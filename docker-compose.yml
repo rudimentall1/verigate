@@ -1,0 +1,14 @@
+services:
+  verigate:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - verigate-data:/app/data
+      - verigate-keys:/app/keys
+    environment:
+      - VERIGATE_POLICY=/app/policies/default.yaml
+
+volumes:
+  verigate-data:
+  verigate-keys:

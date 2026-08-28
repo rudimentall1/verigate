@@ -1,0 +1,42 @@
+# Verigate default policy — a reasonable starting point, not a complete
+# threat model. Edit the numbers below to match your own risk tolerance.
+
+# Payees that are never allowed, regardless of amount.
+blocked_payees: []
+
+# If set, ONLY these payees are allowed (allowlist mode). Leave commented
+# out to allow any payee not explicitly blocked.
+# allowed_payees:
+#   - "0xYourTrustedMerchant"
+
+# Networks / assets this agent is permitted to pay on/with.
+allowed_networks:
+  - base
+  - ethereum
+  - solana
+allowed_assets:
+  - USDC
+
+# Hard cap per single transaction, per asset. Exceeding this is a BLOCK.
+per_tx_cap:
+  USDC: 500
+
+# Tighter cap for the *first* payment to a payee the agent hasn't paid
+# before. Exceeding this is a WARN (human confirmation), not an outright
+# block — it earns full trust once the payee has a track record.
+new_payee_cap:
+  USDC: 50
+
+# Rolling 24h spend cap per asset, across all payees. Exceeding this is a
+# WARN.
+daily_cap:
+  USDC: 2000
+
+# Any single payment above this amount always requires human confirmation,
+# even to a known payee.
+confirmation_required_over:
+  USDC: 250
+
+# Payments per minute before further calls are BLOCKed outright (basic
+# anti-runaway-loop protection).
+rate_limit_per_minute: 30

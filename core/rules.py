@@ -1,0 +1,113 @@
+"""Deterministic rule evaluators. Every check here is something you can
+verify by reading the policy file — no statistical scores, no "reputation"
+numbers pulled from an unverifiable data source.
+"""
+from __future__ import annotations
+
+from .models import PaymentIntent, RuleMatch, Severity
+from .policy import Policy
+
+
+def check_blocked_payee(intent: PaymentIntent, policy: Policy) -> RuleMatch | None:
+    if intent.payee.lower() in {p.lower() for p in policy.blocked_payees}:
+        return RuleMatch("blocked_payee", Severity.BLOCK, f"payee '{intent.payee}' is on the blocklist")
+    return None
+
+
+def check_payee_allowlist(intent: PaymentIntent, policy: Policy) -> RuleMatch | None:
+    if policy.allowed_payees is None:
+        return None
+    if intent.payee.lower() not in {p.lower() for p in policy.allowed_payees}:
+        return RuleMatch(
+            "payee_not_allowlisted",
+            Severity.BLOCK,
+            f"payee '{intent.payee}' is not on the allowlist",
+        )
+    return None
+
+
+def check_network_allowed(intent: PaymentIntent, policy: Policy) -> RuleMatch | None:
+    if policy.allowed_networks is None:
+        return None
+    if intent.network.lower() not in {n.lower() for n in policy.allowed_networks}:
+        return RuleMatch(
+            "network_not_allowed",
+            Severity.BLOCK,
+            f"network '{intent.network}' is not in allowed_networks",
+        )
+    return None
+
+
+def check_asset_allowed(intent: PaymentIntent, policy: Policy) -> RuleMatch | None:
+    if policy.allowed_assets is None:
+        return None
+    if intent.asset.upper() not in {a.upper() for a in policy.allowed_assets}:
+        return RuleMatch(
+            "asset_not_allowed",
+            Severity.BLOCK,
+            f"asset '{intent.asset}' is not in allowed_assets",
+        )
+    return None
+
+
+def check_per_tx_cap(intent: PaymentIntent, policy: Policy) -> RuleMatch | None:
+    cap = policy.per_tx_cap.get(intent.asset.upper())
+    if cap is not None and intent.amount > cap:
+        return RuleMatch(
+            "per_tx_cap_exceeded",
+            Severity.BLOCK,
+            f"amount {intent.amount} {intent.asset} exceeds per-transaction cap {cap}",
+        )
+    return None
+
+
+def check_new_payee_cap(
+    intent: PaymentIntent, policy: Policy, payee_seen_before: bool
+) -> RuleMatch | None:
+    if payee_seen_before:
+        return None
+    cap = policy.new_payee_cap.get(intent.asset.upper())
+    if cap is not None and intent.amount > cap:
+        return RuleMatch(
+            "new_payee_cap_exceeded",
+            Severity.WARN,
+            f"first payment to '{intent.payee}': amount {intent.amount} {intent.asset} "
+            f"exceeds new-payee cap {cap} — needs confirmation",
+        )
+    return None
+
+
+def check_daily_cap(
+    intent: PaymentIntent, policy: Policy, spent_today: float
+) -> RuleMatch | None:
+    cap = policy.daily_cap.get(intent.asset.upper())
+    if cap is not None and (spent_today + intent.amount) > cap:
+        return RuleMatch(
+            "daily_cap_exceeded",
+            Severity.WARN,
+            f"would bring today's total to {spent_today + intent.amount:.2f} {intent.asset}, "
+            f"exceeding daily cap {cap}",
+        )
+    return None
+
+
+def check_confirmation_threshold(intent: PaymentIntent, policy: Policy) -> RuleMatch | None:
+    threshold = policy.confirmation_required_over.get(intent.asset.upper())
+    if threshold is not None and intent.amount > threshold:
+        return RuleMatch(
+            "confirmation_required",
+            Severity.WARN,
+            f"amount {intent.amount} {intent.asset} exceeds confirmation threshold {threshold}",
+        )
+    return None
+
+
+def check_rate_limit(policy: Policy, calls_last_minute: int) -> RuleMatch | None:
+    if policy.rate_limit_per_minute and calls_last_minute >= policy.rate_limit_per_minute:
+        return RuleMatch(
+            "rate_limit_exceeded",
+            Severity.BLOCK,
+            f"{calls_last_minute} payments in the last minute exceeds limit "
+            f"{policy.rate_limit_per_minute}",
+        )
+    return None
