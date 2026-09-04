@@ -82,15 +82,22 @@ def public_key() -> str:
 
 def _decide_and_maybe_sign(intent: PaymentIntent, sign: bool) -> dict:
     assert _engine is not None and _storage is not None
+
+    # GuardrailEngine evaluates AND records the attempt exactly once.
     decision = _engine.evaluate(intent)
-    signature_b64 = None
+
     if sign:
         priv = load_private_key(PRIVATE_KEY_PATH)
         attestation = sign_decision(decision, priv)
-        signature_b64 = attestation.signature_b64
-        _storage.record(intent, decision, signature_b64)
+
+        # Attach the signature to the existing audit row.
+        _storage.update_signature(
+            intent.intent_id,
+            attestation.signature_b64,
+        )
+
         return attestation.as_dict()
-    _storage.record(intent, decision, None)
+
     return decision.as_dict()
 
 

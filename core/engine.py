@@ -1,7 +1,9 @@
 """GuardrailEngine — orchestrates rule evaluation, storage lookups, and
-produces a final GuardrailDecision. This is the single place that decides
-BLOCK beats WARN beats ALLOW.
+produces a final GuardrailDecision.
+
+The engine is the single owner of the evaluate -> persist flow.
 """
+
 from __future__ import annotations
 
 from . import rules as R
@@ -16,48 +18,95 @@ class GuardrailEngine:
         self.storage = storage
 
     def evaluate(self, intent: PaymentIntent) -> GuardrailDecision:
-        matches: list[RuleMatch] = []
+        """Evaluate and persist one payment atomically.
 
-        for check in (
-            R.check_blocked_payee,
-            R.check_payee_allowlist,
-            R.check_network_allowed,
-            R.check_asset_allowed,
-            R.check_per_tx_cap,
-        ):
-            m = check(intent, self.policy)
-            if m:
-                matches.append(m)
+        The transaction covers:
+        1. state reads used by policy rules;
+        2. final decision calculation;
+        3. audit recording.
 
-        payee_seen = self.storage.payee_seen_before(intent.agent_id, intent.payee, intent.intent_id)
-        m = R.check_new_payee_cap(intent, self.policy, payee_seen)
-        if m:
-            matches.append(m)
+        BLOCK attempts are recorded for rate limiting but are excluded from
+        spend and first-seen-payee accounting by Storage.
+        """
+        with self.storage.transaction():
+            matches: list[RuleMatch] = []
 
-        spent_today = self.storage.spent_today(intent.agent_id, intent.asset)
-        m = R.check_daily_cap(intent, self.policy, spent_today)
-        if m:
-            matches.append(m)
+            for check in (
+                R.check_blocked_payee,
+                R.check_payee_allowlist,
+                R.check_network_allowed,
+                R.check_asset_allowed,
+                R.check_per_tx_cap,
+            ):
+                match = check(intent, self.policy)
+                if match:
+                    matches.append(match)
 
-        m = R.check_confirmation_threshold(intent, self.policy)
-        if m:
-            matches.append(m)
+            payee_seen = self.storage.payee_seen_before(
+                intent.agent_id,
+                intent.payee,
+                intent.intent_id,
+            )
 
-        calls = self.storage.calls_last_minute(intent.agent_id)
-        m = R.check_rate_limit(self.policy, calls)
-        if m:
-            matches.append(m)
+            match = R.check_new_payee_cap(
+                intent,
+                self.policy,
+                payee_seen,
+            )
+            if match:
+                matches.append(match)
 
-        if any(m.severity == Severity.BLOCK for m in matches):
-            final = Decision.BLOCK
-        elif any(m.severity == Severity.WARN for m in matches):
-            final = Decision.WARN
-        else:
-            final = Decision.ALLOW
+            spent_today = self.storage.spent_today(
+                intent.agent_id,
+                intent.asset,
+            )
 
-        return GuardrailDecision(
-            intent_id=intent.intent_id,
-            agent_id=intent.agent_id,
-            decision=final,
-            matched_rules=tuple(matches),
-        )
+            match = R.check_daily_cap(
+                intent,
+                self.policy,
+                spent_today,
+            )
+            if match:
+                matches.append(match)
+
+            match = R.check_confirmation_threshold(
+                intent,
+                self.policy,
+            )
+            if match:
+                matches.append(match)
+
+            calls = self.storage.calls_last_minute(intent.agent_id)
+
+            match = R.check_rate_limit(
+                self.policy,
+                calls,
+            )
+            if match:
+                matches.append(match)
+
+            if any(match.severity == Severity.BLOCK for match in matches):
+                final = Decision.BLOCK
+            elif any(match.severity == Severity.WARN for match in matches):
+                final = Decision.WARN
+            else:
+                final = Decision.ALLOW
+
+            decision = GuardrailDecision(
+                intent_id=intent.intent_id,
+                agent_id=intent.agent_id,
+                decision=final,
+                matched_rules=tuple(matches),
+            )
+
+            # IMPORTANT:
+            # evaluate() is now responsible for exactly one audit record.
+            # Callers must NOT call storage.record() again.
+            self.storage.record(
+                intent,
+                decision,
+                signature=None,
+                commit=False,
+            )
+
+            return decision

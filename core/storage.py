@@ -1,17 +1,28 @@
-"""SQLite-backed persistence: audit log, per-(agent,asset) rate limiting,
-first-seen-payee tracking, and rolling daily spend. Single-process by
-default — for multiple replicas, point every process at the same file on
-shared storage, or swap this module for a real database. The interface is
-small and easy to re-target.
+"""SQLite-backed persistence for VeriGate.
+
+Provides:
+- audit logging;
+- per-agent rate limiting;
+- first-seen-payee tracking;
+- rolling 24-hour spend accounting;
+- transaction support for atomic decision + accounting.
+
+The transaction API uses BEGIN IMMEDIATE so decision state reads and the
+resulting audit record can be committed or rolled back as one unit.
 """
+
 from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 from .models import GuardrailDecision, PaymentIntent
+
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -28,74 +39,213 @@ CREATE TABLE IF NOT EXISTS audit_log (
     signature TEXT,
     created_at REAL NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_audit_agent_time ON audit_log(agent_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_audit_payee ON audit_log(payee);
+
+CREATE INDEX IF NOT EXISTS idx_audit_agent_time
+    ON audit_log(agent_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_audit_agent_payee
+    ON audit_log(agent_id, payee);
+
+CREATE INDEX IF NOT EXISTS idx_audit_payee
+    ON audit_log(payee);
 """
 
 
 class Storage:
+    """SQLite persistence with process-local synchronization."""
+
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
-        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+
+        parent = Path(self.db_path).parent
+        parent.mkdir(parents=True, exist_ok=True)
+
+        self._lock = threading.RLock()
+        self._conn = sqlite3.connect(
+            self.db_path,
+            check_same_thread=False,
+            timeout=30.0,
+        )
+
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=30000")
+        self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
 
-    def record(self, intent: PaymentIntent, decision: GuardrailDecision, signature: str | None) -> None:
-        self._conn.execute(
-            "INSERT INTO audit_log "
-            "(intent_id, agent_id, payee, asset, network, amount, decision, "
-            " matched_rules_json, intent_json, signature, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                intent.intent_id,
-                intent.agent_id,
-                intent.payee,
-                intent.asset,
-                intent.network,
-                intent.amount,
-                decision.decision.value,
-                json.dumps([m.__dict__ for m in decision.matched_rules], default=str),
-                json.dumps(intent.metadata),
-                signature,
-                time.time(),
-            ),
-        )
-        self._conn.commit()
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        """Run a group of storage operations atomically."""
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                yield self._conn
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
 
-    def payee_seen_before(self, agent_id: str, payee: str, exclude_intent_id: str) -> bool:
-        row = self._conn.execute(
-            "SELECT 1 FROM audit_log WHERE agent_id = ? AND payee = ? AND intent_id != ? "
-            "AND decision != 'BLOCK' LIMIT 1",
-            (agent_id, payee, exclude_intent_id),
-        ).fetchone()
-        return row is not None
+    def record(
+        self,
+        intent: PaymentIntent,
+        decision: GuardrailDecision,
+        signature: str | None,
+        *,
+        commit: bool = True,
+    ) -> None:
+        """Record one payment attempt.
+
+        commit=False is used when the caller already owns a transaction.
+        """
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO audit_log "
+                "(intent_id, agent_id, payee, asset, network, amount, decision, "
+                "matched_rules_json, intent_json, signature, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    intent.intent_id,
+                    intent.agent_id,
+                    intent.payee,
+                    intent.asset,
+                    intent.network,
+                    intent.amount,
+                    decision.decision.value,
+                    json.dumps(
+                        [
+                            {
+                                "rule_id": m.rule_id,
+                                "severity": m.severity.value,
+                                "message": m.message,
+                            }
+                            for m in decision.matched_rules
+                        ],
+                        separators=(",", ":"),
+                    ),
+                    json.dumps(intent.metadata, separators=(",", ":")),
+                    signature,
+                    time.time(),
+                ),
+            )
+
+            if commit:
+                self._conn.commit()
+
+    def payee_seen_before(
+        self,
+        agent_id: str,
+        payee: str,
+        exclude_intent_id: str,
+    ) -> bool:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 "
+                "FROM audit_log "
+                "WHERE agent_id = ? "
+                "AND payee = ? "
+                "AND intent_id != ? "
+                "AND decision != 'BLOCK' "
+                "LIMIT 1",
+                (agent_id, payee, exclude_intent_id),
+            ).fetchone()
+
+            return row is not None
 
     def spent_today(self, agent_id: str, asset: str) -> float:
+        """Return spend in the rolling 24-hour window.
+
+        BLOCK decisions are excluded from spend accounting.
+        """
         since = time.time() - 24 * 3600
-        row = self._conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) FROM audit_log "
-            "WHERE agent_id = ? AND asset = ? AND created_at >= ? AND decision != 'BLOCK'",
-            (agent_id, asset, since),
-        ).fetchone()
-        return float(row[0] or 0.0)
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(amount), 0) "
+                "FROM audit_log "
+                "WHERE agent_id = ? "
+                "AND asset = ? "
+                "AND created_at >= ? "
+                "AND decision != 'BLOCK'",
+                (agent_id, asset, since),
+            ).fetchone()
+
+            return float(row[0] or 0.0)
 
     def calls_last_minute(self, agent_id: str) -> int:
+        """Return all recorded payment attempts in the last 60 seconds."""
         since = time.time() - 60
-        row = self._conn.execute(
-            "SELECT COUNT(*) FROM audit_log WHERE agent_id = ? AND created_at >= ?",
-            (agent_id, since),
-        ).fetchone()
-        return int(row[0] or 0)
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) "
+                "FROM audit_log "
+                "WHERE agent_id = ? "
+                "AND created_at >= ?",
+                (agent_id, since),
+            ).fetchone()
+
+            return int(row[0] or 0)
 
     def history(self, agent_id: str, limit: int = 50) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT intent_id, payee, asset, network, amount, decision, created_at "
-            "FROM audit_log WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?",
-            (agent_id, limit),
-        ).fetchall()
-        cols = ["intent_id", "payee", "asset", "network", "amount", "decision", "created_at"]
-        return [dict(zip(cols, r)) for r in rows]
+        if limit < 1:
+            return []
 
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT intent_id, payee, asset, network, amount, "
+                "decision, created_at "
+                "FROM audit_log "
+                "WHERE agent_id = ? "
+                "ORDER BY created_at DESC "
+                "LIMIT ?",
+                (agent_id, limit),
+            ).fetchall()
+
+        columns = [
+            "intent_id",
+            "payee",
+            "asset",
+            "network",
+            "amount",
+            "decision",
+            "created_at",
+        ]
+
+        return [dict(zip(columns, row)) for row in rows]
+
+
+    def count_intent(self, intent_id: str) -> int:
+        """Return the number of audit rows for one intent ID."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE intent_id = ?",
+                (intent_id,),
+            ).fetchone()
+
+            return int(row[0] or 0)
+
+    def update_signature(self, intent_id: str, signature: str) -> None:
+        """Attach a signature to an existing audit row.
+
+        Refuses to silently create/update a row that does not exist.
+        """
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE audit_log SET signature = ? WHERE intent_id = ?",
+                (signature, intent_id),
+            )
+
+            if cursor.rowcount != 1:
+                self._conn.rollback()
+                raise ValueError(
+                    f"intent_id '{intent_id}' was not found"
+                )
+
+            self._conn.commit()
+
+    def set_signature(self, intent_id: str, signature: str) -> None:
+        """Backward-compatible alias for update_signature()."""
+        self.update_signature(intent_id, signature)
     def close(self) -> None:
-        self._conn.close()
+        with self._lock:
+            self._conn.close()

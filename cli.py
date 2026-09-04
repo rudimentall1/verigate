@@ -51,8 +51,8 @@ def cmd_check(args: argparse.Namespace) -> int:
         attestation = sign_decision(decision, priv)
         signature_b64 = attestation.signature_b64
         output = attestation.as_dict()
-
-    storage.record(intent, decision, signature_b64)
+    if signature_b64 is not None:
+        storage.update_signature(intent.intent_id, signature_b64)
     print(json.dumps(output, indent=2))
     storage.close()
     return {"ALLOW": 0, "WARN": 1, "BLOCK": 2}[decision.decision.value]
