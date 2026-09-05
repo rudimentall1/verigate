@@ -246,6 +246,7 @@ class Storage:
     def set_signature(self, intent_id: str, signature: str) -> None:
         """Backward-compatible alias for update_signature()."""
         self.update_signature(intent_id, signature)
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()

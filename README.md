@@ -1,6 +1,8 @@
 # Verigate
 
-**A verifiable policy gate for autonomous agent payments.**
+**The authorization and proof layer between an autonomous AI agent and the real world.**
+
+AI can propose an action. VeriGate deterministically authorizes it, and cryptography makes the authorization independently verifiable. Payments are the first vertical; the core model is protocol-agnostic.
 
 Your agent wants to pay for something — a data feed, an API call, an
 invoice, an x402 `PAYMENT-REQUIRED` offer. Verigate checks that payment
@@ -184,6 +186,18 @@ engine can be embedded in another service or tested without installing
 the API layer.
 
 ---
+
+## Genesis architecture
+
+VeriGate is being expanded around a protocol-agnostic authorization lifecycle:
+
+**Discover → Authorize → Enforce → Prove → Learn**
+
+The foundational `ActionIntent` model represents consequential agent actions such as API calls, tool invocations, cloud operations, wallet transactions, and payments. Payment rails remain adapters rather than the core abstraction.
+
+An **Authorization Receipt** binds the normalized action, resulting decision, and SHA-256 fingerprint of the effective policy into a signed Ed25519 proof. A verifier only needs the receipt and issuer public key; it does not need VeriGate's database or API.
+
+The existing `PaymentIntent` and x402 path remain backward-compatible while this generic authorization layer is introduced incrementally.
 
 ## Roadmap
 
