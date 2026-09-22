@@ -1,9 +1,4 @@
-"""Dependency-light EVM execution adapter.
-
-The adapter extracts the exact EVM transaction envelope from the signed
-normalized action, validates it, then consumes the one-time capability before
-handing the canonical transaction to a broadcaster.
-"""
+"""Dependency-light EVM execution adapter."""
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -29,10 +24,13 @@ class EVMExecutionAdapter(ExecutionAdapter):
         tx = metadata.get("evm_transaction")
         if not isinstance(tx, dict):
             raise ValueError("authorized action is missing evm_transaction")
+
         chain_id = tx.get("chain_id")
         to = tx.get("to")
         value_wei = tx.get("value_wei", 0)
         data = tx.get("data", "0x")
+        signed_raw_transaction = tx.get("signed_raw_transaction")
+
         if not isinstance(chain_id, int) or chain_id <= 0:
             raise ValueError("invalid EVM chain_id")
         if not isinstance(to, str) or not to:
@@ -41,7 +39,24 @@ class EVMExecutionAdapter(ExecutionAdapter):
             raise ValueError("invalid EVM value_wei")
         if not isinstance(data, str) or not data.startswith("0x"):
             raise ValueError("invalid EVM calldata")
-        return {"chain_id": chain_id, "to": to, "value_wei": value_wei, "data": data}
+
+        result = {
+            "chain_id": chain_id,
+            "to": to,
+            "value_wei": value_wei,
+            "data": data,
+        }
+        if signed_raw_transaction is not None:
+            if (
+                not isinstance(signed_raw_transaction, str)
+                or not signed_raw_transaction.startswith("0x")
+                or len(signed_raw_transaction) <= 2
+                or len(signed_raw_transaction[2:]) % 2
+                or any(c not in "0123456789abcdefABCDEF" for c in signed_raw_transaction[2:])
+            ):
+                raise ValueError("invalid signed EVM transaction encoding")
+            result["signed_raw_transaction"] = signed_raw_transaction
+        return result
 
     def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         action = authorization["payload"]["action"]
