@@ -43,6 +43,22 @@ class PaymentIntent:
     timestamp: float = field(default_factory=time.time)
 
 
+    def as_action_intent(self) -> "ActionIntent":
+        """Normalize a payment into the protocol-agnostic action model."""
+        return ActionIntent(
+            agent_id=self.agent_id,
+            action_type="payment",
+            target=self.payee,
+            resource=self.resource,
+            amount=self.amount,
+            asset=self.asset,
+            network=self.network,
+            metadata=self.metadata,
+            intent_id=self.intent_id,
+            timestamp=self.timestamp,
+        )
+
+
 @dataclass(frozen=True)
 class ActionIntent:
     """Protocol-agnostic authorization request from an autonomous agent.

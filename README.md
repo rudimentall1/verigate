@@ -213,3 +213,12 @@ The existing `PaymentIntent` and x402 path remain backward-compatible while this
 ## License
 
 MIT.
+
+
+### Canonical authorization API
+
+`POST /v1/authorize` is the explicit authorization contract for payment actions. It evaluates the request under the active policy, creates an Authorization Receipt, signs it with the issuer Ed25519 key, and persists the signature against the same audit attempt.
+
+`POST /v1/authorize/x402` provides the same contract for an x402 `PAYMENT-REQUIRED` header.
+
+The existing `/v1/check` endpoints remain available for compatibility.

@@ -7,9 +7,11 @@ The engine is the single owner of the evaluate -> persist flow.
 from __future__ import annotations
 
 from . import rules as R
-from .models import Decision, GuardrailDecision, PaymentIntent, RuleMatch, Severity
+from .models import ActionIntent, Decision, GuardrailDecision, PaymentIntent, RuleMatch, Severity
 from .policy import Policy
 from .storage import Storage
+
+from attest.receipt import AuthorizationReceipt, sign_receipt
 
 
 class GuardrailEngine:
@@ -110,3 +112,19 @@ class GuardrailEngine:
             )
 
             return decision
+
+
+    def authorize(self, intent: PaymentIntent, private_key) -> AuthorizationReceipt:
+        """Evaluate, sign, and persist one authorization receipt.
+
+        This is the canonical signed authorization path: callers do not need
+        to separately evaluate, construct a receipt, and attach its signature.
+        The audit decision is committed by ``evaluate`` before the signature
+        is attached, so a signing failure never erases the authorization
+        attempt from the audit trail.
+        """
+        decision = self.evaluate(intent)
+        action = intent.as_action_intent()
+        receipt = sign_receipt(action, decision, self.policy.digest, private_key)
+        self.storage.update_signature(intent.intent_id, receipt.signature)
+        return receipt

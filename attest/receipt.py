@@ -59,9 +59,16 @@ def verify_receipt(receipt: dict[str, Any], public_key: Ed25519PublicKey) -> tup
         signature = base64.b64decode(receipt["signature"], validate=True)
         if receipt.get("algorithm") != "Ed25519":
             return False, "unsupported signature algorithm"
-        _ = payload["intent"]["intent_id"]
-        _ = payload["decision"]["decision"]
-        _ = payload["policy_sha256"]
+        intent = payload["intent"]
+        decision = payload["decision"]
+        policy_digest = payload["policy_sha256"]
+        if intent["intent_id"] != decision["intent_id"]:
+            return False, "intent and decision IDs do not match"
+        if intent["agent_id"] != decision["agent_id"]:
+            return False, "intent and decision agents do not match"
+        if (not isinstance(policy_digest, str) or len(policy_digest) != 64
+                or any(c not in "0123456789abcdef" for c in policy_digest)):
+            return False, "invalid policy fingerprint"
         public_key.verify(signature, _canonical(payload))
         return True, "valid authorization receipt"
     except (KeyError, TypeError, ValueError, InvalidSignature):

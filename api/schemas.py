@@ -50,3 +50,9 @@ class VerifyRequest(BaseModel):
 class VerifyResponse(BaseModel):
     valid: bool
     reason: str
+
+
+class AuthorizationReceiptResponse(BaseModel):
+    payload: dict
+    signature: str
+    algorithm: str = "Ed25519"
