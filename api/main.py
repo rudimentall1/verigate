@@ -35,7 +35,7 @@ from x402.parser import X402ParseError, offer_to_intent, parse_payment_required_
 
 from .schemas import (
     AttestationResponse,
-    AuthorizationReceiptResponse,
+    AuthorizationResponse,
     DecisionResponse,
     PaymentIntentRequest,
     VerifyRequest,
@@ -125,7 +125,7 @@ def check_x402(req: X402HeaderRequest) -> dict:
     return _decide_and_maybe_sign(intent, req.sign)
 
 
-@app.post("/v1/authorize", response_model=AuthorizationReceiptResponse)
+@app.post("/v1/authorize", response_model=AuthorizationResponse)
 def authorize(req: PaymentIntentRequest) -> dict:
     """Authorize a payment and return a portable signed authorization receipt.
 
@@ -143,10 +143,10 @@ def authorize(req: PaymentIntentRequest) -> dict:
         resource=req.resource,
     )
     private_key = load_private_key(PRIVATE_KEY_PATH)
-    return _engine.authorize(intent, private_key).as_dict()
+    return _engine.authorize(intent, private_key)
 
 
-@app.post("/v1/authorize/x402", response_model=AuthorizationReceiptResponse)
+@app.post("/v1/authorize/x402", response_model=AuthorizationResponse)
 def authorize_x402(req: X402HeaderRequest) -> dict:
     """Authorize the first x402 payment offer and return a signed receipt."""
     assert _engine is not None
@@ -156,7 +156,7 @@ def authorize_x402(req: X402HeaderRequest) -> dict:
     except X402ParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     private_key = load_private_key(PRIVATE_KEY_PATH)
-    return _engine.authorize(intent, private_key).as_dict()
+    return _engine.authorize(intent, private_key)
 
 
 @app.post("/v1/verify", response_model=VerifyResponse)

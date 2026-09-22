@@ -32,10 +32,12 @@ def test_authorize_endpoint_returns_receipt_and_persists_signature():
 
             assert response.status_code == 200
             body = response.json()
-            assert body["algorithm"] == "Ed25519"
-            assert body["payload"]["intent"]["action_type"] == "payment"
-            assert body["payload"]["decision"]["decision"] == "ALLOW"
-            assert len(body["signature"]) > 0
+            assert body["decision_receipt"]["algorithm"] == "Ed25519"
+            assert body["decision_receipt"]["payload"]["intent"]["action_type"] == "payment"
+            assert body["decision_receipt"]["payload"]["decision"]["decision"] == "ALLOW"
+            assert len(body["decision_receipt"]["signature"]) > 0
+            assert body["execution_authorization"] is not None
+            assert body["execution_authorization"]["payload"]["intent_id"] == body["decision_receipt"]["payload"]["intent"]["intent_id"]
 
         main._storage.close()
         main._storage = None

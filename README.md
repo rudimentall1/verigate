@@ -195,7 +195,7 @@ VeriGate is being expanded around a protocol-agnostic authorization lifecycle:
 
 The foundational `ActionIntent` model represents consequential agent actions such as API calls, tool invocations, cloud operations, wallet transactions, and payments. Payment rails remain adapters rather than the core abstraction.
 
-An **Authorization Receipt** binds the normalized action, resulting decision, and SHA-256 fingerprint of the effective policy into a signed Ed25519 proof. A verifier only needs the receipt and issuer public key; it does not need VeriGate's database or API.
+A **Decision Receipt** binds the normalized action, resulting decision, and SHA-256 fingerprint of the effective policy into a signed Ed25519 proof. It proves what Verigate decided. An **Execution Authorization** is separate: only an ALLOW decision can mint this short-lived, nonce-bound capability for an executor. WARN and BLOCK never receive execution authority.
 
 The existing `PaymentIntent` and x402 path remain backward-compatible while this generic authorization layer is introduced incrementally.
 
@@ -217,7 +217,9 @@ MIT.
 
 ### Canonical authorization API
 
-`POST /v1/authorize` is the explicit authorization contract for payment actions. It evaluates the request under the active policy, creates an Authorization Receipt, signs it with the issuer Ed25519 key, and persists the signature against the same audit attempt.
+`POST /v1/authorize` returns two distinct artifacts: a signed `DecisionReceipt` proving the policy decision, and an `ExecutionAuthorization` only when the decision is ALLOW.
+
+`ExecutionAuthorization` is short-lived and nonce-bound. It is the capability an execution adapter can accept; the decision receipt is evidence and is not itself permission to execute.
 
 `POST /v1/authorize/x402` provides the same contract for an x402 `PAYMENT-REQUIRED` header.
 
