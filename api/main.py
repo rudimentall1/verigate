@@ -1,20 +1,16 @@
-"""Verigate API — FastAPI app.
+"""Verigate API  FastAPI app.
 
 Endpoints:
-  POST /v1/check          evaluate a raw payment intent against policy
-  POST /v1/check/x402      evaluate a payment parsed straight out of a real
-                             x402 PAYMENT-REQUIRED header
-  POST /v1/verify           independently verify a signed attestation
-                             (does not require any prior state — a partner
-                             or auditor can run this against nothing but
-                             your public key)
+  POST /v1/check
+  POST /v1/check/x402
+  POST /v1/authorize
+  POST /v1/authorize/x402
+  POST /v1/execution/consume
+  GET  /v1/execution/networks
+  POST /v1/verify
   GET  /v1/agents/{id}/history
   GET  /health
-  GET  /v1/public-key       fetch the issuer's public key (PEM), so
-                             third parties can verify without an
-                             out-of-band key exchange
-
-Run: uvicorn api.main:app --reload
+  GET  /v1/public-key
 """
 from __future__ import annotations
 
@@ -26,12 +22,13 @@ from fastapi.responses import PlainTextResponse
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
-from enforcement.local import ExecutionGate
 from attest.verify import verify_attestation
 from core.engine import GuardrailEngine
 from core.models import PaymentIntent
 from core.policy import Policy
 from core.storage import Storage
+from enforcement.networks import NetworkRegistry
+from enforcement.router import ExecutionRouter
 from x402.parser import X402ParseError, offer_to_intent, parse_payment_required_header
 
 from .schemas import (
@@ -79,41 +76,25 @@ def health() -> dict:
 
 @app.get("/v1/public-key", response_class=PlainTextResponse)
 def public_key() -> str:
-    """Anyone can fetch this and verify attestations independently,
-    without ever calling this API again."""
     return Path(PUBLIC_KEY_PATH).read_text()
 
 
 def _decide_and_maybe_sign(intent: PaymentIntent, sign: bool) -> dict:
     assert _engine is not None and _storage is not None
-
-    # GuardrailEngine evaluates AND records the attempt exactly once.
     decision = _engine.evaluate(intent)
-
     if sign:
         priv = load_private_key(PRIVATE_KEY_PATH)
         attestation = sign_decision(decision, priv)
-
-        # Attach the signature to the existing audit row.
-        _storage.update_signature(
-            intent.intent_id,
-            attestation.signature_b64,
-        )
-
+        _storage.update_signature(intent.intent_id, attestation.signature_b64)
         return attestation.as_dict()
-
     return decision.as_dict()
 
 
 @app.post("/v1/check", response_model=AttestationResponse | DecisionResponse)
 def check(req: PaymentIntentRequest) -> dict:
     intent = PaymentIntent(
-        agent_id=req.agent_id,
-        payee=req.payee,
-        asset=req.asset,
-        network=req.network,
-        amount=req.amount,
-        resource=req.resource,
+        agent_id=req.agent_id, payee=req.payee, asset=req.asset, network=req.network,
+        amount=req.amount, resource=req.resource,
     )
     return _decide_and_maybe_sign(intent, req.sign)
 
@@ -130,51 +111,41 @@ def check_x402(req: X402HeaderRequest) -> dict:
 
 @app.post("/v1/authorize", response_model=AuthorizationResponse)
 def authorize(req: PaymentIntentRequest) -> dict:
-    """Authorize a payment and return a portable signed authorization receipt.
-
-    Unlike /v1/check, this endpoint makes the signed receipt the explicit
-    authorization contract. Enforcement adapters can verify the receipt
-    independently using the issuer public key.
-    """
     assert _engine is not None
     intent = PaymentIntent(
-        agent_id=req.agent_id,
-        payee=req.payee,
-        asset=req.asset,
-        network=req.network,
-        amount=req.amount,
-        resource=req.resource,
+        agent_id=req.agent_id, payee=req.payee, asset=req.asset, network=req.network,
+        amount=req.amount, resource=req.resource,
     )
-    private_key = load_private_key(PRIVATE_KEY_PATH)
-    return _engine.authorize(intent, private_key)
+    return _engine.authorize(intent, load_private_key(PRIVATE_KEY_PATH))
 
 
 @app.post("/v1/authorize/x402", response_model=AuthorizationResponse)
 def authorize_x402(req: X402HeaderRequest) -> dict:
-    """Authorize the first x402 payment offer and return a signed receipt."""
     assert _engine is not None
     try:
         offers = parse_payment_required_header(req.payment_required_header)
         intent = offer_to_intent(offers[0], agent_id=req.agent_id)
     except X402ParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    private_key = load_private_key(PRIVATE_KEY_PATH)
-    return _engine.authorize(intent, private_key)
+    return _engine.authorize(intent, load_private_key(PRIVATE_KEY_PATH))
 
 
 @app.post("/v1/execution/consume", response_model=ExecutionConsumeResponse)
 def consume_execution(req: ExecutionConsumeRequest) -> dict:
-    """Consume a signed execution capability exactly once.
-
-    This is the executor-facing authorization check. It verifies the
-    capability and atomically consumes its nonce before returning execute=true.
-    It performs no side effect itself.
-    """
+    """Consume a signed execution capability through the universal router."""
     assert _storage is not None
-    public_key = load_public_key(PUBLIC_KEY_PATH)
-    gate = ExecutionGate(_storage, public_key)
-    ok, reason = gate.consume(req.authorization.model_dump())
+    router = ExecutionRouter(
+        NetworkRegistry(),
+        _storage,
+        load_public_key(PUBLIC_KEY_PATH),
+    )
+    ok, reason = router.consume(req.authorization.model_dump())
     return {"execute": ok, "reason": reason}
+
+
+@app.get("/v1/execution/networks")
+def execution_networks() -> list[dict]:
+    return NetworkRegistry().as_dict()
 
 
 @app.post("/v1/verify", response_model=VerifyResponse)
