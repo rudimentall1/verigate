@@ -48,6 +48,14 @@ CREATE INDEX IF NOT EXISTS idx_audit_agent_payee
 
 CREATE INDEX IF NOT EXISTS idx_audit_payee
     ON audit_log(payee);
+
+CREATE TABLE IF NOT EXISTS execution_nonces (
+    nonce TEXT PRIMARY KEY,
+    authorization_id TEXT NOT NULL,
+    intent_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    consumed_at REAL NOT NULL
+);
 """
 
 
@@ -223,6 +231,28 @@ class Storage:
             ).fetchone()
 
             return int(row[0] or 0)
+
+    def consume_execution_nonce(
+        self,
+        nonce: str,
+        authorization_id: str,
+        intent_id: str,
+        agent_id: str,
+    ) -> bool:
+        """Atomically consume a nonce; return False when it was already used."""
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO execution_nonces "
+                    "(nonce, authorization_id, intent_id, agent_id, consumed_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (nonce, authorization_id, intent_id, agent_id, time.time()),
+                )
+                self._conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                self._conn.rollback()
+                return False
 
     def update_signature(self, intent_id: str, signature: str) -> None:
         """Attach a signature to an existing audit row.
