@@ -61,10 +61,10 @@ class RwaPurchaseEvaluator:
         self.policy = policy or RwaPolicy()
 
     @staticmethod
-    def load_policy(path: str | Path) -> RwaPolicy:
+    def load_policy(path: str | Path) -> RwaPurchaseEvaluator:
         with open(path, "r", encoding="utf-8") as handle:
             raw = yaml.safe_load(handle) or {}
-        return RwaPolicy(
+        policy = RwaPolicy(
             allowed_asset_types=tuple(raw.get("allowed_asset_types") or RwaPolicy().allowed_asset_types),
             require_tokenization=bool(raw.get("require_tokenization", True)),
             max_purchase_usd=float(raw.get("max_purchase_usd", 5000.0)),
@@ -74,6 +74,8 @@ class RwaPurchaseEvaluator:
             max_issuer_price_spread_fraction=float(raw.get("max_issuer_price_spread_fraction", 0.02)),
             raw=raw,
         )
+
+        return RwaPurchaseEvaluator(policy)
 
     def build_action(
         self,

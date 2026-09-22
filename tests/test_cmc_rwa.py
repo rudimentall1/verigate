@@ -209,6 +209,14 @@ class RwaPolicyTest(unittest.TestCase):
         self.assertEqual(artifacts["decision"]["decision"], "BLOCK")
         self.assertIsNone(artifacts["execution_authorization"])
 
+    def test_load_policy_returns_evaluator(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / 'policy.yaml'
+            path.write_text('max_purchase_usd: 1000\n', encoding='utf-8')
+            evaluator = RwaPurchaseEvaluator.load_policy(path)
+        self.assertIsInstance(evaluator, RwaPurchaseEvaluator)
+        self.assertEqual(evaluator.policy.max_purchase_usd, 1000.0)
+
     def _keys(self):
         td = tempfile.TemporaryDirectory()
         private = Path(td.name) / "issuer.key"
