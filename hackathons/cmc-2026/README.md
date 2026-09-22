@@ -55,7 +55,7 @@ Default controls:
 - WARN when purchase exceeds 1% of tokenized 24h volume
 - WARN when purchase exceeds 0.1% of tokenized market cap
 - require CMC issuer provenance on tracked tokens
-- WARN when tokenized issuer prices diverge by more than 2%
+- WARN when multiple tracked tokens from the same issuer show price dispersion above 2%
 ## Hackathon status
 
 The CMC hackathon build window is 9–30 September 2026. Submission requires a
@@ -66,10 +66,10 @@ response.
 Verigate remains the canonical repository. This folder is only the CMC
 submission layer.
 
+Live verification is complete: a real CMC API call was captured on 2026-09-22 and stored without credentials in evidence-live-2026-09-22.md.
+
 Before submission:
 
-1. configure a real CMC API key locally;
-2. capture a live API run;
-3. deploy or record the working flow;
-4. freeze the product;
-5. add the submission link and final evidence to hackathons/registry.yaml.
+1. deploy or record the working flow;
+2. freeze the product;
+3. add the submission link and final evidence to hackathons/registry.yaml.

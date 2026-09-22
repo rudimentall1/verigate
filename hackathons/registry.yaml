@@ -1,6 +1,6 @@
 projects:
   - id: cmc-2026-rwa-verigate
-    status: BUILDING
+    status: LIVE_VERIFIED
     track: Real World Assets
     integration: adapters/cmc
     deadline: 2026-09-30T23:59:00Z
@@ -11,8 +11,8 @@ projects:
     evidence:
       - /v5/real-world-assets/map
       - /v5/real-world-assets/quotes/latest
+      - evidence-live-2026-09-22.md
     missing:
-      - live CMC API key configured locally
       - deployed demo or recording
       - DoraHacks submission link
       - final presentation only after product freeze
