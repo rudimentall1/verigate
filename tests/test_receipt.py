@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
-from attest.receipt import sign_receipt, verify_receipt
+from attest.receipt import sign_receipt, verify_receipt, verify_execution_authorization
 from core.models import ActionIntent, Decision, GuardrailDecision, PaymentIntent
 from core.engine import GuardrailEngine
 from core.policy import Policy
@@ -60,15 +60,38 @@ class AuthorizationReceiptTest(unittest.TestCase):
                 agent_id="agent-1", payee="merchant", asset="USDC",
                 network="base", amount=10.0,
             )
-            receipt = engine.authorize(intent, load_private_key(self.priv))
-            data = receipt.as_dict()
-            self.assertEqual(data["payload"]["intent"]["action_type"], "payment")
-            self.assertEqual(data["payload"]["policy_sha256"], policy.digest)
+            result = engine.authorize(intent, load_private_key(self.priv))
+            receipt = result["decision_receipt"]
+            execution = result["execution_authorization"]
+            self.assertEqual(receipt["payload"]["intent"]["action_type"], "payment")
+            self.assertEqual(receipt["payload"]["policy_sha256"], policy.digest)
+            self.assertIsNotNone(execution)
+            self.assertTrue(verify_execution_authorization(execution, load_public_key(self.pub))[0])
             self.assertEqual(storage.count_intent(intent.intent_id), 1)
             row = storage._conn.execute(
                 "SELECT signature FROM audit_log WHERE intent_id = ?", (intent.intent_id,)
             ).fetchone()
-            self.assertEqual(row[0], receipt.signature)
+            self.assertEqual(row[0], receipt["signature"])
+        finally:
+            storage.close()
+
+    def test_warn_gets_decision_receipt_but_no_execution_authorization(self):
+        policy_path = Path(self.tmpdir.name) / "warn-policy.yaml"
+        policy_path.write_text(
+            "allowed_networks: [base]\nallowed_assets: [USDC]\n"
+            "new_payee_cap:\n  USDC: 1\n",
+            encoding="utf-8",
+        )
+        storage = Storage(Path(self.tmpdir.name) / "warn.db")
+        try:
+            engine = GuardrailEngine(Policy.load(policy_path), storage)
+            intent = PaymentIntent(
+                agent_id="agent-1", payee="new-merchant", asset="USDC",
+                network="base", amount=10.0,
+            )
+            result = engine.authorize(intent, load_private_key(self.priv))
+            self.assertEqual(result["decision_receipt"]["payload"]["decision"]["decision"], "WARN")
+            self.assertIsNone(result["execution_authorization"])
         finally:
             storage.close()
 

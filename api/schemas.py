@@ -52,7 +52,27 @@ class VerifyResponse(BaseModel):
     reason: str
 
 
-class AuthorizationReceiptResponse(BaseModel):
+class DecisionReceiptResponse(BaseModel):
     payload: dict
     signature: str
     algorithm: str = "Ed25519"
+
+
+class ExecutionAuthorizationResponse(BaseModel):
+    payload: dict
+    signature: str
+    algorithm: str = "Ed25519"
+
+
+class AuthorizationResponse(BaseModel):
+    decision_receipt: DecisionReceiptResponse
+    execution_authorization: ExecutionAuthorizationResponse | None = None
+
+
+class ExecutionConsumeRequest(BaseModel):
+    authorization: ExecutionAuthorizationResponse
+
+
+class ExecutionConsumeResponse(BaseModel):
+    execute: bool
+    reason: str
