@@ -1,4 +1,4 @@
-"""Minimal Solana JSON-RPC client for authorized transaction broadcast."""
+"""Minimal Solana JSON-RPC client for execution and confirmation."""
 from __future__ import annotations
 
 import json
@@ -45,18 +45,12 @@ class SolanaRpcClient:
             body = json.loads(raw)
         except (TypeError, json.JSONDecodeError) as exc:
             raise SolanaRpcError("Solana RPC returned invalid JSON") from exc
-
         if body.get("error") is not None:
-            raise SolanaRpcError(
-                f"Solana RPC error: {body['error']}"
-            )
+            raise SolanaRpcError(f"Solana RPC error: {body['error']}")
         return body.get("result")
 
     def get_latest_blockhash(self) -> dict[str, Any]:
-        result = self._request(
-            "getLatestBlockhash",
-            [{"commitment": "confirmed"}],
-        )
+        result = self._request("getLatestBlockhash", [{"commitment": "confirmed"}])
         if not isinstance(result, dict):
             raise SolanaRpcError("getLatestBlockhash returned invalid result")
         value = result.get("value")
@@ -67,14 +61,11 @@ class SolanaRpcClient:
     def simulate_transaction(self, serialized_transaction: str) -> dict[str, Any]:
         result = self._request(
             "simulateTransaction",
-            [
-                serialized_transaction,
-                {
-                    "encoding": "base64",
-                    "sigVerify": True,
-                    "replaceRecentBlockhash": False,
-                },
-            ],
+            [serialized_transaction, {
+                "encoding": "base64",
+                "sigVerify": True,
+                "replaceRecentBlockhash": False,
+            }],
         )
         if not isinstance(result, dict):
             raise SolanaRpcError("simulateTransaction returned invalid result")
@@ -83,16 +74,60 @@ class SolanaRpcClient:
     def send_transaction(self, serialized_transaction: str) -> str:
         result = self._request(
             "sendTransaction",
-            [
-                serialized_transaction,
-                {
-                    "encoding": "base64",
-                    "skipPreflight": False,
-                    "preflightCommitment": "confirmed",
-                    "maxRetries": 0,
-                },
-            ],
+            [serialized_transaction, {
+                "encoding": "base64",
+                "skipPreflight": False,
+                "preflightCommitment": "confirmed",
+                "maxRetries": 0,
+            }],
         )
         if not isinstance(result, str) or not result:
             raise SolanaRpcError("sendTransaction returned no signature")
         return result
+
+    def get_signature_status(self, signature: str) -> dict[str, Any] | None:
+        if not isinstance(signature, str) or not signature:
+            raise ValueError("invalid Solana signature")
+        result = self._request(
+            "getSignatureStatuses",
+            [[signature], {"searchTransactionHistory": True}],
+        )
+        if not isinstance(result, dict):
+            raise SolanaRpcError("getSignatureStatuses returned invalid result")
+        values = result.get("value")
+        if not isinstance(values, list):
+            raise SolanaRpcError("getSignatureStatuses returned invalid values")
+        status = values[0] if values else None
+        return status if isinstance(status, dict) else None
+
+    def confirm_transaction(self, signature: str) -> dict[str, Any]:
+        status = self.get_signature_status(signature)
+        if status is None:
+            return {"state": "PENDING", "transaction_ref": signature}
+        if status.get("err") is not None:
+            return {
+                "state": "FAILED",
+                "transaction_ref": signature,
+                "slot": status.get("slot"),
+                "confirmations": status.get("confirmations"),
+                "error": f"Solana transaction failed: {status['err']}",
+                "status": status,
+            }
+        confirmation_status = status.get("confirmationStatus")
+        if confirmation_status in {"confirmed", "finalized"}:
+            return {
+                "state": "CONFIRMED",
+                "transaction_ref": signature,
+                "slot": status.get("slot"),
+                "confirmations": status.get("confirmations"),
+                "confirmation_status": confirmation_status,
+                "status": status,
+            }
+        return {
+            "state": "PENDING",
+            "transaction_ref": signature,
+            "slot": status.get("slot"),
+            "confirmations": status.get("confirmations"),
+            "confirmation_status": confirmation_status,
+            "status": status,
+        }

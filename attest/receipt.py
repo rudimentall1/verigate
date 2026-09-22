@@ -151,14 +151,18 @@ def execution_receipt_payload(
     transaction_ref: str | None,
     executor: str,
     error: str | None = None,
+    receipt_id: str | None = None,
+    previous_receipt_sha256: str | None = None,
+    confirmation_ref: str | None = None,
+    confirmation_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     auth_payload = authorization["payload"]
     action = auth_payload["action"]
-    if status not in {"SUBMITTED", "FAILED"}:
+    if status not in {"SUBMITTED", "CONFIRMED", "FAILED"}:
         raise ValueError("invalid execution receipt status")
     return {
         "execution_receipt_version": 1,
-        "receipt_id": str(uuid.uuid4()),
+        "receipt_id": receipt_id or str(uuid.uuid4()),
         "authorization_id": auth_payload["authorization_id"],
         "decision_receipt_sha256": auth_payload["decision_receipt_sha256"],
         "intent_id": auth_payload["intent_id"],
@@ -169,6 +173,9 @@ def execution_receipt_payload(
         "transaction_ref": transaction_ref,
         "executor": executor,
         "error": error,
+        "previous_receipt_sha256": previous_receipt_sha256,
+        "confirmation_ref": confirmation_ref,
+        "confirmation_data": confirmation_data,
         "executed_at": int(time.time()),
     }
 
@@ -181,6 +188,10 @@ def sign_execution_receipt(
     executor: str,
     private_key: Ed25519PrivateKey,
     error: str | None = None,
+    receipt_id: str | None = None,
+    previous_receipt_sha256: str | None = None,
+    confirmation_ref: str | None = None,
+    confirmation_data: dict[str, Any] | None = None,
 ) -> ExecutionReceipt:
     payload = execution_receipt_payload(
         authorization,
@@ -188,6 +199,10 @@ def sign_execution_receipt(
         transaction_ref=transaction_ref,
         executor=executor,
         error=error,
+        receipt_id=receipt_id,
+        previous_receipt_sha256=previous_receipt_sha256,
+        confirmation_ref=confirmation_ref,
+        confirmation_data=confirmation_data,
     )
     return ExecutionReceipt(payload, _sign(payload, private_key))
 
@@ -203,12 +218,12 @@ def verify_execution_receipt(
         payload = receipt["payload"]
         if payload["execution_receipt_version"] != 1:
             return False, "unsupported execution receipt version"
-        if payload["status"] not in {"SUBMITTED", "FAILED"}:
+        if payload["status"] not in {"SUBMITTED", "CONFIRMED", "FAILED"}:
             return False, "invalid execution receipt status"
         if not payload["receipt_id"] or not payload["authorization_id"] or not payload["intent_id"]:
             return False, "invalid execution receipt identity"
-        if payload["status"] == "SUBMITTED" and not payload["transaction_ref"]:
-            return False, "submitted receipt is missing transaction reference"
+        if payload["status"] in {"SUBMITTED", "CONFIRMED"} and not payload["transaction_ref"]:
+            return False, "execution receipt is missing transaction reference"
         action_sha256 = payload["action_sha256"]
         if not isinstance(action_sha256, str) or len(action_sha256) != 64:
             return False, "invalid execution action fingerprint"

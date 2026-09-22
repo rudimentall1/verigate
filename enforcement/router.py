@@ -1,6 +1,9 @@
 """Universal execution router for Verigate."""
 from __future__ import annotations
 
+import hashlib
+import json
+
 from typing import Any, Callable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
@@ -171,3 +174,30 @@ class ExecutionRouter:
 
         self.storage.record_execution_receipt(receipt.as_dict())
         return receipt
+
+    @staticmethod
+    def _receipt_digest(receipt: dict[str, Any]) -> str:
+        canonical = json.dumps(receipt, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
+
+    def confirm_execution_receipt(self, receipt: dict[str, Any], confirmation: dict[str, Any], *, executor: str = "verigate") -> ExecutionReceipt | None:
+        if self.private_key is None:
+            raise ValueError("execution receipt signing key is required")
+        current = receipt["payload"]
+        state = confirmation.get("state")
+        if state == "PENDING":
+            return None
+        if current.get("status") != "SUBMITTED":
+            return ExecutionReceipt(payload=current, signature=receipt["signature"], algorithm=receipt.get("algorithm", "Ed25519"))
+        if state not in {"CONFIRMED", "FAILED"}:
+            raise ValueError("invalid confirmation state")
+        transaction_ref = confirmation.get("transaction_ref") or current.get("transaction_ref")
+        if not transaction_ref:
+            raise ValueError("confirmation is missing transaction reference")
+        auth = {"payload": {"authorization_id": current["authorization_id"], "decision_receipt_sha256": current["decision_receipt_sha256"], "intent_id": current["intent_id"], "agent_id": current["agent_id"], "action_sha256": current["action_sha256"], "action": {"network": current.get("network")}}}
+        updated = sign_execution_receipt(auth, status=state, transaction_ref=transaction_ref, executor=executor, private_key=self.private_key, error=confirmation.get("error"), receipt_id=current["receipt_id"], previous_receipt_sha256=self._receipt_digest(receipt), confirmation_ref=confirmation.get("block_ref") or confirmation.get("slot"), confirmation_data=confirmation)
+        payload = dict(updated.payload)
+        payload["network"] = current.get("network")
+        updated = ExecutionReceipt(payload=payload, signature=updated.signature, algorithm=updated.algorithm)
+        self.storage.update_execution_receipt(updated.as_dict())
+        return updated

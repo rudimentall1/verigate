@@ -1,4 +1,4 @@
-"""Minimal EVM JSON-RPC client for authorized raw transaction broadcast."""
+"""Minimal EVM JSON-RPC client for execution and confirmation."""
 from __future__ import annotations
 
 import json
@@ -69,3 +69,42 @@ class EvmRpcClient:
         if not isinstance(result, str) or not result.startswith("0x"):
             raise EvmRpcError("eth_sendRawTransaction returned no transaction hash")
         return result
+
+    def get_transaction_receipt(self, transaction_hash: str) -> dict[str, Any] | None:
+        if (
+            not isinstance(transaction_hash, str)
+            or not transaction_hash.startswith("0x")
+            or len(transaction_hash) <= 2
+        ):
+            raise ValueError("invalid EVM transaction hash")
+        result = self._request("eth_getTransactionReceipt", [transaction_hash])
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            raise EvmRpcError("eth_getTransactionReceipt returned invalid result")
+        return result
+
+    def confirm_transaction(self, transaction_hash: str) -> dict[str, Any]:
+        receipt = self.get_transaction_receipt(transaction_hash)
+        if receipt is None:
+            return {"state": "PENDING", "transaction_ref": transaction_hash}
+
+        status = receipt.get("status")
+        if status == "0x1":
+            return {
+                "state": "CONFIRMED",
+                "transaction_ref": transaction_hash,
+                "block_ref": receipt.get("blockNumber"),
+                "block_hash": receipt.get("blockHash"),
+                "receipt": receipt,
+            }
+        if status == "0x0":
+            return {
+                "state": "FAILED",
+                "transaction_ref": transaction_hash,
+                "block_ref": receipt.get("blockNumber"),
+                "block_hash": receipt.get("blockHash"),
+                "error": "EVM transaction reverted",
+                "receipt": receipt,
+            }
+        raise EvmRpcError(f"unknown EVM transaction receipt status: {status!r}")

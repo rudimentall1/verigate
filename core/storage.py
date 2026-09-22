@@ -300,6 +300,27 @@ class Storage:
                 self._conn.rollback()
                 raise ValueError("execution receipt already recorded") from exc
 
+    def update_execution_receipt(self, receipt: dict) -> None:
+        payload = receipt["payload"]
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE execution_receipts SET status = ?, transaction_ref = ?, "
+                "receipt_json = ?, signature = ?, created_at = ? "
+                "WHERE authorization_id = ?",
+                (
+                    payload["status"],
+                    payload.get("transaction_ref"),
+                    json.dumps(receipt, sort_keys=True, separators=(",", ":")),
+                    receipt["signature"],
+                    time.time(),
+                    payload["authorization_id"],
+                ),
+            )
+            if cursor.rowcount != 1:
+                self._conn.rollback()
+                raise ValueError("execution receipt not found")
+            self._conn.commit()
+
     def execution_receipt_by_authorization(self, authorization_id: str) -> dict | None:
         with self._lock:
             row = self._conn.execute(
