@@ -67,3 +67,12 @@ class ExecutionAuthorizationResponse(BaseModel):
 class AuthorizationResponse(BaseModel):
     decision_receipt: DecisionReceiptResponse
     execution_authorization: ExecutionAuthorizationResponse | None = None
+
+
+class ExecutionConsumeRequest(BaseModel):
+    authorization: ExecutionAuthorizationResponse
+
+
+class ExecutionConsumeResponse(BaseModel):
+    execute: bool
+    reason: str

@@ -26,6 +26,7 @@ from fastapi.responses import PlainTextResponse
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
+from enforcement.local import ExecutionGate
 from attest.verify import verify_attestation
 from core.engine import GuardrailEngine
 from core.models import PaymentIntent
@@ -37,6 +38,8 @@ from .schemas import (
     AttestationResponse,
     AuthorizationResponse,
     DecisionResponse,
+    ExecutionConsumeRequest,
+    ExecutionConsumeResponse,
     PaymentIntentRequest,
     VerifyRequest,
     VerifyResponse,
@@ -157,6 +160,21 @@ def authorize_x402(req: X402HeaderRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     private_key = load_private_key(PRIVATE_KEY_PATH)
     return _engine.authorize(intent, private_key)
+
+
+@app.post("/v1/execution/consume", response_model=ExecutionConsumeResponse)
+def consume_execution(req: ExecutionConsumeRequest) -> dict:
+    """Consume a signed execution capability exactly once.
+
+    This is the executor-facing authorization check. It verifies the
+    capability and atomically consumes its nonce before returning execute=true.
+    It performs no side effect itself.
+    """
+    assert _storage is not None
+    public_key = load_public_key(PUBLIC_KEY_PATH)
+    gate = ExecutionGate(_storage, public_key)
+    ok, reason = gate.consume(req.authorization.model_dump())
+    return {"execute": ok, "reason": reason}
 
 
 @app.post("/v1/verify", response_model=VerifyResponse)
