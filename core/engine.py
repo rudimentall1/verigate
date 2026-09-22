@@ -11,7 +11,7 @@ from .models import ActionIntent, Decision, GuardrailDecision, PaymentIntent, Ru
 from .policy import Policy
 from .storage import Storage
 
-from attest.receipt import DecisionReceipt, ExecutionAuthorization, issue_execution_authorization, sign_receipt
+from .authorization import AuthorizationService
 
 
 class GuardrailEngine:
@@ -118,18 +118,12 @@ class GuardrailEngine:
         """Return a signed decision proof and, for ALLOW, a separate execution capability."""
         decision = self.evaluate(intent)
         action = intent.as_action_intent()
-        receipt = sign_receipt(action, decision, self.policy.digest, private_key)
-        self.storage.update_signature(intent.intent_id, receipt.signature)
-
-        execution = None
-        if decision.decision.value == "ALLOW":
-            execution = issue_execution_authorization(
-                receipt,
-                private_key,
-                nonce=intent.intent_id,
-            )
-
-        return {
-            "decision_receipt": receipt.as_dict(),
-            "execution_authorization": execution.as_dict() if execution else None,
-        }
+        artifacts = AuthorizationService().issue(
+            action,
+            decision,
+            self.policy.digest,
+            private_key,
+            nonce=intent.intent_id,
+        )
+        self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
+        return artifacts

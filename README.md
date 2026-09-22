@@ -82,6 +82,7 @@ system — not yet a hosted product. Specifically:
 | Audit log / rate limiting / daily-spend tracking | **Real**, SQLite-backed, single-process. For multiple replicas, point every process at shared storage or swap in a real database — the `Storage` interface is small. |
 | FastAPI HTTP layer | **Written**, not yet load-tested or deployed. Runs with `uvicorn api.main:app`. |
 | AP2 / other payment-rail adapters | **Not built.** The architecture reserves the seam (`core.models.PaymentIntent` is rail-agnostic) but only x402 has a working parser today. |
+| Authorization service | **Real.** Generic `ActionIntent` decisions can mint the same portable receipt and one-time capability used by payment flows. |
 | Execution enforcement boundary | **Real.** One-time signed capabilities are consumed fail-closed; the local and dependency-light EVM adapters share the same gate. |
 | Multi-tenant / hosted key management | **Not built.** Today, one issuer keypair per deployment, loaded from a local file. |
 
@@ -161,7 +162,8 @@ process.
 
 ```
 core/
-    models.py      PaymentIntent, RuleMatch, GuardrailDecision (stdlib only)
+    models.py      PaymentIntent, ActionIntent, RuleMatch, GuardrailDecision
+    authorization.py Protocol-agnostic receipt + execution-capability minting
     policy.py        Policy loader (the one place PyYAML is used in core/)
     rules.py          Deterministic rule evaluators
     storage.py         SQLite-backed audit log, rate limiter, spend tracking
