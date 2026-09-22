@@ -6,15 +6,16 @@ followed by persistent, atomic nonce consumption before a side effect.
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Callable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from attest.receipt import verify_execution_authorization
 from core.storage import Storage
+from enforcement.protocol import ExecutionAdapter
 
 
-class ExecutionGate:
+class ExecutionGate(ExecutionAdapter):
     """Fail-closed local gate for short-lived execution capabilities."""
 
     def __init__(self, storage: Storage, public_key: Ed25519PublicKey):
@@ -50,7 +51,11 @@ class ExecutionGate:
 
         return True, "execution authorization consumed"
 
-    def execute(self, authorization: dict[str, Any], side_effect) -> Any:
+    def execute(
+        self,
+        authorization: dict[str, Any],
+        side_effect: Callable[[], Any],
+    ) -> Any:
         """Consume the capability, then invoke exactly one side effect.
 
         The callback is unreachable unless authorization verification and

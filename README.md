@@ -76,7 +76,7 @@ system — not yet a hosted product. Specifically:
 
 | Component | Status |
 |---|---|
-| Policy engine (caps, allowlists, rate limits, new-payee/daily limits) | **Real.** Deterministic rules, no statistical "risk scores." 19 tests, including one that caught a real test-design bug during development (see `tests/test_engine.py` history). |
+| Policy engine (caps, allowlists, rate limits, new-payee/daily limits) | **Real.** Deterministic rules, no statistical "risk scores." Covered by the full automated suite. |
 | Ed25519 signing + independent verification | **Real.** Standard `cryptography` library primitives, not a custom crypto scheme. Tampering is detected, not just claimed. |
 | x402 header parsing | **Real**, for the `exact` scheme with `extra.name` asset identification. Refuses to guess decimals for an unrecognized asset/network pair rather than silently misjudging an amount — extend `x402/parser.py:_KNOWN_DECIMALS` as you verify more pairs. |
 | Audit log / rate limiting / daily-spend tracking | **Real**, SQLite-backed, single-process. For multiple replicas, point every process at shared storage or swap in a real database — the `Storage` interface is small. |
@@ -179,8 +179,11 @@ api/
 cli.py              check / verify / keygen / history commands
 demo.py             End-to-end policy / attestation walkthrough
 demo_execution.py    Real side-effect execution-gate demonstration
+enforcement/
+    protocol.py       Chain-independent ExecutionAdapter boundary
+    local.py          Fail-closed local execution adapter
 policies/default.yaml
-tests/              19 tests: engine, attestation, x402 parsing
+tests/              Full automated suite: engine, attestation, x402, API, enforcement
 ```
 
 `core/*` and `attest/*` are dependency-light on purpose (stdlib +

@@ -9,6 +9,7 @@ from core.policy import Policy
 from core.storage import Storage
 from core.models import PaymentIntent
 from enforcement.local import ExecutionGate
+from enforcement.protocol import ExecutionAdapter
 
 
 class ExecutionGateTest(unittest.TestCase):
@@ -37,6 +38,17 @@ class ExecutionGateTest(unittest.TestCase):
         result = engine.authorize(intent, load_private_key(self.priv))
         storage.close()
         return result
+
+    def test_local_gate_implements_execution_adapter_boundary(self):
+        auth = self._authorization()["execution_authorization"]
+        storage = Storage(self.db)
+        try:
+            gate = ExecutionGate(storage, load_public_key(self.pub))
+            self.assertIsInstance(gate, ExecutionAdapter)
+            ok, reason = gate.consume(auth)
+            self.assertTrue(ok, reason)
+        finally:
+            storage.close()
 
     def test_authorization_is_consumed_only_once(self):
         auth = self._authorization()["execution_authorization"]
