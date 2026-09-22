@@ -56,13 +56,17 @@ def run_scenario(engine: GuardrailEngine, storage: Storage, priv, agent_id: str,
     intent = offer_to_intent(offer, agent_id=agent_id)
     print(f"Normalized intent: {intent.amount} {intent.asset} -> {intent.payee}")
 
+    # GuardrailEngine evaluates and records the attempt exactly once.
     decision = engine.evaluate(intent)
     print(f"Decision: {decision.decision.value}")
     for m in decision.matched_rules:
         print(f"  - [{m.severity.value}] {m.rule_id}: {m.message}")
 
     attestation = sign_decision(decision, priv)
-    storage.record(intent, decision, attestation.signature_b64)
+    storage.update_signature(
+        intent.intent_id,
+        attestation.signature_b64,
+    )
 
     print("Signed attestation issued (Ed25519, verifiable without server access).")
 
@@ -107,7 +111,10 @@ def main() -> None:
     for m in decision_3.matched_rules:
         print(f"  - [{m.severity.value}] {m.rule_id}: {m.message}")
     attestation_3 = sign_decision(decision_3, priv)
-    storage.record(intent_3, decision_3, attestation_3.signature_b64)
+    storage.update_signature(
+        intent_3.intent_id,
+        attestation_3.signature_b64,
+    )
 
     # Now prove the BLOCK is independently verifiable — and that tampering
     # with it after the fact is detectable — without touching this process

@@ -3,3 +3,4 @@ uvicorn[standard]>=0.30,<1.0
 pydantic>=2.7,<3.0
 pyyaml>=6.0,<7.0
 cryptography>=42.0,<47.0
+httpx2

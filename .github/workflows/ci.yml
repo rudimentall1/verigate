@@ -12,13 +12,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install core test dependencies (no API layer needed)
-        run: pip install pyyaml cryptography
-      - name: Run core + attest + x402 tests (stdlib-boundary, no FastAPI needed)
+
+      - name: Install test dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run full test suite
         run: PYTHONPATH=. python3 -m unittest discover -s tests -v
+
       - name: Run the end-to-end demo
         run: PYTHONPATH=. python3 demo.py
-      - name: Install full requirements (API layer)
-        run: pip install -r requirements.txt
-      - name: Smoke-check the API app imports cleanly
+
+      - name: Smoke-check the API app
         run: PYTHONPATH=. python3 -c "from api.main import app; print('API app OK:', app.title)"

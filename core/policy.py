@@ -3,6 +3,8 @@ PyYAML — everything downstream works with plain dicts/dataclasses."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,18 @@ class Policy:
     rate_limit_per_minute: int = 0  # 0 = disabled
     confirmation_required_over: dict[str, float] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def digest(self) -> str:
+        """SHA-256 fingerprint of the effective policy document.
+
+        The digest is suitable for binding an authorization receipt to the
+        exact policy content that produced the decision.
+        """
+        canonical = json.dumps(
+            self.raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
 
     @staticmethod
     def load(path: str | Path) -> "Policy":

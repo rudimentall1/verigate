@@ -35,6 +35,7 @@ from x402.parser import X402ParseError, offer_to_intent, parse_payment_required_
 
 from .schemas import (
     AttestationResponse,
+    AuthorizationReceiptResponse,
     DecisionResponse,
     PaymentIntentRequest,
     VerifyRequest,
@@ -82,15 +83,22 @@ def public_key() -> str:
 
 def _decide_and_maybe_sign(intent: PaymentIntent, sign: bool) -> dict:
     assert _engine is not None and _storage is not None
+
+    # GuardrailEngine evaluates AND records the attempt exactly once.
     decision = _engine.evaluate(intent)
-    signature_b64 = None
+
     if sign:
         priv = load_private_key(PRIVATE_KEY_PATH)
         attestation = sign_decision(decision, priv)
-        signature_b64 = attestation.signature_b64
-        _storage.record(intent, decision, signature_b64)
+
+        # Attach the signature to the existing audit row.
+        _storage.update_signature(
+            intent.intent_id,
+            attestation.signature_b64,
+        )
+
         return attestation.as_dict()
-    _storage.record(intent, decision, None)
+
     return decision.as_dict()
 
 
@@ -115,6 +123,40 @@ def check_x402(req: X402HeaderRequest) -> dict:
     except X402ParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _decide_and_maybe_sign(intent, req.sign)
+
+
+@app.post("/v1/authorize", response_model=AuthorizationReceiptResponse)
+def authorize(req: PaymentIntentRequest) -> dict:
+    """Authorize a payment and return a portable signed authorization receipt.
+
+    Unlike /v1/check, this endpoint makes the signed receipt the explicit
+    authorization contract. Enforcement adapters can verify the receipt
+    independently using the issuer public key.
+    """
+    assert _engine is not None
+    intent = PaymentIntent(
+        agent_id=req.agent_id,
+        payee=req.payee,
+        asset=req.asset,
+        network=req.network,
+        amount=req.amount,
+        resource=req.resource,
+    )
+    private_key = load_private_key(PRIVATE_KEY_PATH)
+    return _engine.authorize(intent, private_key).as_dict()
+
+
+@app.post("/v1/authorize/x402", response_model=AuthorizationReceiptResponse)
+def authorize_x402(req: X402HeaderRequest) -> dict:
+    """Authorize the first x402 payment offer and return a signed receipt."""
+    assert _engine is not None
+    try:
+        offers = parse_payment_required_header(req.payment_required_header)
+        intent = offer_to_intent(offers[0], agent_id=req.agent_id)
+    except X402ParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    private_key = load_private_key(PRIVATE_KEY_PATH)
+    return _engine.authorize(intent, private_key).as_dict()
 
 
 @app.post("/v1/verify", response_model=VerifyResponse)
