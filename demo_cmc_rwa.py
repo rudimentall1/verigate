@@ -97,6 +97,26 @@ def main() -> None:
         print("Action fingerprint:",
               artifacts["execution_authorization"]["payload"]["action_sha256"]
               if artifacts["execution_authorization"] else "n/a")
+
+        block_amount = evaluator.policy.max_purchase_usd + 1
+        blocked = evaluator.authorize_purchase(
+            quote,
+            block_amount,
+            load_private_key(private),
+            agent_id="cmc-rwa-agent",
+            settlement_network="base",
+            evm_transaction={
+                "chain_id": 8453,
+                "to": "0xAUTHORIZED_TOKEN",
+                "value_wei": 0,
+                "data": "0x",
+            },
+        )
+        print("Verigate block test:", blocked["decision"]["decision"])
+        for rule in blocked["decision"]["matched_rules"]:
+            print(f"- BLOCKED: {rule['rule']} — {rule['message']}")
+        print("Block test execution authorization:",
+              blocked["execution_authorization"] is not None)
         print("No transaction was broadcast.")
 
 

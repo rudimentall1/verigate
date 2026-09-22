@@ -142,7 +142,7 @@ class RwaPurchaseEvaluator:
             matches.append(
                 RuleMatch(
                     "rwa_issuer_price_dispersion_high",
-                    Severity.WARN,
+                    Severity.BLOCK,
                     "tokenized issuer prices are dispersed beyond the configured threshold",
                 )
             )
@@ -172,8 +172,8 @@ class RwaPurchaseEvaluator:
             matches.append(
                 RuleMatch(
                     "rwa_volume_fraction_high",
-                    Severity.WARN,
-                    "purchase is large relative to CMC tokenized 24h volume",
+                    Severity.BLOCK,
+                    "purchase is too large relative to CMC tokenized 24h volume",
                 )
             )
 
@@ -182,8 +182,8 @@ class RwaPurchaseEvaluator:
                 matches.append(
                     RuleMatch(
                         "rwa_market_cap_fraction_high",
-                        Severity.WARN,
-                        "purchase is large relative to CMC tokenized market cap",
+                        Severity.BLOCK,
+                        "purchase is too large relative to CMC tokenized market cap",
                     )
                 )
 

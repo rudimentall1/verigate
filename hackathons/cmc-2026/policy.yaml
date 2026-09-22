@@ -11,3 +11,5 @@ max_volume_fraction: 0.01
 max_market_cap_fraction: 0.001
 require_tracked_issuer: true
 max_issuer_price_spread_fraction: 0.02
+# Threshold violations are hard blocks. WARN is reserved for explicit
+# human-review integrations; this RWA path never auto-executes a WARN.

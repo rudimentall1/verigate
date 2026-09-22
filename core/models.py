@@ -14,6 +14,11 @@ from typing import Any
 
 
 class Decision(str, Enum):
+    """Authorization outcome.
+
+    WARN is a human-review state: it never grants execution permission.
+    BLOCK is a hard deny enforced by the execution boundary.
+    """
     ALLOW = "ALLOW"
     WARN = "WARN"
     BLOCK = "BLOCK"

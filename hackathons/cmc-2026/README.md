@@ -52,10 +52,11 @@ Default controls:
   real estate
 - tokenization required
 - maximum purchase: 5,000 USD
-- WARN when purchase exceeds 1% of tokenized 24h volume
-- WARN when purchase exceeds 0.1% of tokenized market cap
+- BLOCK when purchase exceeds 1% of tokenized 24h volume
+- BLOCK when purchase exceeds 0.1% of tokenized market cap
 - require CMC issuer provenance on tracked tokens
-- WARN when multiple tracked tokens from the same issuer show price dispersion above 2%
+- BLOCK when multiple tracked tokens from the same issuer show price dispersion above 2%
+- WARN is reserved for human-review integrations and never grants automatic execution
 ## Hackathon status
 
 The CMC hackathon build window is 9–30 September 2026. Submission requires a

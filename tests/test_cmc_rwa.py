@@ -96,12 +96,12 @@ class RwaPolicyTest(unittest.TestCase):
         decision = evaluator.evaluate(action, self.quote, 500)
         self.assertEqual(decision.decision.value, "ALLOW")
 
-    def test_large_share_of_volume_is_warn(self):
+    def test_large_share_of_volume_is_block(self):
         evaluator = RwaPurchaseEvaluator()
         action = evaluator.build_action(self.quote, 2_000, agent_id="agent-rwa")
         decision = evaluator.evaluate(action, self.quote, 2_000)
-        self.assertEqual(decision.decision.value, "WARN")
-        self.assertEqual(decision.matched_rules[0].rule_id, "rwa_volume_fraction_high")
+        self.assertEqual(decision.decision.value, "BLOCK")
+        self.assertIn("rwa_volume_fraction_high", {rule.rule_id for rule in decision.matched_rules})
     def test_purchase_cap_is_block(self):
         evaluator = RwaPurchaseEvaluator(RwaPolicy(max_purchase_usd=100))
         action = evaluator.build_action(self.quote, 101, agent_id="agent-rwa")
@@ -133,7 +133,7 @@ class RwaPolicyTest(unittest.TestCase):
         )
         self.assertIsNone(quote.issuer_price_spread_fraction)
 
-    def test_issuer_price_dispersion_is_warn(self):
+    def test_issuer_price_dispersion_is_block(self):
         quote = CmcRwaQuote(
             rwa_id=4, name="Spread", symbol="SPR", slug="spread", asset_type="commodity",
             rwa_rank=None, has_tokens=True, average_tokenized_price=100.0,
@@ -146,7 +146,7 @@ class RwaPolicyTest(unittest.TestCase):
         evaluator = RwaPurchaseEvaluator()
         action = evaluator.build_action(quote, 100, agent_id="agent-rwa")
         decision = evaluator.evaluate(action, quote, 100)
-        self.assertEqual(decision.decision.value, "WARN")
+        self.assertEqual(decision.decision.value, "BLOCK")
         self.assertEqual(decision.matched_rules[0].rule_id, "rwa_issuer_price_dispersion_high")
 
     def test_unsupported_rwa_type_is_block(self):
@@ -199,14 +199,14 @@ class RwaPolicyTest(unittest.TestCase):
                     load_public_key(public),
                 )[0]
             )
-    def test_warn_does_not_mint_execution_capability(self):
+    def test_block_does_not_mint_execution_capability(self):
         evaluator = RwaPurchaseEvaluator()
         artifacts = evaluator.authorize_purchase(
             self.quote,
             2_000,
             load_private_key(self._keys()[0]),
         )
-        self.assertEqual(artifacts["decision"]["decision"], "WARN")
+        self.assertEqual(artifacts["decision"]["decision"], "BLOCK")
         self.assertIsNone(artifacts["execution_authorization"])
 
     def _keys(self):
