@@ -139,5 +139,20 @@ class ExecutionGateTest(unittest.TestCase):
             storage.close()
 
 
+
+    def test_real_file_side_effect_is_gated(self):
+        auth = self._authorization()["execution_authorization"]
+        target = Path(self.tmpdir.name) / "authorized-side-effect.txt"
+        storage = Storage(self.db)
+        try:
+            gate = ExecutionGate(storage, load_public_key(self.pub))
+            gate.execute(auth, lambda: target.write_text("AUTHORIZED\n", encoding="utf-8"))
+            self.assertEqual(target.read_text(encoding="utf-8"), "AUTHORIZED\n")
+            with self.assertRaises(PermissionError):
+                gate.execute(auth, lambda: target.write_text("REPLAYED\n", encoding="utf-8"))
+            self.assertEqual(target.read_text(encoding="utf-8"), "AUTHORIZED\n")
+        finally:
+            storage.close()
+
 if __name__ == "__main__":
     unittest.main()
