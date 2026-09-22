@@ -1,4 +1,3 @@
-"""Multi-chain network registry for Verigate execution."""
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
@@ -6,6 +5,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from core.storage import Storage
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.protocol import ExecutionAdapter
+from enforcement.solana import SolanaExecutionAdapter
 
 @dataclass(frozen=True)
 class NetworkDescriptor:
@@ -30,7 +30,7 @@ DEFAULT_NETWORKS: tuple[NetworkDescriptor, ...] = (
     NetworkDescriptor("linea", "evm", 59144, "ETH", True),
     NetworkDescriptor("zksync-era", "evm", 324, "ETH", True, ("zksync",)),
     NetworkDescriptor("arc", "evm", 5042, "USDC", True),
-    NetworkDescriptor("solana", "solana", None, "SOL", False, ("sol",)),
+    NetworkDescriptor("solana", "solana", None, "SOL", True, ("sol",)),
 )
 
 class NetworkRegistry:
@@ -68,8 +68,12 @@ class NetworkRegistry:
 
     def adapter(self, network: str | int, storage: Storage, public_key: Ed25519PublicKey) -> ExecutionAdapter:
         descriptor = self.resolve(network)
-        if descriptor.family == "evm" and descriptor.execution_supported:
+        if not descriptor.execution_supported:
+            raise UnsupportedNetworkError(f"no execution adapter for {descriptor.name} ({descriptor.family})")
+        if descriptor.family == "evm":
             return EVMExecutionAdapter(storage, public_key)
+        if descriptor.family == "solana":
+            return SolanaExecutionAdapter(storage, public_key)
         raise UnsupportedNetworkError(f"no execution adapter for {descriptor.name} ({descriptor.family})")
 
     def evm_adapter(self, chain_id: int, storage: Storage, public_key: Ed25519PublicKey) -> EVMExecutionAdapter:

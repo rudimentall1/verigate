@@ -6,6 +6,8 @@ from attest.keys import generate_keypair, load_public_key
 from core.storage import Storage
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.networks import NetworkRegistry, UnsupportedNetworkError
+from enforcement.solana import SolanaExecutionAdapter
+
 
 class NetworkRegistryTest(unittest.TestCase):
     def test_known_evm_networks_share_universal_adapter(self):
@@ -40,7 +42,7 @@ class NetworkRegistryTest(unittest.TestCase):
         with self.assertRaises(UnsupportedNetworkError):
             NetworkRegistry().resolve("some-new-chain")
 
-    def test_solana_is_registered_but_not_falsely_supported(self):
+    def test_solana_has_real_execution_adapter(self):
         registry = NetworkRegistry()
         self.assertEqual(registry.resolve("solana").family, "solana")
         with tempfile.TemporaryDirectory() as td:
@@ -49,10 +51,13 @@ class NetworkRegistryTest(unittest.TestCase):
             generate_keypair(private, public)
             storage = Storage(Path(td) / "audit.db")
             try:
-                with self.assertRaises(UnsupportedNetworkError):
-                    registry.adapter("solana", storage, load_public_key(public))
+                self.assertIsInstance(
+                    registry.adapter("solana", storage, load_public_key(public)),
+                    SolanaExecutionAdapter,
+                )
             finally:
                 storage.close()
+
 
 if __name__ == "__main__":
     unittest.main()
