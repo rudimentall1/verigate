@@ -46,14 +46,14 @@ def main() -> None:
     gate = ExecutionGate(storage, public_key)
     gate.execute(
         authorization,
-        lambda: marker.write_text("AUTHORIZED\n", encoding="utf-8"),
+        lambda _: marker.write_text("AUTHORIZED\n", encoding="utf-8"),
     )
     print("Side effect:", marker.read_text(encoding="utf-8").strip())
 
     try:
         gate.execute(
             authorization,
-            lambda: marker.write_text("REPLAYED\n", encoding="utf-8"),
+            lambda _: marker.write_text("REPLAYED\n", encoding="utf-8"),
         )
     except PermissionError as exc:
         print("Replay blocked:", exc)

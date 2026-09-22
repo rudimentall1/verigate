@@ -39,8 +39,15 @@ class ExecutionGateTest(unittest.TestCase):
         storage.close()
         return result
 
+    def _auth_pair(self):
+        result = self._authorization()
+        return (
+            result["execution_authorization"],
+            result["decision_receipt"]["payload"]["intent"],
+        )
+
     def test_local_gate_implements_execution_adapter_boundary(self):
-        auth = self._authorization()["execution_authorization"]
+        auth, action = self._auth_pair()
         storage = Storage(self.db)
         try:
             gate = ExecutionGate(storage, load_public_key(self.pub))
@@ -51,7 +58,7 @@ class ExecutionGateTest(unittest.TestCase):
             storage.close()
 
     def test_authorization_is_consumed_only_once(self):
-        auth = self._authorization()["execution_authorization"]
+        auth, action = self._auth_pair()
         storage = Storage(self.db)
         try:
             gate = ExecutionGate(storage, load_public_key(self.pub))
@@ -64,7 +71,7 @@ class ExecutionGateTest(unittest.TestCase):
             storage.close()
 
     def test_replay_is_rejected_after_storage_reopen(self):
-        auth = self._authorization()["execution_authorization"]
+        auth, action = self._auth_pair()
         storage = Storage(self.db)
         gate = ExecutionGate(storage, load_public_key(self.pub))
         ok, reason = gate.consume(auth)
@@ -81,29 +88,29 @@ class ExecutionGateTest(unittest.TestCase):
             storage.close()
 
     def test_tampered_authorization_is_rejected(self):
-        auth = self._authorization()["execution_authorization"]
+        auth, action = self._auth_pair()
         auth["payload"]["intent_id"] = "attacker-intent"
         storage = Storage(self.db)
         try:
             gate = ExecutionGate(storage, load_public_key(self.pub))
             ok, reason = gate.consume(auth)
             self.assertFalse(ok)
-            self.assertIn("invalid or tampered", reason)
+            self.assertEqual(reason, "authorized action identity mismatch")
         finally:
             storage.close()
 
 
     def test_execute_reaches_side_effect_once(self):
-        auth = self._authorization()["execution_authorization"]
+        auth, action = self._auth_pair()
         calls = []
         storage = Storage(self.db)
         try:
             gate = ExecutionGate(storage, load_public_key(self.pub))
-            result = gate.execute(auth, lambda: calls.append("executed") or "ok")
+            result = gate.execute(auth, lambda _: calls.append("executed") or "ok")
             self.assertEqual(result, "ok")
             self.assertEqual(calls, ["executed"])
             with self.assertRaises(PermissionError):
-                gate.execute(auth, lambda: calls.append("replayed"))
+                gate.execute(auth, lambda _: calls.append("replayed"))
             self.assertEqual(calls, ["executed"])
         finally:
             storage.close()
@@ -132,6 +139,7 @@ class ExecutionGateTest(unittest.TestCase):
     def test_expired_authorization_is_rejected(self):
         result = self._authorization()
         receipt = result["decision_receipt"]
+        action = receipt["payload"]["intent"]
         expired = issue_execution_authorization(
             type("Receipt", (), {
                 "payload": receipt["payload"],
@@ -153,15 +161,15 @@ class ExecutionGateTest(unittest.TestCase):
 
 
     def test_real_file_side_effect_is_gated(self):
-        auth = self._authorization()["execution_authorization"]
+        auth, action = self._auth_pair()
         target = Path(self.tmpdir.name) / "authorized-side-effect.txt"
         storage = Storage(self.db)
         try:
             gate = ExecutionGate(storage, load_public_key(self.pub))
-            gate.execute(auth, lambda: target.write_text("AUTHORIZED\n", encoding="utf-8"))
+            gate.execute(auth, lambda _: target.write_text("AUTHORIZED\n", encoding="utf-8"))
             self.assertEqual(target.read_text(encoding="utf-8"), "AUTHORIZED\n")
             with self.assertRaises(PermissionError):
-                gate.execute(auth, lambda: target.write_text("REPLAYED\n", encoding="utf-8"))
+                gate.execute(auth, lambda _: target.write_text("REPLAYED\n", encoding="utf-8"))
             self.assertEqual(target.read_text(encoding="utf-8"), "AUTHORIZED\n")
         finally:
             storage.close()

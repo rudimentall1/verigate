@@ -66,6 +66,8 @@ class AuthorizationReceiptTest(unittest.TestCase):
             self.assertEqual(receipt["payload"]["intent"]["action_type"], "payment")
             self.assertEqual(receipt["payload"]["policy_sha256"], policy.digest)
             self.assertIsNotNone(execution)
+            self.assertEqual(execution["payload"]["action"], receipt["payload"]["intent"])
+            self.assertEqual(len(execution["payload"]["action_sha256"]), 64)
             self.assertTrue(verify_execution_authorization(execution, load_public_key(self.pub))[0])
             self.assertEqual(storage.count_intent(intent.intent_id), 1)
             row = storage._conn.execute(

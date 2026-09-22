@@ -82,6 +82,7 @@ system — not yet a hosted product. Specifically:
 | Audit log / rate limiting / daily-spend tracking | **Real**, SQLite-backed, single-process. For multiple replicas, point every process at shared storage or swap in a real database — the `Storage` interface is small. |
 | FastAPI HTTP layer | **Written**, not yet load-tested or deployed. Runs with `uvicorn api.main:app`. |
 | AP2 / other payment-rail adapters | **Not built.** The architecture reserves the seam (`core.models.PaymentIntent` is rail-agnostic) but only x402 has a working parser today. |
+| Execution enforcement boundary | **Real.** One-time signed capabilities are consumed fail-closed; the local and dependency-light EVM adapters share the same gate. |
 | Multi-tenant / hosted key management | **Not built.** Today, one issuer keypair per deployment, loaded from a local file. |
 
 ---
@@ -179,9 +180,11 @@ api/
 cli.py              check / verify / keygen / history commands
 demo.py             End-to-end policy / attestation walkthrough
 demo_execution.py    Real side-effect execution-gate demonstration
+demo_evm_execution.py EVM adapter demo with a broadcaster boundary
 enforcement/
     protocol.py       Chain-independent ExecutionAdapter boundary
     local.py          Fail-closed local execution adapter
+    evm.py            Dependency-light EVM execution adapter
 policies/default.yaml
 tests/              Full automated suite: engine, attestation, x402, API, enforcement
 ```
@@ -201,7 +204,7 @@ VeriGate is being expanded around a protocol-agnostic authorization lifecycle:
 
 The foundational `ActionIntent` model represents consequential agent actions such as API calls, tool invocations, cloud operations, wallet transactions, and payments. Payment rails remain adapters rather than the core abstraction.
 
-A **Decision Receipt** binds the normalized action, resulting decision, and SHA-256 fingerprint of the effective policy into a signed Ed25519 proof. It proves what Verigate decided. An **Execution Authorization** is separate: only an ALLOW decision can mint this short-lived, nonce-bound capability for an executor. WARN and BLOCK never receive execution authority.
+A **Decision Receipt** binds the normalized action, resulting decision, and SHA-256 fingerprint of the effective policy into a signed Ed25519 proof. It proves what Verigate decided. An **Execution Authorization** is separate: only an ALLOW decision can mint this short-lived, nonce-bound capability for an executor. The capability is self-contained: it carries the exact normalized action plus its SHA-256 fingerprint, so an adapter can derive and execute only what was signed. WARN and BLOCK never receive execution authority.
 
 The existing `PaymentIntent` and x402 path remain backward-compatible while this generic authorization layer is introduced incrementally.
 
@@ -225,7 +228,7 @@ MIT.
 
 `POST /v1/authorize` returns two distinct artifacts: a signed `DecisionReceipt` proving the policy decision, and an `ExecutionAuthorization` only when the decision is ALLOW.
 
-`ExecutionAuthorization` is short-lived and nonce-bound. It is the capability an execution adapter can accept; the decision receipt is evidence and is not itself permission to execute.
+`ExecutionAuthorization` is short-lived, nonce-bound, and contains the authorized normalized action. It is the capability an execution adapter consumes; the decision receipt is evidence and is not itself permission to execute.
 
 `POST /v1/authorize/x402` provides the same contract for an x402 `PAYMENT-REQUIRED` header.
 

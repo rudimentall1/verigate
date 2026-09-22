@@ -15,5 +15,9 @@ class ExecutionAdapter(Protocol):
     def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         ...
 
-    def execute(self, authorization: dict[str, Any], side_effect: Callable[[], Any]) -> Any:
+    def execute(
+        self,
+        authorization: dict[str, Any],
+        side_effect: Callable[[dict[str, Any]], Any],
+    ) -> Any:
         ...

@@ -22,6 +22,11 @@ def _canonical(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
+def action_digest(action: dict[str, Any]) -> str:
+    """Fingerprint the exact normalized action an executor is authorized to run."""
+    return hashlib.sha256(_canonical(action)).hexdigest()
+
+
 def _sign(payload: dict[str, Any], private_key: Ed25519PrivateKey) -> str:
     return base64.b64encode(private_key.sign(_canonical(payload))).decode("ascii")
 
@@ -71,6 +76,8 @@ def issue_execution_authorization(receipt: DecisionReceipt, private_key: Ed25519
         "intent_id": receipt.payload["intent"]["intent_id"],
         "agent_id": receipt.payload["intent"]["agent_id"],
         "policy_sha256": receipt.payload["policy_sha256"],
+        "action": receipt.payload["intent"],
+        "action_sha256": action_digest(receipt.payload["intent"]),
         "nonce": nonce,
         "issued_at": now,
         "expires_at": now + ttl_seconds,
@@ -108,6 +115,17 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
             return False, "execution authorization expired"
         if not payload["nonce"] or not payload["intent_id"] or not payload["agent_id"]:
             return False, "invalid execution authorization fields"
+        action = payload["action"]
+        if not isinstance(action, dict):
+            return False, "invalid authorized action"
+        if action["intent_id"] != payload["intent_id"] or action["agent_id"] != payload["agent_id"]:
+            return False, "authorized action identity mismatch"
+        action_sha256 = payload["action_sha256"]
+        if (not isinstance(action_sha256, str) or len(action_sha256) != 64
+                or any(c not in "0123456789abcdef" for c in action_sha256)):
+            return False, "invalid action fingerprint"
+        if action_digest(action) != action_sha256:
+            return False, "authorized action fingerprint mismatch"
         _verify(payload, auth["signature"], public_key)
         return True, "valid execution authorization"
     except (KeyError, TypeError, ValueError, InvalidSignature):

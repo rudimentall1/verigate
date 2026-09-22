@@ -37,6 +37,7 @@ class ExecutionGate(ExecutionAdapter):
             return False, reason
 
         payload = authorization["payload"]
+        action = payload["action"]
         if int(payload["issued_at"]) > int(time.time()):
             return False, "execution authorization is not active yet"
 
@@ -54,7 +55,7 @@ class ExecutionGate(ExecutionAdapter):
     def execute(
         self,
         authorization: dict[str, Any],
-        side_effect: Callable[[], Any],
+        side_effect: Callable[[dict[str, Any]], Any],
     ) -> Any:
         """Consume the capability, then invoke exactly one side effect.
 
@@ -64,4 +65,4 @@ class ExecutionGate(ExecutionAdapter):
         ok, reason = self.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return side_effect()
+        return side_effect(authorization["payload"]["action"])
