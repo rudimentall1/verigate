@@ -97,6 +97,9 @@ PYTHONPATH=. python3 -m unittest discover -s tests -v
 # See the full story end-to-end: a real x402 header parsed, evaluated,
 # signed, and independently verified — including a tamper-detection check.
 PYTHONPATH=. python3 demo.py
+
+# Prove an ALLOW authorization gates a real side effect and blocks replay
+PYTHONPATH=. python3 demo_execution.py
 ```
 
 ### CLI
@@ -174,8 +177,8 @@ api/
                        /v1/public-key, /v1/agents/{id}/history
     schemas.py        Pydantic request/response models (API boundary only)
 cli.py              check / verify / keygen / history commands
-demo.py             End-to-end scenario walkthrough (routine payment,
-                       new-payee WARN, runaway-agent BLOCK, tamper detection)
+demo.py             End-to-end policy / attestation walkthrough
+demo_execution.py    Real side-effect execution-gate demonstration
 policies/default.yaml
 tests/              19 tests: engine, attestation, x402 parsing
 ```
