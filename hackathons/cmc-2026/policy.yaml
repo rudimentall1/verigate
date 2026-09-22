@@ -1,0 +1,11 @@
+allowed_asset_types:
+  - stock
+  - commodity
+  - currency
+  - government_security
+  - etf
+  - real_estate
+require_tokenization: true
+max_purchase_usd: 5000
+max_volume_fraction: 0.01
+max_market_cap_fraction: 0.001

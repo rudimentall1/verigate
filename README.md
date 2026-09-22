@@ -102,6 +102,9 @@ PYTHONPATH=. python3 demo.py
 
 # Prove an ALLOW authorization gates a real side effect and blocks replay
 PYTHONPATH=. python3 demo_execution.py
+
+# Run the CMC RWA integration in offline fixture mode
+PYTHONPATH=. python3 demo_cmc_rwa.py --fixture
 ```
 
 ### CLI
@@ -187,6 +190,12 @@ enforcement/
     protocol.py       Chain-independent ExecutionAdapter boundary
     local.py          Fail-closed local execution adapter
     evm.py            Dependency-light EVM execution adapter
+adapters/cmc/
+    client.py         CoinMarketCap RWA v5 client
+    models.py         Normalized RWA market evidence
+    rwa.py            RWA purchase policy + authorization pack
+hackathons/
+    registry.yaml     Hackathon integrations and submission state
 policies/default.yaml
 tests/              Full automated suite: engine, attestation, x402, API, enforcement
 ```
@@ -228,7 +237,7 @@ MIT.
 
 ### Canonical authorization API
 
-`POST /v1/authorize` returns two distinct artifacts: a signed `DecisionReceipt` proving the policy decision, and an `ExecutionAuthorization` only when the decision is ALLOW.
+`POST /v1/authorize` returns two distinct artifacts: a signed `DecisionReceipt` proving the policy decision, and an `ExecutionAuthorization` only when the decision is ALLOW. CMC RWA integrations use the same capability path rather than introducing a second authorization system.
 
 `ExecutionAuthorization` is short-lived, nonce-bound, and contains the authorized normalized action. It is the capability an execution adapter consumes; the decision receipt is evidence and is not itself permission to execute.
 

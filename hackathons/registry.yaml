@@ -1,0 +1,18 @@
+projects:
+  - id: cmc-2026-rwa-verigate
+    status: BUILDING
+    track: Real World Assets
+    integration: adapters/cmc
+    deadline: 2026-09-30T23:59:00Z
+    demo: demo_cmc_rwa.py
+    submission: null
+    deployed_url: null
+    video: null
+    evidence:
+      - /v5/real-world-assets/map
+      - /v5/real-world-assets/quotes/latest
+    missing:
+      - live CMC API key configured locally
+      - deployed demo or recording
+      - DoraHacks submission link
+      - final presentation only after product freeze
