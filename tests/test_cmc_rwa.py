@@ -26,7 +26,7 @@ class CmcClientTest(unittest.TestCase):
                 "tokens": [{"symbol": "PAXG", "crypto_id": 4705, "price": 4000.0, "issuer_id": "issuer-paxos", "issuer_name": "Paxos"}],
                 "tradfi_markets": [],
             },
-            "status": {"error_code": 0, "timestamp": "2026-09-22T12:00:00Z"},
+            "status": {"error_code": "0", "timestamp": "2026-09-22T12:00:00Z"},
         }
 
     def test_quote_uses_dedicated_rwa_endpoint(self):
@@ -43,6 +43,19 @@ class CmcClientTest(unittest.TestCase):
         self.assertEqual(quote.asset_type, "commodity")
         self.assertIn("/v5/real-world-assets/quotes/latest", calls[0][0])
         self.assertEqual(calls[0][1]["X-CMC_PRO_API_KEY"], "secret")
+
+    def test_quote_parses_official_rwa_assets_envelope(self):
+        payload = self._payload()
+        payload["data"] = {
+            "rwa_assets": [payload["data"]],
+            "total_size": 1,
+            "has_more": False,
+        }
+        quote = CmcRwaClient(
+            transport=lambda *_: payload,
+        ).quote(rwa_id=1)
+        self.assertEqual(quote.rwa_id, 1)
+        self.assertEqual(quote.symbol, "GOLD")
 
     def test_selector_requires_exactly_one_identifier(self):
         client = CmcRwaClient(transport=lambda *_: self._payload())
