@@ -65,13 +65,30 @@ class CmcRwaQuote:
 
     @property
     def issuer_price_spread_fraction(self) -> float | None:
-        prices = [float(token["price"]) for token in self.tokens if token.get("price") is not None]
-        if len(prices) < 2:
-            return None
-        baseline = self.average_tokenized_price or (sum(prices) / len(prices))
-        if baseline <= 0:
-            return None
-        return (max(prices) - min(prices)) / baseline
+        """Maximum price spread among multiple tokens from the same issuer.
+
+        Cross-issuer token prices are not directly comparable because a token
+        can represent a different unit or denomination of the same RWA.
+        """
+        prices_by_issuer: dict[str, list[float]] = {}
+        for token in self.tokens:
+            price = token.get("price")
+            issuer_id = token.get("issuer_id")
+            issuer_name = token.get("issuer_name")
+            issuer_key = str(issuer_id or issuer_name or "").strip()
+            if price is None or not issuer_key:
+                continue
+            prices_by_issuer.setdefault(issuer_key, []).append(float(price))
+
+        spreads: list[float] = []
+        for prices in prices_by_issuer.values():
+            if len(prices) < 2:
+                continue
+            baseline = sum(prices) / len(prices)
+            if baseline > 0:
+                spreads.append((max(prices) - min(prices)) / baseline)
+
+        return max(spreads) if spreads else None
 
     def as_evidence(self) -> dict[str, Any]:
         return {

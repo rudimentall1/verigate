@@ -121,14 +121,26 @@ class RwaPolicyTest(unittest.TestCase):
         self.assertEqual(decision.decision.value, "BLOCK")
         self.assertEqual(decision.matched_rules[0].rule_id, "rwa_issuer_provenance_missing")
 
+    def test_cross_issuer_price_difference_is_not_dispersion(self):
+        quote = CmcRwaQuote(
+            rwa_id=5, name="Different Units", symbol="DU", slug="different-units", asset_type="commodity",
+            rwa_rank=None, has_tokens=True, average_tokenized_price=2200.0,
+            tokenized_market_cap=1_000_000.0, tokenized_volume_24h=100_000.0,
+            tokens=(
+                {"symbol": "A", "price": 4000.0, "issuer_id": "issuer-a", "issuer_name": "A"},
+                {"symbol": "B", "price": 100.0, "issuer_id": "issuer-b", "issuer_name": "B"},
+            ),
+        )
+        self.assertIsNone(quote.issuer_price_spread_fraction)
+
     def test_issuer_price_dispersion_is_warn(self):
         quote = CmcRwaQuote(
             rwa_id=4, name="Spread", symbol="SPR", slug="spread", asset_type="commodity",
             rwa_rank=None, has_tokens=True, average_tokenized_price=100.0,
             tokenized_market_cap=1_000_000.0, tokenized_volume_24h=100_000.0,
             tokens=(
-                {"symbol": "A", "price": 90.0, "issuer_id": "a", "issuer_name": "A"},
-                {"symbol": "B", "price": 110.0, "issuer_id": "b", "issuer_name": "B"},
+                {"symbol": "A", "price": 90.0, "issuer_id": "issuer-a", "issuer_name": "A"},
+                {"symbol": "B", "price": 110.0, "issuer_id": "issuer-a", "issuer_name": "A"},
             ),
         )
         evaluator = RwaPurchaseEvaluator()
