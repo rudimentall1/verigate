@@ -231,7 +231,7 @@ class Storage:
         """
         with self._lock:
             cursor = self._conn.execute(
-                "UPDATE audit_log SET signature = ? WHERE intent_id = ?",
+                "UPDATE audit_log SET signature = ? WHERE intent_id = ? AND signature IS NULL",
                 (signature, intent_id),
             )
 

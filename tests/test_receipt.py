@@ -4,7 +4,10 @@ from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import sign_receipt, verify_receipt
-from core.models import ActionIntent, Decision, GuardrailDecision
+from core.models import ActionIntent, Decision, GuardrailDecision, PaymentIntent
+from core.engine import GuardrailEngine
+from core.policy import Policy
+from core.storage import Storage
 
 
 class AuthorizationReceiptTest(unittest.TestCase):
@@ -44,6 +47,53 @@ class AuthorizationReceiptTest(unittest.TestCase):
         receipt = self._receipt().as_dict()
         ok, reason = verify_receipt(receipt, load_public_key(self.pub))
         self.assertTrue(ok, reason)
+
+
+    def test_engine_authorize_produces_and_persists_receipt(self):
+        policy_path = Path(self.tmpdir.name) / "policy.yaml"
+        policy_path.write_text("allowed_networks: [base]\nallowed_assets: [USDC]\n", encoding="utf-8")
+        policy = Policy.load(policy_path)
+        storage = Storage(Path(self.tmpdir.name) / "audit.db")
+        try:
+            engine = GuardrailEngine(policy, storage)
+            intent = PaymentIntent(
+                agent_id="agent-1", payee="merchant", asset="USDC",
+                network="base", amount=10.0,
+            )
+            receipt = engine.authorize(intent, load_private_key(self.priv))
+            data = receipt.as_dict()
+            self.assertEqual(data["payload"]["intent"]["action_type"], "payment")
+            self.assertEqual(data["payload"]["policy_sha256"], policy.digest)
+            self.assertEqual(storage.count_intent(intent.intent_id), 1)
+            row = storage._conn.execute(
+                "SELECT signature FROM audit_log WHERE intent_id = ?", (intent.intent_id,)
+            ).fetchone()
+            self.assertEqual(row[0], receipt.signature)
+        finally:
+            storage.close()
+
+    def test_signing_failure_keeps_audit_record(self):
+        policy_path = Path(self.tmpdir.name) / "policy.yaml"
+        policy_path.write_text("allowed_networks: [base]\nallowed_assets: [USDC]\n", encoding="utf-8")
+        storage = Storage(Path(self.tmpdir.name) / "audit-failure.db")
+        try:
+            engine = GuardrailEngine(Policy.load(policy_path), storage)
+            intent = PaymentIntent(
+                agent_id="agent-1", payee="merchant", asset="USDC",
+                network="base", amount=1.0,
+            )
+            class FailingKey:
+                def sign(self, data):
+                    raise RuntimeError("boom")
+            with self.assertRaises(RuntimeError):
+                engine.authorize(intent, FailingKey())
+            self.assertEqual(storage.count_intent(intent.intent_id), 1)
+            row = storage._conn.execute(
+                "SELECT signature FROM audit_log WHERE intent_id = ?", (intent.intent_id,)
+            ).fetchone()
+            self.assertIsNone(row[0])
+        finally:
+            storage.close()
 
     def test_tampering_policy_fingerprint_fails(self):
         receipt = self._receipt().as_dict()
