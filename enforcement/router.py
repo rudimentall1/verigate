@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+
+from attest.receipt import ExecutionReceipt, sign_execution_receipt
 
 from core.storage import Storage
 from enforcement.evm import EVMExecutionAdapter
@@ -21,10 +23,11 @@ class ExecutionRouter:
     bypassing signature, expiry, or replay checks.
     """
 
-    def __init__(self, registry: NetworkRegistry, storage: Storage, public_key: Ed25519PublicKey):
+    def __init__(self, registry: NetworkRegistry, storage: Storage, public_key: Ed25519PublicKey, private_key: Ed25519PrivateKey | None = None):
         self.registry = registry
         self.storage = storage
         self.public_key = public_key
+        self.private_key = private_key
 
     @staticmethod
     def _action(authorization: dict[str, Any]) -> dict[str, Any]:
@@ -108,3 +111,63 @@ class ExecutionRouter:
 
     def execute(self, authorization: dict[str, Any], broadcaster: Callable[[dict[str, Any]], Any]) -> Any:
         return self._adapter(authorization).execute(authorization, broadcaster)
+
+
+    @staticmethod
+    def _transaction_ref(result: Any) -> str | None:
+        if isinstance(result, str) and result:
+            return result
+        if isinstance(result, dict):
+            for key in ("transaction_hash", "tx_hash", "signature"):
+                value = result.get(key)
+                if isinstance(value, str) and value:
+                    return value
+        return None
+
+    def execute_with_receipt(
+        self,
+        authorization: dict[str, Any],
+        broadcaster: Callable[[dict[str, Any]], Any],
+        *,
+        executor: str = "verigate",
+    ) -> ExecutionReceipt:
+        """Broadcast once and persist a signed SUBMITTED or FAILED receipt.
+
+        A failed broadcast still consumes the one-time authorization. Retrying
+        requires a fresh authorization.
+        """
+        if self.private_key is None:
+            raise ValueError("execution receipt signing key is required")
+
+        existing = self.storage.execution_receipt_by_authorization(authorization["payload"]["authorization_id"])
+        if existing is not None:
+            return ExecutionReceipt(
+                payload=existing["payload"],
+                signature=existing["signature"],
+                algorithm=existing.get("algorithm", "Ed25519"),
+            )
+
+        try:
+            result = self._adapter(authorization).execute(authorization, broadcaster)
+            transaction_ref = self._transaction_ref(result)
+            if not transaction_ref:
+                raise ValueError("broadcaster returned no transaction reference")
+            receipt = sign_execution_receipt(
+                authorization,
+                status="SUBMITTED",
+                transaction_ref=transaction_ref,
+                executor=executor,
+                private_key=self.private_key,
+            )
+        except Exception as exc:
+            receipt = sign_execution_receipt(
+                authorization,
+                status="FAILED",
+                transaction_ref=None,
+                executor=executor,
+                private_key=self.private_key,
+                error=str(exc),
+            )
+
+        self.storage.record_execution_receipt(receipt.as_dict())
+        return receipt

@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -130,6 +131,99 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
         return True, "valid execution authorization"
     except (KeyError, TypeError, ValueError, InvalidSignature):
         return False, "invalid or tampered execution authorization"
+
+
+@dataclass(frozen=True)
+class ExecutionReceipt:
+    """Proof signed by the execution boundary after an execution attempt."""
+    payload: dict[str, Any]
+    signature: str
+    algorithm: str = "Ed25519"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"payload": self.payload, "signature": self.signature, "algorithm": self.algorithm}
+
+
+def execution_receipt_payload(
+    authorization: dict[str, Any],
+    *,
+    status: str,
+    transaction_ref: str | None,
+    executor: str,
+    error: str | None = None,
+) -> dict[str, Any]:
+    auth_payload = authorization["payload"]
+    action = auth_payload["action"]
+    if status not in {"SUBMITTED", "FAILED"}:
+        raise ValueError("invalid execution receipt status")
+    return {
+        "execution_receipt_version": 1,
+        "receipt_id": str(uuid.uuid4()),
+        "authorization_id": auth_payload["authorization_id"],
+        "decision_receipt_sha256": auth_payload["decision_receipt_sha256"],
+        "intent_id": auth_payload["intent_id"],
+        "agent_id": auth_payload["agent_id"],
+        "action_sha256": auth_payload["action_sha256"],
+        "network": action.get("network"),
+        "status": status,
+        "transaction_ref": transaction_ref,
+        "executor": executor,
+        "error": error,
+        "executed_at": int(time.time()),
+    }
+
+
+def sign_execution_receipt(
+    authorization: dict[str, Any],
+    *,
+    status: str,
+    transaction_ref: str | None,
+    executor: str,
+    private_key: Ed25519PrivateKey,
+    error: str | None = None,
+) -> ExecutionReceipt:
+    payload = execution_receipt_payload(
+        authorization,
+        status=status,
+        transaction_ref=transaction_ref,
+        executor=executor,
+        error=error,
+    )
+    return ExecutionReceipt(payload, _sign(payload, private_key))
+
+
+def verify_execution_receipt(
+    receipt: dict[str, Any],
+    public_key: Ed25519PublicKey,
+    authorization: dict[str, Any] | None = None,
+) -> tuple[bool, str]:
+    try:
+        if receipt.get("algorithm") != "Ed25519":
+            return False, "unsupported signature algorithm"
+        payload = receipt["payload"]
+        if payload["execution_receipt_version"] != 1:
+            return False, "unsupported execution receipt version"
+        if payload["status"] not in {"SUBMITTED", "FAILED"}:
+            return False, "invalid execution receipt status"
+        if not payload["receipt_id"] or not payload["authorization_id"] or not payload["intent_id"]:
+            return False, "invalid execution receipt identity"
+        if payload["status"] == "SUBMITTED" and not payload["transaction_ref"]:
+            return False, "submitted receipt is missing transaction reference"
+        action_sha256 = payload["action_sha256"]
+        if not isinstance(action_sha256, str) or len(action_sha256) != 64:
+            return False, "invalid execution action fingerprint"
+        _verify(payload, receipt["signature"], public_key)
+        if authorization is not None:
+            auth = authorization["payload"]
+            if payload["authorization_id"] != auth["authorization_id"]:
+                return False, "execution receipt authorization mismatch"
+            if payload["intent_id"] != auth["intent_id"]:
+                return False, "execution receipt intent mismatch"
+            if payload["action_sha256"] != auth["action_sha256"]:
+                return False, "execution receipt action fingerprint mismatch"
+        return True, "valid execution receipt"
+    except (KeyError, TypeError, ValueError, InvalidSignature):
+        return False, "invalid or tampered execution receipt"
 
 
 # Backward-compatible name for existing consumers.

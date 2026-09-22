@@ -148,6 +148,15 @@ def execution_networks() -> list[dict]:
     return NetworkRegistry().as_dict()
 
 
+@app.get("/v1/execution/receipts/{authorization_id}")
+def execution_receipt(authorization_id: str) -> dict:
+    assert _storage is not None
+    receipt = _storage.execution_receipt_by_authorization(authorization_id)
+    if receipt is None:
+        raise HTTPException(status_code=404, detail="execution receipt not found")
+    return receipt
+
+
 @app.post("/v1/verify", response_model=VerifyResponse)
 def verify(req: VerifyRequest) -> dict:
     pub = load_public_key(PUBLIC_KEY_PATH)

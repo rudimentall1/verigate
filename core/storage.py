@@ -56,6 +56,25 @@ CREATE TABLE IF NOT EXISTS execution_nonces (
     agent_id TEXT NOT NULL,
     consumed_at REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS execution_receipts (
+    receipt_id TEXT PRIMARY KEY,
+    authorization_id TEXT NOT NULL UNIQUE,
+    intent_id TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    network TEXT NOT NULL,
+    status TEXT NOT NULL,
+    transaction_ref TEXT,
+    receipt_json TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_execution_receipts_intent
+    ON execution_receipts(intent_id);
+
+CREATE INDEX IF NOT EXISTS idx_execution_receipts_agent_time
+    ON execution_receipts(agent_id, created_at);
 """
 
 
@@ -253,6 +272,53 @@ class Storage:
             except sqlite3.IntegrityError:
                 self._conn.rollback()
                 return False
+
+    def record_execution_receipt(self, receipt: dict) -> None:
+        payload = receipt["payload"]
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO execution_receipts "
+                    "(receipt_id, authorization_id, intent_id, agent_id, network, status, "
+                    "transaction_ref, receipt_json, signature, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        payload["receipt_id"],
+                        payload["authorization_id"],
+                        payload["intent_id"],
+                        payload["agent_id"],
+                        payload.get("network") or "",
+                        payload["status"],
+                        payload.get("transaction_ref"),
+                        json.dumps(receipt, sort_keys=True, separators=(",", ":")),
+                        receipt["signature"],
+                        time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("execution receipt already recorded") from exc
+
+    def execution_receipt_by_authorization(self, authorization_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT receipt_json FROM execution_receipts WHERE authorization_id = ?",
+                (authorization_id,),
+            ).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def execution_receipts(self, agent_id: str, limit: int = 50) -> list[dict]:
+        if limit < 1:
+            return []
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT receipt_json FROM execution_receipts "
+                "WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?",
+                (agent_id, limit),
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]
+
 
     def update_signature(self, intent_id: str, signature: str) -> None:
         """Attach a signature to an existing audit row.
