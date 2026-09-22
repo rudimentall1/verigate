@@ -34,6 +34,8 @@ class RwaPolicy:
     max_purchase_usd: float = 5_000.0
     max_volume_fraction: float = 0.01
     max_market_cap_fraction: float = 0.001
+    require_tracked_issuer: bool = True
+    max_issuer_price_spread_fraction: float = 0.02
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -44,6 +46,8 @@ class RwaPolicy:
             "max_purchase_usd": self.max_purchase_usd,
             "max_volume_fraction": self.max_volume_fraction,
             "max_market_cap_fraction": self.max_market_cap_fraction,
+            "require_tracked_issuer": self.require_tracked_issuer,
+            "max_issuer_price_spread_fraction": self.max_issuer_price_spread_fraction,
             "raw": self.raw,
         }
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -66,6 +70,8 @@ class RwaPurchaseEvaluator:
             max_purchase_usd=float(raw.get("max_purchase_usd", 5000.0)),
             max_volume_fraction=float(raw.get("max_volume_fraction", 0.01)),
             max_market_cap_fraction=float(raw.get("max_market_cap_fraction", 0.001)),
+            require_tracked_issuer=bool(raw.get("require_tracked_issuer", True)),
+            max_issuer_price_spread_fraction=float(raw.get("max_issuer_price_spread_fraction", 0.02)),
             raw=raw,
         )
 
@@ -120,6 +126,24 @@ class RwaPurchaseEvaluator:
                     "rwa_not_tokenized",
                     Severity.BLOCK,
                     f"RWA '{quote.symbol}' has no tracked tokenization",
+                )
+            )
+
+        if self.policy.require_tracked_issuer and quote.has_tokens and not quote.issuer_provenance:
+            matches.append(
+                RuleMatch(
+                    "rwa_issuer_provenance_missing",
+                    Severity.BLOCK,
+                    "CMC tracked tokens have no issuer provenance",
+                )
+            )
+
+        if quote.issuer_price_spread_fraction is not None and quote.issuer_price_spread_fraction > self.policy.max_issuer_price_spread_fraction:
+            matches.append(
+                RuleMatch(
+                    "rwa_issuer_price_dispersion_high",
+                    Severity.WARN,
+                    "tokenized issuer prices are dispersed beyond the configured threshold",
                 )
             )
 

@@ -23,7 +23,7 @@ class CmcClientTest(unittest.TestCase):
                 "average_tokenized_price": 4000.0,
                 "tokenized_market_cap": 1000000.0,
                 "tokenized_volume_24h": 100000.0,
-                "tokens": [{"symbol": "PAXG", "crypto_id": 4705, "price": 4000.0}],
+                "tokens": [{"symbol": "PAXG", "crypto_id": 4705, "price": 4000.0, "issuer_id": "issuer-paxos", "issuer_name": "Paxos"}],
                 "tradfi_markets": [],
             },
             "status": {"error_code": 0, "timestamp": "2026-09-22T12:00:00Z"},
@@ -71,6 +71,10 @@ class RwaPolicyTest(unittest.TestCase):
             average_tokenized_price=4000.0,
             tokenized_market_cap=1_000_000.0,
             tokenized_volume_24h=100_000.0,
+            tokens=(
+                {"symbol": "PAXG", "price": 4000.0, "issuer_id": "issuer-paxos", "issuer_name": "Paxos"},
+                {"symbol": "XAUM", "price": 4001.0, "issuer_id": "issuer-matrix", "issuer_name": "Matrixdock"},
+            ),
         )
 
     def test_small_purchase_is_allow(self):
@@ -90,6 +94,35 @@ class RwaPolicyTest(unittest.TestCase):
         action = evaluator.build_action(self.quote, 101, agent_id="agent-rwa")
         decision = evaluator.evaluate(action, self.quote, 101)
         self.assertEqual(decision.decision.value, "BLOCK")
+
+    def test_missing_issuer_provenance_is_block(self):
+        quote = CmcRwaQuote(
+            rwa_id=3, name="NoIssuer", symbol="NOI", slug="noi", asset_type="commodity",
+            rwa_rank=None, has_tokens=True, average_tokenized_price=1.0,
+            tokenized_market_cap=1_000_000.0, tokenized_volume_24h=100_000.0,
+            tokens=({"symbol": "NOI", "price": 1.0},),
+        )
+        evaluator = RwaPurchaseEvaluator()
+        action = evaluator.build_action(quote, 100, agent_id="agent-rwa")
+        decision = evaluator.evaluate(action, quote, 100)
+        self.assertEqual(decision.decision.value, "BLOCK")
+        self.assertEqual(decision.matched_rules[0].rule_id, "rwa_issuer_provenance_missing")
+
+    def test_issuer_price_dispersion_is_warn(self):
+        quote = CmcRwaQuote(
+            rwa_id=4, name="Spread", symbol="SPR", slug="spread", asset_type="commodity",
+            rwa_rank=None, has_tokens=True, average_tokenized_price=100.0,
+            tokenized_market_cap=1_000_000.0, tokenized_volume_24h=100_000.0,
+            tokens=(
+                {"symbol": "A", "price": 90.0, "issuer_id": "a", "issuer_name": "A"},
+                {"symbol": "B", "price": 110.0, "issuer_id": "b", "issuer_name": "B"},
+            ),
+        )
+        evaluator = RwaPurchaseEvaluator()
+        action = evaluator.build_action(quote, 100, agent_id="agent-rwa")
+        decision = evaluator.evaluate(action, quote, 100)
+        self.assertEqual(decision.decision.value, "WARN")
+        self.assertEqual(decision.matched_rules[0].rule_id, "rwa_issuer_price_dispersion_high")
 
     def test_unsupported_rwa_type_is_block(self):
         quote = CmcRwaQuote(

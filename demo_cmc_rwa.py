@@ -30,7 +30,10 @@ def fixture_quote(symbol: str) -> CmcRwaQuote:
         average_tokenized_price=4000.0,
         tokenized_market_cap=1_000_000.0,
         tokenized_volume_24h=100_000.0,
-        tokens=({"symbol": "PAXG", "crypto_id": 4705, "price": 4000.0},),
+        tokens=(
+            {"symbol": "PAXG", "crypto_id": 4705, "price": 4000.0, "issuer_id": "issuer-paxos", "issuer_name": "Paxos"},
+            {"symbol": "XAUM", "crypto_id": 34212, "price": 4001.0, "issuer_id": "issuer-matrix", "issuer_name": "Matrixdock"},
+        ),
     )
 
 

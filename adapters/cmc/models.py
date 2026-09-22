@@ -47,6 +47,32 @@ class CmcRwaQuote:
             raw=record,
         )
 
+    @property
+    def issuer_provenance(self) -> tuple[dict[str, Any], ...]:
+        seen: set[str] = set()
+        result: list[dict[str, Any]] = []
+        for token in self.tokens:
+            issuer_id = token.get("issuer_id")
+            issuer_name = token.get("issuer_name")
+            if issuer_id is None and issuer_name is None:
+                continue
+            key = str(issuer_id or issuer_name)
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append({"issuer_id": issuer_id, "issuer_name": issuer_name})
+        return tuple(result)
+
+    @property
+    def issuer_price_spread_fraction(self) -> float | None:
+        prices = [float(token["price"]) for token in self.tokens if token.get("price") is not None]
+        if len(prices) < 2:
+            return None
+        baseline = self.average_tokenized_price or (sum(prices) / len(prices))
+        if baseline <= 0:
+            return None
+        return (max(prices) - min(prices)) / baseline
+
     def as_evidence(self) -> dict[str, Any]:
         return {
             "provider": "coinmarketcap",
@@ -62,5 +88,7 @@ class CmcRwaQuote:
             "tokenized_volume_24h": self.tokenized_volume_24h,
             "tokens": list(self.tokens),
             "tradfi_markets": list(self.tradfi_markets),
+            "issuer_provenance": list(self.issuer_provenance),
+            "issuer_price_spread_fraction": self.issuer_price_spread_fraction,
             "source_timestamp": self.source_timestamp,
         }

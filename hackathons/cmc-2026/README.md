@@ -54,6 +54,8 @@ Default controls:
 - maximum purchase: 5,000 USD
 - WARN when purchase exceeds 1% of tokenized 24h volume
 - WARN when purchase exceeds 0.1% of tokenized market cap
+- require CMC issuer provenance on tracked tokens
+- WARN when tokenized issuer prices diverge by more than 2%
 ## Hackathon status
 
 The CMC hackathon build window is 9–30 September 2026. Submission requires a
