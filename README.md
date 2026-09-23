@@ -135,10 +135,24 @@ PYTHONPATH=. python3 cli.py verify attestation.json
 PYTHONPATH=. python3 cli.py history --agent trading-agent-001
 ```
 
-### API
+### Judge demo UI
+
+Start the API and open **http://localhost:8000/demo/**. The UI is deliberately optimized for a 15-second judge path:
+
+1. Change the approved destination after authorization → **BLOCK** at the execution boundary → **0 broadcasts**.
+2. Execute the untouched authorization → **real Solana Devnet** broadcast → confirmation → explorer receipt.
+
+The tamper panel runs the same enforcement demo used by the automated proof. The live panel runs the real Devnet execution demo; if the public faucet is rate-limited, provide a funded Devnet sender with `--sender-keypair` when running the script directly.
+
+The demo endpoints are intended for a local judging environment:
+
+- `GET /v1/demo/tamper`
+- `GET /v1/demo/live`
+- `GET /demo/`
 
 ```bash
 uvicorn api.main:app --reload
+# open http://localhost:8000/demo/
 ```
 
 Or with Docker:

@@ -15,10 +15,14 @@ Endpoints:
 from __future__ import annotations
 
 import os
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
@@ -54,6 +58,9 @@ app = FastAPI(
     version="0.1.0",
 )
 
+UI_DIR = Path(__file__).resolve().parent.parent / "ui"
+app.mount("/demo", StaticFiles(directory=UI_DIR, html=True), name="demo-ui")
+
 _policy: Policy | None = None
 _storage: Storage | None = None
 _engine: GuardrailEngine | None = None
@@ -72,6 +79,45 @@ def _startup() -> None:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+_DEMO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _run_demo_script(script: str, timeout: int = 45) -> str:
+    result = subprocess.run(
+        [sys.executable, script],
+        cwd=_DEMO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    return result.stdout + ("\n" + result.stderr if result.stderr else "")
+
+
+@app.get("/v1/demo/tamper")
+def demo_tamper() -> dict:
+    output = _run_demo_script("demo_tamper_enforcement.py", timeout=20)
+    blocked = "VERIGATE: BLOCK" in output and "Broadcasts: 0" in output
+    broadcasts = 0 if "Broadcasts: 0" in output else None
+    return {"blocked": blocked, "broadcasts": broadcasts, "output": output[-5000:]}
+
+
+@app.get("/v1/demo/live")
+def demo_live() -> dict:
+    try:
+        output = _run_demo_script("demo_live_solana_devnet.py", timeout=50)
+    except subprocess.TimeoutExpired as exc:
+        return {"confirmed": False, "error": "Devnet execution timed out", "output": str(exc)}
+    match = re.search(r"https://explorer\.solana\.com/tx/([^\s]+)\?cluster=devnet", output)
+    confirmed = "RESULT: REAL DEVNET BROADCAST -> SUBMITTED -> CONFIRMED" in output
+    return {
+        "confirmed": confirmed,
+        "signature": match.group(1) if match else None,
+        "explorer": match.group(0) if match else None,
+        "output": output[-7000:],
+    }
 
 
 @app.get("/v1/public-key", response_class=PlainTextResponse)

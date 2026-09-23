@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Verigate — Execution Proof</title>
+<style>
+:root{--bg:#07090d;--panel:#0d1118;--line:#202833;--muted:#84909f;--text:#f3f6fa;--green:#55e39a;--red:#ff5c6c;--amber:#ffc857;--cyan:#61d7ff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% 0,#15201d 0,#07090d 42%);color:var(--text);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+.wrap{max-width:1180px;margin:auto;padding:34px 24px 60px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}.brand{letter-spacing:.18em;font-weight:800}.live{font-size:11px;color:var(--green);border:1px solid #275f48;border-radius:999px;padding:6px 10px}
+h1{font-size:clamp(32px,5vw,64px);line-height:.95;margin:0 0 14px;max-width:800px;letter-spacing:-.045em}.lead{color:#aeb8c5;max-width:760px;font-size:17px}.flow{display:flex;gap:8px;align-items:center;margin:26px 0 30px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.12em}.flow b{color:var(--text);background:#111720;border:1px solid var(--line);padding:8px 10px;border-radius:7px}.arrow{color:#4b5664}
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px}button{appearance:none;border:0;border-radius:9px;padding:13px 17px;font-weight:800;letter-spacing:.02em;cursor:pointer;background:#eaf0f5;color:#071018}button.secondary{background:#121821;color:#d9e1ea;border:1px solid var(--line)}button:disabled{opacity:.45;cursor:wait}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.card{background:rgba(13,17,24,.9);border:1px solid var(--line);border-radius:14px;padding:20px;min-height:280px;box-shadow:0 14px 50px rgba(0,0,0,.22)}.card h2{font-size:14px;text-transform:uppercase;letter-spacing:.1em;margin:0 0 5px}.sub{color:var(--muted);font-size:12px;margin-bottom:18px}
+.state{border:1px solid var(--line);border-radius:11px;padding:18px;margin:12px 0;background:#0a0e14}.state .big{font-size:42px;font-weight:900;letter-spacing:-.04em}.blocked .big{color:var(--red)}.allowed .big{color:var(--green)}.pending .big{color:var(--amber)}
+.meta{display:grid;grid-template-columns:1fr auto;gap:8px;color:#9aa6b4;font-size:12px}.meta strong{color:#dfe6ed;font-weight:600;text-align:right;word-break:break-all}
+.proof{margin-top:14px;padding:12px;border-radius:9px;background:#080c11;border:1px dashed #2b3542;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#aeb9c7;white-space:pre-wrap;word-break:break-word}.proof a{color:var(--cyan)}
+.verdict{margin-top:20px;padding:18px;border-radius:12px;border:1px solid #2b3542;background:#0b1016}.verdict strong{font-size:16px}.verdict p{margin:6px 0 0;color:#9eabb9}.footer{margin-top:18px;color:#687484;font-size:11px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}.flow{flex-wrap:wrap}.wrap{padding:24px 15px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div class="brand">VERIGATE</div><div class="live">● EXECUTION-SIDE ENFORCEMENT</div></div>
+  <h1>AI can propose.<br>Verigate decides.</h1>
+  <div class="lead">A 15-second proof that an authorized action cannot be mutated into an attacker action — and that an untampered authorization can reach a real blockchain execution boundary.</div>
+  <div class="flow"><b>AGENT</b><span class="arrow">→</span><b>AUTHORIZATION</b><span class="arrow">→</span><b>VERIGATE</b><span class="arrow">→</span><b>EXECUTION</b></div>
+  <div class="controls">
+    <button id="run">▶ RUN 15-SECOND PROOF</button>
+    <button class="secondary" id="tamper">ATTACK: CHANGE DESTINATION</button>
+    <button class="secondary" id="live">REAL DEVNET EXECUTION</button>
+  </div>
+  <div class="grid">
+    <section class="card">
+      <h2>01 / Tamper attempt</h2><div class="sub">Authorization was ALLOW. Destination is changed after signing.</div>
+      <div id="tamperState" class="state pending"><div class="big">READY</div><div class="meta"><span>Broadcasts</span><strong id="broadcasts">—</strong><span>Enforcement</span><strong id="reason">waiting</strong></div></div>
+      <div id="tamperProof" class="proof">No attack executed yet.</div>
+    </section>
+    <section class="card">
+      <h2>02 / Real execution</h2><div class="sub">The same enforcement boundary consumes an untampered capability.</div>
+      <div id="liveState" class="state pending"><div class="big">READY</div><div class="meta"><span>Network</span><strong>Solana Devnet</strong><span>Side effect</span><strong id="liveStatus">not executed</strong></div></div>
+      <div id="liveProof" class="proof">No live transaction in this session.</div>
+    </section>
+  </div>
+  <div id="verdict" class="verdict"><strong>What the judge should see</strong><p>Mutate the approved action → BLOCK at the execution boundary → 0 broadcasts. Then execute the untouched authorization → real Devnet transaction → explorer proof.</p></div>
+  <div class="footer">Demo only • Solana Devnet • No mainnet funds • Cryptographic authorization is verified before execution.</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const setBusy=v=>[$('run'),$('tamper'),$('live')].forEach(b=>b.disabled=v);
+function state(el,kind,title){el.className='state '+kind;el.querySelector('.big').textContent=title}
+async function json(url){const r=await fetch(url);const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'request failed');return d}
+async function runTamper(){
+  state($('tamperState'),'pending','CHECKING');$('tamperProof').textContent='ExecutionRouter verifying signed authorization…';
+  const d=await json('/v1/demo/tamper');
+  if(d.blocked){state($('tamperState'),'blocked','BLOCK');$('broadcasts').textContent=d.broadcasts;$('reason').textContent='action fingerprint mismatch';$('tamperProof').textContent='Signed authorization: VALID\nMutation: destination changed\nExecutionRouter: BLOCK\nBroadcasts: 0\n\n'+d.output;}
+  else{state($('tamperState'),'pending','ERROR');$('tamperProof').textContent=d.output||'Unexpected result';}
+  return d;
+}
+async function runLive(){
+  state($('liveState'),'pending','RUNNING');$('liveStatus').textContent='broadcasting…';$('liveProof').textContent='Authorization → Solana RPC → confirmation…';
+  const d=await json('/v1/demo/live');
+  if(d.confirmed){state($('liveState'),'allowed','CONFIRMED');$('liveStatus').textContent='REAL SIDE EFFECT';$('liveProof').innerHTML='Status: CONFIRMED\nTransaction: '+d.signature+'\nExplorer: <a target="_blank" href="'+d.explorer+'">'+d.explorer+'</a>';}
+  else{state($('liveState'),'pending','UNAVAILABLE');$('liveStatus').textContent='not confirmed';$('liveProof').textContent=d.output||d.error||'Devnet execution unavailable';}
+  return d;
+}
+async function sequence(){setBusy(true);try{await runTamper();await runLive();}catch(e){$('verdict').innerHTML='<strong>BLOCK proof complete.</strong><p>'+e.message+'</p>';}finally{setBusy(false)}}
+$('run').onclick=sequence;$('tamper').onclick=async()=>{setBusy(true);try{await runTamper()}catch(e){state($('tamperState'),'pending','ERROR');$('tamperProof').textContent=e.message}finally{setBusy(false)}};
+$('live').onclick=async()=>{setBusy(true);try{await runLive()}catch(e){state($('liveState'),'pending','ERROR');$('liveProof').textContent=e.message}finally{setBusy(false)}};
+</script>
+</body>
+</html>
