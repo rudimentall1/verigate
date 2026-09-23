@@ -47,6 +47,7 @@ class AuthorizationService:
                 ttl_seconds=ttl_seconds,
                 capability_id=capability.capability_id if capability else None,
                 capability_version=capability.version if capability else None,
+                capability_sha256=capability.digest if capability else None,
             )
 
         return {

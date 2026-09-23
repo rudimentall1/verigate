@@ -62,6 +62,7 @@ class AuthorizationServiceTest(unittest.TestCase):
         execution = artifacts["execution_authorization"]
         self.assertEqual(execution["payload"]["capability_id"], capability.capability_id)
         self.assertEqual(execution["payload"]["capability_version"], capability.version)
+        self.assertEqual(execution["payload"]["capability_sha256"], capability.digest)
         self.assertTrue(verify_execution_authorization(execution, load_public_key(self.pub))[0])
 
     def test_capability_mismatch_cannot_mint_execution_authorization(self):

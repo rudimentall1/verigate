@@ -6,6 +6,8 @@ without dragging the API layer along.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -133,6 +135,28 @@ class Capability:
     issued_at: float = field(default_factory=time.time)
     expires_at: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def digest(self) -> str:
+        """Stable fingerprint of the exact capability definition."""
+        payload = {
+            "capability_id": self.capability_id,
+            "agent_id": self.agent_id,
+            "allowed_actions": self.allowed_actions,
+            "allowed_targets": self.allowed_targets,
+            "allowed_resources": self.allowed_resources,
+            "allowed_networks": self.allowed_networks,
+            "allowed_assets": self.allowed_assets,
+            "max_per_action": self.max_per_action,
+            "aggregate_limits": self.aggregate_limits,
+            "conditions": self.conditions,
+            "version": self.version,
+            "issued_at": self.issued_at,
+            "expires_at": self.expires_at,
+            "metadata": self.metadata,
+        }
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
 
     def permits(self, action: "ActionIntent", now: float | None = None) -> tuple[bool, str]:
         """Check the static scope of this capability against one action."""

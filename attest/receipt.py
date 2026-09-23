@@ -74,6 +74,7 @@ def issue_execution_authorization(
     ttl_seconds: int = 300,
     capability_id: str | None = None,
     capability_version: int | None = None,
+    capability_sha256: str | None = None,
 ) -> ExecutionAuthorization:
     if receipt.payload["decision"]["decision"] != Decision.ALLOW.value:
         raise PermissionError("execution authorization requires ALLOW")
@@ -87,6 +88,7 @@ def issue_execution_authorization(
         "policy_sha256": receipt.payload["policy_sha256"],
         "capability_id": capability_id,
         "capability_version": capability_version,
+        "capability_sha256": capability_sha256,
         "action": receipt.payload["intent"],
         "action_sha256": action_digest(receipt.payload["intent"]),
         "nonce": nonce,
