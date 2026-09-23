@@ -27,11 +27,19 @@ class ExecutionRouter:
     bypassing signature, expiry, or replay checks.
     """
 
-    def __init__(self, registry: NetworkRegistry, storage: Storage, public_key: Ed25519PublicKey, private_key: Ed25519PrivateKey | None = None):
+    def __init__(
+        self,
+        registry: NetworkRegistry,
+        storage: Storage,
+        public_key: Ed25519PublicKey,
+        private_key: Ed25519PrivateKey | None = None,
+        generic_adapters: dict[str, ExecutionAdapter] | None = None,
+    ):
         self.registry = registry
         self.storage = storage
         self.public_key = public_key
         self.private_key = private_key
+        self.generic_adapters = dict(generic_adapters or {})
 
     @staticmethod
     def _action(authorization: dict[str, Any]) -> dict[str, Any]:
@@ -70,6 +78,10 @@ class ExecutionRouter:
 
     def _adapter(self, authorization: dict[str, Any]) -> ExecutionAdapter:
         action = self._action(authorization)
+        action_type = action.get("action_type")
+        generic = self.generic_adapters.get(action_type)
+        if generic is not None:
+            return generic
         network = action.get("network")
         if not isinstance(network, str) or not network.strip():
             raise UnsupportedNetworkError("authorized action has no network")
