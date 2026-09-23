@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 
 from attest.receipt import ExecutionReceipt, sign_execution_receipt
 
+from core.authority_state import DynamicAuthorityService
 from core.storage import Storage
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.local import ExecutionGate
@@ -173,6 +174,15 @@ class ExecutionRouter:
             )
 
         self.storage.record_execution_receipt(receipt.as_dict())
+        capability_id = receipt.payload.get("capability_id")
+        if capability_id and receipt.payload["status"] == "FAILED":
+            DynamicAuthorityService(self.storage).record_event(
+                agent_id=receipt.payload["agent_id"],
+                capability_id=capability_id,
+                identity_id=receipt.payload.get("identity_id"),
+                event_type="EXECUTION_FAILED",
+                evidence_ref=receipt.payload["receipt_id"],
+            )
         return receipt
 
     @staticmethod
@@ -196,10 +206,37 @@ class ExecutionRouter:
             raise ValueError("confirmation is missing transaction reference")
         if transaction_ref != current.get("transaction_ref"):
             raise ValueError("confirmation transaction reference mismatch")
-        auth = {"payload": {"authorization_id": current["authorization_id"], "decision_receipt_sha256": current["decision_receipt_sha256"], "intent_id": current["intent_id"], "agent_id": current["agent_id"], "action_sha256": current["action_sha256"], "action": {"network": current.get("network")}}}
+        auth = {"payload": {
+            "authorization_id": current["authorization_id"],
+            "decision_receipt_sha256": current["decision_receipt_sha256"],
+            "intent_id": current["intent_id"],
+            "agent_id": current["agent_id"],
+            "action_sha256": current["action_sha256"],
+            "identity_id": current.get("identity_id"),
+            "identity_sha256": current.get("identity_sha256"),
+            "capability_id": current.get("capability_id"),
+            "capability_sha256": current.get("capability_sha256"),
+            "authority_state": current.get("authority_state"),
+            "authority_state_sha256": current.get("authority_state_sha256"),
+            "authority_multiplier": current.get("authority_multiplier"),
+            "action": {"network": current.get("network")},
+        }}
         updated = sign_execution_receipt(auth, status=state, transaction_ref=transaction_ref, executor=executor, private_key=self.private_key, error=confirmation.get("error"), receipt_id=current["receipt_id"], previous_receipt_sha256=self._receipt_digest(receipt), confirmation_ref=confirmation.get("block_ref") or confirmation.get("slot"), confirmation_data=confirmation)
         payload = dict(updated.payload)
         payload["network"] = current.get("network")
         updated = ExecutionReceipt(payload=payload, signature=updated.signature, algorithm=updated.algorithm)
         self.storage.update_execution_receipt(updated.as_dict())
+        capability_id = updated.payload.get("capability_id")
+        if capability_id:
+            DynamicAuthorityService(self.storage).record_event(
+                agent_id=updated.payload["agent_id"],
+                capability_id=capability_id,
+                identity_id=updated.payload.get("identity_id"),
+                event_type=(
+                    "EXECUTION_CONFIRMED"
+                    if updated.payload["status"] == "CONFIRMED"
+                    else "EXECUTION_FAILED"
+                ),
+                evidence_ref=updated.payload["receipt_id"],
+            )
         return updated

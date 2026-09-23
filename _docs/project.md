@@ -32,7 +32,11 @@ Organization / Principal → Agent → Identity → Capability → Delegated Cap
 
 Delegation is constrained: a child capability cannot exceed its parent in scope, limits, conditions or lifetime, and delegation requires the parent identity's cryptographic signature. Effective authority follows the entire ancestor chain; revoking a parent or delegator identity invalidates descendant authority for future decisions.
 
-Risk, intelligence and adversarial analysis can inform an AuthorityDecision, but they must never bypass deterministic capability, delegation and execution controls.
+**Dynamic Agent Authority** sits below the static capability ceiling. Each identity-bound capability starts in PROBATION, where only a bounded fraction of its static limits is usable. Verified execution outcomes can promote the capability deterministically through STANDARD to ELEVATED; adverse outcomes reduce authority, while tamper/policy-violation events latch SUSPENDED until explicit reset. Dynamic authority never creates permissions that the registered Capability does not already contain.
+
+The current dynamic snapshot is persisted, auditable and cryptographically bound into newly issued ExecutionAuthorization artifacts. Confirmed/failed execution receipts feed verified outcomes back into the authority state, closing the control loop without turning the system into a generic risk score.
+
+Risk, intelligence and adversarial analysis can inform an AuthorityDecision, but they must never bypass deterministic capability, delegation, dynamic-authority and execution controls.
 
 ## Security invariants
 
@@ -47,7 +51,9 @@ Risk, intelligence and adversarial analysis can inform an AuthorityDecision, but
 9. Effective authority requires every ancestor capability and bound identity to remain active.
 10. Tampering with an authorized action must fail at the execution boundary.
 11. Decision receipts prove the decision but are not themselves execution permission.
-12. Evidence must preserve identity → capability → delegation path → intent → authorization → execution linkage.
+12. Evidence must preserve identity → capability → delegation path → dynamic authority state → intent → authorization → execution linkage.
+13. Dynamic authority may only reduce or restore access within the static capability ceiling; it may never expand capability scope.
+14. Verified execution outcomes are the only automatic promotion/demotion inputs in the dynamic authority loop.
 
 ## Product boundary
 
@@ -55,4 +61,4 @@ The core is protocol-agnostic. Payment rails and chains are adapters. Hackathon-
 
 ## Current focus
 
-The current product focus is the universal authority core: cryptographic agent identity, capabilities, exact ActionIntent verification, deterministic policy, authorization, execution enforcement and evidence. RWA, payments, EVM, Solana and future MCP/API/cloud adapters must consume the same authority contracts rather than define the core.
+The current product focus is the universal authority core: cryptographic agent identity, capabilities, exact ActionIntent verification, deterministic policy, dynamic authority, authorization, execution enforcement and evidence. RWA, payments, EVM, Solana and future MCP/API/cloud adapters must consume the same authority contracts rather than define the core.

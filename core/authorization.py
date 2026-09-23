@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .models import ActionIntent, AgentIdentity, Capability, Decision, GuardrailDecision
+from .authority_state import AuthoritySnapshot
 from attest.receipt import issue_execution_authorization, sign_receipt
 
 
@@ -26,6 +27,7 @@ class AuthorizationService:
         ttl_seconds: int = 300,
         capability: Capability | None = None,
         identity: AgentIdentity | None = None,
+        authority: AuthoritySnapshot | None = None,
     ) -> dict[str, Any]:
         if action.intent_id != decision.intent_id or action.agent_id != decision.agent_id:
             raise ValueError("action and decision identities do not match")
@@ -56,6 +58,9 @@ class AuthorizationService:
                 capability_sha256=capability.digest if capability else None,
                 identity_id=identity.key_id if identity else None,
                 identity_sha256=identity.digest if identity else None,
+                authority_state=authority.as_dict() if authority else None,
+                authority_state_sha256=authority.digest if authority else None,
+                authority_multiplier=authority.multiplier if authority else None,
             )
 
         return {

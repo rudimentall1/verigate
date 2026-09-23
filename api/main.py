@@ -31,6 +31,7 @@ from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
 from attest.verify import verify_attestation
 from core.authority import AuthorityGraph
+from core.authority_state import DynamicAuthorityService
 from core.engine import GuardrailEngine
 from core.models import PaymentIntent
 from core.policy import Policy
@@ -262,7 +263,15 @@ def authority_capability(capability_id: str) -> dict:
     """Explain the authority provenance of one capability."""
     assert _storage is not None
     try:
-        return AuthorityGraph(_storage).explain(capability_id)
+        explanation = AuthorityGraph(_storage).explain(capability_id)
+        capability = _storage.capability(capability_id)
+        if capability is not None:
+            dynamic = DynamicAuthorityService(_storage).explain(
+                capability.agent_id,
+                capability.capability_id,
+            )
+            explanation["dynamic_authority"] = dynamic
+        return explanation
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

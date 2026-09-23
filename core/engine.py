@@ -12,6 +12,7 @@ from .policy import Policy
 from .storage import Storage
 
 from .authorization import AuthorizationService
+from .authority_state import DynamicAuthorityService
 from .capabilities import CapabilityRegistry
 from .identity import IdentityRegistry
 
@@ -140,6 +141,7 @@ class GuardrailEngine:
         decision = self.evaluate(intent)
         action = intent.as_action_intent()
         capability = CapabilityRegistry(self.storage).assert_authority(capability_id, action)
+        authority = DynamicAuthorityService(self.storage).assert_action(capability, action)
         artifacts = AuthorizationService().issue(
             action,
             decision,
@@ -147,6 +149,7 @@ class GuardrailEngine:
             private_key,
             nonce=intent.intent_id,
             capability=capability,
+            authority=authority,
         )
         self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
         return artifacts
@@ -172,6 +175,7 @@ class GuardrailEngine:
             action,
             identity_id=identity_id,
         )
+        authority = DynamicAuthorityService(self.storage).assert_action(capability, action)
         artifacts = AuthorizationService().issue(
             action,
             decision,
@@ -180,6 +184,7 @@ class GuardrailEngine:
             nonce=intent.intent_id,
             capability=capability,
             identity=identity,
+            authority=authority,
         )
         self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
         return artifacts

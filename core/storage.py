@@ -126,6 +126,31 @@ CREATE INDEX IF NOT EXISTS idx_authority_edges_source
 
 CREATE INDEX IF NOT EXISTS idx_authority_edges_target
     ON authority_edges(target_type, target_id, status);
+
+CREATE TABLE IF NOT EXISTS authority_events (
+    event_id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    capability_id TEXT NOT NULL,
+    identity_id TEXT,
+    event_type TEXT NOT NULL,
+    action_type TEXT,
+    evidence_ref TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    occurred_at REAL NOT NULL,
+    UNIQUE(agent_id, capability_id, event_type, evidence_ref)
+);
+
+CREATE INDEX IF NOT EXISTS idx_authority_events_scope_time
+    ON authority_events(agent_id, capability_id, occurred_at);
+
+CREATE TABLE IF NOT EXISTS authority_states (
+    agent_id TEXT NOT NULL,
+    capability_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    snapshot_json TEXT NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY(agent_id, capability_id)
+);
 """
 
 
@@ -663,6 +688,110 @@ class Storage:
             except sqlite3.IntegrityError as exc:
                 raise ValueError("capability or authority edge already exists") from exc
         return edge_id
+
+    def record_authority_event(self, event: dict) -> None:
+        """Persist one verified authority outcome; duplicate evidence is idempotent."""
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO authority_events "
+                    "(event_id, agent_id, capability_id, identity_id, event_type, "
+                    "action_type, evidence_ref, metadata_json, occurred_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        event["event_id"],
+                        event["agent_id"],
+                        event["capability_id"],
+                        event.get("identity_id"),
+                        event["event_type"],
+                        event.get("action_type"),
+                        event["evidence_ref"],
+                        json.dumps(
+                            event.get("metadata") or {},
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        event["occurred_at"],
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError:
+                self._conn.rollback()
+                existing = self._conn.execute(
+                    "SELECT 1 FROM authority_events WHERE event_id = ?",
+                    (event["event_id"],),
+                ).fetchone()
+                if existing is None:
+                    raise ValueError("authority evidence reference already exists")
+
+    def authority_events(
+        self,
+        *,
+        agent_id: str,
+        capability_id: str,
+        since: float | None = None,
+    ) -> list[dict]:
+        clauses = ["agent_id = ?", "capability_id = ?"]
+        params: list = [agent_id, capability_id]
+        if since is not None:
+            clauses.append("occurred_at >= ?")
+            params.append(since)
+        where = " AND ".join(clauses)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT event_id, agent_id, capability_id, identity_id, event_type, "
+                "action_type, evidence_ref, metadata_json, occurred_at "
+                f"FROM authority_events WHERE {where} ORDER BY occurred_at ASC",
+                tuple(params),
+            ).fetchall()
+        columns = [
+            "event_id", "agent_id", "capability_id", "identity_id", "event_type",
+            "action_type", "evidence_ref", "metadata_json", "occurred_at",
+        ]
+        result = []
+        for row in rows:
+            item = dict(zip(columns, row))
+            item["metadata"] = json.loads(item.pop("metadata_json"))
+            result.append(item)
+        return result
+
+    def set_authority_state(
+        self,
+        agent_id: str,
+        capability_id: str,
+        state: str,
+        snapshot: dict,
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO authority_states "
+                "(agent_id, capability_id, state, snapshot_json, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(agent_id, capability_id) DO UPDATE SET "
+                "state = excluded.state, snapshot_json = excluded.snapshot_json, "
+                "updated_at = excluded.updated_at",
+                (
+                    agent_id,
+                    capability_id,
+                    state,
+                    json.dumps(snapshot, sort_keys=True, separators=(",", ":")),
+                    time.time(),
+                ),
+            )
+            self._conn.commit()
+
+    def latest_authority_state(
+        self,
+        agent_id: str,
+        capability_id: str,
+    ) -> str | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT state FROM authority_states "
+                "WHERE agent_id = ? AND capability_id = ?",
+                (agent_id, capability_id),
+            ).fetchone()
+        return row[0] if row else None
 
     def update_signature(self, intent_id: str, signature: str) -> None:
         """Attach a signature to an existing audit row.

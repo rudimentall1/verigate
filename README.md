@@ -87,6 +87,7 @@ system — not yet a hosted product. Specifically:
 | AP2 / other payment-rail adapters | **Not built.** The architecture reserves the seam (`core.models.PaymentIntent` is rail-agnostic) but only x402 has a working parser today. |
 | Agent Identity Registry | **Real.** Ed25519 identities are registered by public-key fingerprint, can be revoked, and can sign exact `ActionIntent` envelopes before authorization. |
 | Capability Registry | **Real.** Capabilities are persistent, scoped, versioned and revocable; authority artifacts bind capability ID/version/digest. |
+| Dynamic Agent Authority | **Real.** Verified execution outcomes deterministically promote/demote effective authority inside the static capability ceiling; snapshots are persisted and bound to execution authorization. |
 | Authorization service | **Real.** Generic `ActionIntent` decisions can mint the same portable receipt and one-time authority used by payment and other execution flows. |
 | Execution enforcement boundary | **Real.** One-time signed capabilities are consumed fail-closed; the local and dependency-light EVM adapters share the same gate. |
 | Multi-tenant / hosted key management | **Not built.** Today, one issuer keypair per deployment, loaded from a local file. |
@@ -207,6 +208,7 @@ core/
     authorization.py Protocol-agnostic receipt + execution-capability minting
     capabilities.py Capability registry + effective authority + revocation
     authority.py    Authority graph + cryptographic capability delegation
+    authority_state.py Deterministic dynamic agent authority + evidence-driven limits
     policy.py       Policy loader (the one place PyYAML is used in core/)
     rules.py        Deterministic rule evaluators
     storage.py      SQLite-backed audit/rate/spend + authority graph persistence
@@ -255,7 +257,7 @@ Verigate is being expanded around a protocol-agnostic authority lifecycle:
 
 The foundational path is:
 
-`AgentIdentity → Capability → Delegated Capability → ActionIntent → Policy + Context + Intelligence → AuthorityDecision → ExecutionAuthorization → Execution → Evidence`
+`AgentIdentity → Capability → Delegated Capability → Dynamic Authority → ActionIntent → Policy + Context + Intelligence → AuthorityDecision → ExecutionAuthorization → Execution → Evidence → Authority Update`
 
 `AgentIdentity` is a cryptographic Ed25519 principal. The Identity Registry maps an identity fingerprint to an agent and supports revocation. An agent can sign the exact normalized `ActionIntent` before Verigate evaluates it.
 
@@ -265,7 +267,9 @@ A **Capability** is programmable authority: action scope, targets/resources, net
 
 Effective authority is evaluated over the full ancestor chain. Revoking a parent capability or any required identity invalidates descendant authority for future decisions.
 
-A **Decision Receipt** proves what Verigate decided. An **Execution Authorization** is distinct: only ALLOW can mint it, and the signed artifact contains the exact action fingerprint plus capability and identity fingerprints. The execution boundary consumes the artifact fail-closed.
+**Dynamic Agent Authority** is the next control layer below that static graph. A capability starts in `PROBATION`, is constrained to a deterministic fraction of its registered limits, and can progress to `STANDARD` and `ELEVATED` only through verified successful execution history. Adverse outcomes reduce authority; tamper and policy-violation evidence can suspend it. Dynamic authority never grants more than the static capability already grants.
+
+A **Decision Receipt** proves what Verigate decided. An **Execution Authorization** is distinct: only ALLOW can mint it, and the signed artifact contains the exact action fingerprint plus capability, identity and dynamic-authority fingerprints. The execution boundary consumes the artifact fail-closed. Confirmed/failed execution receipts feed verified outcomes back into the capability's authority state.
 
 Revoking an identity or capability prevents future authorizations. It does not silently mutate an already-issued authorization; issued authority remains bound to the exact identity/capability versions that produced it.
 
@@ -273,11 +277,10 @@ Payment and x402 remain backward-compatible adapters while this general authorit
 
 ## Roadmap
 
-1. **Dynamic Agent Authority** — use verified history and outcomes to expand, reduce or probationarily constrain capabilities without bypassing deterministic policy.
-2. **Adversarial Verification Plane** — independently challenge proposed authority and build a reusable regression/attack corpus.
-3. **Signed policy versions** — bind each authority decision to the exact policy version and provenance that produced it.
-4. **Hosted, multi-tenant key management** — move beyond one local issuer keypair while keeping offline verification.
-5. **Reference execution integrations** — MCP, API, cloud, database and additional payment/chain adapters all consuming the same authority contracts.
+1. **Adversarial Verification Plane** — independently challenge proposed authority and build a reusable regression/attack corpus.
+2. **Signed policy versions** — bind each authority decision to the exact policy version and provenance that produced it.
+3. **Hosted, multi-tenant key management** — move beyond one local issuer keypair while keeping offline verification.
+4. **Reference execution integrations** — MCP, API, cloud, database and additional payment/chain adapters all consuming the same authority contracts.
 
 ## License
 

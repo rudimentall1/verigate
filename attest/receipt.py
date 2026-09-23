@@ -77,6 +77,9 @@ def issue_execution_authorization(
     capability_sha256: str | None = None,
     identity_id: str | None = None,
     identity_sha256: str | None = None,
+    authority_state: dict[str, Any] | None = None,
+    authority_state_sha256: str | None = None,
+    authority_multiplier: float | None = None,
 ) -> ExecutionAuthorization:
     if receipt.payload["decision"]["decision"] != Decision.ALLOW.value:
         raise PermissionError("execution authorization requires ALLOW")
@@ -93,6 +96,9 @@ def issue_execution_authorization(
         "capability_sha256": capability_sha256,
         "identity_id": identity_id,
         "identity_sha256": identity_sha256,
+        "authority_state": authority_state,
+        "authority_state_sha256": authority_state_sha256,
+        "authority_multiplier": authority_multiplier,
         "action": receipt.payload["intent"],
         "action_sha256": action_digest(receipt.payload["intent"]),
         "nonce": nonce,
@@ -154,6 +160,30 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
                 return False, f"invalid execution authorization field: {id_field}"
             if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
                 return False, f"invalid execution authorization fingerprint: {digest_field}"
+
+        authority_state = payload.get("authority_state")
+        authority_state_sha256 = payload.get("authority_state_sha256")
+        authority_multiplier = payload.get("authority_multiplier")
+        if authority_state is None and authority_state_sha256 is None and authority_multiplier is None:
+            pass
+        else:
+            if not isinstance(authority_state, dict):
+                return False, "invalid execution authority state"
+            if not isinstance(authority_state_sha256, str) or len(authority_state_sha256) != 64:
+                return False, "invalid execution authority state fingerprint"
+            if authority_state.get("state") not in {
+                "PROBATION", "LIMITED", "STANDARD", "ELEVATED", "SUSPENDED"
+            }:
+                return False, "invalid execution authority state value"
+            if isinstance(authority_multiplier, bool) or not isinstance(authority_multiplier, (int, float)):
+                return False, "invalid execution authority multiplier"
+            if not 0.0 <= float(authority_multiplier) <= 1.0:
+                return False, "execution authority multiplier out of range"
+            expected_authority_sha256 = hashlib.sha256(
+                _canonical(authority_state)
+            ).hexdigest()
+            if expected_authority_sha256 != authority_state_sha256:
+                return False, "execution authority state fingerprint mismatch"
 
         issued_at = payload.get("issued_at")
         expires_at = payload.get("expires_at")
