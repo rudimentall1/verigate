@@ -13,6 +13,7 @@ resulting audit record can be committed or rolled back as one unit.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -76,6 +77,19 @@ CREATE INDEX IF NOT EXISTS idx_execution_receipts_intent
 
 CREATE INDEX IF NOT EXISTS idx_execution_receipts_agent_time
     ON execution_receipts(agent_id, created_at);
+
+CREATE TABLE IF NOT EXISTS authorization_artifacts (
+    authorization_id TEXT PRIMARY KEY,
+    intent_id TEXT NOT NULL UNIQUE,
+    agent_id TEXT NOT NULL,
+    decision_json TEXT NOT NULL,
+    execution_authorization_json TEXT,
+    agent_signature TEXT,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_authorization_artifacts_agent_time
+    ON authorization_artifacts(agent_id, created_at);
 
 CREATE TABLE IF NOT EXISTS capabilities (
     capability_id TEXT PRIMARY KEY,
@@ -254,6 +268,13 @@ class Storage:
         self._conn.execute("PRAGMA busy_timeout=30000")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_SCHEMA)
+        columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(authorization_artifacts)")
+        }
+        if "agent_signature" not in columns:
+            self._conn.execute(
+                "ALTER TABLE authorization_artifacts ADD COLUMN agent_signature TEXT"
+            )
         self._conn.commit()
 
     @contextmanager
@@ -511,6 +532,87 @@ class Storage:
                 self._conn.rollback()
                 raise ValueError("execution receipt not found")
             self._conn.commit()
+
+    def record_authorization_artifacts(
+        self,
+        artifacts: dict,
+        *,
+        agent_signature: str | None = None,
+    ) -> None:
+        decision = artifacts["decision_receipt"]
+        execution = artifacts.get("execution_authorization")
+        decision_payload = decision["payload"]
+        authorization_id = (
+            execution["payload"]["authorization_id"]
+            if execution is not None
+            else hashlib.sha256(
+                json.dumps(decision, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()
+        )
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO authorization_artifacts "
+                    "(authorization_id, intent_id, agent_id, decision_json, "
+                    "execution_authorization_json, agent_signature, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        authorization_id,
+                        decision_payload["intent"]["intent_id"],
+                        decision_payload["intent"]["agent_id"],
+                        json.dumps(decision, sort_keys=True, separators=(",", ":")),
+                        json.dumps(execution, sort_keys=True, separators=(",", ":"))
+                        if execution is not None else None,
+                        agent_signature,
+                        time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("authorization artifacts already recorded") from exc
+
+    def authorization_by_id(self, authorization_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT decision_json, execution_authorization_json, agent_signature "
+                "FROM authorization_artifacts WHERE authorization_id = ?",
+                (authorization_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "decision_receipt": json.loads(row[0]),
+            "execution_authorization": json.loads(row[1]) if row[1] else None,
+            "agent_signature": row[2],
+        }
+
+    def audit_by_intent(self, intent_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT intent_id, agent_id, payee, asset, network, amount, decision, "
+                "matched_rules_json, intent_json, signature, created_at "
+                "FROM audit_log WHERE intent_id = ? ORDER BY created_at DESC LIMIT 1",
+                (intent_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        columns = [
+            "intent_id", "agent_id", "payee", "asset", "network", "amount",
+            "decision", "matched_rules_json", "intent_json", "signature", "created_at",
+        ]
+        item = dict(zip(columns, row))
+        item["matched_rules"] = json.loads(item.pop("matched_rules_json"))
+        item["intent"] = json.loads(item.pop("intent_json"))
+        return item
+
+    def authorization_by_intent(self, intent_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT authorization_id FROM authorization_artifacts WHERE intent_id = ?",
+                (intent_id,),
+            ).fetchone()
+        return self.authorization_by_id(row[0]) if row else None
 
     def execution_receipt_by_authorization(self, authorization_id: str) -> dict | None:
         with self._lock:

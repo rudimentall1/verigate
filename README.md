@@ -285,8 +285,8 @@ Payment and x402 remain backward-compatible adapters while this general authorit
 
 ## Roadmap
 
-1. **Execution Fabric** — reference MCP and HTTP/API executors consuming the same `ExecutionAuthorization` as EVM/Solana/payment adapters.
-2. **Evidence Graph** — one queryable provenance chain from identity and capability through action, execution and outcome.
+1. **Evidence Graph expansion** — durable delegation signatures, richer policy/governance lineage and non-chain execution outcome proofs.
+2. **Execution Fabric** — reference MCP and HTTP/API executors consuming the same `ExecutionAuthorization` as EVM/Solana/payment adapters.
 3. **Hosted authority infrastructure** — multi-tenant key management, governance operations and offline-verifiable evidence at service scale.
 
 ## License
@@ -315,6 +315,8 @@ MIT.
 A multi-party policy is supplied through `VERIGATE_GOVERNANCE_POLICY` and contains `policy_id`, `version`, `threshold`, `members`, optional `required_roles`, `max_approval_lifetime_seconds` and `allowed_actions`. `POLICY_CHANGE` must be included in `allowed_actions` for governed policy publication. Production control deployments should also allow `POLICY_FREEZE` and `POLICY_ROLLBACK`; keep `AUTHORITY_RESET` separate from policy operations when role separation is required. Each member is identified by the SHA-256 fingerprint of its raw Ed25519 public key and carries its base64-encoded raw public key plus governance role. Keep the policy file and private governance keys outside the repository; the repository should contain only the schema/configuration contract.
 
 `ExecutionAuthorization` is short-lived, nonce-bound, and contains the authorized normalized action plus identity/capability fingerprints. The execution adapter consumes it; the decision receipt is evidence and is not itself permission to execute. The Execution Fabric now has generic `mcp.tool.call` and `api.request` boundaries in addition to chain-specific adapters; they execute only the exact signed action data and fail closed before consuming authority on unsupported targets or URL drift.
+
+The **Evidence Graph** exposes this provenance as a deterministic subgraph. `/v1/evidence/authorization/{id}` and `/v1/evidence/intent/{id}` return the identity, agent signature, capability/delegation path, policy version, authority state, decision receipt, execution authorization, execution receipt and resulting authority event when those artifacts exist. Each artifact is hash-addressed and signed artifacts are independently re-verified before the graph reports them as valid.
 
 `POST /v1/authorize/x402` provides the compatibility contract for an x402 `PAYMENT-REQUIRED` header.
 

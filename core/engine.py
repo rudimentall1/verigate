@@ -81,6 +81,24 @@ class GuardrailEngine:
                 raise
         return self._signed_policy_version
 
+    def _persist_authorization(
+        self,
+        artifacts: dict,
+        intent_id: str,
+        *,
+        agent_signature: str | None = None,
+    ) -> dict:
+        """Persist immutable authorization artifacts for later evidence queries."""
+        self.storage.record_authorization_artifacts(
+            artifacts,
+            agent_signature=agent_signature,
+        )
+        self.storage.update_signature(
+            intent_id,
+            artifacts["decision_receipt"]["signature"],
+        )
+        return artifacts
+
     def evaluate(self, intent: PaymentIntent) -> GuardrailDecision:
         """Evaluate and persist one payment atomically.
 
@@ -244,8 +262,11 @@ class GuardrailEngine:
             authority=authority,
             signed_policy=self.signed_policy_version(private_key),
         )
-        self.storage.update_signature(action.intent_id, artifacts["decision_receipt"]["signature"])
-        return artifacts
+        return self._persist_authorization(
+            artifacts,
+            action.intent_id,
+            agent_signature=agent_signature,
+        )
 
     def authorize(self, intent: PaymentIntent, private_key) -> dict:
         """Legacy authorization path retained for compatibility."""
@@ -259,8 +280,7 @@ class GuardrailEngine:
             nonce=intent.intent_id,
             signed_policy=self.signed_policy_version(private_key),
         )
-        self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
-        return artifacts
+        return self._persist_authorization(artifacts, intent.intent_id)
 
     def authorize_with_capability(
         self,
@@ -283,8 +303,7 @@ class GuardrailEngine:
             authority=authority,
             signed_policy=self.signed_policy_version(private_key),
         )
-        self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
-        return artifacts
+        return self._persist_authorization(artifacts, intent.intent_id)
 
     def authorize_with_identity(
         self,
@@ -319,5 +338,8 @@ class GuardrailEngine:
             authority=authority,
             signed_policy=self.signed_policy_version(private_key),
         )
-        self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
-        return artifacts
+        return self._persist_authorization(
+            artifacts,
+            intent.intent_id,
+            agent_signature=agent_signature,
+        )

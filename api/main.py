@@ -45,6 +45,7 @@ from core.adversarial import AdversarialVerificationPlane
 from core.authority import AuthorityGraph
 from core.authority_state import DynamicAuthorityService
 from core.engine import GuardrailEngine
+from core.evidence import EvidenceGraph
 from core.governance import (
     AuthorityGovernanceService,
     GovernanceMember,
@@ -605,6 +606,30 @@ def verify_adversarial(req: AdversarialVerificationRequest) -> dict:
         ],
         "all_blocked": all_blocked,
     }
+
+
+@app.get("/v1/evidence/authorization/{authorization_id}")
+def evidence_authorization(authorization_id: str) -> dict:
+    assert _storage is not None
+    try:
+        return EvidenceGraph(
+            _storage,
+            load_public_key(PUBLIC_KEY_PATH),
+        ).build(authorization_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/v1/evidence/intent/{intent_id}")
+def evidence_intent(intent_id: str) -> dict:
+    assert _storage is not None
+    try:
+        return EvidenceGraph(
+            _storage,
+            load_public_key(PUBLIC_KEY_PATH),
+        ).build_by_intent(intent_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/v1/agents/{agent_id}/history")
