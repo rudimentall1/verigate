@@ -45,9 +45,7 @@ def main() -> None:
     args = parser.parse_args()
 
     policy_path = Path("hackathons/cmc-2026/policy.yaml")
-    evaluator = RwaPurchaseEvaluator(
-        RwaPurchaseEvaluator.load_policy(policy_path)
-    )
+    evaluator = RwaPurchaseEvaluator.load_policy(policy_path)
 
     if args.fixture:
         quote = fixture_quote(args.symbol)
