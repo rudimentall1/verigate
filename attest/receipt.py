@@ -331,6 +331,12 @@ def verify_execution_receipt(
                 return False, "execution receipt capability mismatch"
             if payload.get("capability_sha256") != auth.get("capability_sha256"):
                 return False, "execution receipt capability fingerprint mismatch"
+            if payload.get("authority_state") != auth.get("authority_state"):
+                return False, "execution receipt authority state mismatch"
+            if payload.get("authority_state_sha256") != auth.get("authority_state_sha256"):
+                return False, "execution receipt authority fingerprint mismatch"
+            if payload.get("authority_multiplier") != auth.get("authority_multiplier"):
+                return False, "execution receipt authority multiplier mismatch"
         return True, "valid execution receipt"
     except (KeyError, TypeError, ValueError, InvalidSignature):
         return False, "invalid or tampered execution receipt"

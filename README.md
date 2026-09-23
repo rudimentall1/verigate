@@ -88,6 +88,7 @@ system — not yet a hosted product. Specifically:
 | Agent Identity Registry | **Real.** Ed25519 identities are registered by public-key fingerprint, can be revoked, and can sign exact `ActionIntent` envelopes before authorization. |
 | Capability Registry | **Real.** Capabilities are persistent, scoped, versioned and revocable; authority artifacts bind capability ID/version/digest. |
 | Dynamic Agent Authority | **Real.** Verified execution outcomes deterministically promote/demote effective authority inside the static capability ceiling; snapshots are persisted and bound to execution authorization. |
+| Adversarial Verification Plane | **Real.** A reusable mutation corpus challenges signed execution authority and exposes the result through an independent verification endpoint. |
 | Authorization service | **Real.** Generic `ActionIntent` decisions can mint the same portable receipt and one-time authority used by payment and other execution flows. |
 | Execution enforcement boundary | **Real.** One-time signed capabilities are consumed fail-closed; the local and dependency-light EVM adapters share the same gate. |
 | Multi-tenant / hosted key management | **Not built.** Today, one issuer keypair per deployment, loaded from a local file. |
@@ -209,6 +210,7 @@ core/
     capabilities.py Capability registry + effective authority + revocation
     authority.py    Authority graph + cryptographic capability delegation
     authority_state.py Deterministic dynamic agent authority + evidence-driven limits
+    adversarial.py  Mutation-based attack corpus + fail-closed authority verification
     policy.py       Policy loader (the one place PyYAML is used in core/)
     rules.py        Deterministic rule evaluators
     storage.py      SQLite-backed audit/rate/spend + authority graph persistence
@@ -295,7 +297,9 @@ MIT.
 
 `POST /v1/authorize/identity` is the canonical cryptographic authority path. The caller supplies an exact intent plus an agent signature; Verigate verifies the registered identity, checks the identity-bound capability and its delegation ancestry, evaluates policy, and only then mints execution authority.
 
-`GET /v1/authority/capabilities/{capability_id}` explains the authority provenance of a capability, including its delegation path and graph edges.
+`GET /v1/authority/capabilities/{capability_id}` explains the authority provenance of a capability, including its delegation path, graph edges and dynamic authority state.
+
+`POST /v1/verify/adversarial` verifies a signed `ExecutionAuthorization` with the independent mutation corpus and reports whether every authority-tampering challenge is blocked.
 
 `ExecutionAuthorization` is short-lived, nonce-bound, and contains the authorized normalized action plus identity/capability fingerprints. The execution adapter consumes it; the decision receipt is evidence and is not itself permission to execute.
 

@@ -17,6 +17,7 @@
 - `core.capabilities`: active authority registry, effective-chain validation and revocation
 - `core.authority`: authority graph, delegation proof and constrained capability delegation
 - `core.authority_state`: deterministic dynamic authority state, bounded promotion/demotion and evidence-driven authority limits
+- `core.adversarial`: mutation-based attack corpus for signed authority and fail-closed verification
 - `core.engine`: orchestration and identity/capability-bound authorization paths with dynamic authority enforcement
 - `core.storage`: audit/rate/spend state plus identity, capability, graph and authority-history persistence
 

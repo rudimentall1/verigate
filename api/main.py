@@ -30,6 +30,8 @@ from fastapi.staticfiles import StaticFiles
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
 from attest.verify import verify_attestation
+from attest.receipt import verify_execution_authorization
+from core.adversarial import AdversarialVerificationPlane
 from core.authority import AuthorityGraph
 from core.authority_state import DynamicAuthorityService
 from core.engine import GuardrailEngine
@@ -43,6 +45,8 @@ from x402.parser import X402ParseError, offer_to_intent, parse_payment_required_
 from .schemas import (
     AttestationResponse,
     AuthorizationResponse,
+    AdversarialVerificationRequest,
+    AdversarialVerificationResponse,
     CapabilityAuthorizationRequest,
     IdentityAuthorizationRequest,
     DecisionResponse,
@@ -290,6 +294,35 @@ def verify(req: VerifyRequest) -> dict:
     pub = load_public_key(PUBLIC_KEY_PATH)
     ok, reason = verify_attestation(req.model_dump(), pub)
     return {"valid": ok, "reason": reason}
+
+
+@app.post("/v1/verify/adversarial", response_model=AdversarialVerificationResponse)
+def verify_adversarial(req: AdversarialVerificationRequest) -> dict:
+    public_key = load_public_key(PUBLIC_KEY_PATH)
+    authorization = req.authorization.model_dump()
+    baseline_valid, baseline_reason = verify_execution_authorization(
+        authorization,
+        public_key,
+    )
+    attacks = AdversarialVerificationPlane.run(
+        authorization,
+        public_key,
+    )
+    all_blocked = all(result.passed for result in attacks)
+    return {
+        "baseline_valid": baseline_valid,
+        "baseline_reason": baseline_reason,
+        "attacks": [
+            {
+                "attack_id": result.attack_id,
+                "passed": result.passed,
+                "description": result.description,
+                "reason": result.reason,
+            }
+            for result in attacks
+        ],
+        "all_blocked": all_blocked,
+    }
 
 
 @app.get("/v1/agents/{agent_id}/history")

@@ -36,6 +36,8 @@ Delegation is constrained: a child capability cannot exceed its parent in scope,
 
 The current dynamic snapshot is persisted, auditable and cryptographically bound into newly issued ExecutionAuthorization artifacts. Confirmed/failed execution receipts feed verified outcomes back into the authority state, closing the control loop without turning the system into a generic risk score.
 
+The **Adversarial Verification Plane** treats authority artifacts as hostile input. Its reusable mutation corpus changes action, amount, capability, identity, authority state, nonce, expiry and signature fields and requires every mutation to fail at the verification boundary. This turns the core security invariants into executable regression evidence rather than documentation claims.
+
 Risk, intelligence and adversarial analysis can inform an AuthorityDecision, but they must never bypass deterministic capability, delegation, dynamic-authority and execution controls.
 
 ## Security invariants

@@ -88,6 +88,24 @@ class AuthorizationResponse(BaseModel):
     execution_authorization: ExecutionAuthorizationResponse | None = None
 
 
+class AdversarialVerificationRequest(BaseModel):
+    authorization: ExecutionAuthorizationResponse
+
+
+class AdversarialAttackResponse(BaseModel):
+    attack_id: str
+    passed: bool
+    description: str
+    reason: str
+
+
+class AdversarialVerificationResponse(BaseModel):
+    baseline_valid: bool
+    baseline_reason: str
+    attacks: list[AdversarialAttackResponse]
+    all_blocked: bool
+
+
 class ExecutionConsumeRequest(BaseModel):
     authorization: ExecutionAuthorizationResponse
 
