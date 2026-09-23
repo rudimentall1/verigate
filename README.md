@@ -90,7 +90,7 @@ system — not yet a hosted product. Specifically:
 | Dynamic Agent Authority | **Real.** Verified execution outcomes deterministically promote/demote effective authority inside the static capability ceiling; snapshots are persisted and bound to execution authorization. |
 | Adversarial Verification Plane | **Real.** A reusable mutation corpus challenges signed execution authority and exposes the result through an independent verification endpoint. |
 | Signed Policy Versions | **Real.** Policy identity, version, exact digest and provenance are signed and bound into decision, authorization and execution evidence. |
-| Governance / Authority Reset | **Real.** SUSPENDED authority can only enter a new epoch through a signed governance action; static capability revocation remains final. |
+| Governance / Authority Reset | **Real.** SUSPENDED authority can only enter a new epoch through a signed governance action; static capability revocation remains final. Single-governor compatibility exists, and the hardened path supports configurable multi-party quorum and role separation. |
 | Authorization service | **Real.** Generic `ActionIntent` decisions can mint the same portable receipt and one-time authority used by payment and other execution flows. |
 | Execution enforcement boundary | **Real.** One-time signed capabilities are consumed fail-closed; the local and dependency-light EVM adapters share the same gate. |
 | Multi-tenant / hosted key management | **Not built.** Today, one issuer keypair per deployment, loaded from a local file. |
@@ -214,7 +214,7 @@ core/
     authority_state.py Deterministic dynamic agent authority + evidence-driven limits
     adversarial.py  Mutation-based attack corpus + fail-closed authority verification
     policy_version.py Signed immutable policy versions + lineage verification
-    governance.py   Signed authority-reset actions + authority epoch recovery
+    governance.py   Signed authority reset + multi-party quorum governance + epoch recovery
     policy.py       Policy loader (the one place PyYAML is used in core/)
     rules.py        Deterministic rule evaluators
     storage.py      SQLite-backed audit/rate/spend + authority graph persistence
@@ -275,6 +275,8 @@ Effective authority is evaluated over the full ancestor chain. Revoking a parent
 
 **Dynamic Agent Authority** is the next control layer below that static graph. A capability starts in `PROBATION`, is constrained to a deterministic fraction of its registered limits, and can progress to `STANDARD` and `ELEVATED` only through verified successful execution history. Adverse outcomes reduce authority; tamper and policy-violation evidence can suspend it. Dynamic authority never grants more than the static capability already grants.
 
+**Multi-party governance** protects sensitive authority recovery from a single compromised governance key. A `GovernancePolicy` defines the quorum threshold, optional required roles and bounded approval lifetime. Each governor signs the exact governance-action digest, which also commits to the exact governance-policy digest. Signers are unique, approvals expire, nonces are persisted, and the quorum is checked before a new authority epoch can be opened. The HTTP control plane exposes the configured policy at `GET /v1/governance/policy` and the hardened recovery path at `POST /v1/authority/reset/multi`.
+
 A **Decision Receipt** proves what Verigate decided. An **Execution Authorization** is distinct: only ALLOW can mint it, and the signed artifact contains the exact action fingerprint plus capability, identity and dynamic-authority fingerprints. The execution boundary consumes the artifact fail-closed. Confirmed/failed execution receipts feed verified outcomes back into the capability's authority state.
 
 Revoking an identity or capability prevents future authorizations. It does not silently mutate an already-issued authorization; issued authority remains bound to the exact identity/capability versions that produced it.
@@ -283,7 +285,7 @@ Payment and x402 remain backward-compatible adapters while this general authorit
 
 ## Roadmap
 
-1. **Multi-party governance** — require threshold or role-separated approvals for sensitive authority resets and policy changes.
+1. **Governed policy changes** — extend the same quorum/role-separated governance model from authority recovery to sensitive policy-version changes.
 2. **Hosted, multi-tenant key management** — move beyond one local issuer keypair while keeping offline verification.
 3. **Reference execution integrations** — MCP, API, cloud, database and additional payment/chain adapters all consuming the same authority contracts.
 
@@ -306,7 +308,9 @@ MIT.
 
 `GET /v1/policies/{policy_sha256}` returns the signed policy version bound to a decision, allowing independent auditors to retrieve and verify the exact policy provenance.
 
-`GET /v1/governance/public-key` exposes the public key used to verify governance actions. `POST /v1/authority/reset` accepts a signed `AUTHORITY_RESET` artifact and starts a new authority epoch only after the governance checks pass.
+`GET /v1/governance/public-key` exposes the compatibility governor public key. `POST /v1/authority/reset` remains the legacy single-governor recovery path. Production multi-party recovery uses `GET /v1/governance/policy` plus `POST /v1/authority/reset/multi`; the latter requires a configured quorum policy with threshold >= 2, exact-action approvals, unique signers, bounded approval lifetime and persisted replay protection.
+
+A multi-party policy is supplied through `VERIGATE_GOVERNANCE_POLICY` and contains `policy_id`, `version`, `threshold`, `members`, optional `required_roles`, `max_approval_lifetime_seconds` and `allowed_actions`. Each member is identified by the SHA-256 fingerprint of its raw Ed25519 public key and carries its base64-encoded raw public key plus governance role. Keep the policy file and private governance keys outside the repository; the repository should contain only the schema/configuration contract.
 
 `ExecutionAuthorization` is short-lived, nonce-bound, and contains the authorized normalized action plus identity/capability fingerprints. The execution adapter consumes it; the decision receipt is evidence and is not itself permission to execute.
 

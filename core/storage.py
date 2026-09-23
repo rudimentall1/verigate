@@ -178,6 +178,22 @@ CREATE TABLE IF NOT EXISTS authority_resets (
     UNIQUE(agent_id, capability_id, epoch)
 );
 
+CREATE TABLE IF NOT EXISTS governance_approvals (
+    approval_id TEXT PRIMARY KEY,
+    action_digest TEXT NOT NULL,
+    governor_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    issued_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    nonce TEXT NOT NULL UNIQUE,
+    signed_approval_json TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    UNIQUE(action_digest, governor_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_governance_approvals_action
+    ON governance_approvals(action_digest, governor_id);
+
 CREATE INDEX IF NOT EXISTS idx_authority_resets_scope
     ON authority_resets(agent_id, capability_id, epoch);
 """
@@ -854,21 +870,49 @@ class Storage:
             ).fetchone()
         return json.loads(row[0]) if row else None
 
-    def register_authority_reset(self, signed_reset: dict) -> None:
-        """Persist one signed governance reset and its new authority epoch."""
+    def register_authority_reset(
+        self,
+        signed_reset: dict,
+        *,
+        governance_approvals: list[dict] | None = None,
+    ) -> None:
+        """Persist a signed governance reset and optional quorum approvals atomically."""
         payload = signed_reset["payload"]
         with self._lock:
             try:
+                for approval in governance_approvals or []:
+                    approval_payload = approval["payload"]
+                    self._conn.execute(
+                        "INSERT INTO governance_approvals "
+                        "(approval_id, action_digest, governor_id, role, issued_at, "
+                        "expires_at, nonce, signed_approval_json, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            approval_payload["approval_id"],
+                            approval_payload["action_digest"],
+                            approval_payload["governor_id"],
+                            approval_payload["role"],
+                            approval_payload["issued_at"],
+                            approval_payload["expires_at"],
+                            approval_payload["nonce"],
+                            json.dumps(
+                                approval,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ),
+                            time.time(),
+                        ),
+                    )
                 self._conn.execute(
                     "INSERT INTO authority_resets "
                     "(reset_id, agent_id, capability_id, governor_id, epoch, reason, "
                     "issued_at, nonce, signed_reset_json, created_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        payload["reset_id"],
+                        payload.get("reset_id", payload.get("action_id")),
                         payload["agent_id"],
                         payload["capability_id"],
-                        payload["governor_id"],
+                        payload.get("governor_id", "MULTIPARTY"),
                         payload["epoch"],
                         payload["reason"],
                         payload["issued_at"],
@@ -884,6 +928,8 @@ class Storage:
                 self._conn.commit()
             except sqlite3.IntegrityError as exc:
                 self._conn.rollback()
+                if governance_approvals:
+                    raise ValueError("governance approval or authority reset already registered") from exc
                 raise ValueError("authority reset already registered") from exc
 
     def latest_authority_reset(

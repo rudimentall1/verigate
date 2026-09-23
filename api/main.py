@@ -15,10 +15,13 @@ Endpoints:
   GET  /health
   GET  /v1/public-key
   GET  /v1/governance/public-key
+  GET  /v1/governance/policy
   POST /v1/authority/reset
+  POST /v1/authority/reset/multi
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -37,7 +40,12 @@ from core.adversarial import AdversarialVerificationPlane
 from core.authority import AuthorityGraph
 from core.authority_state import DynamicAuthorityService
 from core.engine import GuardrailEngine
-from core.governance import AuthorityGovernanceService
+from core.governance import (
+    AuthorityGovernanceService,
+    GovernanceMember,
+    GovernancePolicy,
+    MultiPartyAuthorityGovernanceService,
+)
 from core.models import PaymentIntent
 from core.policy import Policy
 from core.storage import Storage
@@ -52,6 +60,8 @@ from .schemas import (
     AdversarialVerificationResponse,
     AuthorityResetRequest,
     AuthorityResetResponse,
+    MultiPartyAuthorityResetRequest,
+    MultiPartyAuthorityResetResponse,
     CapabilityAuthorizationRequest,
     IdentityAuthorizationRequest,
     DecisionResponse,
@@ -75,10 +85,14 @@ GOVERNANCE_PUBLIC_KEY_PATH = os.environ.get(
     "VERIGATE_GOVERNANCE_PUBLIC_KEY",
     "keys/governance.pub",
 )
+GOVERNANCE_POLICY_PATH = os.environ.get(
+    "VERIGATE_GOVERNANCE_POLICY",
+    "config/governance-policy.json",
+)
 
 app = FastAPI(
     title="Verigate",
-    description="A verifiable policy gate for autonomous agent payments (x402 and beyond).",
+    description="Agent Authority Control Plane for autonomous agents: identity, capability, governance, authorization, execution and evidence.",
     version="0.1.0",
 )
 
@@ -88,11 +102,28 @@ app.mount("/demo", StaticFiles(directory=UI_DIR, html=True), name="demo-ui")
 _policy: Policy | None = None
 _storage: Storage | None = None
 _engine: GuardrailEngine | None = None
+_governance_policy: GovernancePolicy | None = None
+
+
+def _load_governance_policy() -> GovernancePolicy:
+    policy_path = Path(GOVERNANCE_POLICY_PATH)
+    if policy_path.exists():
+        data = json.loads(policy_path.read_text(encoding="utf-8"))
+        return GovernancePolicy.from_dict(data)
+    public_key = load_public_key(GOVERNANCE_PUBLIC_KEY_PATH)
+    policy = GovernancePolicy(
+        policy_id="verigate-local-single-governor",
+        version=1,
+        threshold=1,
+        members=(GovernanceMember.from_public_key(public_key, "governor"),),
+    )
+    policy.validate()
+    return policy
 
 
 @app.on_event("startup")
 def _startup() -> None:
-    global _policy, _storage, _engine
+    global _policy, _storage, _engine, _governance_policy
     if not Path(PRIVATE_KEY_PATH).exists():
         generate_keypair(PRIVATE_KEY_PATH, PUBLIC_KEY_PATH)
     if not Path(GOVERNANCE_PRIVATE_KEY_PATH).exists():
@@ -107,6 +138,7 @@ def _startup() -> None:
         _storage,
         policy_source_ref=POLICY_PATH,
     )
+    _governance_policy = _load_governance_policy()
 
 
 @app.get("/health")
@@ -307,6 +339,15 @@ def authority_capability(capability_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.get("/v1/governance/policy")
+def governance_policy() -> dict:
+    assert _governance_policy is not None
+    return {
+        **_governance_policy.as_dict(),
+        "policy_sha256": _governance_policy.digest,
+    }
+
+
 @app.post(
     "/v1/authority/reset",
     response_model=AuthorityResetResponse,
@@ -317,6 +358,31 @@ def authority_reset(req: AuthorityResetRequest) -> dict:
         return AuthorityGovernanceService(_storage).reset(
             req.reset,
             load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post(
+    "/v1/authority/reset/multi",
+    response_model=MultiPartyAuthorityResetResponse,
+)
+def authority_reset_multiparty(req: MultiPartyAuthorityResetRequest) -> dict:
+    assert _storage is not None and _governance_policy is not None
+    if _governance_policy.threshold < 2:
+        raise HTTPException(
+            status_code=503,
+            detail="multi-party governance policy is not configured",
+        )
+    try:
+        return MultiPartyAuthorityGovernanceService(_storage).reset(
+            req.action,
+            req.approvals,
+            _governance_policy,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

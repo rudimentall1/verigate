@@ -110,10 +110,22 @@ class AuthorityResetRequest(BaseModel):
     reset: dict
 
 
+class MultiPartyAuthorityResetRequest(BaseModel):
+    action: dict
+    approvals: list[dict]
+
+
 class AuthorityResetResponse(BaseModel):
     reset: dict
     snapshot: dict
     snapshot_sha256: str
+
+
+class MultiPartyAuthorityResetResponse(BaseModel):
+    reset: dict
+    snapshot: dict
+    snapshot_sha256: str
+    governance_policy_sha256: str
 
 
 class ExecutionConsumeRequest(BaseModel):
