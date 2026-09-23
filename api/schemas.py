@@ -21,6 +21,10 @@ class X402HeaderRequest(BaseModel):
     sign: bool = True
 
 
+class CapabilityAuthorizationRequest(PaymentIntentRequest):
+    capability_id: str = Field(..., min_length=1, examples=["cap-trader-001"])
+
+
 class RuleMatchResponse(BaseModel):
     rule: str
     severity: str

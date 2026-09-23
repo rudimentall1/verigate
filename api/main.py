@@ -38,6 +38,7 @@ from x402.parser import X402ParseError, offer_to_intent, parse_payment_required_
 from .schemas import (
     AttestationResponse,
     AuthorizationResponse,
+    CapabilityAuthorizationRequest,
     DecisionResponse,
     ExecutionConsumeRequest,
     ExecutionConsumeResponse,
@@ -173,6 +174,25 @@ def authorize(req: PaymentIntentRequest) -> dict:
         amount=req.amount, resource=req.resource,
     )
     return _engine.authorize(intent, load_private_key(PRIVATE_KEY_PATH))
+
+
+@app.post("/v1/authorize/capability", response_model=AuthorizationResponse)
+def authorize_with_capability(req: CapabilityAuthorizationRequest) -> dict:
+    assert _engine is not None
+    intent = PaymentIntent(
+        agent_id=req.agent_id, payee=req.payee, asset=req.asset, network=req.network,
+        amount=req.amount, resource=req.resource,
+    )
+    try:
+        return _engine.authorize_with_capability(
+            intent,
+            req.capability_id,
+            load_private_key(PRIVATE_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @app.post("/v1/authorize/x402", response_model=AuthorizationResponse)
