@@ -4,6 +4,8 @@ Endpoints:
   POST /v1/check
   POST /v1/check/x402
   POST /v1/authorize
+  POST /v1/authorize/capability
+  POST /v1/authorize/identity
   POST /v1/authorize/x402
   POST /v1/execution/consume
   GET  /v1/execution/networks
@@ -39,6 +41,7 @@ from .schemas import (
     AttestationResponse,
     AuthorizationResponse,
     CapabilityAuthorizationRequest,
+    IdentityAuthorizationRequest,
     DecisionResponse,
     ExecutionConsumeRequest,
     ExecutionConsumeResponse,
@@ -187,6 +190,34 @@ def authorize_with_capability(req: CapabilityAuthorizationRequest) -> dict:
         return _engine.authorize_with_capability(
             intent,
             req.capability_id,
+            load_private_key(PRIVATE_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.post("/v1/authorize/identity", response_model=AuthorizationResponse)
+def authorize_with_identity(req: IdentityAuthorizationRequest) -> dict:
+    assert _engine is not None
+    intent = PaymentIntent(
+        agent_id=req.agent_id,
+        payee=req.payee,
+        asset=req.asset,
+        network=req.network,
+        amount=req.amount,
+        resource=req.resource,
+        metadata=req.metadata,
+        intent_id=req.intent_id,
+        timestamp=req.timestamp,
+    )
+    try:
+        return _engine.authorize_with_identity(
+            intent,
+            req.capability_id,
+            req.identity_id,
+            req.agent_signature,
             load_private_key(PRIVATE_KEY_PATH),
         )
     except LookupError as exc:

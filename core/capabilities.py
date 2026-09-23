@@ -32,8 +32,21 @@ class CapabilityRegistry:
     def revoke(self, capability_id: str) -> bool:
         return self.storage.revoke_capability(capability_id)
 
-    def authorize(self, capability_id: str, action: ActionIntent) -> Capability:
+    def authorize(
+        self,
+        capability_id: str,
+        action: ActionIntent,
+        identity_id: str | None = None,
+    ) -> Capability:
         capability = self.resolve(capability_id)
+        if capability.identity_id is not None:
+            if identity_id != capability.identity_id:
+                raise PermissionError("capability identity mismatch")
+            if not self.storage.identity_is_active(capability.identity_id):
+                raise PermissionError("capability identity is not active")
+            identity = self.storage.identity(capability.identity_id)
+            if identity is None or identity.agent_id != capability.agent_id:
+                raise PermissionError("capability identity binding is invalid")
         permitted, reason = capability.permits(action)
         if not permitted:
             raise PermissionError(reason)
@@ -42,6 +55,11 @@ class CapabilityRegistry:
         """Return whether a capability can grant new authority now."""
         return self.storage.capability_is_active(capability_id)
 
-    def assert_authority(self, capability_id: str, action: ActionIntent) -> Capability:
+    def assert_authority(
+        self,
+        capability_id: str,
+        action: ActionIntent,
+        identity_id: str | None = None,
+    ) -> Capability:
         """Strict control-plane gate used before execution authorization."""
-        return self.authorize(capability_id, action)
+        return self.authorize(capability_id, action, identity_id=identity_id)

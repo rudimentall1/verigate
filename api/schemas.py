@@ -25,6 +25,21 @@ class CapabilityAuthorizationRequest(PaymentIntentRequest):
     capability_id: str = Field(..., min_length=1, examples=["cap-trader-001"])
 
 
+class IdentityAuthorizationRequest(BaseModel):
+    identity_id: str = Field(..., min_length=1)
+    capability_id: str = Field(..., min_length=1)
+    agent_id: str = Field(..., min_length=1)
+    agent_signature: str = Field(..., min_length=1)
+    intent_id: str = Field(..., min_length=1)
+    timestamp: float
+    payee: str = Field(..., min_length=1)
+    asset: str = Field(..., min_length=1)
+    network: str = Field(..., min_length=1)
+    amount: float = Field(..., gt=0)
+    resource: str = ""
+    metadata: dict = Field(default_factory=dict)
+
+
 class RuleMatchResponse(BaseModel):
     rule: str
     severity: str

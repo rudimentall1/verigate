@@ -75,6 +75,8 @@ def issue_execution_authorization(
     capability_id: str | None = None,
     capability_version: int | None = None,
     capability_sha256: str | None = None,
+    identity_id: str | None = None,
+    identity_sha256: str | None = None,
 ) -> ExecutionAuthorization:
     if receipt.payload["decision"]["decision"] != Decision.ALLOW.value:
         raise PermissionError("execution authorization requires ALLOW")
@@ -89,6 +91,8 @@ def issue_execution_authorization(
         "capability_id": capability_id,
         "capability_version": capability_version,
         "capability_sha256": capability_sha256,
+        "identity_id": identity_id,
+        "identity_sha256": identity_sha256,
         "action": receipt.payload["intent"],
         "action_sha256": action_digest(receipt.payload["intent"]),
         "nonce": nonce,
@@ -140,6 +144,16 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
                 return False, f"invalid execution authorization fingerprint: {field}"
         if len(payload["authorization_id"]) != 64 or any(c not in "0123456789abcdef" for c in payload["authorization_id"]):
             return False, "invalid execution authorization id"
+
+        for id_field, digest_field in (("identity_id", "identity_sha256"), ("capability_id", "capability_sha256")):
+            identifier = payload.get(id_field)
+            digest = payload.get(digest_field)
+            if identifier is None and digest is None:
+                continue
+            if not isinstance(identifier, str) or not identifier:
+                return False, f"invalid execution authorization field: {id_field}"
+            if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+                return False, f"invalid execution authorization fingerprint: {digest_field}"
 
         issued_at = payload.get("issued_at")
         expires_at = payload.get("expires_at")
@@ -206,6 +220,10 @@ def execution_receipt_payload(
         "decision_receipt_sha256": auth_payload["decision_receipt_sha256"],
         "intent_id": auth_payload["intent_id"],
         "agent_id": auth_payload["agent_id"],
+        "identity_id": auth_payload.get("identity_id"),
+        "identity_sha256": auth_payload.get("identity_sha256"),
+        "capability_id": auth_payload.get("capability_id"),
+        "capability_sha256": auth_payload.get("capability_sha256"),
         "action_sha256": auth_payload["action_sha256"],
         "network": action.get("network"),
         "status": status,
@@ -275,6 +293,14 @@ def verify_execution_receipt(
                 return False, "execution receipt intent mismatch"
             if payload["action_sha256"] != auth["action_sha256"]:
                 return False, "execution receipt action fingerprint mismatch"
+            if payload.get("identity_id") != auth.get("identity_id"):
+                return False, "execution receipt identity mismatch"
+            if payload.get("identity_sha256") != auth.get("identity_sha256"):
+                return False, "execution receipt identity fingerprint mismatch"
+            if payload.get("capability_id") != auth.get("capability_id"):
+                return False, "execution receipt capability mismatch"
+            if payload.get("capability_sha256") != auth.get("capability_sha256"):
+                return False, "execution receipt capability fingerprint mismatch"
         return True, "valid execution receipt"
     except (KeyError, TypeError, ValueError, InvalidSignature):
         return False, "invalid or tampered execution receipt"

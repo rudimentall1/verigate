@@ -103,18 +103,33 @@ class ActionIntent:
 
 @dataclass(frozen=True)
 class AgentIdentity:
-    """Canonical identity of an autonomous principal.
-
-    This is intentionally descriptive rather than a credential store. The
-    execution layer must bind concrete credentials/wallets to this identity
-    before side effects are permitted.
-    """
+    """Canonical cryptographic identity of an autonomous principal."""
 
     agent_id: str
+    public_key_b64: str = ""
+    key_id: str = ""
     organization_id: str = ""
     identity_version: int = 1
     reputation_ref: str | None = None
+    issued_at: float = field(default_factory=time.time)
+    expires_at: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def digest(self) -> str:
+        payload = {
+            "agent_id": self.agent_id,
+            "public_key_b64": self.public_key_b64,
+            "key_id": self.key_id,
+            "organization_id": self.organization_id,
+            "identity_version": self.identity_version,
+            "reputation_ref": self.reputation_ref,
+            "issued_at": self.issued_at,
+            "expires_at": self.expires_at,
+            "metadata": self.metadata,
+        }
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -123,6 +138,7 @@ class Capability:
 
     capability_id: str
     agent_id: str
+    identity_id: str | None = None
     allowed_actions: tuple[str, ...] = ()
     allowed_targets: tuple[str, ...] = ()
     allowed_resources: tuple[str, ...] = ()
@@ -142,6 +158,7 @@ class Capability:
         payload = {
             "capability_id": self.capability_id,
             "agent_id": self.agent_id,
+            "identity_id": self.identity_id,
             "allowed_actions": self.allowed_actions,
             "allowed_targets": self.allowed_targets,
             "allowed_resources": self.allowed_resources,

@@ -91,6 +91,21 @@ CREATE TABLE IF NOT EXISTS capabilities (
 
 CREATE INDEX IF NOT EXISTS idx_capabilities_agent_status
     ON capabilities(agent_id, status);
+
+CREATE TABLE IF NOT EXISTS identities (
+    identity_id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    identity_json TEXT NOT NULL,
+    identity_sha256 TEXT NOT NULL,
+    status TEXT NOT NULL,
+    issued_at REAL NOT NULL,
+    expires_at REAL,
+    revoked_at REAL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_identities_agent_status
+    ON identities(agent_id, status);
 """
 
 
@@ -356,6 +371,64 @@ class Storage:
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
 
+
+    def register_identity(self, identity) -> None:
+        """Persist a new cryptographic agent identity."""
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO identities "
+                    "(identity_id, agent_id, identity_json, identity_sha256, status, "
+                    "issued_at, expires_at, revoked_at, created_at) "
+                    "VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, NULL, ?)",
+                    (
+                        identity.key_id,
+                        identity.agent_id,
+                        json.dumps(identity.__dict__, sort_keys=True, separators=(",", ":")),
+                        identity.digest,
+                        identity.issued_at,
+                        identity.expires_at,
+                        time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("identity_id already registered") from exc
+
+    def identity(self, identity_id: str):
+        from .models import AgentIdentity
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT identity_json FROM identities WHERE identity_id = ?",
+                (identity_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return AgentIdentity(**json.loads(row[0]))
+
+    def identity_is_active(self, identity_id: str, now: float | None = None) -> bool:
+        now = time.time() if now is None else now
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT status, expires_at FROM identities WHERE identity_id = ?",
+                (identity_id,),
+            ).fetchone()
+        return bool(row and row[0] == 'ACTIVE' and (row[1] is None or now < row[1]))
+
+    def revoke_identity(self, identity_id: str) -> bool:
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE identities SET status = 'REVOKED', revoked_at = ? "
+                "WHERE identity_id = ? AND status = 'ACTIVE'",
+                (time.time(), identity_id),
+            )
+            if cursor.rowcount != 1:
+                self._conn.rollback()
+                return False
+            self._conn.commit()
+            return True
 
     def register_capability(self, capability: Capability) -> None:
         """Persist a new capability version as active authority."""

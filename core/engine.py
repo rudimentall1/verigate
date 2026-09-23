@@ -13,6 +13,7 @@ from .storage import Storage
 
 from .authorization import AuthorizationService
 from .capabilities import CapabilityRegistry
+from .identity import IdentityRegistry
 
 
 class GuardrailEngine:
@@ -135,7 +136,7 @@ class GuardrailEngine:
         capability_id: str,
         private_key,
     ) -> dict:
-        """Canonical control-plane authorization path using registry authority."""
+        """Canonical capability-bound path retained for compatible callers."""
         decision = self.evaluate(intent)
         action = intent.as_action_intent()
         capability = CapabilityRegistry(self.storage).assert_authority(capability_id, action)
@@ -146,6 +147,39 @@ class GuardrailEngine:
             private_key,
             nonce=intent.intent_id,
             capability=capability,
+        )
+        self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
+        return artifacts
+
+    def authorize_with_identity(
+        self,
+        intent: PaymentIntent,
+        capability_id: str,
+        identity_id: str,
+        agent_signature: str,
+        private_key,
+    ) -> dict:
+        """Canonical identity + capability authority path."""
+        action = intent.as_action_intent()
+        identity = IdentityRegistry(self.storage).authorize_action(
+            identity_id,
+            action,
+            agent_signature,
+        )
+        decision = self.evaluate(intent)
+        capability = CapabilityRegistry(self.storage).assert_authority(
+            capability_id,
+            action,
+            identity_id=identity_id,
+        )
+        artifacts = AuthorizationService().issue(
+            action,
+            decision,
+            self.policy.digest,
+            private_key,
+            nonce=intent.intent_id,
+            capability=capability,
+            identity=identity,
         )
         self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
         return artifacts

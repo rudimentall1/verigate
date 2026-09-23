@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import ActionIntent, Capability, Decision, GuardrailDecision
+from .models import ActionIntent, AgentIdentity, Capability, Decision, GuardrailDecision
 from attest.receipt import issue_execution_authorization, sign_receipt
 
 
@@ -25,6 +25,7 @@ class AuthorizationService:
         nonce: str | None = None,
         ttl_seconds: int = 300,
         capability: Capability | None = None,
+        identity: AgentIdentity | None = None,
     ) -> dict[str, Any]:
         if action.intent_id != decision.intent_id or action.agent_id != decision.agent_id:
             raise ValueError("action and decision identities do not match")
@@ -36,6 +37,11 @@ class AuthorizationService:
             permitted, reason = capability.permits(action)
             if not permitted:
                 raise PermissionError(reason)
+        if identity is not None and identity.agent_id != action.agent_id:
+            raise PermissionError("identity agent mismatch")
+        if capability is not None and capability.identity_id is not None:
+            if identity is None or capability.identity_id != identity.key_id:
+                raise PermissionError("capability identity mismatch")
 
         receipt = sign_receipt(action, decision, policy_digest, private_key)
         execution = None
@@ -48,6 +54,8 @@ class AuthorizationService:
                 capability_id=capability.capability_id if capability else None,
                 capability_version=capability.version if capability else None,
                 capability_sha256=capability.digest if capability else None,
+                identity_id=identity.key_id if identity else None,
+                identity_sha256=identity.digest if identity else None,
             )
 
         return {

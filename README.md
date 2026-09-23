@@ -1,8 +1,8 @@
 # Verigate
 
-**The authorization and proof layer between an autonomous AI agent and the real world.**
+**Agent Authority Control Plane for autonomous agents.**
 
-AI can propose an action. VeriGate deterministically authorizes it, and cryptography makes the authorization independently verifiable. Payments are the first vertical; the core model is protocol-agnostic.
+An AI agent can propose an action. Verigate establishes the authority under which it may execute, then enforces and proves what actually happened. Identity, capabilities, policy, execution and evidence are protocol-agnostic; payments and blockchains are adapters, not the product boundary.
 
 Your agent wants to pay for something — a data feed, an API call, an
 invoice, an x402 `PAYMENT-REQUIRED` offer. Verigate checks that payment
@@ -36,11 +36,14 @@ x402 offer / raw payment intent
 
 ## Why this, not another agent-risk dashboard
 
-Agentic payments (x402, AP2, and similar protocols) are explicitly
-designed with **no human in the loop by default** — the point of the
-protocol is that nothing sits between "agent wants to pay" and "money
-moves." That is also the gap: every deployment ships with zero
-organization-level governance unless someone adds it.
+The core problem is broader than payments: autonomous agents increasingly
+need authority to call APIs, use MCP tools, change cloud resources, write
+data, move money, execute contracts and perform other consequential actions.
+
+Verigate therefore treats payment as one execution adapter inside a general
+authority lifecycle. The critical boundary is not a dashboard or a risk
+number; it is the verifiable chain from **identity → capability → exact
+intent → decision → authorization → execution → evidence**.
 
 Most answers to that gap are "trust our dashboard" — a vendor's server
 decides, logs the decision, and shows you a UI. Verigate's decisions are
@@ -82,7 +85,9 @@ system — not yet a hosted product. Specifically:
 | Audit log / rate limiting / daily-spend tracking | **Real**, SQLite-backed, single-process. For multiple replicas, point every process at shared storage or swap in a real database — the `Storage` interface is small. |
 | FastAPI HTTP layer | **Written**, not yet load-tested or deployed. Runs with `uvicorn api.main:app`. |
 | AP2 / other payment-rail adapters | **Not built.** The architecture reserves the seam (`core.models.PaymentIntent` is rail-agnostic) but only x402 has a working parser today. |
-| Authorization service | **Real.** Generic `ActionIntent` decisions can mint the same portable receipt and one-time capability used by payment flows. |
+| Agent Identity Registry | **Real.** Ed25519 identities are registered by public-key fingerprint, can be revoked, and can sign exact `ActionIntent` envelopes before authorization. |
+| Capability Registry | **Real.** Capabilities are persistent, scoped, versioned and revocable; authority artifacts bind capability ID/version/digest. |
+| Authorization service | **Real.** Generic `ActionIntent` decisions can mint the same portable receipt and one-time authority used by payment and other execution flows. |
 | Execution enforcement boundary | **Real.** One-time signed capabilities are consumed fail-closed; the local and dependency-light EVM adapters share the same gate. |
 | Multi-tenant / hosted key management | **Not built.** Today, one issuer keypair per deployment, loaded from a local file. |
 
@@ -197,12 +202,14 @@ process.
 
 ```
 core/
-    models.py      PaymentIntent, ActionIntent, RuleMatch, GuardrailDecision
+    models.py       PaymentIntent, ActionIntent, AgentIdentity, Capability, decisions
+    identity.py     Cryptographic identity registry + agent-signed intent verification
     authorization.py Protocol-agnostic receipt + execution-capability minting
-    policy.py        Policy loader (the one place PyYAML is used in core/)
-    rules.py          Deterministic rule evaluators
-    storage.py         SQLite-backed audit log, rate limiter, spend tracking
-    engine.py           GuardrailEngine — orchestrates rules -> decision
+    capabilities.py Capability registry + revocation + authority checks
+    policy.py       Policy loader (the one place PyYAML is used in core/)
+    rules.py        Deterministic rule evaluators
+    storage.py      SQLite-backed audit/rate/spend + authority registries
+    engine.py       GuardrailEngine — evaluates and binds identity/capability authority
 attest/
     keys.py         Ed25519 keypair generation/loading
     sign.py          Sign a decision into a verifiable attestation
@@ -211,8 +218,8 @@ x402/
     parser.py       Parses a real x402 PAYMENT-REQUIRED header into a
                        normalized PaymentIntent
 api/
-    main.py         FastAPI app: /v1/check, /v1/check/x402, /v1/verify,
-                       /v1/public-key, /v1/agents/{id}/history
+    main.py         FastAPI app: check, capability-bound authorization,
+                       identity-bound authorization, execution and verification endpoints
     schemas.py        Pydantic request/response models (API boundary only)
 cli.py              check / verify / keygen / history commands
 demo.py             End-to-end policy / attestation walkthrough
@@ -241,15 +248,23 @@ the API layer.
 
 ## Genesis architecture
 
-VeriGate is being expanded around a protocol-agnostic authorization lifecycle:
+Verigate is being expanded around a protocol-agnostic authority lifecycle:
 
-**Discover → Authorize → Enforce → Prove → Learn**
+**Identify → Propose → Verify → Decide → Authorize → Enforce → Observe → Prove → Learn**
 
-The foundational `ActionIntent` model represents consequential agent actions such as API calls, tool invocations, cloud operations, wallet transactions, and payments. Payment rails remain adapters rather than the core abstraction.
+The foundational path is:
 
-A **Decision Receipt** binds the normalized action, resulting decision, and SHA-256 fingerprint of the effective policy into a signed Ed25519 proof. It proves what Verigate decided. An **Execution Authorization** is separate: only an ALLOW decision can mint this short-lived, nonce-bound capability for an executor. The capability is self-contained: it carries the exact normalized action plus its SHA-256 fingerprint, so an adapter can derive and execute only what was signed. WARN and BLOCK never receive execution authority.
+`AgentIdentity → Capability → ActionIntent → Policy + Context + Intelligence → AuthorityDecision → ExecutionAuthorization → Execution → Evidence`
 
-The existing `PaymentIntent` and x402 path remain backward-compatible while this generic authorization layer is introduced incrementally.
+`AgentIdentity` is a cryptographic Ed25519 principal. The Identity Registry maps an identity fingerprint to an agent and supports revocation. An agent can sign the exact normalized `ActionIntent` before Verigate evaluates it.
+
+A **Capability** is programmable authority: action scope, targets/resources, networks/assets, limits, conditions and expiry. The Capability Registry is the source of truth for active capabilities and supports revocation. A capability may be bound to a specific identity.
+
+A **Decision Receipt** proves what Verigate decided. An **Execution Authorization** is distinct: only ALLOW can mint it, and the signed artifact contains the exact action fingerprint plus capability and identity fingerprints. The execution boundary consumes the artifact fail-closed.
+
+Revoking an identity or capability prevents future authorizations. It does not silently mutate an already-issued authorization; issued authority remains bound to the exact identity/capability versions that produced it.
+
+Payment and x402 remain backward-compatible adapters while this general authority model expands to API, MCP, cloud, database, EVM, Solana and other execution environments.
 
 ## Roadmap
 
@@ -269,10 +284,14 @@ MIT.
 
 ### Canonical authorization API
 
-`POST /v1/authorize` returns two distinct artifacts: a signed `DecisionReceipt` proving the policy decision, and an `ExecutionAuthorization` only when the decision is ALLOW. CMC RWA integrations use the same capability path rather than introducing a second authorization system.
+`POST /v1/authorize` remains the backward-compatible payment path.
 
-`ExecutionAuthorization` is short-lived, nonce-bound, and contains the authorized normalized action. It is the capability an execution adapter consumes; the decision receipt is evidence and is not itself permission to execute.
+`POST /v1/authorize/capability` resolves a registered active capability and binds it to one exact normalized action before minting `ExecutionAuthorization`.
 
-`POST /v1/authorize/x402` provides the same contract for an x402 `PAYMENT-REQUIRED` header.
+`POST /v1/authorize/identity` is the canonical cryptographic authority path. The caller supplies an exact intent plus an agent signature; Verigate verifies the registered identity, checks the identity-bound capability, evaluates policy, and only then mints execution authority.
+
+`ExecutionAuthorization` is short-lived, nonce-bound, and contains the authorized normalized action plus identity/capability fingerprints. The execution adapter consumes it; the decision receipt is evidence and is not itself permission to execute.
+
+`POST /v1/authorize/x402` provides the compatibility contract for an x402 `PAYMENT-REQUIRED` header.
 
 The existing `/v1/check` endpoints remain available for compatibility.
