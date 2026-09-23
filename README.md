@@ -103,6 +103,9 @@ PYTHONPATH=. python3 demo.py
 # Prove an ALLOW authorization gates a real side effect and blocks replay
 PYTHONPATH=. python3 demo_execution.py
 
+# Prove changed tool endpoints and transaction destinations are blocked
+PYTHONPATH=. python3 demo_tamper_enforcement.py
+
 # Run the CMC RWA integration in offline fixture mode
 PYTHONPATH=. python3 demo_cmc_rwa.py --fixture
 ```
