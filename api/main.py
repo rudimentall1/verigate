@@ -18,6 +18,8 @@ Endpoints:
   GET  /v1/governance/policy
   POST /v1/authority/reset
   POST /v1/authority/reset/multi
+  POST /v1/policies/governed/publish
+  GET  /v1/policies/governed/{policy_sha256}
 """
 from __future__ import annotations
 
@@ -48,6 +50,7 @@ from core.governance import (
 )
 from core.models import PaymentIntent
 from core.policy import Policy
+from core.policy_version import GovernedPolicyVersionRegistry
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
@@ -70,6 +73,8 @@ from .schemas import (
     PaymentIntentRequest,
     VerifyRequest,
     VerifyResponse,
+    GovernedPolicyPublishRequest,
+    GovernedPolicyPublishResponse,
     X402HeaderRequest,
 )
 
@@ -89,6 +94,10 @@ GOVERNANCE_POLICY_PATH = os.environ.get(
     "VERIGATE_GOVERNANCE_POLICY",
     "config/governance-policy.json",
 )
+REQUIRE_GOVERNED_POLICY = os.environ.get(
+    "VERIGATE_REQUIRE_GOVERNED_POLICY",
+    "",
+).lower() in {"1", "true", "yes"}
 
 app = FastAPI(
     title="Verigate",
@@ -137,6 +146,7 @@ def _startup() -> None:
         _policy,
         _storage,
         policy_source_ref=POLICY_PATH,
+        require_governed_policy=REQUIRE_GOVERNED_POLICY,
     )
     _governance_policy = _load_governance_policy()
 
@@ -406,6 +416,45 @@ def verify(req: VerifyRequest) -> dict:
     pub = load_public_key(PUBLIC_KEY_PATH)
     ok, reason = verify_attestation(req.model_dump(), pub)
     return {"valid": ok, "reason": reason}
+
+
+@app.post(
+    "/v1/policies/governed/publish",
+    response_model=GovernedPolicyPublishResponse,
+)
+def publish_governed_policy(req: GovernedPolicyPublishRequest) -> dict:
+    assert _storage is not None and _governance_policy is not None
+    if _governance_policy.threshold < 2:
+        raise HTTPException(
+            status_code=503,
+            detail="multi-party governance policy is not configured",
+        )
+    if "POLICY_CHANGE" not in _governance_policy.allowed_actions:
+        raise HTTPException(
+            status_code=403,
+            detail="governance policy does not allow policy changes",
+        )
+    try:
+        return GovernedPolicyVersionRegistry(_storage).publish(
+            req.policy,
+            req.governance_action,
+            req.approvals,
+            _governance_policy,
+            load_public_key(PUBLIC_KEY_PATH),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/v1/policies/governed/{policy_sha256}")
+def governed_policy(policy_sha256: str) -> dict:
+    assert _storage is not None
+    envelope = _storage.governed_policy_change_by_sha(policy_sha256)
+    if envelope is None:
+        raise HTTPException(status_code=404, detail="governed policy version not found")
+    return envelope
 
 
 @app.get("/v1/policies/{policy_sha256}")

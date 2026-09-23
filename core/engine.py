@@ -27,10 +27,12 @@ class GuardrailEngine:
         policy_source_ref: str = "verigate:runtime",
         policy_version_number: int | None = None,
         policy_parent_sha256: str | None = None,
+        require_governed_policy: bool = False,
     ):
         self.policy = policy
         self.storage = storage
         self.policy_source_ref = policy_source_ref
+        self.require_governed_policy = require_governed_policy
         self.policy_version_number = (
             policy_version_number
             if policy_version_number is not None
@@ -48,6 +50,26 @@ class GuardrailEngine:
                 parent_sha256=self.policy_parent_sha256,
             )
             self._signed_policy_version = sign_policy_version(version, private_key).as_dict()
+            if self.require_governed_policy:
+                governed = self.storage.governed_policy_change_by_sha(
+                    self.policy.digest
+                )
+                if governed is None:
+                    self._signed_policy_version = None
+                    raise PermissionError(
+                        "policy version is not governance-approved"
+                    )
+                governed_policy = governed["policy_version"]["payload"]
+                if (
+                    governed_policy["policy_sha256"] != self.policy.digest
+                    or governed_policy["version"] != self.policy_version_number
+                    or governed_policy["source_ref"] != self.policy_source_ref
+                    or governed_policy.get("parent_sha256") != self.policy_parent_sha256
+                ):
+                    self._signed_policy_version = None
+                    raise PermissionError(
+                        "governed policy artifact does not match active policy"
+                    )
             self.storage.register_policy_version(self._signed_policy_version)
         return self._signed_policy_version
 

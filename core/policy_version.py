@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -144,3 +145,155 @@ class PolicyVersionRegistry:
 
     def resolve(self, policy_sha256: str) -> dict[str, Any] | None:
         return self.storage.policy_version_by_sha(policy_sha256)
+
+
+@dataclass(frozen=True)
+class PolicyChangeGovernanceAction:
+    action_id: str
+    policy_id: str
+    policy_sha256: str
+    version: int
+    source_ref: str
+    parent_sha256: str | None
+    governance_policy_sha256: str
+    reason: str
+    issued_at: float
+    expires_at: float
+    nonce: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "governance_version": 1,
+            "action": "POLICY_CHANGE",
+            "action_id": self.action_id,
+            "policy_id": self.policy_id,
+            "policy_sha256": self.policy_sha256,
+            "policy_version_number": self.version,
+            "source_ref": self.source_ref,
+            "parent_sha256": self.parent_sha256,
+            "governance_policy_sha256": self.governance_policy_sha256,
+            "reason": self.reason,
+            "issued_at": self.issued_at,
+            "expires_at": self.expires_at,
+            "nonce": self.nonce,
+        }
+
+    @property
+    def digest(self) -> str:
+        return hashlib.sha256(_canonical(self.as_dict())).hexdigest()
+def create_policy_change_action(
+    signed_policy: dict[str, Any],
+    *,
+    governance_policy,
+    reason: str,
+    issued_at: float | None = None,
+    expires_at: float | None = None,
+    action_id: str | None = None,
+    nonce: str | None = None,
+) -> PolicyChangeGovernanceAction:
+    """Create the exact governance action governors must approve."""
+    governance_policy.validate()
+    if "POLICY_CHANGE" not in governance_policy.allowed_actions:
+        raise ValueError("governance policy does not allow policy changes")
+    if not reason.strip():
+        raise ValueError("policy change reason is required")
+    payload = signed_policy["payload"]
+    issued = time.time() if issued_at is None else issued_at
+    expiry = (
+        issued + governance_policy.max_approval_lifetime_seconds
+        if expires_at is None
+        else expires_at
+    )
+    if expiry <= issued or expiry - issued > governance_policy.max_approval_lifetime_seconds:
+        raise ValueError("invalid policy governance action expiry")
+    return PolicyChangeGovernanceAction(
+        action_id=action_id or str(uuid.uuid4()),
+        policy_id=payload["policy_id"],
+        policy_sha256=payload["policy_sha256"],
+        version=payload["version"],
+        source_ref=payload["source_ref"],
+        parent_sha256=payload.get("parent_sha256"),
+        governance_policy_sha256=governance_policy.digest,
+        reason=reason,
+        issued_at=issued,
+        expires_at=expiry,
+        nonce=nonce or str(uuid.uuid4()),
+    )
+class GovernedPolicyVersionRegistry(PolicyVersionRegistry):
+    """Publish signed policy versions only after governance quorum approval."""
+
+    def publish(
+        self,
+        signed_policy: dict[str, Any],
+        action: PolicyChangeGovernanceAction | dict[str, Any],
+        approvals: list[dict[str, Any]],
+        governance_policy,
+        issuer_public_key: Ed25519PublicKey,
+    ) -> dict[str, Any]:
+        from .governance import verify_governance_quorum
+
+        ok, reason = verify_policy_version(signed_policy, issuer_public_key)
+        if not ok:
+            raise PermissionError(reason)
+        ok, reason = verify_governance_quorum(
+            action,
+            approvals,
+            governance_policy,
+        )
+        if not ok:
+            raise PermissionError(reason)
+        payload = action.as_dict() if hasattr(action, "as_dict") else action
+        policy_payload = signed_policy["payload"]
+        if payload.get("action") != "POLICY_CHANGE":
+            raise PermissionError("unsupported policy governance action")
+        expected = {
+            "policy_id": policy_payload["policy_id"],
+            "policy_sha256": policy_payload["policy_sha256"],
+            "policy_version_number": policy_payload["version"],
+            "source_ref": policy_payload["source_ref"],
+            "parent_sha256": policy_payload.get("parent_sha256"),
+        }
+        for field, value in expected.items():
+            if payload.get(field) != value:
+                raise PermissionError(
+                    f"policy governance action does not match signed policy: {field}"
+                )
+        if payload.get("governance_policy_sha256") != governance_policy.digest:
+            raise PermissionError("governance policy fingerprint mismatch")
+        existing = self.storage.governed_policy_change_by_sha(
+            policy_payload["policy_sha256"]
+        )
+        if existing is not None:
+            raise PermissionError("governed policy version already published")
+        latest = self.storage.latest_governed_policy_version(policy_payload["policy_id"])
+        version = policy_payload["version"]
+        parent = policy_payload.get("parent_sha256")
+        if latest is None:
+            if version != 1 or parent is not None:
+                raise PermissionError("first governed policy version must start at 1")
+        else:
+            if version != latest["version"] + 1:
+                raise PermissionError("governed policy version must increment monotonically")
+            if parent != latest["policy_sha256"]:
+                raise PermissionError("governed policy parent does not match latest version")
+        envelope = {
+            "policy_version": signed_policy,
+            "governance_action": payload,
+            "approvals": approvals,
+            "governance_policy": governance_policy.as_dict(),
+            "governance_policy_sha256": governance_policy.digest,
+            "algorithm": "Ed25519-POLICY-MULTIPARTY",
+        }
+        self.storage.register_governed_policy_change(
+            signed_policy,
+            envelope,
+            governance_approvals=approvals,
+        )
+        return {
+            "policy": signed_policy,
+            "governance_action": payload,
+            "approvals": approvals,
+            "governance_policy_sha256": governance_policy.digest,
+        }
+    def governed(self, policy_sha256: str) -> dict[str, Any] | None:
+        return self.storage.governed_policy_change_by_sha(policy_sha256)

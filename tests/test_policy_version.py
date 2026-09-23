@@ -1,4 +1,6 @@
+import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -6,8 +8,15 @@ from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import verify_execution_authorization, verify_receipt
 from core.engine import GuardrailEngine
 from core.policy import Policy
+from core.governance import (
+    GovernanceMember,
+    GovernancePolicy,
+    sign_governance_approval,
+)
 from core.policy_version import (
+    GovernedPolicyVersionRegistry,
     build_policy_version,
+    create_policy_change_action,
     sign_policy_version,
     verify_policy_version,
 )
@@ -187,6 +196,318 @@ class PolicyVersionTest(unittest.TestCase):
         finally:
             storage.close()
 
+
+
+class GovernedPolicyVersionTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.issuer_private = root / "issuer.key"
+        self.issuer_public = root / "issuer.pub"
+        generate_keypair(self.issuer_private, self.issuer_public)
+        self.policy_path = root / "governed-policy.yaml"
+        self.policy_path.write_text(
+            "allowed_networks: [base]\nallowed_assets: [USDC]\n",
+            encoding="utf-8",
+        )
+        self.policy = Policy.load(self.policy_path)
+        self.governance_keys = []
+        members = []
+        for i, role in enumerate(("security", "operations", "finance"), start=1):
+            private = root / f"gov-{i}.key"
+            public = root / f"gov-{i}.pub"
+            generate_keypair(private, public)
+            private_key = load_private_key(private)
+            self.governance_keys.append(private_key)
+            members.append(
+                GovernanceMember.from_public_key(
+                    load_public_key(public),
+                    role,
+                )
+            )
+        self.governance_policy = GovernancePolicy(
+            policy_id="policy-governance",
+            version=1,
+            threshold=2,
+            members=tuple(members),
+            required_roles=(("security", 1), ("operations", 1)),
+            allowed_actions=("AUTHORITY_RESET", "POLICY_CHANGE"),
+        )
+        self.storage = Storage(root / "governed.db")
+
+    def tearDown(self):
+        self.storage.close()
+        self.tmp.cleanup()
+
+    def signed_policy(self, version=1, parent_sha256=None):
+        return sign_policy_version(
+            build_policy_version(
+                self.policy,
+                source_ref=str(self.policy_path),
+                version=version,
+                parent_sha256=parent_sha256,
+            ),
+            load_private_key(self.issuer_private),
+        ).as_dict()
+
+    def approvals_for(self, action):
+        issued = action.issued_at
+        return [
+            sign_governance_approval(
+                action,
+                role="security",
+                private_key=self.governance_keys[0],
+                issued_at=issued,
+                expires_at=issued + 30,
+            ).as_dict(),
+            sign_governance_approval(
+                action,
+                role="operations",
+                private_key=self.governance_keys[1],
+                issued_at=issued,
+                expires_at=issued + 30,
+            ).as_dict(),
+        ]
+    def publish(self, signed):
+        action = create_policy_change_action(
+            signed,
+            governance_policy=self.governance_policy,
+            reason="approve exact policy change",
+            issued_at=time.time() + 0.2,
+            expires_at=time.time() + 60,
+        )
+        return action, GovernedPolicyVersionRegistry(self.storage).publish(
+            signed,
+            action,
+            self.approvals_for(action),
+            self.governance_policy,
+            load_public_key(self.issuer_public),
+        )
+
+    def test_governed_policy_publish_requires_quorum(self):
+        signed = self.signed_policy()
+        action = create_policy_change_action(
+            signed,
+            governance_policy=self.governance_policy,
+            reason="two-person policy approval",
+            issued_at=time.time() + 0.2,
+            expires_at=time.time() + 60,
+        )
+        registry = GovernedPolicyVersionRegistry(self.storage)
+        with self.assertRaisesRegex(PermissionError, "threshold not reached"):
+            registry.publish(
+                signed,
+                action,
+                [self.approvals_for(action)[0]],
+                self.governance_policy,
+                load_public_key(self.issuer_public),
+            )
+
+    def test_governed_policy_publish_succeeds_with_exact_quorum(self):
+        signed = self.signed_policy()
+        action, result = self.publish(signed)
+        self.assertEqual(result["policy"]["payload"]["version"], 1)
+        self.assertEqual(result["governance_action"]["action"], "POLICY_CHANGE")
+        self.assertEqual(
+            result["governance_policy_sha256"],
+            self.governance_policy.digest,
+        )
+        governed = self.storage.governed_policy_change_by_sha(
+            signed["payload"]["policy_sha256"]
+        )
+        self.assertIsNotNone(governed)
+        self.assertEqual(
+            governed["governance_action"]["action_id"],
+            action.action_id,
+        )
+    def test_policy_action_tamper_is_rejected(self):
+        signed = self.signed_policy()
+        action = create_policy_change_action(
+            signed,
+            governance_policy=self.governance_policy,
+            reason="policy review",
+            issued_at=time.time() + 0.2,
+            expires_at=time.time() + 60,
+        )
+        approvals = self.approvals_for(action)
+        tampered = dict(action.as_dict())
+        tampered["policy_sha256"] = "f" * 64
+        with self.assertRaisesRegex(
+            PermissionError,
+            "different action|policy governance action does not match",
+        ):
+            GovernedPolicyVersionRegistry(self.storage).publish(
+                signed,
+                tampered,
+                approvals,
+                self.governance_policy,
+                load_public_key(self.issuer_public),
+            )
+
+    def test_signed_policy_tamper_is_rejected(self):
+        signed = self.signed_policy()
+        action = create_policy_change_action(
+            signed,
+            governance_policy=self.governance_policy,
+            reason="policy review",
+            issued_at=time.time() + 0.2,
+            expires_at=time.time() + 60,
+        )
+        signed["payload"]["version"] = 2
+        with self.assertRaisesRegex(PermissionError, "invalid or tampered"):
+            GovernedPolicyVersionRegistry(self.storage).publish(
+                signed,
+                action,
+                self.approvals_for(action),
+                self.governance_policy,
+                load_public_key(self.issuer_public),
+            )
+
+    def test_policy_lineage_is_monotonic_and_parent_bound(self):
+        first = self.signed_policy()
+        _, _ = self.publish(first)
+        self.policy_path.write_text(
+            "allowed_networks: [base, arbitrum]\nallowed_assets: [USDC]\n",
+            encoding="utf-8",
+        )
+        self.policy = Policy.load(self.policy_path)
+        second = self.signed_policy(
+            version=2,
+            parent_sha256=first["payload"]["policy_sha256"],
+        )
+        _, result = self.publish(second)
+        self.assertEqual(result["policy"]["payload"]["version"], 2)
+
+        self.policy_path.write_text(
+            "allowed_networks: [base, arbitrum, ethereum]\nallowed_assets: [USDC]\n",
+            encoding="utf-8",
+        )
+        self.policy = Policy.load(self.policy_path)
+        bad = self.signed_policy(
+            version=4,
+            parent_sha256=second["payload"]["policy_sha256"],
+        )
+        action = create_policy_change_action(
+            bad,
+            governance_policy=self.governance_policy,
+            reason="invalid lineage",
+            issued_at=time.time() + 0.2,
+            expires_at=time.time() + 60,
+        )
+        with self.assertRaisesRegex(PermissionError, "increment monotonically"):
+            GovernedPolicyVersionRegistry(self.storage).publish(
+                bad,
+                action,
+                self.approvals_for(action),
+                self.governance_policy,
+                load_public_key(self.issuer_public),
+            )
+    def test_policy_publish_replay_is_persistently_blocked(self):
+        signed = self.signed_policy()
+        action, _ = self.publish(signed)
+        with self.assertRaisesRegex(
+            PermissionError,
+            "already published",
+        ):
+            GovernedPolicyVersionRegistry(self.storage).publish(
+                signed,
+                action,
+                self.approvals_for(action),
+                self.governance_policy,
+                load_public_key(self.issuer_public),
+            )
+
+    def test_strict_engine_rejects_ungoverned_policy(self):
+        engine = GuardrailEngine(
+            self.policy,
+            self.storage,
+            policy_source_ref=str(self.policy_path),
+            policy_version_number=1,
+            require_governed_policy=True,
+        )
+        with self.assertRaisesRegex(PermissionError, "not governance-approved"):
+            engine.signed_policy_version(
+                load_private_key(self.issuer_private)
+            )
+
+    def test_strict_engine_accepts_governed_policy(self):
+        signed = self.signed_policy()
+        self.publish(signed)
+        engine = GuardrailEngine(
+            self.policy,
+            self.storage,
+            policy_source_ref=str(self.policy_path),
+            policy_version_number=1,
+            require_governed_policy=True,
+        )
+        artifact = engine.signed_policy_version(
+            load_private_key(self.issuer_private)
+        )
+        self.assertEqual(
+            artifact["payload"]["policy_sha256"],
+            self.policy.digest,
+        )
+
+    def test_governance_policy_digest_is_part_of_action(self):
+        signed = self.signed_policy()
+        action = create_policy_change_action(
+            signed,
+            governance_policy=self.governance_policy,
+            reason="digest binding",
+        )
+        self.assertEqual(
+            action.as_dict()["governance_policy_sha256"],
+            self.governance_policy.digest,
+        )
+
+
+    def test_api_governed_policy_publication(self):
+        from fastapi.testclient import TestClient
+        from api import main
+
+        root = Path(self.tmp.name) / "api"
+        root.mkdir()
+        governance_path = root / "governance-policy.json"
+        governance_path.write_text(
+            json.dumps(self.governance_policy.as_dict()),
+            encoding="utf-8",
+        )
+        main.POLICY_PATH = str(self.policy_path)
+        main.DB_PATH = str(root / "api.db")
+        main.PRIVATE_KEY_PATH = str(self.issuer_private)
+        main.PUBLIC_KEY_PATH = str(self.issuer_public)
+        main.GOVERNANCE_POLICY_PATH = str(governance_path)
+        main.REQUIRE_GOVERNED_POLICY = False
+
+        signed = self.signed_policy()
+        action = create_policy_change_action(
+            signed,
+            governance_policy=self.governance_policy,
+            reason="API policy publication",
+            issued_at=time.time() + 0.2,
+            expires_at=time.time() + 60,
+        )
+        with TestClient(main.app) as client:
+            response = client.post(
+                "/v1/policies/governed/publish",
+                json={
+                    "policy": signed,
+                    "governance_action": action.as_dict(),
+                    "approvals": self.approvals_for(action),
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+            governed = client.get(
+                f"/v1/policies/governed/{signed['payload']['policy_sha256']}"
+            )
+            self.assertEqual(governed.status_code, 200)
+            self.assertEqual(
+                governed.json()["governance_policy_sha256"],
+                self.governance_policy.digest,
+            )
+
+        main._storage = main._engine = main._policy = None
+        main._governance_policy = None
 
 
 if __name__ == "__main__":

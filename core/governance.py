@@ -379,6 +379,7 @@ class GovernanceAction:
             "epoch": self.epoch,
             "reason": self.reason,
             "policy_sha256": self.policy_sha256,
+            "governance_policy_sha256": self.policy_sha256,
             "issued_at": self.issued_at,
             "expires_at": self.expires_at,
             "nonce": self.nonce,
@@ -543,45 +544,63 @@ def verify_governance_approval(
     except (KeyError, TypeError, ValueError, InvalidSignature):
         return False, "invalid or tampered governance approval"
 def verify_governance_quorum(
-    action: GovernanceAction | dict[str, Any],
+    action: Any,
     approvals: list[dict[str, Any]],
     policy: GovernancePolicy,
     *,
     now: float | None = None,
 ) -> tuple[bool, str]:
     policy.validate()
-    payload = action.as_dict() if isinstance(action, GovernanceAction) else action
+    payload = action.as_dict() if hasattr(action, "as_dict") else action
     now = time.time() if now is None else now
+    if not isinstance(payload, dict):
+        return False, "invalid governance action payload"
     if payload.get("governance_version") != 1:
         return False, "unsupported governance action version"
     string_fields = (
         "action",
         "action_id",
-        "agent_id",
-        "capability_id",
         "reason",
-        "policy_sha256",
         "nonce",
     )
-    if any(not isinstance(payload.get(field), str) or not payload[field] for field in string_fields):
+    if any(
+        not isinstance(payload.get(field), str) or not payload[field]
+        for field in string_fields
+    ):
         return False, "invalid governance action fields"
-    if isinstance(payload.get("epoch"), bool) or not isinstance(payload.get("epoch"), int) or payload["epoch"] < 1:
-        return False, "invalid governance action epoch"
-    for field in ("issued_at", "expires_at"):
-        if isinstance(payload.get(field), bool) or not isinstance(payload.get(field), (int, float)):
-            return False, f"invalid governance action {field}"
-    if payload.get("policy_sha256") != policy.digest:
+    governance_policy_sha256 = payload.get("governance_policy_sha256") or payload.get(
+        "policy_sha256"
+    )
+    if not isinstance(governance_policy_sha256, str) or not governance_policy_sha256:
+        return False, "missing governance policy fingerprint"
+    if governance_policy_sha256 != policy.digest:
         return False, "governance policy fingerprint mismatch"
     if payload.get("action") not in policy.allowed_actions:
         return False, "governance action is not allowed"
+    for field in ("issued_at", "expires_at"):
+        if isinstance(payload.get(field), bool) or not isinstance(
+            payload.get(field), (int, float)
+        ):
+            return False, f"invalid governance action {field}"
     if payload["issued_at"] > now + 60:
         return False, "governance action is too far in the future"
     if payload["expires_at"] <= now:
         return False, "governance action has expired"
     if payload["expires_at"] <= payload["issued_at"]:
         return False, "governance action expiry is invalid"
-    if payload["expires_at"] - payload["issued_at"] > policy.max_approval_lifetime_seconds:
+    if (
+        payload["expires_at"] - payload["issued_at"]
+        > policy.max_approval_lifetime_seconds
+    ):
         return False, "governance action lifetime exceeds policy"
+    if payload.get("action") == "AUTHORITY_RESET":
+        if isinstance(payload.get("epoch"), bool) or not isinstance(
+            payload.get("epoch"), int
+        ) or payload["epoch"] < 1:
+            return False, "invalid governance action epoch"
+        for field in ("agent_id", "capability_id", "policy_sha256"):
+            if not isinstance(payload.get(field), str) or not payload[field]:
+                return False, "invalid governance action fields"
     seen_governors: set[str] = set()
     seen_nonces: set[str] = set()
     role_counts: dict[str, int] = {}

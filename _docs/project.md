@@ -38,7 +38,7 @@ The current dynamic snapshot is persisted, auditable and cryptographically bound
 
 The **Adversarial Verification Plane** treats authority artifacts as hostile input. Its reusable mutation corpus changes action, amount, capability, identity, authority state, nonce, expiry and signature fields and requires every mutation to fail at the verification boundary. This turns the core security invariants into executable regression evidence rather than documentation claims.
 
-A **Signed PolicyVersion** makes the decision basis independently auditable: policy identity, explicit version, exact policy SHA-256, source reference and parent-version link are signed by the issuer. The same artifact is carried from DecisionReceipt into ExecutionAuthorization and ExecutionReceipt, so the evidence chain can answer not only what authority existed, but which exact policy version created it.
+A **Signed PolicyVersion** makes the decision basis independently auditable: policy identity, explicit version, exact policy SHA-256, source reference and parent-version link are signed by the issuer. The same artifact is carried from DecisionReceipt into ExecutionAuthorization and ExecutionReceipt, so the evidence chain can answer not only what authority existed, but which exact policy version created it. A **Governed PolicyVersion** adds a second control boundary: the issuer signature proves what policy was published, while an exact `POLICY_CHANGE` governance action and configured multi-party quorum prove that authorized governors approved that exact digest and lineage. The governed registry enforces monotonic versioning and parent linkage; strict engines can reject policy versions that are not in that registry.
 
 **Governance recovery is a separate authority layer.** A SUSPENDED capability enters a new authority epoch only after an Ed25519-signed `AUTHORITY_RESET` from governance. The compatibility path supports one governor; the hardened path uses a `GovernancePolicy` with threshold and optional role separation. Each governor approves the exact action digest, which commits to the exact governance-policy digest; duplicate signers do not count twice, approvals expire, nonces are persisted, and recovery is rejected without the configured quorum. Revoked or expired capabilities/identities cannot be resurrected by governance recovery. Historical incidents remain immutable audit evidence; only post-reset events affect effective authority.
 
@@ -64,6 +64,8 @@ Risk, intelligence and adversarial analysis can inform an AuthorityDecision, but
 16. Governance reset never resurrects revoked or expired static authority.
 17. Sensitive multi-party governance actions require the configured independent signer quorum; one compromised governor key cannot satisfy a threshold greater than one.
 18. A governance approval is valid only for the exact action digest, exact policy digest, authorized signer role, bounded lifetime and unused persisted nonce.
+19. A governed PolicyVersion cannot be published without a valid issuer signature plus the configured governance quorum for that exact policy digest.
+20. Governed policy lineage is monotonic: the first governed version is version 1, later versions increment by one and must name the immediately preceding governed digest as parent.
 
 ## Product boundary
 

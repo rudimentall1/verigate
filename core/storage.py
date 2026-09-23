@@ -164,6 +164,21 @@ CREATE TABLE IF NOT EXISTS policy_versions (
 CREATE INDEX IF NOT EXISTS idx_policy_versions_identity
     ON policy_versions(policy_id, version);
 
+CREATE TABLE IF NOT EXISTS governed_policy_changes (
+    policy_sha256 TEXT PRIMARY KEY,
+    policy_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    parent_sha256 TEXT,
+    action_id TEXT NOT NULL UNIQUE,
+    action_nonce TEXT NOT NULL UNIQUE,
+    governance_policy_sha256 TEXT NOT NULL,
+    envelope_json TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_governed_policy_changes_identity
+    ON governed_policy_changes(policy_id, version);
+
 CREATE TABLE IF NOT EXISTS authority_resets (
     reset_id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL,
@@ -869,6 +884,126 @@ class Storage:
                 (policy_sha256,),
             ).fetchone()
         return json.loads(row[0]) if row else None
+
+    def latest_policy_version(self, policy_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT policy_sha256, policy_id, version, source_ref, signed_policy_json "
+                "FROM policy_versions WHERE policy_id = ? ORDER BY version DESC LIMIT 1",
+                (policy_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "policy_sha256": row[0],
+            "policy_id": row[1],
+            "version": row[2],
+            "source_ref": row[3],
+            "signed_policy": json.loads(row[4]),
+        }
+
+    def governed_policy_change_by_sha(self, policy_sha256: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT envelope_json FROM governed_policy_changes WHERE policy_sha256 = ?",
+                (policy_sha256,),
+            ).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def latest_governed_policy_version(self, policy_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT policy_sha256, policy_id, version, parent_sha256, envelope_json "
+                "FROM governed_policy_changes WHERE policy_id = ? "
+                "ORDER BY version DESC LIMIT 1",
+                (policy_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "policy_sha256": row[0],
+            "policy_id": row[1],
+            "version": row[2],
+            "parent_sha256": row[3],
+            "envelope": json.loads(row[4]),
+        }
+
+    def register_governed_policy_change(
+        self,
+        signed_policy: dict,
+        envelope: dict,
+        *,
+        governance_approvals: list[dict] | None = None,
+    ) -> None:
+        payload = signed_policy["payload"]
+        action = envelope["governance_action"]
+        with self._lock:
+            try:
+                for approval in governance_approvals or []:
+                    approval_payload = approval["payload"]
+                    self._conn.execute(
+                        "INSERT INTO governance_approvals "
+                        "(approval_id, action_digest, governor_id, role, issued_at, "
+                        "expires_at, nonce, signed_approval_json, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            approval_payload["approval_id"],
+                            approval_payload["action_digest"],
+                            approval_payload["governor_id"],
+                            approval_payload["role"],
+                            approval_payload["issued_at"],
+                            approval_payload["expires_at"],
+                            approval_payload["nonce"],
+                            json.dumps(
+                                approval,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ),
+                            time.time(),
+                        ),
+                    )
+                self._conn.execute(
+                    "INSERT INTO policy_versions "
+                    "(policy_sha256, policy_id, version, source_ref, signed_policy_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        payload["policy_sha256"],
+                        payload["policy_id"],
+                        payload["version"],
+                        payload["source_ref"],
+                        json.dumps(
+                            signed_policy,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        time.time(),
+                    ),
+                )
+                self._conn.execute(
+                    "INSERT INTO governed_policy_changes "
+                    "(policy_sha256, policy_id, version, parent_sha256, action_id, action_nonce, "
+                    "governance_policy_sha256, envelope_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        payload["policy_sha256"],
+                        payload["policy_id"],
+                        payload["version"],
+                        payload.get("parent_sha256"),
+                        action["action_id"],
+                        action["nonce"],
+                        envelope["governance_policy_sha256"],
+                        json.dumps(
+                            envelope,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("governed policy version or approval already registered") from exc
 
     def register_authority_reset(
         self,

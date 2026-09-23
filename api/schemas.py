@@ -128,6 +128,19 @@ class MultiPartyAuthorityResetResponse(BaseModel):
     governance_policy_sha256: str
 
 
+class GovernedPolicyPublishRequest(BaseModel):
+    policy: dict
+    governance_action: dict
+    approvals: list[dict]
+
+
+class GovernedPolicyPublishResponse(BaseModel):
+    policy: dict
+    governance_action: dict
+    approvals: list[dict]
+    governance_policy_sha256: str
+
+
 class ExecutionConsumeRequest(BaseModel):
     authorization: ExecutionAuthorizationResponse
 
