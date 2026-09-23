@@ -213,6 +213,7 @@ core/
     authority.py    Authority graph + cryptographic capability delegation
     authority_state.py Deterministic dynamic agent authority + evidence-driven limits
     evidence.py     Cryptographic provenance / Evidence Graph projection
+    outcome.py      Independent execution outcome claims + trusted attestations
     adversarial.py  Mutation-based attack corpus + fail-closed authority verification
     policy_version.py Signed policy versions, governed publication, freeze/rollback control and lineage verification
     governance.py   Signed authority reset + multi-party quorum governance + epoch recovery
@@ -281,7 +282,7 @@ Effective authority is evaluated over the full ancestor chain. Revoking a parent
 
 **Multi-party governance** protects sensitive authority recovery from a single compromised governance key. A `GovernancePolicy` defines the quorum threshold, optional required roles and bounded approval lifetime. Each governor signs the exact governance-action digest, which also commits to the exact governance-policy digest. Signers are unique, approvals expire, nonces are persisted, and the quorum is checked before a new authority epoch can be opened. The HTTP control plane exposes the configured policy at `GET /v1/governance/policy` and the hardened recovery path at `POST /v1/authority/reset/multi`.
 
-A **Decision Receipt** proves what Verigate decided. An **Execution Authorization** is distinct: only ALLOW can mint it, and the signed artifact contains the exact action fingerprint plus capability, identity and dynamic-authority fingerprints. The execution boundary consumes the artifact fail-closed. Confirmed/failed execution receipts feed verified outcomes back into the capability's authority state.
+A **Decision Receipt** proves what Verigate decided. An **Execution Authorization** is distinct: only ALLOW can mint it, and the signed artifact contains the exact action fingerprint plus capability, identity and dynamic-authority fingerprints. The execution boundary consumes the artifact fail-closed. An **Execution Receipt** records what the executor reported, but it does not by itself change authority. An independent **Outcome Claim** binds the observed result to that signed receipt; a registered external or chain attestor can then sign an **Outcome Attestation**. Only those independent attestations automatically create `EXECUTION_CONFIRMED` / `EXECUTION_FAILED` authority events. Executor self-reports remain auditable evidence but cannot promote or demote the agent.
 
 Revoking an identity or capability prevents future authorizations. It does not silently mutate an already-issued authorization; issued authority remains bound to the exact identity/capability versions that produced it.
 
@@ -289,9 +290,9 @@ Payment and x402 remain backward-compatible adapters while this general authorit
 
 ## Roadmap
 
-1. **Evidence Graph expansion** — durable delegation signatures, richer policy/governance lineage and non-chain execution outcome proofs.
-2. **Execution Fabric** — reference MCP and HTTP/API executors consuming the same `ExecutionAuthorization` as EVM/Solana/payment adapters.
-3. **Hosted authority infrastructure** — multi-tenant key management, governance operations and offline-verifiable evidence at service scale.
+1. **Evidence Graph expansion** — independent non-chain outcome proofs, external attestations and tamper-evident evidence manifests.
+2. **Execution Fabric** — harden generic MCP/HTTP/API executors and attach independently verifiable effect evidence.
+3. **Hosted authority infrastructure** — multi-tenant key management, attestor lifecycle, governance operations and offline-verifiable evidence at service scale.
 
 ## License
 
@@ -320,7 +321,9 @@ A multi-party policy is supplied through `VERIGATE_GOVERNANCE_POLICY` and contai
 
 `ExecutionAuthorization` is short-lived, nonce-bound, and contains the authorized normalized action plus identity/capability fingerprints. The execution adapter consumes it; the decision receipt is evidence and is not itself permission to execute. The Execution Fabric now has generic `mcp.tool.call` and `api.request` boundaries in addition to chain-specific adapters; they execute only the exact signed action data and fail closed before consuming authority on unsupported targets or URL drift.
 
-The **Evidence Graph** exposes this provenance as a deterministic subgraph. `/v1/evidence/authorization/{id}` and `/v1/evidence/intent/{id}` return the identity, agent signature, signed delegation path, governed policy lineage, freeze/rollback controls, authority reset, dynamic authority state, decision receipt, execution authorization, execution receipt and resulting authority event when those artifacts exist. Each artifact is hash-addressed; missing delegation signatures and invalid governance approvals are surfaced as invalid evidence rather than silently treated as trusted links.
+The **Evidence Graph** exposes this provenance as a deterministic subgraph. `/v1/evidence/authorization/{id}` and `/v1/evidence/intent/{id}` return the identity, agent signature, signed delegation path, governed policy lineage, freeze/rollback controls, authority reset, dynamic authority state, decision receipt, execution authorization, execution receipt, outcome claim, outcome attestation and resulting authority event when those artifacts exist. Each artifact is hash-addressed; missing delegation signatures, invalid governance approvals and invalid outcome attestations are surfaced as invalid evidence rather than silently treated as trusted links.
+
+The outcome plane is exposed through `POST /v1/outcomes/attest` and `GET /v1/evidence/outcome/{authorization_id}`. Trusted attestors are durable registry entries rather than arbitrary public keys supplied in an attestation. Deployments can seed them with `VERIGATE_OUTCOME_ATTESTORS` as a JSON array of `attestor_id`, `public_key_b64` and `attestor_type` objects. `EXECUTOR` keys may self-report, but only `EXTERNAL_VERIFIER` or `CHAIN_VERIFIER` attestations can change dynamic authority automatically. Chain verifiers must supply `CHAIN_RECEIPT` evidence.
 
 `POST /v1/authorize/x402` provides the compatibility contract for an x402 `PAYMENT-REQUIRED` header.
 

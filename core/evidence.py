@@ -16,6 +16,7 @@ from core.governance import GovernancePolicy, verify_authority_reset, verify_gov
 from core.authority_state import DynamicAuthorityService
 from core.identity import verify_action_signature
 from core.models import ActionIntent
+from core.outcome import OutcomeAttestationService, digest as outcome_digest
 from core.policy_version import verify_policy_version
 from core.storage import Storage
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -339,6 +340,62 @@ class EvidenceGraph:
                         if event["evidence_ref"] == receipt_id:
                             nodes.append(_node("authority_event", event["event_id"], event))
                             edges.append({"from": f"execution_receipt:{receipt_id}", "relation": "INFORMS", "to": f"authority_event:{event['event_id']}"})
+
+                outcome_service = OutcomeAttestationService(
+                    self.storage,
+                    self.public_key,
+                )
+                for claim in self.storage.outcome_claims_by_authorization(execution_id):
+                    claim_id = claim["claim_id"]
+                    claim_sha256 = outcome_digest(claim)
+                    nodes.append(_node("outcome_claim", claim_id, claim))
+                    edges.append({
+                        "from": f"execution_receipt:{receipt_id}",
+                        "relation": "OBSERVED_BY",
+                        "to": f"outcome_claim:{claim_id}",
+                    })
+                    for attestation in self.storage.outcome_attestations_by_claim(claim_id):
+                        attestation_id = attestation["payload"]["attestation_id"]
+                        try:
+                            outcome_check = outcome_service.verify_existing(attestation)
+                            verification[f"outcome_attestation:{attestation_id}"] = {
+                                "valid": True,
+                                "reason": outcome_check["reason"],
+                                "claim_sha256": claim_sha256,
+                                "attestation_sha256": outcome_check["attestation_sha256"],
+                                "attestor_type": attestation["payload"]["attestor_type"],
+                            }
+                        except (KeyError, TypeError, ValueError, PermissionError, LookupError) as exc:
+                            verification[f"outcome_attestation:{attestation_id}"] = {
+                                "valid": False,
+                                "reason": str(exc),
+                            }
+                        nodes.append(_node(
+                            "outcome_attestation",
+                            attestation_id,
+                            attestation,
+                        ))
+                        edges.append({
+                            "from": f"outcome_attestation:{attestation_id}",
+                            "relation": "ATTESTS",
+                            "to": f"outcome_claim:{claim_id}",
+                        })
+                    if capability_id:
+                        for event in self.storage.authority_events(
+                            agent_id=agent_id,
+                            capability_id=capability_id,
+                        ):
+                            if event["evidence_ref"] == claim_id:
+                                nodes.append(_node(
+                                    "authority_event",
+                                    event["event_id"],
+                                    event,
+                                ))
+                                edges.append({
+                                    "from": f"outcome_claim:{claim_id}",
+                                    "relation": "INFORMS",
+                                    "to": f"authority_event:{event['event_id']}",
+                                })
 
         verification["action_digest"] = action_digest(intent)
         verification["audit_present"] = True

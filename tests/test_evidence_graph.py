@@ -21,6 +21,11 @@ from core.governance import (
 from core.policy_version import create_policy_change_action
 from core.identity import sign_action_intent
 from core.models import ActionIntent, AgentIdentity, Capability
+from core.outcome import (
+    OutcomeAttestationService,
+    build_outcome_attestation,
+    build_outcome_claim,
+)
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
@@ -122,6 +127,37 @@ class EvidenceGraphTest(unittest.TestCase):
                 "block_ref": "effect-block-1",
             },
         )
+        attestor_key = Ed25519PrivateKey.generate()
+        raw_attestor = attestor_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        attestor_id = "evidence-external-verifier"
+        outcome_service = OutcomeAttestationService(
+            self.storage,
+            self.public_key,
+        )
+        outcome_service.register_attestor(
+            attestor_id=attestor_id,
+            public_key_b64=base64.b64encode(raw_attestor).decode("ascii"),
+            attestor_type="EXTERNAL_VERIFIER",
+        )
+        claim = build_outcome_claim(
+            confirmed.as_dict(),
+            status="SUCCEEDED",
+            executor_id="evidence-test",
+            evidence_kind="MCP_RESULT",
+            evidence_ref="mcp-result:evidence-1",
+            result_sha256=hashlib.sha256(b"tool-ready").hexdigest(),
+        )
+        attestation = build_outcome_attestation(
+            claim,
+            attestor_id=attestor_id,
+            attestor_type="EXTERNAL_VERIFIER",
+            private_key=attestor_key,
+        )
+        outcome = outcome_service.verify_and_record(attestation)
+        self.assertTrue(outcome["valid"])
         graph = EvidenceGraph(self.storage, self.public_key).build(
             authorization["payload"]["authorization_id"]
         )
@@ -132,8 +168,18 @@ class EvidenceGraphTest(unittest.TestCase):
         self.assertIn("policy_version", node_types)
         self.assertIn("execution_authorization", node_types)
         self.assertIn("execution_receipt", node_types)
+        self.assertIn("outcome_claim", node_types)
+        self.assertIn("outcome_attestation", node_types)
         self.assertIn("authority_event", node_types)
-        self.assertTrue(graph["verification"]["all_signed_artifacts_valid"], graph["verification"])
+        self.assertTrue(
+            graph["verification"]["all_signed_artifacts_valid"],
+            graph["verification"],
+        )
+        self.assertTrue(
+            graph["verification"][
+                f"outcome_attestation:{attestation['payload']['attestation_id']}"
+            ]["valid"]
+        )
         self.assertEqual(confirmed.payload["status"], "CONFIRMED")
 
     def test_graph_proves_signed_delegation(self):

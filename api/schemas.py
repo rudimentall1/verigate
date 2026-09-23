@@ -178,3 +178,24 @@ class ExecutionConsumeRequest(BaseModel):
 class ExecutionConsumeResponse(BaseModel):
     execute: bool
     reason: str
+
+
+class OutcomeAttestationRequest(BaseModel):
+    attestation: dict
+
+
+class OutcomeAttestationResponse(BaseModel):
+    valid: bool
+    reason: str
+    claim: dict
+    claim_sha256: str
+    attestation_id: str
+    attestation_sha256: str
+    authority_event: dict | None = None
+    claim_verification: dict
+
+
+class OutcomeEvidenceResponse(BaseModel):
+    authorization_id: str
+    claims: list[dict]
+    attestations: list[dict]

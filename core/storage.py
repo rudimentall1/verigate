@@ -258,6 +258,41 @@ CREATE INDEX IF NOT EXISTS idx_governance_approvals_action
 
 CREATE INDEX IF NOT EXISTS idx_authority_resets_scope
     ON authority_resets(agent_id, capability_id, epoch);
+
+CREATE TABLE IF NOT EXISTS outcome_attestors (
+    attestor_id TEXT PRIMARY KEY,
+    key_id TEXT NOT NULL UNIQUE,
+    public_key_b64 TEXT NOT NULL,
+    attestor_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    revoked_at REAL
+);
+
+CREATE TABLE IF NOT EXISTS execution_outcome_claims (
+    claim_id TEXT PRIMARY KEY,
+    authorization_id TEXT NOT NULL,
+    execution_receipt_sha256 TEXT NOT NULL,
+    claim_sha256 TEXT NOT NULL UNIQUE,
+    claim_json TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_outcome_claims_authorization
+    ON execution_outcome_claims(authorization_id, created_at);
+
+CREATE TABLE IF NOT EXISTS outcome_attestations (
+    attestation_id TEXT PRIMARY KEY,
+    claim_id TEXT NOT NULL,
+    attestor_id TEXT NOT NULL,
+    attestation_type TEXT NOT NULL,
+    attestation_sha256 TEXT NOT NULL UNIQUE,
+    attestation_json TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_outcome_attestations_claim
+    ON outcome_attestations(claim_id, created_at);
 """
 
 
@@ -1413,6 +1448,152 @@ class Storage:
     def set_signature(self, intent_id: str, signature: str) -> None:
         """Backward-compatible alias for update_signature()."""
         self.update_signature(intent_id, signature)
+
+    def register_outcome_attestor(self, attestor: dict) -> None:
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO outcome_attestors "
+                    "(attestor_id, key_id, public_key_b64, attestor_type, status, created_at, revoked_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, NULL)",
+                    (
+                        attestor["attestor_id"],
+                        attestor["key_id"],
+                        attestor["public_key_b64"],
+                        attestor["attestor_type"],
+                        attestor.get("status", "ACTIVE"),
+                        time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("outcome attestor already registered") from exc
+
+    def outcome_attestor(self, attestor_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT attestor_id, key_id, public_key_b64, attestor_type, status, "
+                "created_at, revoked_at FROM outcome_attestors WHERE attestor_id = ?",
+                (attestor_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(zip(
+            ("attestor_id", "key_id", "public_key_b64", "attestor_type", "status",
+             "created_at", "revoked_at"),
+            row,
+        ))
+
+    def revoke_outcome_attestor(self, attestor_id: str) -> None:
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE outcome_attestors SET status = 'REVOKED', revoked_at = ? "
+                "WHERE attestor_id = ? AND status = 'ACTIVE'",
+                (time.time(), attestor_id),
+            )
+            if cursor.rowcount != 1:
+                self._conn.rollback()
+                raise ValueError("active outcome attestor not found")
+            self._conn.commit()
+
+    @staticmethod
+    def _object_digest(value: dict) -> str:
+        canonical = json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
+
+    def record_outcome_claim(self, claim: dict) -> None:
+        claim_sha256 = self._object_digest(claim)
+        with self._lock:
+            existing = self._conn.execute(
+                "SELECT claim_json, claim_sha256 FROM execution_outcome_claims "
+                "WHERE claim_id = ?",
+                (claim["claim_id"],),
+            ).fetchone()
+            if existing is not None:
+                if existing[1] != claim_sha256 or json.loads(existing[0]) != claim:
+                    raise ValueError("outcome claim id is already bound to different content")
+                return
+            try:
+                self._conn.execute(
+                    "INSERT INTO execution_outcome_claims "
+                    "(claim_id, authorization_id, execution_receipt_sha256, claim_sha256, "
+                    "claim_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        claim["claim_id"],
+                        claim["authorization_id"],
+                        claim["execution_receipt_sha256"],
+                        claim_sha256,
+                        json.dumps(claim, sort_keys=True, separators=(",", ":")),
+                        time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("outcome claim already recorded") from exc
+
+    def outcome_claims_by_authorization(self, authorization_id: str) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT claim_json FROM execution_outcome_claims "
+                "WHERE authorization_id = ? ORDER BY created_at ASC",
+                (authorization_id,),
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]
+
+    def record_outcome_attestation(self, attestation: dict) -> None:
+        payload = attestation["payload"]
+        attestation_sha256 = self._object_digest(attestation)
+        with self._lock:
+            existing = self._conn.execute(
+                "SELECT attestation_json, attestation_sha256 FROM outcome_attestations "
+                "WHERE attestation_id = ?",
+                (payload["attestation_id"],),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing[1] != attestation_sha256
+                    or json.loads(existing[0]) != attestation
+                ):
+                    raise ValueError(
+                        "outcome attestation id is already bound to different content"
+                    )
+                return
+            try:
+                self._conn.execute(
+                    "INSERT INTO outcome_attestations "
+                    "(attestation_id, claim_id, attestor_id, attestation_type, "
+                    "attestation_sha256, attestation_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        payload["attestation_id"],
+                        payload["claim"]["claim_id"],
+                        payload["attestor_id"],
+                        payload["attestor_type"],
+                        attestation_sha256,
+                        json.dumps(attestation, sort_keys=True, separators=(",", ":")),
+                        time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("outcome attestation already recorded") from exc
+
+    def outcome_attestations_by_claim(self, claim_id: str) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT attestation_json FROM outcome_attestations "
+                "WHERE claim_id = ? ORDER BY created_at ASC",
+                (claim_id,),
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]
 
     def close(self) -> None:
         with self._lock:

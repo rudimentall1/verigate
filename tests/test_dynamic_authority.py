@@ -1,6 +1,11 @@
+import base64
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import (
@@ -12,6 +17,11 @@ from core.authority_state import (
     DynamicAuthorityService,
 )
 from core.models import ActionIntent, Capability
+from core.outcome import (
+    OutcomeAttestationService,
+    build_outcome_attestation,
+    build_outcome_claim,
+)
 from core.storage import Storage
 
 
@@ -245,13 +255,50 @@ class DynamicAuthorityTest(unittest.TestCase):
             {"state": "CONFIRMED", "transaction_ref": "tx-dynamic-001"},
         )
         self.assertIsNotNone(confirmed)
+        self.assertEqual(
+            self.storage.authority_events(
+                agent_id=self.capability.agent_id,
+                capability_id=self.capability.capability_id,
+            ),
+            [],
+        )
+        attestor_key = Ed25519PrivateKey.generate()
+        raw = attestor_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        outcome_service = OutcomeAttestationService(
+            self.storage,
+            load_public_key(public_path),
+        )
+        outcome_service.register_attestor(
+            attestor_id="dynamic-external-verifier",
+            public_key_b64=base64.b64encode(raw).decode("ascii"),
+            attestor_type="EXTERNAL_VERIFIER",
+        )
+        claim = build_outcome_claim(
+            confirmed.as_dict(),
+            status="SUCCEEDED",
+            executor_id="verigate",
+            evidence_kind="EXTERNAL_REFERENCE",
+            evidence_ref="dynamic-verifier-001",
+            result_sha256=hashlib.sha256(b"confirmed").hexdigest(),
+        )
+        attestation = build_outcome_attestation(
+            claim,
+            attestor_id="dynamic-external-verifier",
+            attestor_type="EXTERNAL_VERIFIER",
+            private_key=attestor_key,
+        )
+        result = outcome_service.verify_and_record(attestation)
+        self.assertTrue(result["valid"])
         events = self.storage.authority_events(
             agent_id=self.capability.agent_id,
             capability_id=self.capability.capability_id,
         )
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["event_type"], "EXECUTION_CONFIRMED")
-        self.assertEqual(events[0]["evidence_ref"], submitted.payload["receipt_id"])
+        self.assertEqual(events[0]["evidence_ref"], claim["claim_id"])
 
 
 

@@ -9,6 +9,8 @@ Endpoints:
   POST /v1/actions/authorize
   POST /v1/authorize/x402
   POST /v1/execution/consume
+  POST /v1/outcomes/attest
+  GET  /v1/evidence/outcome/{authorization_id}
   GET  /v1/execution/networks
   GET  /v1/authority/capabilities/{id}
   POST /v1/verify
@@ -46,6 +48,7 @@ from core.authority import AuthorityGraph
 from core.authority_state import DynamicAuthorityService
 from core.engine import GuardrailEngine
 from core.evidence import EvidenceGraph
+from core.outcome import OutcomeAttestationService
 from core.governance import (
     AuthorityGovernanceService,
     GovernanceMember,
@@ -78,6 +81,9 @@ from .schemas import (
     DecisionResponse,
     ExecutionConsumeRequest,
     ExecutionConsumeResponse,
+    OutcomeAttestationRequest,
+    OutcomeAttestationResponse,
+    OutcomeEvidenceResponse,
     PaymentIntentRequest,
     VerifyRequest,
     VerifyResponse,
@@ -108,6 +114,7 @@ REQUIRE_GOVERNED_POLICY = os.environ.get(
     "VERIGATE_REQUIRE_GOVERNED_POLICY",
     "",
 ).lower() in {"1", "true", "yes"}
+OUTCOME_ATTESTORS_JSON = os.environ.get("VERIGATE_OUTCOME_ATTESTORS", "")
 
 app = FastAPI(
     title="Verigate",
@@ -140,6 +147,39 @@ def _load_governance_policy() -> GovernancePolicy:
     return policy
 
 
+def _load_outcome_attestors() -> None:
+    if not OUTCOME_ATTESTORS_JSON:
+        return
+    assert _storage is not None
+    data = json.loads(OUTCOME_ATTESTORS_JSON)
+    if not isinstance(data, list):
+        raise ValueError("VERIGATE_OUTCOME_ATTESTORS must be a JSON array")
+    service = OutcomeAttestationService(
+        _storage,
+        load_public_key(PUBLIC_KEY_PATH),
+    )
+    for item in data:
+        if not isinstance(item, dict):
+            raise ValueError("each configured outcome attestor must be an object")
+        attestor_id = item["attestor_id"]
+        existing = _storage.outcome_attestor(attestor_id)
+        if existing is None:
+            service.register_attestor(
+                attestor_id=attestor_id,
+                public_key_b64=item["public_key_b64"],
+                attestor_type=item["attestor_type"],
+            )
+            continue
+        if (
+            existing["public_key_b64"] != item["public_key_b64"]
+            or existing["attestor_type"] != item["attestor_type"]
+            or existing["status"] != "ACTIVE"
+        ):
+            raise ValueError(
+                f"configured outcome attestor '{attestor_id}' conflicts with stored key"
+            )
+
+
 @app.on_event("startup")
 def _startup() -> None:
     global _policy, _storage, _engine, _governance_policy
@@ -152,6 +192,7 @@ def _startup() -> None:
         )
     _policy = Policy.load(POLICY_PATH)
     _storage = Storage(DB_PATH)
+    _load_outcome_attestors()
     _engine = GuardrailEngine(
         _policy,
         _storage,
@@ -366,6 +407,48 @@ def consume_execution(req: ExecutionConsumeRequest) -> dict:
     )
     ok, reason = router.consume(req.authorization.model_dump())
     return {"execute": ok, "reason": reason}
+
+
+@app.post(
+    "/v1/outcomes/attest",
+    response_model=OutcomeAttestationResponse,
+)
+def attest_outcome(req: OutcomeAttestationRequest) -> dict:
+    """Record an independently signed execution outcome."""
+    assert _storage is not None
+    try:
+        return OutcomeAttestationService(
+            _storage,
+            load_public_key(PUBLIC_KEY_PATH),
+        ).verify_and_record(req.attestation)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (KeyError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(
+    "/v1/evidence/outcome/{authorization_id}",
+    response_model=OutcomeEvidenceResponse,
+)
+def outcome_evidence(authorization_id: str) -> dict:
+    assert _storage is not None
+    claims = _storage.outcome_claims_by_authorization(authorization_id)
+    return {
+        "authorization_id": authorization_id,
+        "claims": claims,
+        "attestations": [
+            att
+            for claim in claims
+            for att in _storage.outcome_attestations_by_claim(
+                claim["claim_id"]
+            )
+        ],
+    }
 
 
 @app.get("/v1/execution/networks")

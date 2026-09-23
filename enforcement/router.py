@@ -10,7 +10,6 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 
 from attest.receipt import ExecutionReceipt, sign_execution_receipt
 
-from core.authority_state import DynamicAuthorityService
 from core.storage import Storage
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.local import ExecutionGate
@@ -186,15 +185,9 @@ class ExecutionRouter:
             )
 
         self.storage.record_execution_receipt(receipt.as_dict())
-        capability_id = receipt.payload.get("capability_id")
-        if capability_id and receipt.payload["status"] == "FAILED":
-            DynamicAuthorityService(self.storage).record_event(
-                agent_id=receipt.payload["agent_id"],
-                capability_id=capability_id,
-                identity_id=receipt.payload.get("identity_id"),
-                event_type="EXECUTION_FAILED",
-                evidence_ref=receipt.payload["receipt_id"],
-            )
+        # ExecutionReceipt is executor evidence only. Dynamic authority changes
+        # require an independent OutcomeAttestation, so a local executor cannot
+        # promote or demote itself by merely reporting an outcome.
         return receipt
 
     @staticmethod
@@ -241,17 +234,6 @@ class ExecutionRouter:
         payload["network"] = current.get("network")
         updated = ExecutionReceipt(payload=payload, signature=updated.signature, algorithm=updated.algorithm)
         self.storage.update_execution_receipt(updated.as_dict())
-        capability_id = updated.payload.get("capability_id")
-        if capability_id:
-            DynamicAuthorityService(self.storage).record_event(
-                agent_id=updated.payload["agent_id"],
-                capability_id=capability_id,
-                identity_id=updated.payload.get("identity_id"),
-                event_type=(
-                    "EXECUTION_CONFIRMED"
-                    if updated.payload["status"] == "CONFIRMED"
-                    else "EXECUTION_FAILED"
-                ),
-                evidence_ref=updated.payload["receipt_id"],
-            )
+        # Confirmation updates the execution evidence, but does not by itself
+        # change authority. A separate trusted attestor must confirm the effect.
         return updated
