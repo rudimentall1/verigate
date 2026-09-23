@@ -108,6 +108,10 @@ PYTHONPATH=. python3 demo_tamper_enforcement.py
 
 # Run the CMC RWA integration in offline fixture mode
 PYTHONPATH=. python3 demo_cmc_rwa.py --fixture
+
+# Run a real Solana Devnet execution: ALLOW -> broadcast -> confirmation
+PYTHONPATH=. python3 demo_live_solana_devnet.py
+# Optional: override the public Devnet RPC with VERIGATE_SOLANA_DEVNET_RPC_URL
 ```
 
 ### CLI

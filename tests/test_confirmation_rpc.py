@@ -5,6 +5,15 @@ from enforcement.solana_rpc import SolanaRpcClient
 
 
 class ConfirmationRpcTest(unittest.TestCase):
+    def test_solana_airdrop(self):
+        response = b'{"jsonrpc":"2.0","id":1,"result":"airdrop-sig"}'
+
+        def transport(endpoint, payload, headers, timeout):
+            return response
+
+        client = SolanaRpcClient("https://example.invalid", transport=transport)
+        self.assertEqual(client.request_airdrop("recipient", 1_000_000), "airdrop-sig")
+
     def test_evm_pending_success_and_revert(self):
         responses = [
             b'{"jsonrpc":"2.0","id":1,"result":null}',

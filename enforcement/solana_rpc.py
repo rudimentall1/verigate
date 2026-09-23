@@ -49,6 +49,19 @@ class SolanaRpcClient:
             raise SolanaRpcError(f"Solana RPC error: {body['error']}")
         return body.get("result")
 
+    def request_airdrop(self, public_key: str, lamports: int) -> str:
+        if not isinstance(public_key, str) or not public_key:
+            raise ValueError("invalid Solana public key")
+        if not isinstance(lamports, int) or lamports <= 0:
+            raise ValueError("invalid Solana airdrop amount")
+        result = self._request(
+            "requestAirdrop",
+            [public_key, lamports, {"commitment": "confirmed"}],
+        )
+        if not isinstance(result, str) or not result:
+            raise SolanaRpcError("requestAirdrop returned no signature")
+        return result
+
     def get_latest_blockhash(self) -> dict[str, Any]:
         result = self._request("getLatestBlockhash", [{"commitment": "confirmed"}])
         if not isinstance(result, dict):
