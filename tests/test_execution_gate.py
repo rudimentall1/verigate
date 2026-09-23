@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
@@ -69,6 +70,21 @@ class ExecutionGateTest(unittest.TestCase):
             self.assertEqual(reason, "execution authorization already consumed")
         finally:
             storage.close()
+
+    def test_concurrent_workers_can_consume_authorization_only_once(self):
+        auth, action = self._auth_pair()
+        storage_a = Storage(self.db)
+        storage_b = Storage(self.db)
+        try:
+            gate_a = ExecutionGate(storage_a, load_public_key(self.pub))
+            gate_b = ExecutionGate(storage_b, load_public_key(self.pub))
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda gate: gate.consume(auth), (gate_a, gate_b)))
+            self.assertEqual(sum(ok for ok, _ in results), 1)
+            self.assertEqual(sum(reason == "execution authorization already consumed" for _, reason in results), 1)
+        finally:
+            storage_a.close()
+            storage_b.close()
 
     def test_replay_is_rejected_after_storage_reopen(self):
         auth, action = self._auth_pair()

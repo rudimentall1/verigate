@@ -112,10 +112,37 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
         if auth.get("algorithm") != "Ed25519":
             return False, "unsupported signature algorithm"
         payload = auth["payload"]
-        if int(payload["expires_at"]) < int(time.time()):
+        if payload.get("authorization_version") != 1:
+            return False, "unsupported execution authorization version"
+
+        # Reject malformed identity/timing/fingerprint fields before any state
+        # transition. The execution boundary must fail closed on ambiguous
+        # authorization envelopes, not merely rely on the signature.
+        for field in ("authorization_id", "decision_receipt_sha256", "policy_sha256", "intent_id", "agent_id", "nonce"):
+            value = payload.get(field)
+            if not isinstance(value, str) or not value:
+                return False, f"invalid execution authorization field: {field}"
+        for field in ("authorization_id", "decision_receipt_sha256"):
+            value = payload[field]
+            if len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+                return False, f"invalid execution authorization fingerprint: {field}"
+        if len(payload["authorization_id"]) != 64 or any(c not in "0123456789abcdef" for c in payload["authorization_id"]):
+            return False, "invalid execution authorization id"
+
+        issued_at = payload.get("issued_at")
+        expires_at = payload.get("expires_at")
+        if isinstance(issued_at, bool) or not isinstance(issued_at, int):
+            return False, "invalid execution authorization issued_at"
+        if isinstance(expires_at, bool) or not isinstance(expires_at, int):
+            return False, "invalid execution authorization expires_at"
+        now = int(time.time())
+        if expires_at < now:
             return False, "execution authorization expired"
-        if not payload["nonce"] or not payload["intent_id"] or not payload["agent_id"]:
-            return False, "invalid execution authorization fields"
+        if expires_at <= issued_at:
+            return False, "invalid execution authorization lifetime"
+        if issued_at > now:
+            return False, "execution authorization is not active yet"
+
         action = payload["action"]
         if not isinstance(action, dict):
             return False, "invalid authorized action"

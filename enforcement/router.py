@@ -194,6 +194,8 @@ class ExecutionRouter:
         transaction_ref = confirmation.get("transaction_ref") or current.get("transaction_ref")
         if not transaction_ref:
             raise ValueError("confirmation is missing transaction reference")
+        if transaction_ref != current.get("transaction_ref"):
+            raise ValueError("confirmation transaction reference mismatch")
         auth = {"payload": {"authorization_id": current["authorization_id"], "decision_receipt_sha256": current["decision_receipt_sha256"], "intent_id": current["intent_id"], "agent_id": current["agent_id"], "action_sha256": current["action_sha256"], "action": {"network": current.get("network")}}}
         updated = sign_execution_receipt(auth, status=state, transaction_ref=transaction_ref, executor=executor, private_key=self.private_key, error=confirmation.get("error"), receipt_id=current["receipt_id"], previous_receipt_sha256=self._receipt_digest(receipt), confirmation_ref=confirmation.get("block_ref") or confirmation.get("slot"), confirmation_data=confirmation)
         payload = dict(updated.payload)

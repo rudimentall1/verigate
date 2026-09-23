@@ -95,6 +95,23 @@ class ExecutionRouterTest(unittest.TestCase):
             self.router.execute(auth, lambda tx: sent.append(tx) or "bad")
         self.assertEqual(sent, [])
 
+    def test_mismatched_confirmation_transaction_is_rejected(self):
+        intent = ActionIntent(
+            agent_id="router-agent", action_type="token.transfer", target="merchant",
+            asset="USDC", network="base",
+            metadata={"evm_transaction": {"chain_id": 8453, "to": "0xMerchant", "value_wei": 0, "data": "0x"}},
+        )
+        auth = self._authorization(intent)["execution_authorization"]
+        router = ExecutionRouter(
+            NetworkRegistry(), self.storage, load_public_key(self.public), load_private_key(self.private)
+        )
+        receipt = router.execute_with_receipt(auth, lambda tx: "0xoriginal")
+        with self.assertRaises(ValueError):
+            router.confirm_execution_receipt(
+                receipt.as_dict(),
+                {"state": "CONFIRMED", "transaction_ref": "0xattacker"},
+            )
+
     def test_blocked_decision_does_not_create_execution_authorization(self):
         intent = ActionIntent(
             agent_id="router-agent", action_type="token.transfer", target="merchant",
