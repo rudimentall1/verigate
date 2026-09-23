@@ -13,8 +13,9 @@
 - `core.models`: normalized PaymentIntent / ActionIntent and decisions
 - `core.policy` + `core.rules`: deterministic policy evaluation
 - `core.authorization`: portable execution authorization
-- `core.engine`: orchestration
-- `core.storage`: audit/rate/spend state
+- `core.capabilities`: active authority registry and revocation
+- `core.engine`: orchestration and capability-bound authorization path
+- `core.storage`: audit/rate/spend state plus capability registry persistence
 
 ## Evidence and authorization
 

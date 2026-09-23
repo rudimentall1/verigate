@@ -19,7 +19,9 @@ The current implementation already contains important pieces of this path: Actio
 
 ## Authority model
 
-A **Capability** represents programmable authority granted to an agent: action types, resource/target scope, limits, networks, counterparties, required controls and expiry. An ExecutionAuthorization is a short-lived proof that one exact ActionIntent is permitted under that authority.
+A **Capability** represents programmable authority granted to an agent: action types, resource/target scope, limits, networks, counterparties, required controls and expiry. The **Capability Registry** is the source of truth for active capabilities and supports explicit revocation. An ExecutionAuthorization is a short-lived proof that one exact ActionIntent is permitted under that authority.
+
+Revocation applies to future authorization only. Already-issued authorization remains cryptographically bound to its capability ID, version and SHA-256 digest.
 
 The core graph is:
 Agent → Capability → ActionIntent → Resource → Effect → Evidence.
