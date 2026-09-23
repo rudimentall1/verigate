@@ -25,7 +25,7 @@ class SolanaRpcClient:
             "method": method,
             "params": params,
         }, separators=(",", ":")).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "User-Agent": "Verigate/0.1"}
         try:
             if self.transport is not None:
                 raw = self.transport(self.endpoint, payload, headers, self.timeout_seconds)
