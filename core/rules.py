@@ -4,8 +4,76 @@ numbers pulled from an unverifiable data source.
 """
 from __future__ import annotations
 
-from .models import PaymentIntent, RuleMatch, Severity
+from .models import ActionIntent, PaymentIntent, RuleMatch, Severity
 from .policy import Policy
+
+
+def check_action_type_allowed(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
+    allowed = policy.allowed_action_types
+    if allowed is None:
+        return None
+    if intent.action_type.lower() not in {a.lower() for a in allowed}:
+        return RuleMatch(
+            "action_type_not_allowed",
+            Severity.BLOCK,
+            f"action type '{intent.action_type}' is not allowed by policy",
+        )
+    return None
+
+
+def check_target_allowed(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
+    blocked = {p.lower() for p in policy.blocked_payees}
+    if intent.target.lower() in blocked:
+        return RuleMatch(
+            "target_blocked",
+            Severity.BLOCK,
+            f"target '{intent.target}' is blocked by policy",
+        )
+    allowed = policy.allowed_targets
+    if allowed is not None and intent.target.lower() not in {t.lower() for t in allowed}:
+        return RuleMatch(
+            "target_not_allowed",
+            Severity.BLOCK,
+            f"target '{intent.target}' is not allowed by policy",
+        )
+    return None
+
+
+def check_generic_network_allowed(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
+    if intent.network is None or policy.allowed_networks is None:
+        return None
+    if intent.network.lower() not in {n.lower() for n in policy.allowed_networks}:
+        return RuleMatch(
+            "network_not_allowed",
+            Severity.BLOCK,
+            f"network '{intent.network}' is not allowed by policy",
+        )
+    return None
+
+
+def check_generic_asset_allowed(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
+    if intent.asset is None or policy.allowed_assets is None:
+        return None
+    if intent.asset.upper() not in {a.upper() for a in policy.allowed_assets}:
+        return RuleMatch(
+            "asset_not_allowed",
+            Severity.BLOCK,
+            f"asset '{intent.asset}' is not allowed by policy",
+        )
+    return None
+
+
+def check_generic_amount_cap(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
+    if intent.amount is None or intent.asset is None:
+        return None
+    cap = policy.per_tx_cap.get(intent.asset.upper())
+    if cap is not None and intent.amount > cap:
+        return RuleMatch(
+            "per_tx_cap_exceeded",
+            Severity.BLOCK,
+            f"amount {intent.amount} {intent.asset} exceeds per-transaction cap {cap}",
+        )
+    return None
 
 
 def check_blocked_payee(intent: PaymentIntent, policy: Policy) -> RuleMatch | None:

@@ -176,6 +176,77 @@ class GuardrailEngine:
             return decision
 
 
+    def evaluate_action(self, action: ActionIntent) -> GuardrailDecision:
+        """Evaluate any consequential agent action, independent of protocol."""
+        with self.storage.transaction():
+            matches: list[RuleMatch] = []
+            for check in (
+                R.check_action_type_allowed,
+                R.check_target_allowed,
+                R.check_generic_network_allowed,
+                R.check_generic_asset_allowed,
+                R.check_generic_amount_cap,
+            ):
+                match = check(action, self.policy)
+                if match:
+                    matches.append(match)
+
+            calls = self.storage.calls_last_minute(action.agent_id)
+            match = R.check_rate_limit(self.policy, calls)
+            if match:
+                matches.append(match)
+
+            if any(match.severity == Severity.BLOCK for match in matches):
+                final = Decision.BLOCK
+            elif any(match.severity == Severity.WARN for match in matches):
+                final = Decision.WARN
+            else:
+                final = Decision.ALLOW
+
+            decision = GuardrailDecision(
+                intent_id=action.intent_id,
+                agent_id=action.agent_id,
+                decision=final,
+                matched_rules=tuple(matches),
+            )
+            self.storage.record_action(action, decision, commit=False)
+            return decision
+
+    def authorize_action(
+        self,
+        action: ActionIntent,
+        capability_id: str,
+        identity_id: str,
+        agent_signature: str,
+        private_key,
+    ) -> dict:
+        """Canonical control-plane authorization for a non-payment action."""
+        identity = IdentityRegistry(self.storage).authorize_action(
+            identity_id,
+            action,
+            agent_signature,
+        )
+        decision = self.evaluate_action(action)
+        capability = CapabilityRegistry(self.storage).assert_authority(
+            capability_id,
+            action,
+            identity_id=identity_id,
+        )
+        authority = DynamicAuthorityService(self.storage).assert_action(capability, action)
+        artifacts = AuthorizationService().issue(
+            action,
+            decision,
+            self.policy.digest,
+            private_key,
+            nonce=action.intent_id,
+            capability=capability,
+            identity=identity,
+            authority=authority,
+            signed_policy=self.signed_policy_version(private_key),
+        )
+        self.storage.update_signature(action.intent_id, artifacts["decision_receipt"]["signature"])
+        return artifacts
+
     def authorize(self, intent: PaymentIntent, private_key) -> dict:
         """Legacy authorization path retained for compatibility."""
         decision = self.evaluate(intent)

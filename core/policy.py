@@ -15,6 +15,8 @@ import yaml
 class Policy:
     blocked_payees: list[str] = field(default_factory=list)
     allowed_payees: list[str] | None = None  # None = no allowlist restriction
+    allowed_action_types: list[str] | None = None
+    allowed_targets: list[str] | None = None
     allowed_networks: list[str] | None = None
     allowed_assets: list[str] | None = None
     per_tx_cap: dict[str, float] = field(default_factory=dict)  # asset -> max amount
@@ -43,6 +45,8 @@ class Policy:
         return Policy(
             blocked_payees=raw.get("blocked_payees", []) or [],
             allowed_payees=raw.get("allowed_payees"),
+            allowed_action_types=raw.get("allowed_action_types"),
+            allowed_targets=raw.get("allowed_targets"),
             allowed_networks=raw.get("allowed_networks"),
             allowed_assets=raw.get("allowed_assets"),
             per_tx_cap=raw.get("per_tx_cap", {}) or {},

@@ -6,6 +6,7 @@ Endpoints:
   POST /v1/authorize
   POST /v1/authorize/capability
   POST /v1/authorize/identity
+  POST /v1/actions/authorize
   POST /v1/authorize/x402
   POST /v1/execution/consume
   GET  /v1/execution/networks
@@ -50,7 +51,7 @@ from core.governance import (
     GovernancePolicy,
     MultiPartyAuthorityGovernanceService,
 )
-from core.models import PaymentIntent
+from core.models import ActionIntent, PaymentIntent
 from core.policy import Policy
 from core.policy_version import (
     GovernedPolicyControlService,
@@ -70,6 +71,7 @@ from .schemas import (
     AuthorityResetResponse,
     MultiPartyAuthorityResetRequest,
     MultiPartyAuthorityResetResponse,
+    ActionAuthorizationRequest,
     CapabilityAuthorizationRequest,
     IdentityAuthorizationRequest,
     DecisionResponse,
@@ -307,6 +309,38 @@ def authorize_with_identity(req: IdentityAuthorizationRequest) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.post("/v1/actions/authorize", response_model=AuthorizationResponse)
+def authorize_action(req: ActionAuthorizationRequest) -> dict:
+    """Canonical protocol-agnostic authority issuance endpoint."""
+    assert _engine is not None
+    action = ActionIntent(
+        agent_id=req.agent_id,
+        action_type=req.action_type,
+        target=req.target,
+        resource=req.resource,
+        amount=req.amount,
+        asset=req.asset,
+        network=req.network,
+        metadata=req.metadata,
+        intent_id=req.intent_id,
+        timestamp=req.timestamp,
+    )
+    try:
+        return _engine.authorize_action(
+            action,
+            req.capability_id,
+            req.identity_id,
+            req.agent_signature,
+            load_private_key(PRIVATE_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/v1/authorize/x402", response_model=AuthorizationResponse)

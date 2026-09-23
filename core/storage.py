@@ -22,7 +22,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from .models import Capability, GuardrailDecision, PaymentIntent
+from .models import ActionIntent, Capability, GuardrailDecision, PaymentIntent
 
 
 _SCHEMA = """
@@ -267,6 +267,41 @@ class Storage:
             except Exception:
                 self._conn.rollback()
                 raise
+
+    def record_action(
+        self,
+        intent: ActionIntent,
+        decision: GuardrailDecision,
+        signature: str | None = None,
+        *,
+        commit: bool = True,
+    ) -> None:
+        """Record a protocol-agnostic action using the legacy audit table."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO audit_log "
+                "(intent_id, agent_id, payee, asset, network, amount, decision, "
+                "matched_rules_json, intent_json, signature, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    intent.intent_id,
+                    intent.agent_id,
+                    intent.target,
+                    intent.asset or "",
+                    intent.network or "",
+                    intent.amount if intent.amount is not None else 0.0,
+                    decision.decision.value,
+                    json.dumps([
+                        {"rule_id": m.rule_id, "severity": m.severity.value, "message": m.message}
+                        for m in decision.matched_rules
+                    ], separators=(",", ":")),
+                    json.dumps(intent.as_dict(), sort_keys=True, separators=(",", ":")),
+                    signature,
+                    time.time(),
+                ),
+            )
+            if commit:
+                self._conn.commit()
 
     def record(
         self,

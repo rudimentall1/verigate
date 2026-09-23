@@ -216,7 +216,7 @@ core/
     policy_version.py Signed policy versions, governed publication, freeze/rollback control and lineage verification
     governance.py   Signed authority reset + multi-party quorum governance + epoch recovery
     policy.py       Policy loader (the one place PyYAML is used in core/)
-    rules.py        Deterministic rule evaluators
+    rules.py        Deterministic payment + protocol-agnostic action rule evaluators
     storage.py      SQLite-backed audit/rate/spend + authority graph persistence
     engine.py       GuardrailEngine — evaluates and binds identity/capability authority
 attest/
@@ -285,9 +285,9 @@ Payment and x402 remain backward-compatible adapters while this general authorit
 
 ## Roadmap
 
-1. **Hosted, multi-tenant key management** — move beyond one local issuer keypair while keeping offline verification.
-2. **Reference execution integrations** — MCP, API, cloud, database and additional payment/chain adapters all consuming the same authority contracts.
-3. **Governed policy operations beyond publication** — controlled rollback/revocation and emergency policy freeze using the same governance authority.
+1. **Execution Fabric** — reference MCP and HTTP/API executors consuming the same `ExecutionAuthorization` as EVM/Solana/payment adapters.
+2. **Evidence Graph** — one queryable provenance chain from identity and capability through action, execution and outcome.
+3. **Hosted authority infrastructure** — multi-tenant key management, governance operations and offline-verifiable evidence at service scale.
 
 ## License
 
@@ -300,7 +300,9 @@ MIT.
 
 `POST /v1/authorize/capability` resolves a registered active capability and binds it to one exact normalized action before minting `ExecutionAuthorization`.
 
-`POST /v1/authorize/identity` is the canonical cryptographic authority path. The caller supplies an exact intent plus an agent signature; Verigate verifies the registered identity, checks the identity-bound capability and its delegation ancestry, evaluates policy, and only then mints execution authority.
+`POST /v1/actions/authorize` is the canonical protocol-agnostic authority path. The caller supplies an exact `ActionIntent` plus an agent signature; Verigate verifies the registered identity, checks the identity-bound capability and its delegation ancestry, evaluates universal action policy, and only then mints execution authority. Actions include MCP tools, API requests, cloud/database changes, contract calls and payments.
+
+`POST /v1/authorize/identity` remains the backward-compatible payment-shaped identity path. It normalizes its request into the same `ActionIntent` authority model.
 
 `GET /v1/authority/capabilities/{capability_id}` explains the authority provenance of a capability, including its delegation path, graph edges and dynamic authority state.
 

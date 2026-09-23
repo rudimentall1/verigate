@@ -25,6 +25,22 @@ class CapabilityAuthorizationRequest(PaymentIntentRequest):
     capability_id: str = Field(..., min_length=1, examples=["cap-trader-001"])
 
 
+class ActionAuthorizationRequest(BaseModel):
+    identity_id: str = Field(..., min_length=1)
+    capability_id: str = Field(..., min_length=1)
+    agent_id: str = Field(..., min_length=1)
+    agent_signature: str = Field(..., min_length=1)
+    intent_id: str = Field(..., min_length=1)
+    timestamp: float
+    action_type: str = Field(..., min_length=1, examples=["mcp.tool.call"])
+    target: str = Field(..., min_length=1, examples=["github.create_issue"])
+    resource: str = ""
+    amount: float | None = Field(None, gt=0)
+    asset: str | None = None
+    network: str | None = None
+    metadata: dict = Field(default_factory=dict)
+
+
 class IdentityAuthorizationRequest(BaseModel):
     identity_id: str = Field(..., min_length=1)
     capability_id: str = Field(..., min_length=1)
