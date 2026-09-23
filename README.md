@@ -137,23 +137,32 @@ PYTHONPATH=. python3 cli.py history --agent trading-agent-001
 
 ### Judge demo UI
 
-Start the API and open **http://localhost:8000/demo/**. The UI is deliberately optimized for a 15-second judge path:
+The browser UI lives at **http://localhost:8000/demo/**, but the demo execution endpoints are disabled by default. This is intentional: opening a web page must never implicitly expose a live blockchain execution endpoint.
 
-1. Change the approved destination after authorization → **BLOCK** at the execution boundary → **0 broadcasts**.
-2. Execute the untouched authorization → **real Solana Devnet** broadcast → confirmation → explorer receipt.
+For a safe local proof of execution-side enforcement:
 
-The tamper panel runs the same enforcement demo used by the automated proof. The live panel runs the real Devnet execution demo; if the public faucet is rate-limited, provide a funded Devnet sender with `--sender-keypair` when running the script directly.
-
-The demo endpoints are intended for a local judging environment:
-
-- `GET /v1/demo/tamper`
-- `GET /v1/demo/live`
-- `GET /demo/`
-
-```bash
-uvicorn api.main:app --reload
+```powershell
+.\scripts\demo.ps1
 # open http://localhost:8000/demo/
 ```
+
+This enables only the deterministic tamper proof. It demonstrates: change the approved destination after authorization → **BLOCK** at the execution boundary → **0 broadcasts**.
+
+For the explicit Solana Devnet demo, use:
+
+```powershell
+.\scripts\demo.ps1 -Live
+```
+
+`-Live` enables the real Devnet endpoint for that local process only. It may broadcast a real Devnet transaction and should not be enabled on a public deployment.
+
+The endpoints are:
+
+- `GET /demo/` — static judge UI, safe to serve by default.
+- `GET /v1/demo/tamper` — deterministic enforcement proof; enabled by `VERIGATE_ENABLE_DEMO_TAMPER=true`.
+- `GET /v1/demo/live` — real Solana Devnet execution; requires explicit `VERIGATE_ENABLE_DEMO_ENDPOINTS=true`.
+
+The UI itself remains available even when execution endpoints are disabled, so a deployed instance does not silently become a transaction broadcaster just because `/demo/` is reachable.
 
 Or with Docker:
 

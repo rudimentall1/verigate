@@ -83,11 +83,13 @@ def health() -> dict:
 
 _DEMO_ROOT = Path(__file__).resolve().parent.parent
 ENABLE_DEMO_ENDPOINTS = os.environ.get("VERIGATE_ENABLE_DEMO_ENDPOINTS", "").lower() in {"1", "true", "yes"}
+ENABLE_DEMO_TAMPER = os.environ.get("VERIGATE_ENABLE_DEMO_TAMPER", "").lower() in {"1", "true", "yes"}
 
 
-def _require_demo_endpoints() -> None:
-    if not ENABLE_DEMO_ENDPOINTS:
-        raise HTTPException(status_code=404, detail="demo endpoints are disabled")
+def _require_demo_endpoints(*, live: bool = False) -> None:
+    enabled = ENABLE_DEMO_ENDPOINTS if live else (ENABLE_DEMO_ENDPOINTS or ENABLE_DEMO_TAMPER)
+    if not enabled:
+        raise HTTPException(status_code=404, detail="demo endpoint is disabled")
 
 
 def _run_demo_script(script: str, timeout: int = 45) -> str:
@@ -113,7 +115,7 @@ def demo_tamper() -> dict:
 
 @app.get("/v1/demo/live")
 def demo_live() -> dict:
-    _require_demo_endpoints()
+    _require_demo_endpoints(live=True)
     try:
         output = _run_demo_script("demo_live_solana_devnet.py", timeout=50)
     except subprocess.TimeoutExpired as exc:

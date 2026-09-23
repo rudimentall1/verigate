@@ -58,12 +58,14 @@ async function runTamper(){
 }
 async function runLive(){
   state($('liveState'),'pending','RUNNING');$('liveStatus').textContent='broadcasting…';$('liveProof').textContent='Authorization → Solana RPC → confirmation…';
-  const d=await json('/v1/demo/live');
+  const r=await fetch('/v1/demo/live');
+  if(r.status===404){state($('liveState'),'pending','DISABLED');$('liveStatus').textContent='explicit opt-in required';$('liveProof').textContent='Real Devnet execution is disabled by default. Run the local demo with -Live to enable it.';return null;}
+  const d=await r.json();
   if(d.confirmed){state($('liveState'),'allowed','CONFIRMED');$('liveStatus').textContent='REAL SIDE EFFECT';$('liveProof').innerHTML='Status: CONFIRMED\nTransaction: '+d.signature+'\nExplorer: <a target="_blank" href="'+d.explorer+'">'+d.explorer+'</a>';}
   else{state($('liveState'),'pending','UNAVAILABLE');$('liveStatus').textContent='not confirmed';$('liveProof').textContent=d.output||d.error||'Devnet execution unavailable';}
   return d;
 }
-async function sequence(){setBusy(true);try{await runTamper();await runLive();}catch(e){$('verdict').innerHTML='<strong>BLOCK proof complete.</strong><p>'+e.message+'</p>';}finally{setBusy(false)}}
+async function sequence(){setBusy(true);try{await runTamper();await runLive();}catch(e){$('verdict').innerHTML='<strong>Demo error.</strong><p>'+e.message+'</p>';}finally{setBusy(false)}}
 $('run').onclick=sequence;$('tamper').onclick=async()=>{setBusy(true);try{await runTamper()}catch(e){state($('tamperState'),'pending','ERROR');$('tamperProof').textContent=e.message}finally{setBusy(false)}};
 $('live').onclick=async()=>{setBusy(true);try{await runLive()}catch(e){state($('liveState'),'pending','ERROR');$('liveProof').textContent=e.message}finally{setBusy(false)}};
 </script>
