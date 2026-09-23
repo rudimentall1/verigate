@@ -15,12 +15,41 @@ from .authorization import AuthorizationService
 from .authority_state import DynamicAuthorityService
 from .capabilities import CapabilityRegistry
 from .identity import IdentityRegistry
+from .policy_version import build_policy_version, sign_policy_version
 
 
 class GuardrailEngine:
-    def __init__(self, policy: Policy, storage: Storage):
+    def __init__(
+        self,
+        policy: Policy,
+        storage: Storage,
+        *,
+        policy_source_ref: str = "verigate:runtime",
+        policy_version_number: int | None = None,
+        policy_parent_sha256: str | None = None,
+    ):
         self.policy = policy
         self.storage = storage
+        self.policy_source_ref = policy_source_ref
+        self.policy_version_number = (
+            policy_version_number
+            if policy_version_number is not None
+            else int(policy.raw.get("_verigate_version", 1) or 1)
+        )
+        self.policy_parent_sha256 = policy_parent_sha256
+        self._signed_policy_version = None
+
+    def signed_policy_version(self, private_key) -> dict:
+        if self._signed_policy_version is None:
+            version = build_policy_version(
+                self.policy,
+                source_ref=self.policy_source_ref,
+                version=self.policy_version_number,
+                parent_sha256=self.policy_parent_sha256,
+            )
+            self._signed_policy_version = sign_policy_version(version, private_key).as_dict()
+            self.storage.register_policy_version(self._signed_policy_version)
+        return self._signed_policy_version
 
     def evaluate(self, intent: PaymentIntent) -> GuardrailDecision:
         """Evaluate and persist one payment atomically.
@@ -127,6 +156,7 @@ class GuardrailEngine:
             self.policy.digest,
             private_key,
             nonce=intent.intent_id,
+            signed_policy=self.signed_policy_version(private_key),
         )
         self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
         return artifacts
@@ -150,6 +180,7 @@ class GuardrailEngine:
             nonce=intent.intent_id,
             capability=capability,
             authority=authority,
+            signed_policy=self.signed_policy_version(private_key),
         )
         self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
         return artifacts
@@ -185,6 +216,7 @@ class GuardrailEngine:
             capability=capability,
             identity=identity,
             authority=authority,
+            signed_policy=self.signed_policy_version(private_key),
         )
         self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
         return artifacts

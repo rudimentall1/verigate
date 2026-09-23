@@ -36,8 +36,24 @@ def _verify(payload: dict[str, Any], signature: str, public_key: Ed25519PublicKe
     public_key.verify(base64.b64decode(signature, validate=True), _canonical(payload))
 
 
-def receipt_payload(intent: ActionIntent, decision: GuardrailDecision, policy_digest: str) -> dict[str, Any]:
-    return {"receipt_version": 1, "intent": intent.as_dict(), "decision": decision.as_dict(), "policy_sha256": policy_digest}
+def receipt_payload(
+    intent: ActionIntent,
+    decision: GuardrailDecision,
+    policy_digest: str,
+    signed_policy_version: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    payload = {
+        "receipt_version": 1,
+        "intent": intent.as_dict(),
+        "decision": decision.as_dict(),
+        "policy_sha256": policy_digest,
+        "signed_policy_version": signed_policy_version,
+    }
+    if signed_policy_version is not None:
+        payload["policy_version_sha256"] = hashlib.sha256(
+            _canonical(signed_policy_version["payload"])
+        ).hexdigest()
+    return payload
 
 @dataclass(frozen=True)
 class DecisionReceipt:
@@ -50,8 +66,20 @@ class DecisionReceipt:
         return {"payload": self.payload, "signature": self.signature, "algorithm": self.algorithm}
 
 
-def sign_receipt(intent: ActionIntent, decision: GuardrailDecision, policy_digest: str, private_key: Ed25519PrivateKey) -> DecisionReceipt:
-    payload = receipt_payload(intent, decision, policy_digest)
+def sign_receipt(
+    intent: ActionIntent,
+    decision: GuardrailDecision,
+    policy_digest: str,
+    private_key: Ed25519PrivateKey,
+    *,
+    signed_policy_version: dict[str, Any] | None = None,
+) -> DecisionReceipt:
+    payload = receipt_payload(
+        intent,
+        decision,
+        policy_digest,
+        signed_policy_version=signed_policy_version,
+    )
     return DecisionReceipt(payload, _sign(payload, private_key))
 
 
@@ -91,6 +119,8 @@ def issue_execution_authorization(
         "intent_id": receipt.payload["intent"]["intent_id"],
         "agent_id": receipt.payload["intent"]["agent_id"],
         "policy_sha256": receipt.payload["policy_sha256"],
+        "signed_policy_version": receipt.payload.get("signed_policy_version"),
+        "policy_version_sha256": receipt.payload.get("policy_version_sha256"),
         "capability_id": capability_id,
         "capability_version": capability_version,
         "capability_sha256": capability_sha256,
@@ -123,6 +153,19 @@ def verify_receipt(receipt: dict[str, Any], public_key: Ed25519PublicKey) -> tup
         if (not isinstance(policy_digest, str) or len(policy_digest) != 64
                 or any(c not in "0123456789abcdef" for c in policy_digest)):
             return False, "invalid policy fingerprint"
+        signed_policy = payload.get("signed_policy_version")
+        if signed_policy is not None:
+            from core.policy_version import verify_policy_version
+            ok, reason = verify_policy_version(signed_policy, public_key)
+            if not ok:
+                return False, reason
+            expected = hashlib.sha256(
+                _canonical(signed_policy["payload"])
+            ).hexdigest()
+            if payload.get("policy_version_sha256") != expected:
+                return False, "policy version fingerprint mismatch"
+            if signed_policy["payload"].get("policy_sha256") != policy_digest:
+                return False, "policy version does not match effective policy"
         _verify(payload, signature, public_key)
         return True, "valid decision receipt"
     except (KeyError, TypeError, ValueError, InvalidSignature):
@@ -150,6 +193,20 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
                 return False, f"invalid execution authorization fingerprint: {field}"
         if len(payload["authorization_id"]) != 64 or any(c not in "0123456789abcdef" for c in payload["authorization_id"]):
             return False, "invalid execution authorization id"
+
+        signed_policy = payload.get("signed_policy_version")
+        if signed_policy is not None:
+            from core.policy_version import verify_policy_version
+            ok, reason = verify_policy_version(signed_policy, public_key)
+            if not ok:
+                return False, reason
+            expected = hashlib.sha256(
+                _canonical(signed_policy["payload"])
+            ).hexdigest()
+            if payload.get("policy_version_sha256") != expected:
+                return False, "policy version fingerprint mismatch"
+            if signed_policy["payload"].get("policy_sha256") != payload.get("policy_sha256"):
+                return False, "policy version does not match effective policy"
 
         for id_field, digest_field in (("identity_id", "identity_sha256"), ("capability_id", "capability_sha256")):
             identifier = payload.get(id_field)
@@ -248,6 +305,9 @@ def execution_receipt_payload(
         "receipt_id": receipt_id or str(uuid.uuid4()),
         "authorization_id": auth_payload["authorization_id"],
         "decision_receipt_sha256": auth_payload["decision_receipt_sha256"],
+        "policy_sha256": auth_payload.get("policy_sha256"),
+        "signed_policy_version": auth_payload.get("signed_policy_version"),
+        "policy_version_sha256": auth_payload.get("policy_version_sha256"),
         "intent_id": auth_payload["intent_id"],
         "agent_id": auth_payload["agent_id"],
         "identity_id": auth_payload.get("identity_id"),
@@ -321,6 +381,12 @@ def verify_execution_receipt(
                 return False, "execution receipt authorization mismatch"
             if payload["intent_id"] != auth["intent_id"]:
                 return False, "execution receipt intent mismatch"
+            if payload.get("policy_sha256") != auth.get("policy_sha256"):
+                return False, "execution receipt policy mismatch"
+            if payload.get("policy_version_sha256") != auth.get("policy_version_sha256"):
+                return False, "execution receipt policy version mismatch"
+            if payload.get("signed_policy_version") != auth.get("signed_policy_version"):
+                return False, "execution receipt signed policy mismatch"
             if payload["action_sha256"] != auth["action_sha256"]:
                 return False, "execution receipt action fingerprint mismatch"
             if payload.get("identity_id") != auth.get("identity_id"):

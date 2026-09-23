@@ -38,6 +38,8 @@ The current dynamic snapshot is persisted, auditable and cryptographically bound
 
 The **Adversarial Verification Plane** treats authority artifacts as hostile input. Its reusable mutation corpus changes action, amount, capability, identity, authority state, nonce, expiry and signature fields and requires every mutation to fail at the verification boundary. This turns the core security invariants into executable regression evidence rather than documentation claims.
 
+A **Signed PolicyVersion** makes the decision basis independently auditable: policy identity, explicit version, exact policy SHA-256, source reference and parent-version link are signed by the issuer. The same artifact is carried from DecisionReceipt into ExecutionAuthorization and ExecutionReceipt, so the evidence chain can answer not only what authority existed, but which exact policy version created it.
+
 Risk, intelligence and adversarial analysis can inform an AuthorityDecision, but they must never bypass deterministic capability, delegation, dynamic-authority and execution controls.
 
 ## Security invariants

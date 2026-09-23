@@ -28,6 +28,7 @@ class AuthorizationService:
         capability: Capability | None = None,
         identity: AgentIdentity | None = None,
         authority: AuthoritySnapshot | None = None,
+        signed_policy: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if action.intent_id != decision.intent_id or action.agent_id != decision.agent_id:
             raise ValueError("action and decision identities do not match")
@@ -45,7 +46,13 @@ class AuthorizationService:
             if identity is None or capability.identity_id != identity.key_id:
                 raise PermissionError("capability identity mismatch")
 
-        receipt = sign_receipt(action, decision, policy_digest, private_key)
+        receipt = sign_receipt(
+            action,
+            decision,
+            policy_digest,
+            private_key,
+            signed_policy_version=signed_policy,
+        )
         execution = None
         if decision.decision == Decision.ALLOW:
             execution = issue_execution_authorization(

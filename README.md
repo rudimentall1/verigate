@@ -89,6 +89,7 @@ system — not yet a hosted product. Specifically:
 | Capability Registry | **Real.** Capabilities are persistent, scoped, versioned and revocable; authority artifacts bind capability ID/version/digest. |
 | Dynamic Agent Authority | **Real.** Verified execution outcomes deterministically promote/demote effective authority inside the static capability ceiling; snapshots are persisted and bound to execution authorization. |
 | Adversarial Verification Plane | **Real.** A reusable mutation corpus challenges signed execution authority and exposes the result through an independent verification endpoint. |
+| Signed Policy Versions | **Real.** Policy identity, version, exact digest and provenance are signed and bound into decision, authorization and execution evidence. |
 | Authorization service | **Real.** Generic `ActionIntent` decisions can mint the same portable receipt and one-time authority used by payment and other execution flows. |
 | Execution enforcement boundary | **Real.** One-time signed capabilities are consumed fail-closed; the local and dependency-light EVM adapters share the same gate. |
 | Multi-tenant / hosted key management | **Not built.** Today, one issuer keypair per deployment, loaded from a local file. |
@@ -211,6 +212,7 @@ core/
     authority.py    Authority graph + cryptographic capability delegation
     authority_state.py Deterministic dynamic agent authority + evidence-driven limits
     adversarial.py  Mutation-based attack corpus + fail-closed authority verification
+    policy_version.py Signed immutable policy versions + lineage verification
     policy.py       Policy loader (the one place PyYAML is used in core/)
     rules.py        Deterministic rule evaluators
     storage.py      SQLite-backed audit/rate/spend + authority graph persistence
@@ -279,10 +281,9 @@ Payment and x402 remain backward-compatible adapters while this general authorit
 
 ## Roadmap
 
-1. **Adversarial Verification Plane** — independently challenge proposed authority and build a reusable regression/attack corpus.
-2. **Signed policy versions** — bind each authority decision to the exact policy version and provenance that produced it.
-3. **Hosted, multi-tenant key management** — move beyond one local issuer keypair while keeping offline verification.
-4. **Reference execution integrations** — MCP, API, cloud, database and additional payment/chain adapters all consuming the same authority contracts.
+1. **Authority reset / governance workflow** — make suspended authority recoverable through explicit, auditable governance rather than implicit timers.
+2. **Hosted, multi-tenant key management** — move beyond one local issuer keypair while keeping offline verification.
+3. **Reference execution integrations** — MCP, API, cloud, database and additional payment/chain adapters all consuming the same authority contracts.
 
 ## License
 
@@ -300,6 +301,8 @@ MIT.
 `GET /v1/authority/capabilities/{capability_id}` explains the authority provenance of a capability, including its delegation path, graph edges and dynamic authority state.
 
 `POST /v1/verify/adversarial` verifies a signed `ExecutionAuthorization` with the independent mutation corpus and reports whether every authority-tampering challenge is blocked.
+
+`GET /v1/policies/{policy_sha256}` returns the signed policy version bound to a decision, allowing independent auditors to retrieve and verify the exact policy provenance.
 
 `ExecutionAuthorization` is short-lived, nonce-bound, and contains the authorized normalized action plus identity/capability fingerprints. The execution adapter consumes it; the decision receipt is evidence and is not itself permission to execute.
 

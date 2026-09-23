@@ -84,7 +84,11 @@ def _startup() -> None:
         generate_keypair(PRIVATE_KEY_PATH, PUBLIC_KEY_PATH)
     _policy = Policy.load(POLICY_PATH)
     _storage = Storage(DB_PATH)
-    _engine = GuardrailEngine(_policy, _storage)
+    _engine = GuardrailEngine(
+        _policy,
+        _storage,
+        policy_source_ref=POLICY_PATH,
+    )
 
 
 @app.get("/health")
@@ -294,6 +298,15 @@ def verify(req: VerifyRequest) -> dict:
     pub = load_public_key(PUBLIC_KEY_PATH)
     ok, reason = verify_attestation(req.model_dump(), pub)
     return {"valid": ok, "reason": reason}
+
+
+@app.get("/v1/policies/{policy_sha256}")
+def policy_version(policy_sha256: str) -> dict:
+    assert _storage is not None
+    artifact = _storage.policy_version_by_sha(policy_sha256)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="policy version not found")
+    return artifact
 
 
 @app.post("/v1/verify/adversarial", response_model=AdversarialVerificationResponse)

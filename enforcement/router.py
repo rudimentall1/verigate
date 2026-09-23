@@ -209,6 +209,9 @@ class ExecutionRouter:
         auth = {"payload": {
             "authorization_id": current["authorization_id"],
             "decision_receipt_sha256": current["decision_receipt_sha256"],
+            "policy_sha256": current.get("policy_sha256"),
+            "signed_policy_version": current.get("signed_policy_version"),
+            "policy_version_sha256": current.get("policy_version_sha256"),
             "intent_id": current["intent_id"],
             "agent_id": current["agent_id"],
             "action_sha256": current["action_sha256"],

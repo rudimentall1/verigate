@@ -151,6 +151,18 @@ CREATE TABLE IF NOT EXISTS authority_states (
     updated_at REAL NOT NULL,
     PRIMARY KEY(agent_id, capability_id)
 );
+
+CREATE TABLE IF NOT EXISTS policy_versions (
+    policy_sha256 TEXT PRIMARY KEY,
+    policy_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    source_ref TEXT NOT NULL,
+    signed_policy_json TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_versions_identity
+    ON policy_versions(policy_id, version);
 """
 
 
@@ -792,6 +804,38 @@ class Storage:
                 (agent_id, capability_id),
             ).fetchone()
         return row[0] if row else None
+
+    def register_policy_version(self, signed_policy: dict) -> None:
+        """Persist one signed policy version by its exact policy digest."""
+        payload = signed_policy["payload"]
+        policy_sha256 = payload["policy_sha256"]
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO policy_versions "
+                "(policy_sha256, policy_id, version, source_ref, signed_policy_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    policy_sha256,
+                    payload["policy_id"],
+                    payload["version"],
+                    payload["source_ref"],
+                    json.dumps(
+                        signed_policy,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    time.time(),
+                ),
+            )
+            self._conn.commit()
+
+    def policy_version_by_sha(self, policy_sha256: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT signed_policy_json FROM policy_versions WHERE policy_sha256 = ?",
+                (policy_sha256,),
+            ).fetchone()
+        return json.loads(row[0]) if row else None
 
     def update_signature(self, intent_id: str, signature: str) -> None:
         """Attach a signature to an existing audit row.
