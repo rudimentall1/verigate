@@ -41,6 +41,25 @@ class GuardrailEngine:
         self.policy_parent_sha256 = policy_parent_sha256
         self._signed_policy_version = None
 
+    def _assert_governed_policy_control(self) -> None:
+        governed = self.storage.governed_policy_change_by_sha(self.policy.digest)
+        if governed is None:
+            raise PermissionError("policy version is not governance-approved")
+        governed_policy = governed["policy_version"]["payload"]
+        if (
+            governed_policy["policy_sha256"] != self.policy.digest
+            or governed_policy["version"] != self.policy_version_number
+            or governed_policy["source_ref"] != self.policy_source_ref
+            or governed_policy.get("parent_sha256") != self.policy_parent_sha256
+        ):
+            raise PermissionError("governed policy artifact does not match active policy")
+        control = self.storage.policy_control(governed_policy["policy_id"])
+        if control is not None:
+            if control["frozen"]:
+                raise PermissionError("governed policy is frozen")
+            if control["active_policy_sha256"] != self.policy.digest:
+                raise PermissionError("policy is not the active governed policy")
+
     def signed_policy_version(self, private_key) -> dict:
         if self._signed_policy_version is None:
             version = build_policy_version(
@@ -49,28 +68,17 @@ class GuardrailEngine:
                 version=self.policy_version_number,
                 parent_sha256=self.policy_parent_sha256,
             )
-            self._signed_policy_version = sign_policy_version(version, private_key).as_dict()
-            if self.require_governed_policy:
-                governed = self.storage.governed_policy_change_by_sha(
-                    self.policy.digest
-                )
-                if governed is None:
-                    self._signed_policy_version = None
-                    raise PermissionError(
-                        "policy version is not governance-approved"
-                    )
-                governed_policy = governed["policy_version"]["payload"]
-                if (
-                    governed_policy["policy_sha256"] != self.policy.digest
-                    or governed_policy["version"] != self.policy_version_number
-                    or governed_policy["source_ref"] != self.policy_source_ref
-                    or governed_policy.get("parent_sha256") != self.policy_parent_sha256
-                ):
-                    self._signed_policy_version = None
-                    raise PermissionError(
-                        "governed policy artifact does not match active policy"
-                    )
+            self._signed_policy_version = sign_policy_version(
+                version,
+                private_key,
+            ).as_dict()
             self.storage.register_policy_version(self._signed_policy_version)
+        if self.require_governed_policy:
+            try:
+                self._assert_governed_policy_control()
+            except PermissionError:
+                self._signed_policy_version = None
+                raise
         return self._signed_policy_version
 
     def evaluate(self, intent: PaymentIntent) -> GuardrailDecision:

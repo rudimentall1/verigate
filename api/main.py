@@ -20,6 +20,8 @@ Endpoints:
   POST /v1/authority/reset/multi
   POST /v1/policies/governed/publish
   GET  /v1/policies/governed/{policy_sha256}
+  POST /v1/policies/governed/freeze
+  POST /v1/policies/governed/rollback
 """
 from __future__ import annotations
 
@@ -50,7 +52,10 @@ from core.governance import (
 )
 from core.models import PaymentIntent
 from core.policy import Policy
-from core.policy_version import GovernedPolicyVersionRegistry
+from core.policy_version import (
+    GovernedPolicyControlService,
+    GovernedPolicyVersionRegistry,
+)
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
@@ -75,6 +80,8 @@ from .schemas import (
     VerifyResponse,
     GovernedPolicyPublishRequest,
     GovernedPolicyPublishResponse,
+    GovernedPolicyControlRequest,
+    GovernedPolicyControlResponse,
     X402HeaderRequest,
 )
 
@@ -455,6 +462,77 @@ def governed_policy(policy_sha256: str) -> dict:
     if envelope is None:
         raise HTTPException(status_code=404, detail="governed policy version not found")
     return envelope
+
+
+@app.get("/v1/policies/governed/control/{policy_id}")
+def governed_policy_control(policy_id: str) -> dict:
+    assert _storage is not None
+    control = _storage.policy_control(policy_id)
+    if control is None:
+        raise HTTPException(status_code=404, detail="policy control state not found")
+    return control
+
+
+@app.post(
+    "/v1/policies/governed/freeze",
+    response_model=GovernedPolicyControlResponse,
+)
+def freeze_governed_policy(req: GovernedPolicyControlRequest) -> dict:
+    assert _storage is not None and _governance_policy is not None
+    if _governance_policy.threshold < 2:
+        raise HTTPException(
+            status_code=503,
+            detail="multi-party governance policy is not configured",
+        )
+    if "POLICY_FREEZE" not in _governance_policy.allowed_actions:
+        raise HTTPException(
+            status_code=403,
+            detail="governance policy does not allow policy freeze",
+        )
+    try:
+        action = req.governance_action
+        if action.get("action") != "POLICY_FREEZE":
+            raise PermissionError("unsupported policy control action")
+        return GovernedPolicyControlService(_storage).apply(
+            action,
+            req.approvals,
+            _governance_policy,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post(
+    "/v1/policies/governed/rollback",
+    response_model=GovernedPolicyControlResponse,
+)
+def rollback_governed_policy(req: GovernedPolicyControlRequest) -> dict:
+    assert _storage is not None and _governance_policy is not None
+    if _governance_policy.threshold < 2:
+        raise HTTPException(
+            status_code=503,
+            detail="multi-party governance policy is not configured",
+        )
+    if "POLICY_ROLLBACK" not in _governance_policy.allowed_actions:
+        raise HTTPException(
+            status_code=403,
+            detail="governance policy does not allow policy rollback",
+        )
+    try:
+        action = req.governance_action
+        if action.get("action") != "POLICY_ROLLBACK":
+            raise PermissionError("unsupported policy control action")
+        return GovernedPolicyControlService(_storage).apply(
+            action,
+            req.approvals,
+            _governance_policy,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/v1/policies/{policy_sha256}")

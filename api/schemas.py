@@ -141,6 +141,20 @@ class GovernedPolicyPublishResponse(BaseModel):
     governance_policy_sha256: str
 
 
+class GovernedPolicyControlRequest(BaseModel):
+    governance_action: dict
+    approvals: list[dict]
+
+
+class GovernedPolicyControlResponse(BaseModel):
+    policy_id: str
+    active_policy_sha256: str
+    frozen: bool
+    governance_action: dict
+    approvals: list[dict]
+    governance_policy_sha256: str
+
+
 class ExecutionConsumeRequest(BaseModel):
     authorization: ExecutionAuthorizationResponse
 

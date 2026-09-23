@@ -14,9 +14,11 @@ from core.governance import (
     sign_governance_approval,
 )
 from core.policy_version import (
+    GovernedPolicyControlService,
     GovernedPolicyVersionRegistry,
     build_policy_version,
     create_policy_change_action,
+    create_policy_control_action,
     sign_policy_version,
     verify_policy_version,
 )
@@ -231,7 +233,12 @@ class GovernedPolicyVersionTest(unittest.TestCase):
             threshold=2,
             members=tuple(members),
             required_roles=(("security", 1), ("operations", 1)),
-            allowed_actions=("AUTHORITY_RESET", "POLICY_CHANGE"),
+            allowed_actions=(
+                "AUTHORITY_RESET",
+                "POLICY_CHANGE",
+                "POLICY_FREEZE",
+                "POLICY_ROLLBACK",
+            ),
         )
         self.storage = Storage(root / "governed.db")
 
@@ -509,6 +516,223 @@ class GovernedPolicyVersionTest(unittest.TestCase):
         main._storage = main._engine = main._policy = None
         main._governance_policy = None
 
+    def control_approvals(self, action):
+        return self.approvals_for(action)
+
+    def test_policy_freeze_blocks_cached_engine_authority(self):
+        signed = self.signed_policy()
+        self.publish(signed)
+        engine = GuardrailEngine(
+            self.policy,
+            self.storage,
+            policy_source_ref=str(self.policy_path),
+            policy_version_number=1,
+            require_governed_policy=True,
+        )
+        engine.signed_policy_version(load_private_key(self.issuer_private))
+        action = create_policy_control_action(
+            action="POLICY_FREEZE",
+            policy_id=signed["payload"]["policy_id"],
+            current_policy_sha256=signed["payload"]["policy_sha256"],
+            governance_policy=self.governance_policy,
+            reason="emergency freeze",
+            issued_at=time.time() + 0.2,
+            expires_at=time.time() + 60,
+        )
+        result = GovernedPolicyControlService(self.storage).apply(
+            action,
+            self.control_approvals(action),
+            self.governance_policy,
+        )
+        self.assertTrue(result["frozen"])
+        with self.assertRaisesRegex(PermissionError, "frozen"):
+            engine.signed_policy_version(load_private_key(self.issuer_private))
+
+    def test_policy_freeze_replay_is_persistently_blocked(self):
+        signed = self.signed_policy()
+        self.publish(signed)
+        action = create_policy_control_action(
+            action="POLICY_FREEZE",
+            policy_id=signed["payload"]["policy_id"],
+            current_policy_sha256=signed["payload"]["policy_sha256"],
+            governance_policy=self.governance_policy,
+            reason="freeze replay test",
+            issued_at=time.time() + 0.2,
+            expires_at=time.time() + 60,
+        )
+        approvals = self.control_approvals(action)
+        service = GovernedPolicyControlService(self.storage)
+        service.apply(action, approvals, self.governance_policy)
+        with self.assertRaisesRegex(PermissionError, "already registered"):
+            service.apply(action, approvals, self.governance_policy)
+
+    def test_policy_rollback_reactivates_previous_governed_version(self):
+        first = self.signed_policy()
+        self.publish(first)
+        self.policy_path.write_text(
+            "allowed_networks: [base, arbitrum]\nallowed_assets: [USDC]\n",
+            encoding="utf-8",
+        )
+        self.policy = Policy.load(self.policy_path)
+        second = self.signed_policy(
+            version=2,
+            parent_sha256=first["payload"]["policy_sha256"],
+        )
+        self.publish(second)
+
+        rollback = create_policy_control_action(
+            action="POLICY_ROLLBACK",
+            policy_id=second["payload"]["policy_id"],
+            current_policy_sha256=second["payload"]["policy_sha256"],
+            target_policy_sha256=first["payload"]["policy_sha256"],
+            target_version=1,
+            governance_policy=self.governance_policy,
+            reason="rollback compromised policy",
+            issued_at=time.time() + 0.2,
+            expires_at=time.time() + 60,
+        )
+        result = GovernedPolicyControlService(self.storage).apply(
+            rollback,
+            self.control_approvals(rollback),
+            self.governance_policy,
+        )
+        self.assertFalse(result["frozen"])
+        self.assertEqual(
+            result["active_policy_sha256"],
+            first["payload"]["policy_sha256"],
+        )
+
+        strict_v2 = GuardrailEngine(
+            self.policy,
+            self.storage,
+            policy_source_ref=str(self.policy_path),
+            policy_version_number=2,
+            policy_parent_sha256=first["payload"]["policy_sha256"],
+            require_governed_policy=True,
+        )
+        with self.assertRaisesRegex(PermissionError, "not the active governed policy"):
+            strict_v2.signed_policy_version(load_private_key(self.issuer_private))
+
+        self.policy_path.write_text(
+            "allowed_networks: [base]\nallowed_assets: [USDC]\n",
+            encoding="utf-8",
+        )
+        self.policy = Policy.load(self.policy_path)
+        strict_v1 = GuardrailEngine(
+            self.policy,
+            self.storage,
+            policy_source_ref=str(self.policy_path),
+            policy_version_number=1,
+            require_governed_policy=True,
+        )
+        artifact = strict_v1.signed_policy_version(load_private_key(self.issuer_private))
+        self.assertEqual(
+            artifact["payload"]["policy_sha256"],
+            first["payload"]["policy_sha256"],
+        )
+
+    def test_rollback_requires_real_governed_target(self):
+        signed = self.signed_policy()
+        self.publish(signed)
+        fake = "f" * 64
+        with self.assertRaisesRegex(PermissionError, "rollback target is not governed"):
+            action = create_policy_control_action(
+                action="POLICY_ROLLBACK",
+                policy_id=signed["payload"]["policy_id"],
+                current_policy_sha256=signed["payload"]["policy_sha256"],
+                target_policy_sha256=fake,
+                target_version=1,
+                governance_policy=self.governance_policy,
+                reason="invalid rollback target",
+            )
+            GovernedPolicyControlService(self.storage).apply(
+                action,
+                self.control_approvals(action),
+                self.governance_policy,
+            )
+
+    def test_control_action_policy_digest_is_bound(self):
+        signed = self.signed_policy()
+        self.publish(signed)
+        action = create_policy_control_action(
+            action="POLICY_FREEZE",
+            policy_id=signed["payload"]["policy_id"],
+            current_policy_sha256=signed["payload"]["policy_sha256"],
+            governance_policy=self.governance_policy,
+            reason="digest binding",
+        )
+        tampered = dict(action.as_dict())
+        tampered["current_policy_sha256"] = "0" * 64
+        with self.assertRaisesRegex(PermissionError, "different action"):
+            GovernedPolicyControlService(self.storage).apply(
+                tampered,
+                self.control_approvals(action),
+                self.governance_policy,
+            )
+
+
+    def test_api_policy_freeze_control(self):
+        from fastapi.testclient import TestClient
+        from api import main
+
+        root = Path(self.tmp.name) / "freeze-api"
+        root.mkdir()
+        governance_path = root / "governance-policy.json"
+        governance_path.write_text(
+            json.dumps(self.governance_policy.as_dict()),
+            encoding="utf-8",
+        )
+        main.POLICY_PATH = str(self.policy_path)
+        main.DB_PATH = str(root / "api.db")
+        main.PRIVATE_KEY_PATH = str(self.issuer_private)
+        main.PUBLIC_KEY_PATH = str(self.issuer_public)
+        main.GOVERNANCE_POLICY_PATH = str(governance_path)
+        main.REQUIRE_GOVERNED_POLICY = False
+
+        signed = self.signed_policy()
+        publish_action = create_policy_change_action(
+            signed,
+            governance_policy=self.governance_policy,
+            reason="API freeze setup",
+            issued_at=time.time() + 0.2,
+            expires_at=time.time() + 60,
+        )
+        freeze_action = create_policy_control_action(
+            action="POLICY_FREEZE",
+            policy_id=signed["payload"]["policy_id"],
+            current_policy_sha256=signed["payload"]["policy_sha256"],
+            governance_policy=self.governance_policy,
+            reason="API emergency freeze",
+            issued_at=time.time() + 0.2,
+            expires_at=time.time() + 60,
+        )
+        with TestClient(main.app) as client:
+            published = client.post(
+                "/v1/policies/governed/publish",
+                json={
+                    "policy": signed,
+                    "governance_action": publish_action.as_dict(),
+                    "approvals": self.approvals_for(publish_action),
+                },
+            )
+            self.assertEqual(published.status_code, 200)
+            frozen = client.post(
+                "/v1/policies/governed/freeze",
+                json={
+                    "governance_action": freeze_action.as_dict(),
+                    "approvals": self.control_approvals(freeze_action),
+                },
+            )
+            self.assertEqual(frozen.status_code, 200)
+            self.assertTrue(frozen.json()["frozen"])
+            control = client.get(
+                f"/v1/policies/governed/control/{signed['payload']['policy_id']}"
+            )
+            self.assertEqual(control.status_code, 200)
+            self.assertTrue(control.json()["frozen"])
+
+        main._storage = main._engine = main._policy = None
+        main._governance_policy = None
 
 if __name__ == "__main__":
     unittest.main()

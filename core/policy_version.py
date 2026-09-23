@@ -297,3 +297,178 @@ class GovernedPolicyVersionRegistry(PolicyVersionRegistry):
         }
     def governed(self, policy_sha256: str) -> dict[str, Any] | None:
         return self.storage.governed_policy_change_by_sha(policy_sha256)
+
+@dataclass(frozen=True)
+class PolicyControlGovernanceAction:
+    action_id: str
+    action: str
+    policy_id: str
+    current_policy_sha256: str
+    target_policy_sha256: str | None
+    target_version: int | None
+    governance_policy_sha256: str
+    reason: str
+    issued_at: float
+    expires_at: float
+    nonce: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "governance_version": 1,
+            "action": self.action,
+            "action_id": self.action_id,
+            "policy_id": self.policy_id,
+            "current_policy_sha256": self.current_policy_sha256,
+            "target_policy_sha256": self.target_policy_sha256,
+            "target_version": self.target_version,
+            "governance_policy_sha256": self.governance_policy_sha256,
+            "reason": self.reason,
+            "issued_at": self.issued_at,
+            "expires_at": self.expires_at,
+            "nonce": self.nonce,
+        }
+
+    @property
+    def digest(self) -> str:
+        return hashlib.sha256(_canonical(self.as_dict())).hexdigest()
+
+
+def create_policy_control_action(
+    *,
+    action: str,
+    policy_id: str,
+    current_policy_sha256: str,
+    governance_policy,
+    reason: str,
+    target_policy_sha256: str | None = None,
+    target_version: int | None = None,
+    issued_at: float | None = None,
+    expires_at: float | None = None,
+    action_id: str | None = None,
+    nonce: str | None = None,
+) -> PolicyControlGovernanceAction:
+    governance_policy.validate()
+    if action not in {"POLICY_FREEZE", "POLICY_ROLLBACK"}:
+        raise ValueError("unsupported policy control action")
+    if action not in governance_policy.allowed_actions:
+        raise ValueError("governance policy does not allow policy control")
+    if not current_policy_sha256 or not policy_id or not reason.strip():
+        raise ValueError("policy control requires policy, digest and reason")
+    if action == "POLICY_ROLLBACK":
+        if not target_policy_sha256 or target_version is None or target_version < 1:
+            raise ValueError("rollback requires target policy digest and version")
+        if target_policy_sha256 == current_policy_sha256:
+            raise ValueError("rollback target must differ from current policy")
+    else:
+        if target_policy_sha256 is not None or target_version is not None:
+            raise ValueError("freeze cannot specify a rollback target")
+    issued = time.time() if issued_at is None else issued_at
+    expiry = (
+        issued + governance_policy.max_approval_lifetime_seconds
+        if expires_at is None
+        else expires_at
+    )
+    if expiry <= issued or expiry - issued > governance_policy.max_approval_lifetime_seconds:
+        raise ValueError("invalid policy control action expiry")
+    return PolicyControlGovernanceAction(
+        action_id=action_id or str(uuid.uuid4()),
+        action=action,
+        policy_id=policy_id,
+        current_policy_sha256=current_policy_sha256,
+        target_policy_sha256=target_policy_sha256,
+        target_version=target_version,
+        governance_policy_sha256=governance_policy.digest,
+        reason=reason,
+        issued_at=issued,
+        expires_at=expiry,
+        nonce=nonce or str(uuid.uuid4()),
+    )
+
+
+class GovernedPolicyControlService:
+    """Apply quorum-approved freeze/rollback controls to governed policy activation."""
+
+    def __init__(self, storage):
+        self.storage = storage
+
+    def apply(
+        self,
+        action: PolicyControlGovernanceAction | dict[str, Any],
+        approvals: list[dict[str, Any]],
+        governance_policy,
+    ) -> dict[str, Any]:
+        from .governance import verify_governance_quorum
+
+        ok, reason = verify_governance_quorum(
+            action,
+            approvals,
+            governance_policy,
+        )
+        if not ok:
+            raise PermissionError(reason)
+        payload = action.as_dict() if hasattr(action, "as_dict") else action
+        if self.storage.policy_control_action(payload["action_id"]) is not None:
+            raise PermissionError("policy control action already registered")
+        if payload.get("action") not in {"POLICY_FREEZE", "POLICY_ROLLBACK"}:
+            raise PermissionError("unsupported policy control action")
+        if payload.get("governance_policy_sha256") != governance_policy.digest:
+            raise PermissionError("governance policy fingerprint mismatch")
+        current_governed = self.storage.governed_policy_change_by_sha(
+            payload["current_policy_sha256"]
+        )
+        if current_governed is None:
+            raise PermissionError("current policy is not governed")
+        current_policy = current_governed["policy_version"]["payload"]
+        if current_policy["policy_id"] != payload["policy_id"]:
+            raise PermissionError("current policy belongs to another policy lineage")
+        current = self.storage.policy_control(payload["policy_id"])
+        current_sha = (
+            payload["current_policy_sha256"]
+            if current is None
+            else current["active_policy_sha256"]
+        )
+        if current_sha != payload["current_policy_sha256"]:
+            raise PermissionError("policy control action targets a stale active policy")
+        if payload["action"] == "POLICY_FREEZE":
+            if current is not None and current["frozen"]:
+                raise PermissionError("policy is already frozen")
+            active_sha = payload["current_policy_sha256"]
+            frozen = True
+        else:
+            target_sha = payload.get("target_policy_sha256")
+            target_version = payload.get("target_version")
+            target = self.storage.governed_policy_change_by_sha(target_sha)
+            if target is None:
+                raise PermissionError("rollback target is not governed")
+            target_payload = target["policy_version"]["payload"]
+            if target_payload["policy_id"] != payload["policy_id"]:
+                raise PermissionError("rollback target belongs to another policy lineage")
+            if target_payload["version"] != target_version:
+                raise PermissionError("rollback target version mismatch")
+            if target_sha == payload["current_policy_sha256"]:
+                raise PermissionError("rollback target must differ from current policy")
+            active_sha = target_sha
+            frozen = False
+        envelope = {
+            "governance_action": payload,
+            "approvals": approvals,
+            "governance_policy": governance_policy.as_dict(),
+            "governance_policy_sha256": governance_policy.digest,
+            "active_policy_sha256": active_sha,
+            "frozen": frozen,
+            "algorithm": "Ed25519-POLICY-CONTROL-MULTIPARTY",
+        }
+        self.storage.apply_policy_control(
+            payload["policy_id"],
+            active_sha,
+            frozen,
+            envelope,
+        )
+        return {
+            "policy_id": payload["policy_id"],
+            "active_policy_sha256": active_sha,
+            "frozen": frozen,
+            "governance_action": payload,
+            "approvals": approvals,
+            "governance_policy_sha256": governance_policy.digest,
+        }

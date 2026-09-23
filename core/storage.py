@@ -179,6 +179,26 @@ CREATE TABLE IF NOT EXISTS governed_policy_changes (
 CREATE INDEX IF NOT EXISTS idx_governed_policy_changes_identity
     ON governed_policy_changes(policy_id, version);
 
+CREATE TABLE IF NOT EXISTS policy_controls (
+    policy_id TEXT PRIMARY KEY,
+    active_policy_sha256 TEXT NOT NULL,
+    frozen INTEGER NOT NULL,
+    control_json TEXT NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS policy_control_actions (
+    action_id TEXT PRIMARY KEY,
+    action_nonce TEXT NOT NULL UNIQUE,
+    policy_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    envelope_json TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_control_actions_policy
+    ON policy_control_actions(policy_id, created_at);
+
 CREATE TABLE IF NOT EXISTS authority_resets (
     reset_id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL,
@@ -909,6 +929,84 @@ class Storage:
                 (policy_sha256,),
             ).fetchone()
         return json.loads(row[0]) if row else None
+
+    def policy_control(self, policy_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT policy_id, active_policy_sha256, frozen, control_json, updated_at "
+                "FROM policy_controls WHERE policy_id = ?",
+                (policy_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "policy_id": row[0],
+            "active_policy_sha256": row[1],
+            "frozen": bool(row[2]),
+            "control": json.loads(row[3]),
+            "updated_at": row[4],
+        }
+
+    def policy_control_action(self, action_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT envelope_json FROM policy_control_actions WHERE action_id = ?",
+                (action_id,),
+            ).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def apply_policy_control(
+        self,
+        policy_id: str,
+        active_policy_sha256: str,
+        frozen: bool,
+        envelope: dict,
+    ) -> None:
+        action = envelope["governance_action"]
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO policy_control_actions "
+                    "(action_id, action_nonce, policy_id, action, envelope_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        action["action_id"],
+                        action["nonce"],
+                        policy_id,
+                        action["action"],
+                        json.dumps(
+                            envelope,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        time.time(),
+                    ),
+                )
+                self._conn.execute(
+                    "INSERT INTO policy_controls "
+                    "(policy_id, active_policy_sha256, frozen, control_json, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(policy_id) DO UPDATE SET "
+                    "active_policy_sha256 = excluded.active_policy_sha256, "
+                    "frozen = excluded.frozen, "
+                    "control_json = excluded.control_json, "
+                    "updated_at = excluded.updated_at",
+                    (
+                        policy_id,
+                        active_policy_sha256,
+                        1 if frozen else 0,
+                        json.dumps(
+                            envelope,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("policy control action already registered") from exc
 
     def latest_governed_policy_version(self, policy_id: str) -> dict | None:
         with self._lock:
