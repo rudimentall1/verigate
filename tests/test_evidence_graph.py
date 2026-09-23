@@ -1,4 +1,5 @@
 import base64
+import base64
 import hashlib
 import tempfile
 import unittest
@@ -10,7 +11,14 @@ from fastapi.testclient import TestClient
 
 from api import main
 from attest.keys import generate_keypair, load_private_key, load_public_key
+from core.authority import CapabilityDelegationService, sign_delegation
 from core.evidence import EvidenceGraph
+from core.governance import (
+    GovernanceMember,
+    GovernancePolicy,
+    sign_governance_approval,
+)
+from core.policy_version import create_policy_change_action
 from core.identity import sign_action_intent
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.storage import Storage
@@ -127,6 +135,170 @@ class EvidenceGraphTest(unittest.TestCase):
         self.assertIn("authority_event", node_types)
         self.assertTrue(graph["verification"]["all_signed_artifacts_valid"], graph["verification"])
         self.assertEqual(confirmed.payload["status"], "CONFIRMED")
+
+    def test_graph_proves_signed_delegation(self):
+        root_key = Ed25519PrivateKey.generate()
+        child_key = Ed25519PrivateKey.generate()
+        root_raw = root_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        child_raw = child_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        root_id = hashlib.sha256(root_raw).hexdigest()
+        child_id = hashlib.sha256(child_raw).hexdigest()
+        root_identity = AgentIdentity(
+            agent_id="delegation-root",
+            public_key_b64=base64.b64encode(root_raw).decode("ascii"),
+            key_id=root_id,
+        )
+        child_identity = AgentIdentity(
+            agent_id="delegation-child",
+            public_key_b64=base64.b64encode(child_raw).decode("ascii"),
+            key_id=child_id,
+        )
+        self.storage.register_identity(root_identity)
+        self.storage.register_identity(child_identity)
+        root = Capability(
+            capability_id="cap-delegation-root",
+            agent_id=root_identity.agent_id,
+            identity_id=root_id,
+            allowed_actions=("mcp.tool.call",),
+            allowed_targets=("github.create_issue",),
+            delegation_depth=0,
+        )
+        child = Capability(
+            capability_id="cap-delegation-child",
+            agent_id=child_identity.agent_id,
+            identity_id=child_id,
+            delegated_from=root.capability_id,
+            delegated_by_identity_id=root_id,
+            delegation_depth=1,
+            allowed_actions=("mcp.tool.call",),
+            allowed_targets=("github.create_issue",),
+        )
+        self.storage.register_capability(root)
+        delegation_signature = sign_delegation(
+            root.capability_id,
+            child,
+            root_id,
+            root_key,
+        )
+        CapabilityDelegationService(self.storage).delegate(
+            root.capability_id,
+            child,
+            root_id,
+            delegation_signature,
+        )
+        from core.engine import GuardrailEngine
+        from core.policy import Policy
+        policy_path = Path(self.tmpdir.name) / "delegation-policy.yaml"
+        policy_path.write_text(
+            "allowed_action_types: [mcp.tool.call]\n"
+            "allowed_targets: [github.create_issue]\n",
+            encoding="utf-8",
+        )
+        engine = GuardrailEngine(
+            Policy.load(policy_path),
+            self.storage,
+            policy_source_ref=str(policy_path),
+        )
+        action = ActionIntent(
+            agent_id=child_identity.agent_id,
+            action_type="mcp.tool.call",
+            target="github.create_issue",
+            metadata={"arguments": {"title": "delegated"}},
+        )
+        agent_signature = sign_action_intent(action, child_id, child_key)
+        artifacts = engine.authorize_action(
+            action,
+            child.capability_id,
+            child_id,
+            agent_signature,
+            self.private_key,
+        )
+        graph = EvidenceGraph(self.storage, self.public_key).build(
+            artifacts["execution_authorization"]["payload"]["authorization_id"]
+        )
+        self.assertIn("delegation", {node["type"] for node in graph["nodes"]})
+        self.assertTrue(graph["verification"][f"delegation:{child.capability_id}"]["valid"])
+
+    def test_graph_proves_governed_policy_publication(self):
+        from core.engine import GuardrailEngine
+        from core.policy import Policy
+        from core.policy_version import build_policy_version, sign_policy_version
+
+        policy_path = Path(self.tmpdir.name) / "governed-policy.yaml"
+        policy_path.write_text(
+            "allowed_action_types: [mcp.tool.call]\n"
+            "allowed_targets: [github.create_issue]\n",
+            encoding="utf-8",
+        )
+        policy = Policy.load(policy_path)
+        engine = GuardrailEngine(
+            policy,
+            self.storage,
+            policy_source_ref=str(policy_path),
+        )
+        agent_key, identity, capability = self._identity_and_capability()
+        action = ActionIntent(
+            agent_id=identity.agent_id,
+            action_type="mcp.tool.call",
+            target="github.create_issue",
+        )
+        agent_signature = sign_action_intent(action, identity.key_id, agent_key)
+        artifacts = engine.authorize_action(
+            action,
+            capability.capability_id,
+            identity.key_id,
+            agent_signature,
+            self.private_key,
+        )
+        signed_policy = artifacts["decision_receipt"]["payload"]["signed_policy_version"]
+        governor_policy = GovernancePolicy(
+            policy_id="evidence-governance",
+            version=1,
+            threshold=1,
+            members=(GovernanceMember.from_public_key(self.public_key, "governor"),),
+            allowed_actions=("POLICY_CHANGE",),
+        )
+        governance_action = create_policy_change_action(
+            signed_policy,
+            governance_policy=governor_policy,
+            reason="publish policy for evidence provenance",
+        )
+        approval = sign_governance_approval(
+            governance_action,
+            role="governor",
+            private_key=self.private_key,
+        )
+        self.storage.register_governed_policy_change(
+            signed_policy,
+            {
+                "policy_version": signed_policy,
+                "governance_action": governance_action.as_dict(),
+                "approvals": [approval.as_dict()],
+                "governance_policy": governor_policy.as_dict(),
+                "governance_policy_sha256": governor_policy.digest,
+                "algorithm": "Ed25519-POLICY-MULTIPARTY",
+            },
+            governance_approvals=[approval.as_dict()],
+        )
+        graph = EvidenceGraph(self.storage, self.public_key).build(
+            artifacts["execution_authorization"]["payload"]["authorization_id"]
+        )
+        node_types = {node["type"] for node in graph["nodes"]}
+        self.assertIn("governance_policy", node_types)
+        self.assertIn("governance_action", node_types)
+        self.assertIn("governance_approval", node_types)
+        governance_checks = [
+            value for key, value in graph["verification"].items()
+            if key.startswith("governance:")
+        ]
+        self.assertTrue(governance_checks)
+        self.assertTrue(all(item["valid"] for item in governance_checks))
 
     def test_api_exposes_evidence_by_authorization(self):
         root = Path(self.tmpdir.name)

@@ -266,6 +266,8 @@ class CapabilityDelegationService:
         edge_id = self.storage.register_delegated_capability(
             child_capability,
             parent_capability_id,
+            delegator_identity_id=delegator_identity_id,
+            delegation_signature=delegation_signature,
         )
         return {
             "capability": child_capability,

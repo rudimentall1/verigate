@@ -11,10 +11,12 @@ from attest.receipt import (
     verify_execution_receipt,
     verify_receipt,
 )
-from core.authority import AuthorityGraph
+from core.authority import AuthorityGraph, verify_delegation
+from core.governance import GovernancePolicy, verify_authority_reset, verify_governance_quorum
 from core.authority_state import DynamicAuthorityService
 from core.identity import verify_action_signature
 from core.models import ActionIntent
+from core.policy_version import verify_policy_version
 from core.storage import Storage
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
@@ -38,9 +40,67 @@ def _node(node_type: str, node_id: str, data: Any) -> dict[str, Any]:
 class EvidenceGraph:
     """Build a deterministic provenance subgraph from durable Verigate evidence."""
 
-    def __init__(self, storage: Storage, public_key: Ed25519PublicKey):
+    def __init__(
+        self,
+        storage: Storage,
+        public_key: Ed25519PublicKey,
+        governance_public_key: Ed25519PublicKey | None = None,
+    ):
         self.storage = storage
         self.public_key = public_key
+        self.governance_public_key = governance_public_key
+
+    def _add_governance_envelope(
+        self,
+        envelope: dict[str, Any],
+        *,
+        subject_type: str,
+        subject_id: str,
+        relation: str,
+        verification: dict[str, Any],
+        nodes: list[dict[str, Any]],
+        edges: list[dict[str, str]],
+    ) -> None:
+        action = envelope.get("governance_action") or envelope.get("action")
+        approvals = envelope.get("approvals") or []
+        policy_data = envelope.get("governance_policy") or envelope.get("policy")
+        if not isinstance(action, dict) or not isinstance(policy_data, dict):
+            verification[f"governance:{subject_id}"] = {
+                "valid": False,
+                "reason": "governance envelope is incomplete",
+            }
+            return
+        try:
+            policy = GovernancePolicy.from_dict(policy_data)
+            ok, reason = verify_governance_quorum(action, approvals, policy)
+        except (TypeError, ValueError, KeyError) as exc:
+            ok, reason = False, f"invalid governance envelope: {exc}"
+        verification[f"governance:{action.get('action_id', subject_id)}"] = {
+            "valid": ok,
+            "reason": reason,
+        }
+        governance_policy_id = envelope.get("governance_policy_sha256") or policy.digest
+        nodes.append(_node("governance_policy", governance_policy_id, policy_data))
+        action_id = action.get("action_id", subject_id)
+        nodes.append(_node("governance_action", action_id, action))
+        edges.append({
+            "from": f"governance_action:{action_id}",
+            "relation": relation,
+            "to": f"{subject_type}:{subject_id}",
+        })
+        edges.append({
+            "from": f"governance_policy:{governance_policy_id}",
+            "relation": "GOVERNS",
+            "to": f"governance_action:{action_id}",
+        })
+        for approval in approvals:
+            approval_id = approval.get("payload", {}).get("approval_id") or _digest(approval)
+            nodes.append(_node("governance_approval", approval_id, approval))
+            edges.append({
+                "from": f"governance_approval:{approval_id}",
+                "relation": "APPROVES",
+                "to": f"governance_action:{action_id}",
+            })
 
     def build_by_intent(self, intent_id: str) -> dict[str, Any]:
         artifacts = self.storage.authorization_by_intent(intent_id)
@@ -89,6 +149,56 @@ class EvidenceGraph:
         if policy is not None:
             nodes.append(_node("policy_version", policy_sha256, policy))
             edges.append({"from": f"policy_version:{policy_sha256}", "relation": "GOVERNS", "to": f"decision:{intent_id}"})
+            governed = self.storage.governed_policy_change_by_sha(policy_sha256)
+            if governed is not None:
+                envelope = governed
+                policy_ok, policy_reason = verify_policy_version(
+                    envelope["policy_version"], self.public_key
+                )
+                verification[f"policy:{policy_sha256}"] = {
+                    "valid": policy_ok,
+                    "reason": policy_reason,
+                }
+                self._add_governance_envelope(
+                    envelope,
+                    subject_type="policy_version",
+                    subject_id=policy_sha256,
+                    relation="PUBLISHES",
+                    verification=verification,
+                    nodes=nodes,
+                    edges=edges,
+                )
+                control = self.storage.policy_control(envelope["policy_version"]["payload"]["policy_id"])
+                if control is not None:
+                    nodes.append(_node("policy_control", envelope["policy_version"]["payload"]["policy_id"], control))
+                    edges.append({
+                        "from": f"policy_control:{envelope['policy_version']['payload']['policy_id']}",
+                        "relation": "CONTROLS",
+                        "to": f"policy_version:{policy_sha256}",
+                    })
+                for control_action in self.storage.policy_control_actions(
+                    envelope["policy_version"]["payload"]["policy_id"]
+                ):
+                    control_envelope = control_action["envelope"]
+                    action = control_envelope.get("governance_action", {})
+                    current_sha = action.get("current_policy_sha256")
+                    target_sha = action.get("target_policy_sha256")
+                    if policy_sha256 not in {current_sha, target_sha}:
+                        continue
+                    self._add_governance_envelope(
+                        control_envelope,
+                        subject_type="policy_version",
+                        subject_id=policy_sha256,
+                        relation=(
+                            "FREEZES"
+                            if action.get("action") == "POLICY_FREEZE"
+                            else "ROLLS_BACK_FROM" if current_sha == policy_sha256
+                            else "ROLLS_BACK_TO"
+                        ),
+                        verification=verification,
+                        nodes=nodes,
+                        edges=edges,
+                    )
         else:
             nodes.append(_node("policy_version", policy_sha256, {"policy_sha256": policy_sha256, "available": False}))
             edges.append({"from": f"policy_version:{policy_sha256}", "relation": "GOVERNS", "to": f"decision:{intent_id}"})
@@ -131,6 +241,37 @@ class EvidenceGraph:
                             "relation": "DELEGATES",
                             "to": f"capability:{path_node['id']}",
                         })
+                        delegation = self.storage.delegation_by_child(path_node["id"])
+                        if delegation is None:
+                            verification[f"delegation:{path_node['id']}"] = {
+                                "valid": False,
+                                "reason": "delegation signature evidence is missing",
+                            }
+                        else:
+                            parent = self.storage.capability(path_node["delegated_from"])
+                            child = self.storage.capability(path_node["id"])
+                            delegator = self.storage.identity(delegation["delegator_identity_id"])
+                            valid = False
+                            reason = "delegation evidence is incomplete"
+                            if parent is not None and child is not None and delegator is not None:
+                                valid, reason = verify_delegation(
+                                    parent.capability_id,
+                                    child,
+                                    delegation["delegator_identity_id"],
+                                    delegation["delegation_signature"],
+                                    delegator,
+                                )
+                            verification[f"delegation:{path_node['id']}"] = {
+                                "valid": valid,
+                                "reason": reason,
+                            }
+                            delegation_id = delegation["edge_id"]
+                            nodes.append(_node("delegation", delegation_id, delegation))
+                            edges.append({
+                                "from": f"delegation:{delegation_id}",
+                                "relation": "PROVES",
+                                "to": f"capability:{path_node['id']}",
+                            })
                 edges.append({"from": f"capability:{capability_id}", "relation": "AUTHORIZES", "to": f"action_intent:{intent_id}"})
 
                 dynamic = DynamicAuthorityService(self.storage).explain(
@@ -139,6 +280,40 @@ class EvidenceGraph:
                 )
                 nodes.append(_node("authority_state", capability_id, dynamic))
                 edges.append({"from": f"authority_state:{capability_id}", "relation": "CONSTRAINS", "to": f"action_intent:{intent_id}"})
+                reset = self.storage.latest_authority_reset(
+                    capability.agent_id,
+                    capability.capability_id,
+                )
+                if reset is not None:
+                    reset_payload = reset.get("payload", {})
+                    reset_id = reset_payload.get("action_id") or reset_payload.get("reset_id") or _digest(reset)
+                    reset_valid = False
+                    reset_reason = "governance reset could not be verified"
+                    if reset.get("approvals") and reset.get("policy"):
+                        try:
+                            reset_policy = GovernancePolicy.from_dict(reset["policy"])
+                            reset_valid, reset_reason = verify_governance_quorum(
+                                reset_payload,
+                                reset["approvals"],
+                                reset_policy,
+                            )
+                        except (TypeError, ValueError, KeyError) as exc:
+                            reset_reason = f"invalid multiparty reset envelope: {exc}"
+                    elif self.governance_public_key is not None:
+                        reset_valid, reset_reason = verify_authority_reset(
+                            reset,
+                            self.governance_public_key,
+                        )
+                    verification[f"authority_reset:{reset_id}"] = {
+                        "valid": reset_valid,
+                        "reason": reset_reason,
+                    }
+                    nodes.append(_node("authority_reset", reset_id, reset))
+                    edges.append({
+                        "from": f"authority_reset:{reset_id}",
+                        "relation": "RESETS",
+                        "to": f"authority_state:{capability_id}",
+                    })
 
         if execution is not None:
             execution_id = execution["payload"]["authorization_id"]

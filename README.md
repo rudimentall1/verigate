@@ -212,6 +212,7 @@ core/
     capabilities.py Capability registry + effective authority + revocation
     authority.py    Authority graph + cryptographic capability delegation
     authority_state.py Deterministic dynamic agent authority + evidence-driven limits
+    evidence.py     Cryptographic provenance / Evidence Graph projection
     adversarial.py  Mutation-based attack corpus + fail-closed authority verification
     policy_version.py Signed policy versions, governed publication, freeze/rollback control and lineage verification
     governance.py   Signed authority reset + multi-party quorum governance + epoch recovery
@@ -237,7 +238,10 @@ demo_evm_execution.py EVM adapter demo with a broadcaster boundary
 enforcement/
     protocol.py       Chain-independent ExecutionAdapter boundary
     local.py          Fail-closed local execution adapter
-    evm.py            Dependency-light EVM execution adapter
+    tool.py           MCP-style signed tool-call execution boundary
+    http.py            Exact signed HTTP/API execution boundary
+    router.py          Network + generic execution routing
+    evm.py             Dependency-light EVM execution adapter
 adapters/cmc/
     client.py         CoinMarketCap RWA v5 client
     models.py         Normalized RWA market evidence
@@ -316,7 +320,7 @@ A multi-party policy is supplied through `VERIGATE_GOVERNANCE_POLICY` and contai
 
 `ExecutionAuthorization` is short-lived, nonce-bound, and contains the authorized normalized action plus identity/capability fingerprints. The execution adapter consumes it; the decision receipt is evidence and is not itself permission to execute. The Execution Fabric now has generic `mcp.tool.call` and `api.request` boundaries in addition to chain-specific adapters; they execute only the exact signed action data and fail closed before consuming authority on unsupported targets or URL drift.
 
-The **Evidence Graph** exposes this provenance as a deterministic subgraph. `/v1/evidence/authorization/{id}` and `/v1/evidence/intent/{id}` return the identity, agent signature, capability/delegation path, policy version, authority state, decision receipt, execution authorization, execution receipt and resulting authority event when those artifacts exist. Each artifact is hash-addressed and signed artifacts are independently re-verified before the graph reports them as valid.
+The **Evidence Graph** exposes this provenance as a deterministic subgraph. `/v1/evidence/authorization/{id}` and `/v1/evidence/intent/{id}` return the identity, agent signature, signed delegation path, governed policy lineage, freeze/rollback controls, authority reset, dynamic authority state, decision receipt, execution authorization, execution receipt and resulting authority event when those artifacts exist. Each artifact is hash-addressed; missing delegation signatures and invalid governance approvals are surfaced as invalid evidence rather than silently treated as trusted links.
 
 `POST /v1/authorize/x402` provides the compatibility contract for an x402 `PAYMENT-REQUIRED` header.
 

@@ -615,6 +615,7 @@ def evidence_authorization(authorization_id: str) -> dict:
         return EvidenceGraph(
             _storage,
             load_public_key(PUBLIC_KEY_PATH),
+            load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
         ).build(authorization_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -627,6 +628,7 @@ def evidence_intent(intent_id: str) -> dict:
         return EvidenceGraph(
             _storage,
             load_public_key(PUBLIC_KEY_PATH),
+            load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
         ).build_by_intent(intent_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

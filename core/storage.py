@@ -141,6 +141,19 @@ CREATE INDEX IF NOT EXISTS idx_authority_edges_source
 CREATE INDEX IF NOT EXISTS idx_authority_edges_target
     ON authority_edges(target_type, target_id, status);
 
+CREATE TABLE IF NOT EXISTS capability_delegations (
+    edge_id TEXT PRIMARY KEY,
+    parent_capability_id TEXT NOT NULL,
+    child_capability_id TEXT NOT NULL UNIQUE,
+    delegator_identity_id TEXT NOT NULL,
+    delegation_signature TEXT NOT NULL,
+    child_capability_sha256 TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_capability_delegations_parent
+    ON capability_delegations(parent_capability_id);
+
 CREATE TABLE IF NOT EXISTS authority_events (
     event_id TEXT PRIMARY KEY,
     agent_id TEXT NOT NULL,
@@ -801,6 +814,23 @@ class Storage:
                     self._conn.rollback()
                 raise ValueError("authority edge already exists") from exc
 
+    def delegation_by_child(self, child_capability_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT edge_id, parent_capability_id, child_capability_id, "
+                "delegator_identity_id, delegation_signature, child_capability_sha256, created_at "
+                "FROM capability_delegations WHERE child_capability_id = ?",
+                (child_capability_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        columns = [
+            "edge_id", "parent_capability_id", "child_capability_id",
+            "delegator_identity_id", "delegation_signature", "child_capability_sha256",
+            "created_at",
+        ]
+        return dict(zip(columns, row))
+
     def authority_edges(
         self,
         *,
@@ -850,8 +880,15 @@ class Storage:
             self._conn.commit()
             return True
 
-    def register_delegated_capability(self, capability, parent_capability_id: str) -> str:
-        """Atomically register a delegated capability and its graph edge."""
+    def register_delegated_capability(
+        self,
+        capability,
+        parent_capability_id: str,
+        *,
+        delegator_identity_id: str | None = None,
+        delegation_signature: str | None = None,
+    ) -> str:
+        """Atomically register a delegated capability, graph edge and signature evidence."""
         edge_id = str(uuid.uuid4())
         with self.transaction():
             parent = self._conn.execute(
@@ -902,8 +939,24 @@ class Storage:
                             time.time(),
                         ),
                     )
+                if delegator_identity_id and delegation_signature:
+                    self._conn.execute(
+                        "INSERT INTO capability_delegations "
+                        "(edge_id, parent_capability_id, child_capability_id, "
+                        "delegator_identity_id, delegation_signature, child_capability_sha256, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            edge_id,
+                            parent_capability_id,
+                            capability.capability_id,
+                            delegator_identity_id,
+                            delegation_signature,
+                            capability.digest,
+                            time.time(),
+                        ),
+                    )
             except sqlite3.IntegrityError as exc:
-                raise ValueError("capability or authority edge already exists") from exc
+                raise ValueError("capability, authority edge or delegation evidence already exists") from exc
         return edge_id
 
     def record_authority_event(self, event: dict) -> None:
@@ -1084,6 +1137,20 @@ class Storage:
             "updated_at": row[4],
         }
 
+    def policy_control_actions(self, policy_id: str, limit: int = 50) -> list[dict]:
+        if limit < 1:
+            return []
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT action_id, envelope_json FROM policy_control_actions "
+                "WHERE policy_id = ? ORDER BY created_at ASC LIMIT ?",
+                (policy_id, limit),
+            ).fetchall()
+        return [
+            {"action_id": row[0], "envelope": json.loads(row[1])}
+            for row in rows
+        ]
+
     def policy_control_action(self, action_id: str) -> dict | None:
         with self._lock:
             row = self._conn.execute(
@@ -1197,23 +1264,31 @@ class Storage:
                             time.time(),
                         ),
                     )
-                self._conn.execute(
-                    "INSERT INTO policy_versions "
-                    "(policy_sha256, policy_id, version, source_ref, signed_policy_json, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (
-                        payload["policy_sha256"],
-                        payload["policy_id"],
-                        payload["version"],
-                        payload["source_ref"],
-                        json.dumps(
-                            signed_policy,
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
-                        time.time(),
-                    ),
+                signed_policy_json = json.dumps(
+                    signed_policy,
+                    sort_keys=True,
+                    separators=(",", ":"),
                 )
+                existing_policy = self._conn.execute(
+                    "SELECT signed_policy_json FROM policy_versions WHERE policy_sha256 = ?",
+                    (payload["policy_sha256"],),
+                ).fetchone()
+                if existing_policy is None:
+                    self._conn.execute(
+                        "INSERT INTO policy_versions "
+                        "(policy_sha256, policy_id, version, source_ref, signed_policy_json, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (
+                            payload["policy_sha256"],
+                            payload["policy_id"],
+                            payload["version"],
+                            payload["source_ref"],
+                            signed_policy_json,
+                            time.time(),
+                        ),
+                    )
+                elif existing_policy[0] != signed_policy_json:
+                    raise ValueError("policy digest is already bound to different signed policy content")
                 self._conn.execute(
                     "INSERT INTO governed_policy_changes "
                     "(policy_sha256, policy_id, version, parent_sha256, action_id, action_nonce, "
