@@ -66,7 +66,15 @@ class ExecutionAuthorization:
         return {"payload": self.payload, "signature": self.signature, "algorithm": self.algorithm}
 
 
-def issue_execution_authorization(receipt: DecisionReceipt, private_key: Ed25519PrivateKey, *, nonce: str, ttl_seconds: int = 300) -> ExecutionAuthorization:
+def issue_execution_authorization(
+    receipt: DecisionReceipt,
+    private_key: Ed25519PrivateKey,
+    *,
+    nonce: str,
+    ttl_seconds: int = 300,
+    capability_id: str | None = None,
+    capability_version: int | None = None,
+) -> ExecutionAuthorization:
     if receipt.payload["decision"]["decision"] != Decision.ALLOW.value:
         raise PermissionError("execution authorization requires ALLOW")
     now = int(time.time())
@@ -77,6 +85,8 @@ def issue_execution_authorization(receipt: DecisionReceipt, private_key: Ed25519
         "intent_id": receipt.payload["intent"]["intent_id"],
         "agent_id": receipt.payload["intent"]["agent_id"],
         "policy_sha256": receipt.payload["policy_sha256"],
+        "capability_id": capability_id,
+        "capability_version": capability_version,
         "action": receipt.payload["intent"],
         "action_sha256": action_digest(receipt.payload["intent"]),
         "nonce": nonce,

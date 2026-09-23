@@ -100,6 +100,64 @@ class ActionIntent:
 
 
 @dataclass(frozen=True)
+class AgentIdentity:
+    """Canonical identity of an autonomous principal.
+
+    This is intentionally descriptive rather than a credential store. The
+    execution layer must bind concrete credentials/wallets to this identity
+    before side effects are permitted.
+    """
+
+    agent_id: str
+    organization_id: str = ""
+    identity_version: int = 1
+    reputation_ref: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class Capability:
+    """Programmable authority granted to an agent."""
+
+    capability_id: str
+    agent_id: str
+    allowed_actions: tuple[str, ...] = ()
+    allowed_targets: tuple[str, ...] = ()
+    allowed_resources: tuple[str, ...] = ()
+    allowed_networks: tuple[str, ...] = ()
+    allowed_assets: tuple[str, ...] = ()
+    max_per_action: dict[str, float] = field(default_factory=dict)
+    aggregate_limits: dict[str, float] = field(default_factory=dict)
+    conditions: tuple[str, ...] = ()
+    version: int = 1
+    issued_at: float = field(default_factory=time.time)
+    expires_at: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def permits(self, action: "ActionIntent", now: float | None = None) -> tuple[bool, str]:
+        """Check the static scope of this capability against one action."""
+        now = time.time() if now is None else now
+        if action.agent_id != self.agent_id:
+            return False, "capability agent mismatch"
+        if self.expires_at is not None and now >= self.expires_at:
+            return False, "capability expired"
+        if self.allowed_actions and action.action_type not in self.allowed_actions:
+            return False, "action type outside capability"
+        if self.allowed_targets and action.target not in self.allowed_targets:
+            return False, "target outside capability"
+        if self.allowed_resources and action.resource not in self.allowed_resources:
+            return False, "resource outside capability"
+        if self.allowed_networks and (action.network not in self.allowed_networks):
+            return False, "network outside capability"
+        if self.allowed_assets and (action.asset not in self.allowed_assets):
+            return False, "asset outside capability"
+        limit = self.max_per_action.get(action.asset or "")
+        if limit is not None and (action.amount is None or action.amount > limit):
+            return False, "action exceeds capability limit"
+        return True, "capability permits action"
+
+
+@dataclass(frozen=True)
 class RuleMatch:
     rule_id: str
     severity: Severity

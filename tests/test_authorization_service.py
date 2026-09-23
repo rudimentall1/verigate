@@ -5,7 +5,7 @@ from pathlib import Path
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import verify_execution_authorization, verify_receipt
 from core.authorization import AuthorizationService
-from core.models import ActionIntent, Decision, GuardrailDecision
+from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 
 
 class AuthorizationServiceTest(unittest.TestCase):
@@ -46,6 +46,36 @@ class AuthorizationServiceTest(unittest.TestCase):
             action, decision, "b" * 64, load_private_key(self.priv)
         )
         self.assertIsNone(artifacts["execution_authorization"])
+
+    def test_capability_scope_is_bound_to_execution_authorization(self):
+        action = self._action()
+        capability = Capability(
+            capability_id="cap-rwa-001",
+            agent_id=action.agent_id,
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+        )
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+        artifacts = AuthorizationService().issue(
+            action, decision, "c" * 64, load_private_key(self.priv), capability=capability
+        )
+        execution = artifacts["execution_authorization"]
+        self.assertEqual(execution["payload"]["capability_id"], capability.capability_id)
+        self.assertEqual(execution["payload"]["capability_version"], capability.version)
+        self.assertTrue(verify_execution_authorization(execution, load_public_key(self.pub))[0])
+
+    def test_capability_mismatch_cannot_mint_execution_authorization(self):
+        action = self._action()
+        capability = Capability(
+            capability_id="cap-wrong-agent",
+            agent_id="another-agent",
+            allowed_actions=("evm.transaction",),
+        )
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+        with self.assertRaises(PermissionError):
+            AuthorizationService().issue(
+                action, decision, "d" * 64, load_private_key(self.priv), capability=capability
+            )
 
 
 if __name__ == "__main__":
