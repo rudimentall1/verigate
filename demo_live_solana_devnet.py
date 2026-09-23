@@ -153,6 +153,20 @@ def main() -> None:
         help="do not request faucet SOL; use the supplied funded sender",
     )
     args = parser.parse_args()
+    env_keypair = os.environ.get("VERIGATE_SOLANA_KEYPAIR")
+    auto_keypair = Path(env_keypair).expanduser() if env_keypair else None
+    if auto_keypair is None:
+        for candidate in (
+            Path.cwd() / "solana-keypair.json",
+            Path(__file__).resolve().parent.parent / "solana-keypair.json",
+        ):
+            if candidate.exists():
+                auto_keypair = candidate
+                break
+    sender_keypair = args.sender_keypair or auto_keypair
+    use_funded_sender = sender_keypair is not None
+    if use_funded_sender and not sender_keypair.exists():
+        raise FileNotFoundError(f"Solana keypair not found: {sender_keypair}")
     rpc = SolanaRpcClient(RPC_URL)
 
     with tempfile.TemporaryDirectory(prefix="verigate-live-solana-") as td:
@@ -163,8 +177,8 @@ def main() -> None:
         generate_keypair(issuer_private, issuer_public)
 
         sender = (
-            load_solana_keypair(args.sender_keypair)
-            if args.sender_keypair
+            load_solana_keypair(sender_keypair)
+            if use_funded_sender
             else Ed25519PrivateKey.generate()
         )
         recipient = Ed25519PrivateKey.generate()
@@ -179,7 +193,7 @@ def main() -> None:
         print("Recipient:", recipient_address)
 
         print()
-        if args.skip_airdrop or args.sender_keypair:
+        if args.skip_airdrop or use_funded_sender:
             print("1) Using existing funded Devnet sender; faucet skipped.")
         else:
             print("1) Requesting 1 SOL from Devnet faucet...")

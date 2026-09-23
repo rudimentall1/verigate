@@ -7,3 +7,4 @@ keys/
 *.db
 .env
 .DS_Store
+solana-keypair.json
