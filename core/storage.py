@@ -17,6 +17,7 @@ import json
 import sqlite3
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -106,6 +107,25 @@ CREATE TABLE IF NOT EXISTS identities (
 
 CREATE INDEX IF NOT EXISTS idx_identities_agent_status
     ON identities(agent_id, status);
+
+CREATE TABLE IF NOT EXISTS authority_edges (
+    edge_id TEXT PRIMARY KEY,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    relation TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    revoked_at REAL,
+    UNIQUE(source_type, source_id, relation, target_type, target_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_authority_edges_source
+    ON authority_edges(source_type, source_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_authority_edges_target
+    ON authority_edges(target_type, target_id, status);
 """
 
 
@@ -431,8 +451,8 @@ class Storage:
             return True
 
     def register_capability(self, capability: Capability) -> None:
-        """Persist a new capability version as active authority."""
-        with self._lock:
+        """Persist a new capability and its identity->capability graph edge atomically."""
+        with self.transaction():
             try:
                 self._conn.execute(
                     "INSERT INTO capabilities "
@@ -450,10 +470,20 @@ class Storage:
                         time.time(),
                     ),
                 )
-                self._conn.commit()
+                if capability.identity_id:
+                    self._conn.execute(
+                        "INSERT INTO authority_edges "
+                        "(edge_id, source_type, source_id, relation, target_type, target_id, "
+                        "status, created_at, revoked_at) VALUES (?, 'identity', ?, 'HOLDS', 'capability', ?, 'ACTIVE', ?, NULL)",
+                        (
+                            str(uuid.uuid4()),
+                            capability.identity_id,
+                            capability.capability_id,
+                            time.time(),
+                        ),
+                    )
             except sqlite3.IntegrityError as exc:
-                self._conn.rollback()
-                raise ValueError("capability_id already registered") from exc
+                raise ValueError("capability_id or authority edge already registered") from exc
 
     def capability(self, capability_id: str) -> Capability | None:
         with self._lock:
@@ -501,6 +531,138 @@ class Storage:
                 (capability_id,),
             ).fetchone()
         return bool(row and row[0] == 'ACTIVE' and (row[1] is None or now < row[1]))
+
+    def record_authority_edge(self, edge, *, commit: bool = True) -> None:
+        """Persist one typed authority-graph edge."""
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO authority_edges "
+                    "(edge_id, source_type, source_id, relation, target_type, target_id, "
+                    "status, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        edge.edge_id,
+                        edge.source_type,
+                        edge.source_id,
+                        edge.relation,
+                        edge.target_type,
+                        edge.target_id,
+                        edge.status,
+                        edge.created_at,
+                        edge.revoked_at,
+                    ),
+                )
+                if commit:
+                    self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                if commit:
+                    self._conn.rollback()
+                raise ValueError("authority edge already exists") from exc
+
+    def authority_edges(
+        self,
+        *,
+        source_type: str | None = None,
+        source_id: str | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        active_only: bool = True,
+    ) -> list[dict]:
+        clauses = []
+        params: list = []
+        for column, value in (
+            ("source_type", source_type),
+            ("source_id", source_id),
+            ("target_type", target_type),
+            ("target_id", target_id),
+        ):
+            if value is not None:
+                clauses.append(f"{column} = ?")
+                params.append(value)
+        if active_only:
+            clauses.append("status = 'ACTIVE'")
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT edge_id, source_type, source_id, relation, target_type, "
+                "target_id, status, created_at, revoked_at "
+                f"FROM authority_edges{where} ORDER BY created_at ASC",
+                tuple(params),
+            ).fetchall()
+        columns = [
+            "edge_id", "source_type", "source_id", "relation", "target_type",
+            "target_id", "status", "created_at", "revoked_at",
+        ]
+        return [dict(zip(columns, row)) for row in rows]
+
+    def revoke_authority_edge(self, edge_id: str) -> bool:
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE authority_edges SET status = 'REVOKED', revoked_at = ? "
+                "WHERE edge_id = ? AND status = 'ACTIVE'",
+                (time.time(), edge_id),
+            )
+            if cursor.rowcount != 1:
+                self._conn.rollback()
+                return False
+            self._conn.commit()
+            return True
+
+    def register_delegated_capability(self, capability, parent_capability_id: str) -> str:
+        """Atomically register a delegated capability and its graph edge."""
+        edge_id = str(uuid.uuid4())
+        with self.transaction():
+            parent = self._conn.execute(
+                "SELECT capability_id, status FROM capabilities WHERE capability_id = ?",
+                (parent_capability_id,),
+            ).fetchone()
+            if parent is None:
+                raise LookupError("parent capability not found")
+            if parent[1] != "ACTIVE":
+                raise PermissionError("parent capability is not active")
+            try:
+                self._conn.execute(
+                    "INSERT INTO capabilities "
+                    "(capability_id, agent_id, version, capability_json, capability_sha256, "
+                    "status, issued_at, expires_at, revoked_at, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, NULL, ?)",
+                    (
+                        capability.capability_id,
+                        capability.agent_id,
+                        capability.version,
+                        json.dumps(capability.__dict__, sort_keys=True, separators=(",", ":")),
+                        capability.digest,
+                        capability.issued_at,
+                        capability.expires_at,
+                        time.time(),
+                    ),
+                )
+                self._conn.execute(
+                    "INSERT INTO authority_edges "
+                    "(edge_id, source_type, source_id, relation, target_type, target_id, "
+                    "status, created_at, revoked_at) VALUES (?, 'capability', ?, 'DELEGATES', 'capability', ?, 'ACTIVE', ?, NULL)",
+                    (
+                        edge_id,
+                        parent_capability_id,
+                        capability.capability_id,
+                        time.time(),
+                    ),
+                )
+                if capability.identity_id:
+                    self._conn.execute(
+                        "INSERT INTO authority_edges "
+                        "(edge_id, source_type, source_id, relation, target_type, target_id, "
+                        "status, created_at, revoked_at) VALUES (?, 'identity', ?, 'HOLDS', 'capability', ?, 'ACTIVE', ?, NULL)",
+                        (
+                            str(uuid.uuid4()),
+                            capability.identity_id,
+                            capability.capability_id,
+                            time.time(),
+                        ),
+                    )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("capability or authority edge already exists") from exc
+        return edge_id
 
     def update_signature(self, intent_id: str, signature: str) -> None:
         """Attach a signature to an existing audit row.

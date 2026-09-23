@@ -9,6 +9,7 @@ Endpoints:
   POST /v1/authorize/x402
   POST /v1/execution/consume
   GET  /v1/execution/networks
+  GET  /v1/authority/capabilities/{id}
   POST /v1/verify
   GET  /v1/agents/{id}/history
   GET  /health
@@ -29,6 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
 from attest.verify import verify_attestation
+from core.authority import AuthorityGraph
 from core.engine import GuardrailEngine
 from core.models import PaymentIntent
 from core.policy import Policy
@@ -253,6 +255,16 @@ def consume_execution(req: ExecutionConsumeRequest) -> dict:
 @app.get("/v1/execution/networks")
 def execution_networks() -> list[dict]:
     return NetworkRegistry().as_dict()
+
+
+@app.get("/v1/authority/capabilities/{capability_id}")
+def authority_capability(capability_id: str) -> dict:
+    """Explain the authority provenance of one capability."""
+    assert _storage is not None
+    try:
+        return AuthorityGraph(_storage).explain(capability_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/v1/execution/receipts/{authorization_id}")

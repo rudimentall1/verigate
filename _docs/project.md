@@ -27,10 +27,12 @@ A **Capability** represents programmable authority granted to an agent: action t
 
 Revocation applies to future authorization only. Already-issued authorization remains cryptographically bound to its capability ID, version and SHA-256 digest.
 
-The core graph is:
-Agent → Capability → ActionIntent → Resource → Effect → Evidence.
+The authority graph is:
+Organization / Principal → Agent → Identity → Capability → Delegated Capability → ActionIntent → Resource → Effect → Evidence.
 
-Risk, intelligence and adversarial analysis can inform an AuthorityDecision, but they must never bypass deterministic capability and execution controls.
+Delegation is constrained: a child capability cannot exceed its parent in scope, limits, conditions or lifetime, and delegation requires the parent identity's cryptographic signature. Effective authority follows the entire ancestor chain; revoking a parent or delegator identity invalidates descendant authority for future decisions.
+
+Risk, intelligence and adversarial analysis can inform an AuthorityDecision, but they must never bypass deterministic capability, delegation and execution controls.
 
 ## Security invariants
 
@@ -40,9 +42,12 @@ Risk, intelligence and adversarial analysis can inform an AuthorityDecision, but
 4. Agent-signed intent must verify against the registered cryptographic identity before canonical authority can be issued.
 5. Capability scope and identity status are checked before authority issuance.
 6. Revoked identities/capabilities cannot grant future authority.
-7. Tampering with an authorized action must fail at the execution boundary.
-8. Decision receipts prove the decision but are not themselves execution permission.
-9. Evidence must preserve identity → capability → intent → authorization → execution linkage.
+7. A delegated capability cannot exceed its parent's scope, limits, conditions or lifetime.
+8. Delegation requires the identity that owns the parent capability to sign the exact child capability definition.
+9. Effective authority requires every ancestor capability and bound identity to remain active.
+10. Tampering with an authorized action must fail at the execution boundary.
+11. Decision receipts prove the decision but are not themselves execution permission.
+12. Evidence must preserve identity → capability → delegation path → intent → authorization → execution linkage.
 
 ## Product boundary
 

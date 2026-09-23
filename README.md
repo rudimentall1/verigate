@@ -202,13 +202,14 @@ process.
 
 ```
 core/
-    models.py       PaymentIntent, ActionIntent, AgentIdentity, Capability, decisions
+    models.py       PaymentIntent, ActionIntent, AgentIdentity, Capability, AuthorityEdge
     identity.py     Cryptographic identity registry + agent-signed intent verification
     authorization.py Protocol-agnostic receipt + execution-capability minting
-    capabilities.py Capability registry + revocation + authority checks
+    capabilities.py Capability registry + effective authority + revocation
+    authority.py    Authority graph + cryptographic capability delegation
     policy.py       Policy loader (the one place PyYAML is used in core/)
     rules.py        Deterministic rule evaluators
-    storage.py      SQLite-backed audit/rate/spend + authority registries
+    storage.py      SQLite-backed audit/rate/spend + authority graph persistence
     engine.py       GuardrailEngine — evaluates and binds identity/capability authority
 attest/
     keys.py         Ed25519 keypair generation/loading
@@ -254,11 +255,15 @@ Verigate is being expanded around a protocol-agnostic authority lifecycle:
 
 The foundational path is:
 
-`AgentIdentity → Capability → ActionIntent → Policy + Context + Intelligence → AuthorityDecision → ExecutionAuthorization → Execution → Evidence`
+`AgentIdentity → Capability → Delegated Capability → ActionIntent → Policy + Context + Intelligence → AuthorityDecision → ExecutionAuthorization → Execution → Evidence`
 
 `AgentIdentity` is a cryptographic Ed25519 principal. The Identity Registry maps an identity fingerprint to an agent and supports revocation. An agent can sign the exact normalized `ActionIntent` before Verigate evaluates it.
 
-A **Capability** is programmable authority: action scope, targets/resources, networks/assets, limits, conditions and expiry. The Capability Registry is the source of truth for active capabilities and supports revocation. A capability may be bound to a specific identity.
+A **Capability** is programmable authority: action scope, targets/resources, networks/assets, limits, conditions and expiry. The Capability Registry is the source of truth for effective active authority. A capability may be bound to a specific identity.
+
+**Delegation is first-class.** A parent capability can create a child capability only when the parent identity signs the exact child definition. The child must be narrower or equal in every authority dimension: action/target/resource/network/asset scope, limits, conditions and lifetime. The relationship is persisted as a graph edge, allowing Verigate to explain authority provenance.
+
+Effective authority is evaluated over the full ancestor chain. Revoking a parent capability or any required identity invalidates descendant authority for future decisions.
 
 A **Decision Receipt** proves what Verigate decided. An **Execution Authorization** is distinct: only ALLOW can mint it, and the signed artifact contains the exact action fingerprint plus capability and identity fingerprints. The execution boundary consumes the artifact fail-closed.
 
@@ -268,14 +273,11 @@ Payment and x402 remain backward-compatible adapters while this general authorit
 
 ## Roadmap
 
-1. AP2 and additional payment-rail adapters (same `PaymentIntent` seam).
-2. Hosted, multi-tenant key management (today: one local keypair).
-3. Signed policy versions, so an attestation can also prove *which*
-   policy version produced a decision, not just the decision itself.
-4. Webhook/event stream for real-time WARN confirmation (today: poll
-   `/v1/agents/{id}/history` or use the CLI).
-5. Reference integrations for common agent frameworks (LangChain, CrewAI,
-   a raw MCP tool wrapper).
+1. **Dynamic Agent Authority** — use verified history and outcomes to expand, reduce or probationarily constrain capabilities without bypassing deterministic policy.
+2. **Adversarial Verification Plane** — independently challenge proposed authority and build a reusable regression/attack corpus.
+3. **Signed policy versions** — bind each authority decision to the exact policy version and provenance that produced it.
+4. **Hosted, multi-tenant key management** — move beyond one local issuer keypair while keeping offline verification.
+5. **Reference execution integrations** — MCP, API, cloud, database and additional payment/chain adapters all consuming the same authority contracts.
 
 ## License
 
@@ -288,7 +290,9 @@ MIT.
 
 `POST /v1/authorize/capability` resolves a registered active capability and binds it to one exact normalized action before minting `ExecutionAuthorization`.
 
-`POST /v1/authorize/identity` is the canonical cryptographic authority path. The caller supplies an exact intent plus an agent signature; Verigate verifies the registered identity, checks the identity-bound capability, evaluates policy, and only then mints execution authority.
+`POST /v1/authorize/identity` is the canonical cryptographic authority path. The caller supplies an exact intent plus an agent signature; Verigate verifies the registered identity, checks the identity-bound capability and its delegation ancestry, evaluates policy, and only then mints execution authority.
+
+`GET /v1/authority/capabilities/{capability_id}` explains the authority provenance of a capability, including its delegation path and graph edges.
 
 `ExecutionAuthorization` is short-lived, nonce-bound, and contains the authorized normalized action plus identity/capability fingerprints. The execution adapter consumes it; the decision receipt is evidence and is not itself permission to execute.
 

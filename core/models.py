@@ -139,6 +139,9 @@ class Capability:
     capability_id: str
     agent_id: str
     identity_id: str | None = None
+    delegated_from: str | None = None
+    delegated_by_identity_id: str | None = None
+    delegation_depth: int = 0
     allowed_actions: tuple[str, ...] = ()
     allowed_targets: tuple[str, ...] = ()
     allowed_resources: tuple[str, ...] = ()
@@ -159,6 +162,9 @@ class Capability:
             "capability_id": self.capability_id,
             "agent_id": self.agent_id,
             "identity_id": self.identity_id,
+            "delegated_from": self.delegated_from,
+            "delegated_by_identity_id": self.delegated_by_identity_id,
+            "delegation_depth": self.delegation_depth,
             "allowed_actions": self.allowed_actions,
             "allowed_targets": self.allowed_targets,
             "allowed_resources": self.allowed_resources,
@@ -196,6 +202,21 @@ class Capability:
         if limit is not None and (action.amount is None or action.amount > limit):
             return False, "action exceeds capability limit"
         return True, "capability permits action"
+
+
+@dataclass(frozen=True)
+class AuthorityEdge:
+    """A typed relationship in the Verigate authority graph."""
+
+    edge_id: str
+    source_type: str
+    source_id: str
+    relation: str
+    target_type: str
+    target_id: str
+    created_at: float = field(default_factory=time.time)
+    status: str = "ACTIVE"
+    revoked_at: float | None = None
 
 
 @dataclass(frozen=True)

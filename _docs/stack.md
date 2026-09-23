@@ -13,10 +13,11 @@
 - `core.models`: PaymentIntent, ActionIntent, AgentIdentity, Capability and decisions
 - `core.policy` + `core.rules`: deterministic policy evaluation
 - `core.identity`: cryptographic identity registry and agent-signed intent verification
-- `core.authorization`: portable execution authorization
-- `core.capabilities`: active authority registry and revocation
+- `core.authorization`: portable execution authorization and evidence linkage
+- `core.capabilities`: active authority registry, effective-chain validation and revocation
+- `core.authority`: authority graph, delegation proof and constrained capability delegation
 - `core.engine`: orchestration and identity/capability-bound authorization paths
-- `core.storage`: audit/rate/spend state plus identity and capability registries
+- `core.storage`: audit/rate/spend state plus identity, capability and graph persistence
 
 ## Evidence and authorization
 
