@@ -106,6 +106,16 @@ class AdversarialVerificationResponse(BaseModel):
     all_blocked: bool
 
 
+class AuthorityResetRequest(BaseModel):
+    reset: dict
+
+
+class AuthorityResetResponse(BaseModel):
+    reset: dict
+    snapshot: dict
+    snapshot_sha256: str
+
+
 class ExecutionConsumeRequest(BaseModel):
     authorization: ExecutionAuthorizationResponse
 

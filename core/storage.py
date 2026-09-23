@@ -163,6 +163,23 @@ CREATE TABLE IF NOT EXISTS policy_versions (
 
 CREATE INDEX IF NOT EXISTS idx_policy_versions_identity
     ON policy_versions(policy_id, version);
+
+CREATE TABLE IF NOT EXISTS authority_resets (
+    reset_id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    capability_id TEXT NOT NULL,
+    governor_id TEXT NOT NULL,
+    epoch INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    issued_at REAL NOT NULL,
+    nonce TEXT NOT NULL UNIQUE,
+    signed_reset_json TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    UNIQUE(agent_id, capability_id, epoch)
+);
+
+CREATE INDEX IF NOT EXISTS idx_authority_resets_scope
+    ON authority_resets(agent_id, capability_id, epoch);
 """
 
 
@@ -834,6 +851,52 @@ class Storage:
             row = self._conn.execute(
                 "SELECT signed_policy_json FROM policy_versions WHERE policy_sha256 = ?",
                 (policy_sha256,),
+            ).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def register_authority_reset(self, signed_reset: dict) -> None:
+        """Persist one signed governance reset and its new authority epoch."""
+        payload = signed_reset["payload"]
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO authority_resets "
+                    "(reset_id, agent_id, capability_id, governor_id, epoch, reason, "
+                    "issued_at, nonce, signed_reset_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        payload["reset_id"],
+                        payload["agent_id"],
+                        payload["capability_id"],
+                        payload["governor_id"],
+                        payload["epoch"],
+                        payload["reason"],
+                        payload["issued_at"],
+                        payload["nonce"],
+                        json.dumps(
+                            signed_reset,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                        time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("authority reset already registered") from exc
+
+    def latest_authority_reset(
+        self,
+        agent_id: str,
+        capability_id: str,
+    ) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT signed_reset_json FROM authority_resets "
+                "WHERE agent_id = ? AND capability_id = ? "
+                "ORDER BY epoch DESC LIMIT 1",
+                (agent_id, capability_id),
             ).fetchone()
         return json.loads(row[0]) if row else None
 

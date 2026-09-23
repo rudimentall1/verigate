@@ -19,6 +19,7 @@
 - `core.authority_state`: deterministic dynamic authority state, bounded promotion/demotion and evidence-driven authority limits
 - `core.adversarial`: mutation-based attack corpus for signed authority and fail-closed verification
 - `core.policy_version`: immutable policy-version artifacts, issuer signatures and lineage verification
+- `core.governance`: signed authority-reset actions, epoch control and recovery validation
 - `core.engine`: orchestration and identity/capability-bound authorization paths with dynamic authority enforcement
 - `core.storage`: audit/rate/spend state plus identity, capability, graph and authority-history persistence
 

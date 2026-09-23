@@ -14,6 +14,8 @@ Endpoints:
   GET  /v1/agents/{id}/history
   GET  /health
   GET  /v1/public-key
+  GET  /v1/governance/public-key
+  POST /v1/authority/reset
 """
 from __future__ import annotations
 
@@ -35,6 +37,7 @@ from core.adversarial import AdversarialVerificationPlane
 from core.authority import AuthorityGraph
 from core.authority_state import DynamicAuthorityService
 from core.engine import GuardrailEngine
+from core.governance import AuthorityGovernanceService
 from core.models import PaymentIntent
 from core.policy import Policy
 from core.storage import Storage
@@ -47,6 +50,8 @@ from .schemas import (
     AuthorizationResponse,
     AdversarialVerificationRequest,
     AdversarialVerificationResponse,
+    AuthorityResetRequest,
+    AuthorityResetResponse,
     CapabilityAuthorizationRequest,
     IdentityAuthorizationRequest,
     DecisionResponse,
@@ -62,6 +67,14 @@ POLICY_PATH = os.environ.get("VERIGATE_POLICY", "policies/default.yaml")
 DB_PATH = os.environ.get("VERIGATE_DB", "data/verigate.db")
 PRIVATE_KEY_PATH = os.environ.get("VERIGATE_PRIVATE_KEY", "keys/issuer.key")
 PUBLIC_KEY_PATH = os.environ.get("VERIGATE_PUBLIC_KEY", "keys/issuer.pub")
+GOVERNANCE_PRIVATE_KEY_PATH = os.environ.get(
+    "VERIGATE_GOVERNANCE_PRIVATE_KEY",
+    "keys/governance.key",
+)
+GOVERNANCE_PUBLIC_KEY_PATH = os.environ.get(
+    "VERIGATE_GOVERNANCE_PUBLIC_KEY",
+    "keys/governance.pub",
+)
 
 app = FastAPI(
     title="Verigate",
@@ -82,6 +95,11 @@ def _startup() -> None:
     global _policy, _storage, _engine
     if not Path(PRIVATE_KEY_PATH).exists():
         generate_keypair(PRIVATE_KEY_PATH, PUBLIC_KEY_PATH)
+    if not Path(GOVERNANCE_PRIVATE_KEY_PATH).exists():
+        generate_keypair(
+            GOVERNANCE_PRIVATE_KEY_PATH,
+            GOVERNANCE_PUBLIC_KEY_PATH,
+        )
     _policy = Policy.load(POLICY_PATH)
     _storage = Storage(DB_PATH)
     _engine = GuardrailEngine(
@@ -148,6 +166,11 @@ def demo_live() -> dict:
 @app.get("/v1/public-key", response_class=PlainTextResponse)
 def public_key() -> str:
     return Path(PUBLIC_KEY_PATH).read_text()
+
+
+@app.get("/v1/governance/public-key", response_class=PlainTextResponse)
+def governance_public_key() -> str:
+    return Path(GOVERNANCE_PUBLIC_KEY_PATH).read_text()
 
 
 def _decide_and_maybe_sign(intent: PaymentIntent, sign: bool) -> dict:
@@ -282,6 +305,25 @@ def authority_capability(capability_id: str) -> dict:
         return explanation
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post(
+    "/v1/authority/reset",
+    response_model=AuthorityResetResponse,
+)
+def authority_reset(req: AuthorityResetRequest) -> dict:
+    assert _storage is not None
+    try:
+        return AuthorityGovernanceService(_storage).reset(
+            req.reset,
+            load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/v1/execution/receipts/{authorization_id}")

@@ -107,17 +107,27 @@ class DynamicAuthorityService:
         now: float | None = None,
     ) -> AuthoritySnapshot:
         now = time.time() if now is None else now
+        latest_reset = self.storage.latest_authority_reset(
+            agent_id,
+            capability_id,
+        )
+        history_start = now - self.policy.window_seconds
+        if latest_reset is not None:
+            history_start = max(
+                history_start,
+                float(latest_reset["payload"]["issued_at"]),
+            )
         events = self.storage.authority_events(
             agent_id=agent_id,
             capability_id=capability_id,
-            since=now - self.policy.window_seconds,
+            since=history_start,
         )
         successes = sum(1 for event in events if event["event_type"] in self.SUCCESS_EVENTS)
         adverse = sum(1 for event in events if event["event_type"] in self.ADVERSE_EVENTS)
         critical = sum(1 for event in events if event["event_type"] in self.CRITICAL_EVENTS)
 
         previous = self.storage.latest_authority_state(agent_id, capability_id)
-        if previous == AuthorityState.SUSPENDED.value:
+        if previous == AuthorityState.SUSPENDED.value and latest_reset is None:
             state = AuthorityState.SUSPENDED
             reason = "suspended until an explicit authority reset"
         elif critical >= self.policy.suspension_critical_events:
@@ -213,6 +223,16 @@ class DynamicAuthorityService:
             "events": self.storage.authority_events(
                 agent_id=agent_id,
                 capability_id=capability_id,
-                since=time.time() - self.policy.window_seconds,
+                since=max(
+                    time.time() - self.policy.window_seconds,
+                    float(
+                        (self.storage.latest_authority_reset(agent_id, capability_id)
+                         or {"payload": {"issued_at": 0}})["payload"]["issued_at"]
+                    ),
+                ),
+            ),
+            "governance_reset": self.storage.latest_authority_reset(
+                agent_id,
+                capability_id,
             ),
         }

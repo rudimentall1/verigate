@@ -40,6 +40,8 @@ The **Adversarial Verification Plane** treats authority artifacts as hostile inp
 
 A **Signed PolicyVersion** makes the decision basis independently auditable: policy identity, explicit version, exact policy SHA-256, source reference and parent-version link are signed by the issuer. The same artifact is carried from DecisionReceipt into ExecutionAuthorization and ExecutionReceipt, so the evidence chain can answer not only what authority existed, but which exact policy version created it.
 
+**Governance recovery is a separate authority layer.** A SUSPENDED capability enters a new authority epoch only after an Ed25519-signed `AUTHORITY_RESET` from the dedicated governance principal. The reset has a monotonic epoch, nonce, explicit reason and timestamp after the latest critical incident. Revoked or expired capabilities/identities cannot be resurrected by governance recovery. Historical incidents remain immutable audit evidence; only post-reset events affect effective authority.
+
 Risk, intelligence and adversarial analysis can inform an AuthorityDecision, but they must never bypass deterministic capability, delegation, dynamic-authority and execution controls.
 
 ## Security invariants
@@ -58,6 +60,8 @@ Risk, intelligence and adversarial analysis can inform an AuthorityDecision, but
 12. Evidence must preserve identity → capability → delegation path → dynamic authority state → intent → authorization → execution linkage.
 13. Dynamic authority may only reduce or restore access within the static capability ceiling; it may never expand capability scope.
 14. Verified execution outcomes are the only automatic promotion/demotion inputs in the dynamic authority loop.
+15. SUSPENDED authority can only recover through a separately signed governance reset and a new monotonic authority epoch.
+16. Governance reset never resurrects revoked or expired static authority.
 
 ## Product boundary
 
