@@ -7,7 +7,9 @@ the submitted execution receipt into a confirmed signed receipt.
 """
 from __future__ import annotations
 
+import argparse
 import base64
+import json
 import os
 import struct
 import time
@@ -75,6 +77,14 @@ def raw_public_key(private_key: Ed25519PrivateKey) -> bytes:
     )
 
 
+def load_solana_keypair(path: Path) -> Ed25519PrivateKey:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, list) or len(raw) not in {32, 64}:
+        raise ValueError("Solana keypair JSON must contain 32 or 64 bytes")
+    secret = bytes(raw[:32])
+    return Ed25519PrivateKey.from_private_bytes(secret)
+
+
 def sign_system_transfer(
     sender: Ed25519PrivateKey,
     recipient_pubkey: bytes,
@@ -131,6 +141,18 @@ def wait_for_confirmed(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--sender-keypair",
+        type=Path,
+        help="existing Solana CLI keypair JSON for a funded Devnet sender",
+    )
+    parser.add_argument(
+        "--skip-airdrop",
+        action="store_true",
+        help="do not request faucet SOL; use the supplied funded sender",
+    )
+    args = parser.parse_args()
     rpc = SolanaRpcClient(RPC_URL)
 
     with tempfile.TemporaryDirectory(prefix="verigate-live-solana-") as td:
@@ -140,7 +162,11 @@ def main() -> None:
         audit_db = root / "audit.db"
         generate_keypair(issuer_private, issuer_public)
 
-        sender = Ed25519PrivateKey.generate()
+        sender = (
+            load_solana_keypair(args.sender_keypair)
+            if args.sender_keypair
+            else Ed25519PrivateKey.generate()
+        )
         recipient = Ed25519PrivateKey.generate()
         sender_address = b58encode(raw_public_key(sender))
         recipient_address = b58encode(raw_public_key(recipient))
@@ -153,12 +179,30 @@ def main() -> None:
         print("Recipient:", recipient_address)
 
         print()
-        print("1) Requesting 1 SOL from Devnet faucet...")
-        airdrop_sig = rpc.request_airdrop(sender_address, LAMPORTS_PER_SOL)
-        airdrop_state = wait_for_confirmed(rpc, airdrop_sig)
-        if airdrop_state["state"] != "CONFIRMED":
-            raise RuntimeError(f"Devnet faucet did not confirm: {airdrop_state}")
-        print("Airdrop:", airdrop_state["state"], airdrop_sig)
+        if args.skip_airdrop or args.sender_keypair:
+            print("1) Using existing funded Devnet sender; faucet skipped.")
+        else:
+            print("1) Requesting 1 SOL from Devnet faucet...")
+            try:
+                airdrop_sig = rpc.request_airdrop(sender_address, LAMPORTS_PER_SOL)
+                airdrop_state = wait_for_confirmed(rpc, airdrop_sig)
+                if airdrop_state["state"] != "CONFIRMED":
+                    raise RuntimeError(f"Devnet faucet did not confirm: {airdrop_state}")
+                print("Airdrop:", airdrop_state["state"], airdrop_sig)
+            except Exception as exc:
+                raise RuntimeError(
+                    "Devnet faucet failed. Re-run with --sender-keypair <funded-keypair.json> "
+                    "--skip-airdrop after funding the sender on Devnet."
+                ) from exc
+
+        balance = rpc.get_balance(sender_address)
+        print("Sender balance:", balance / LAMPORTS_PER_SOL, "SOL")
+        required = TRANSFER_LAMPORTS + 100_000
+        if balance < required:
+            raise RuntimeError(
+                f"Sender needs at least {required / LAMPORTS_PER_SOL:.6f} SOL; "
+                "fund the Devnet sender first."
+            )
 
         latest = rpc.get_latest_blockhash()
         raw_tx = sign_system_transfer(

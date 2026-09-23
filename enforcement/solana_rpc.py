@@ -62,6 +62,14 @@ class SolanaRpcClient:
             raise SolanaRpcError("requestAirdrop returned no signature")
         return result
 
+    def get_balance(self, address: str) -> int:
+        if not isinstance(address, str) or not address:
+            raise ValueError("invalid Solana address")
+        result = self._request("getBalance", [address, {"commitment": "confirmed"}])
+        if not isinstance(result, dict) or not isinstance(result.get("value"), int):
+            raise SolanaRpcError("getBalance returned invalid result")
+        return result["value"]
+
     def get_latest_blockhash(self) -> dict[str, Any]:
         result = self._request("getLatestBlockhash", [{"commitment": "confirmed"}])
         if not isinstance(result, dict):

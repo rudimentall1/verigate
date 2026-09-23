@@ -111,6 +111,8 @@ PYTHONPATH=. python3 demo_cmc_rwa.py --fixture
 
 # Run a real Solana Devnet execution: ALLOW -> broadcast -> confirmation
 PYTHONPATH=. python3 demo_live_solana_devnet.py
+# If the public faucet is rate-limited, use any funded Devnet keypair instead:
+PYTHONPATH=. python3 demo_live_solana_devnet.py --sender-keypair path/to/devnet-id.json --skip-airdrop
 # Optional: override the public Devnet RPC with VERIGATE_SOLANA_DEVNET_RPC_URL
 ```
 

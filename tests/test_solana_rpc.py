@@ -12,6 +12,13 @@ from enforcement.solana_rpc import SolanaRpcClient, SolanaRpcError
 
 
 class SolanaRpcClientTest(unittest.TestCase):
+    def test_get_balance_parses_lamports(self):
+        client = SolanaRpcClient(
+            "https://example.invalid",
+            transport=lambda *_: b'{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":1},"value":1234567}}',
+        )
+        self.assertEqual(client.get_balance("Sender"), 1234567)
+
     def test_send_transaction_uses_fail_closed_rpc_options(self):
         calls = []
 
