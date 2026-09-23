@@ -12,6 +12,7 @@ from .policy import Policy
 from .storage import Storage
 
 from .authorization import AuthorizationService
+from .capabilities import CapabilityRegistry
 
 
 class GuardrailEngine:
@@ -115,7 +116,7 @@ class GuardrailEngine:
 
 
     def authorize(self, intent: PaymentIntent, private_key) -> dict:
-        """Return a signed decision proof and, for ALLOW, a separate execution capability."""
+        """Legacy authorization path retained for compatibility."""
         decision = self.evaluate(intent)
         action = intent.as_action_intent()
         artifacts = AuthorizationService().issue(
@@ -124,6 +125,27 @@ class GuardrailEngine:
             self.policy.digest,
             private_key,
             nonce=intent.intent_id,
+        )
+        self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
+        return artifacts
+
+    def authorize_with_capability(
+        self,
+        intent: PaymentIntent,
+        capability_id: str,
+        private_key,
+    ) -> dict:
+        """Canonical control-plane authorization path using registry authority."""
+        decision = self.evaluate(intent)
+        action = intent.as_action_intent()
+        capability = CapabilityRegistry(self.storage).assert_authority(capability_id, action)
+        artifacts = AuthorizationService().issue(
+            action,
+            decision,
+            self.policy.digest,
+            private_key,
+            nonce=intent.intent_id,
+            capability=capability,
         )
         self.storage.update_signature(intent.intent_id, artifacts["decision_receipt"]["signature"])
         return artifacts

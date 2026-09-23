@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from .models import GuardrailDecision, PaymentIntent
+from .models import Capability, GuardrailDecision, PaymentIntent
 
 
 _SCHEMA = """
@@ -75,6 +75,22 @@ CREATE INDEX IF NOT EXISTS idx_execution_receipts_intent
 
 CREATE INDEX IF NOT EXISTS idx_execution_receipts_agent_time
     ON execution_receipts(agent_id, created_at);
+
+CREATE TABLE IF NOT EXISTS capabilities (
+    capability_id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    capability_json TEXT NOT NULL,
+    capability_sha256 TEXT NOT NULL,
+    status TEXT NOT NULL,
+    issued_at REAL NOT NULL,
+    expires_at REAL,
+    revoked_at REAL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_capabilities_agent_status
+    ON capabilities(agent_id, status);
 """
 
 
@@ -340,6 +356,78 @@ class Storage:
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
 
+
+    def register_capability(self, capability: Capability) -> None:
+        """Persist a new capability version as active authority."""
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO capabilities "
+                    "(capability_id, agent_id, version, capability_json, capability_sha256, "
+                    "status, issued_at, expires_at, revoked_at, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, NULL, ?)",
+                    (
+                        capability.capability_id,
+                        capability.agent_id,
+                        capability.version,
+                        json.dumps(capability.__dict__, sort_keys=True, separators=(",", ":")),
+                        capability.digest,
+                        capability.issued_at,
+                        capability.expires_at,
+                        time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("capability_id already registered") from exc
+
+    def capability(self, capability_id: str) -> Capability | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT capability_json FROM capabilities WHERE capability_id = ?",
+                (capability_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        data = json.loads(row[0])
+        data["allowed_actions"] = tuple(data.get("allowed_actions", ()))
+        data["allowed_targets"] = tuple(data.get("allowed_targets", ()))
+        data["allowed_resources"] = tuple(data.get("allowed_resources", ()))
+        data["allowed_networks"] = tuple(data.get("allowed_networks", ()))
+        data["allowed_assets"] = tuple(data.get("allowed_assets", ()))
+        data["conditions"] = tuple(data.get("conditions", ()))
+        return Capability(**data)
+
+    def capability_status(self, capability_id: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT status FROM capabilities WHERE capability_id = ?",
+                (capability_id,),
+            ).fetchone()
+        return row[0] if row else None
+
+    def revoke_capability(self, capability_id: str) -> bool:
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE capabilities SET status = 'REVOKED', revoked_at = ? "
+                "WHERE capability_id = ? AND status = 'ACTIVE'",
+                (time.time(), capability_id),
+            )
+            if cursor.rowcount != 1:
+                self._conn.rollback()
+                return False
+            self._conn.commit()
+            return True
+
+    def capability_is_active(self, capability_id: str, now: float | None = None) -> bool:
+        now = time.time() if now is None else now
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT status, expires_at FROM capabilities WHERE capability_id = ?",
+                (capability_id,),
+            ).fetchone()
+        return bool(row and row[0] == 'ACTIVE' and (row[1] is None or now < row[1]))
 
     def update_signature(self, intent_id: str, signature: str) -> None:
         """Attach a signature to an existing audit row.
