@@ -366,59 +366,34 @@ def verify_manifest(
     manifest: dict[str, Any],
     trusted_public_key_b64: str | None = None,
 ) -> dict[str, Any]:
-    if not isinstance(manifest, dict):
-        return {"valid": False, "reason": "manifest must be an object"}
-    payload = manifest.get("payload")
-    signature = manifest.get("signature")
-    embedded = manifest.get("issuer_public_key_b64")
-    if not isinstance(payload, dict) or not isinstance(signature, str) or not isinstance(embedded, str):
-        return {"valid": False, "reason": "manifest envelope is incomplete"}
-    if payload.get("manifest_version") != 1:
-        return {"valid": False, "reason": "unsupported manifest version"}
-    proof_profile = payload.get("proof_profile", "integrity")
-    graph_ok, graph_reason = _verify_nodes(payload)
-    if not graph_ok:
-        return {"valid": False, "reason": graph_reason}
-    profile_ok, profile_reason = _validate_profile(payload, proof_profile)
-    if not profile_ok:
-        return {"valid": False, "reason": profile_reason, "proof_profile": proof_profile}
-    expected_root = graph_root(payload)
-    if payload.get("root_digest") != expected_root:
-        return {"valid": False, "reason": "evidence Merkle root mismatch"}
-    try:
-        raw = base64.b64decode(embedded, validate=True)
-        public_key = Ed25519PublicKey.from_public_bytes(raw)
-    except (ValueError, TypeError):
-        return {"valid": False, "reason": "invalid embedded issuer public key"}
-    if trusted_public_key_b64 is not None:
-        if trusted_public_key_b64 != embedded:
-            return {"valid": False, "reason": "issuer public key is not trusted"}
-    try:
-        public_key.verify(base64.b64decode(signature, validate=True), canonical(payload))
-    except (InvalidSignature, ValueError, TypeError):
-        return {"valid": False, "reason": "invalid manifest signature"}
-    verification = payload.get("verification") or {}
-    invalid_evidence = [
-        key for key, item in verification.items()
-        if isinstance(item, dict) and item.get("valid") is False
-    ]
-    if invalid_evidence:
-        return {
-            "valid": False,
-            "reason": "evidence verification failed",
-            "invalid_evidence": invalid_evidence,
-            "root_digest": expected_root,
-        }
-    return {
-        "valid": True,
-        "reason": "valid signed evidence manifest",
-        "root_digest": expected_root,
-        "node_count": len(payload["nodes"]),
-        "edge_count": len(payload["edges"]),
-        "embedded_issuer_trusted": trusted_public_key_b64 is not None,
-        "invalid_evidence": invalid_evidence,
-        "assurance": {
-            "profile": proof_profile,
-            "claims": assurance_claims(proof_profile),
-        },
+    from core.proof_engine import verify_signed_proof
+
+    result = verify_signed_proof(
+        manifest,
+        trusted_public_key_b64=trusted_public_key_b64,
+        node_validator=_verify_nodes,
+        profile_validator=_validate_profile,
+        root_calculator=graph_root,
+        assurance_claims=assurance_claims,
+    )
+    response = {
+        "valid": result.valid,
+        "reason": result.reason,
     }
+    if result.root_digest is not None:
+        response["root_digest"] = result.root_digest
+    if result.invalid_evidence:
+        response["invalid_evidence"] = list(result.invalid_evidence)
+    if result.assurance is not None:
+        response["assurance"] = result.assurance
+    if result.valid:
+        payload = manifest["payload"]
+        response.update({
+            "node_count": len(payload["nodes"]),
+            "edge_count": len(payload["edges"]),
+            "embedded_issuer_trusted": trusted_public_key_b64 is not None,
+            "invalid_evidence": [],
+        })
+    elif result.reason != "evidence verification failed" and result.invalid_evidence:
+        response["invalid_evidence"] = list(result.invalid_evidence)
+    return response
