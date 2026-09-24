@@ -82,6 +82,77 @@ class EVMExecutionAdapterTest(unittest.TestCase):
         finally:
             adapter.gate.storage.close()
 
+    def test_authorization_binds_atomic_guard_state(self):
+        storage = Storage(self.db)
+        policy_path = Path(self.tmpdir.name) / "atomic-policy.yaml"
+        policy_path.write_text("""allowed_networks: [arbitrum-sepolia]
+allowed_assets: [USDC]
+external_state_requirements:
+  - action_type: payment
+    target: merchant
+    kind: evm.state
+""", encoding="utf-8")
+        engine = GuardrailEngine(Policy.load(policy_path), storage)
+        guard = "0x" + "11" * 20
+        oracle = "0x" + "22" * 20
+        reference = "0x" + "33" * 32
+        expected = "0x" + "44" * 32
+        tx = {"chain_id": 421614, "to": guard, "value_wei": 0, "data": "0x1234"}
+        import hashlib, json
+        data_sha256 = hashlib.sha256(tx["data"].encode("utf-8")).hexdigest()
+        state = {
+            "kind": "evm.state",
+            "reference": "resource:merchant",
+            "digest": "a" * 64,
+            "atomic_guard": {
+                "address": guard, "oracle": oracle, "reference": reference,
+                "expected": expected, "data_sha256": data_sha256,
+            },
+        }
+        intent = PaymentIntent(
+            agent_id="agent-evm", payee="merchant", asset="USDC", network="arbitrum-sepolia", amount=1.0,
+            metadata={"evm_transaction": tx, "external_state": state},
+        )
+        capability = Capability(
+            capability_id="cap-atomic", agent_id="agent-evm", allowed_actions=("payment",),
+            allowed_targets=("merchant",), allowed_networks=("arbitrum-sepolia",),
+            allowed_assets=("USDC",), max_per_action={"USDC": 10.0},
+        )
+        storage.register_capability(capability)
+        result = engine.authorize_with_capability(intent, capability.capability_id, load_private_key(self.priv))
+        auth = result["execution_authorization"]
+        self.assertIsNotNone(auth)
+        self.assertEqual(auth["payload"]["external_state"]["kind"], "evm.state")
+        self.assertEqual(auth["payload"]["external_state"]["atomic_guard"]["address"], guard)
+        self.assertEqual(auth["payload"]["external_state_requirement"]["kind"], "evm.state")
+        storage.close()
+
+    def test_router_requires_atomic_guard_for_policy_bound_evm_state(self):
+        storage = Storage(self.db)
+        policy_path = Path(self.tmpdir.name) / "atomic-router-policy.yaml"
+        policy_path.write_text("""allowed_networks: [arbitrum-sepolia]
+allowed_assets: [USDC]
+external_state_requirements:
+  - action_type: payment
+    target: merchant
+    kind: evm.state
+""", encoding="utf-8")
+        engine = GuardrailEngine(Policy.load(policy_path), storage)
+        tx = {"chain_id": 421614, "to": "0x" + "11" * 20, "value_wei": 0, "data": "0x1234"}
+        state = {"kind": "evm.state", "reference": "resource:merchant", "digest": "a" * 64}
+        intent = PaymentIntent(agent_id="agent-evm", payee="merchant", asset="USDC", network="arbitrum-sepolia", amount=1.0, metadata={"evm_transaction": tx, "external_state": state})
+        capability = Capability(capability_id="cap-atomic-router", agent_id="agent-evm", allowed_actions=("payment",), allowed_targets=("merchant",), allowed_networks=("arbitrum-sepolia",), allowed_assets=("USDC",), max_per_action={"USDC": 10.0})
+        storage.register_capability(capability)
+        result = engine.authorize_with_capability(intent, capability.capability_id, load_private_key(self.priv))
+        from enforcement.router import ExecutionRouter
+        from enforcement.networks import NetworkRegistry
+        router = ExecutionRouter(NetworkRegistry(), storage, load_public_key(self.pub))
+        calls=[]
+        with self.assertRaises(ValueError):
+            router.execute(result["execution_authorization"], lambda value: calls.append(value) or "tx")
+        self.assertEqual(calls, [])
+        storage.close()
+
     def test_execute_bound_requires_atomic_guard_binding(self):
         result, tx = self._authorized()
         adapter = EVMExecutionAdapter(Storage(self.db), load_public_key(self.pub))
