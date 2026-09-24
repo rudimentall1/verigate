@@ -8,3 +8,4 @@ keys/
 .env
 .DS_Store
 solana-keypair.json
+node_modules/
