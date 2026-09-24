@@ -1,13 +1,36 @@
 """Profile-specific semantic validators for Verigate evidence proofs."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from core.proof_engine import digest
 from core.proof_profiles import profile_spec
 
 
-def validate_profile(payload: dict[str, Any], profile: str) -> tuple[bool, str]:
+class ProfileValidatorRegistry:
+    """Explicit registry for profile semantics used by the generic proof engine."""
+
+    def __init__(self) -> None:
+        self._validators: dict[str, Callable[[dict[str, Any], str], tuple[bool, str]]] = {}
+
+    def register(self, profile: str, validator: Callable[[dict[str, Any], str], tuple[bool, str]]) -> None:
+        if not profile:
+            raise ValueError("proof profile name must not be empty")
+        if profile in self._validators:
+            raise ValueError(f"proof profile validator already registered: {profile}")
+        self._validators[profile] = validator
+
+    def get(self, profile: str) -> Callable[[dict[str, Any], str], tuple[bool, str]] | None:
+        return self._validators.get(profile)
+
+    def names(self) -> tuple[str, ...]:
+        return tuple(sorted(self._validators))
+
+
+PROFILE_VALIDATORS = ProfileValidatorRegistry()
+
+
+def _validate_profile_semantics(payload: dict[str, Any], profile: str) -> tuple[bool, str]:
     spec = profile_spec(profile)
     if spec is None:
         return False, f"unsupported proof profile: {profile}"
@@ -252,3 +275,14 @@ def validate_profile(payload: dict[str, Any], profile: str) -> tuple[bool, str]:
             return False, "governance approval is not bound to the approved governance action"
 
     return True, "authority lifecycle proof profile satisfied"
+
+
+def validate_profile(payload: dict[str, Any], profile: str) -> tuple[bool, str]:
+    validator = PROFILE_VALIDATORS.get(profile)
+    if validator is None:
+        return False, f"unsupported proof profile: {profile}"
+    return validator(payload, profile)
+
+
+for _profile in ("integrity", "mcp_execution", "authority_lifecycle"):
+    PROFILE_VALIDATORS.register(_profile, _validate_profile_semantics)
