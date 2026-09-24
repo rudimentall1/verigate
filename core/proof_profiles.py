@@ -10,10 +10,12 @@ PROOF_PROFILES: dict[str, dict[str, Any]] = {
     },
     "mcp_execution": {
         "required_nodes": {
-            "action_intent", "execution_authorization", "execution_receipt",
+            "action_intent", "decision", "execution_authorization", "execution_receipt",
             "outcome_claim", "outcome_attestation", "attestor_authority",
         },
         "required_edges": {
+            ("action_intent", "EVALUATED_AS", "decision"),
+            ("decision", "MINTS", "execution_authorization"),
             ("execution_authorization", "PRODUCES", "execution_receipt"),
             ("execution_receipt", "OBSERVED_BY", "outcome_claim"),
             ("outcome_attestation", "ATTESTS", "outcome_claim"),
