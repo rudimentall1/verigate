@@ -108,6 +108,7 @@ def issue_execution_authorization(
     authority_state: dict[str, Any] | None = None,
     authority_state_sha256: str | None = None,
     authority_multiplier: float | None = None,
+    effective_authority: dict[str, Any] | None = None,
 ) -> ExecutionAuthorization:
     if receipt.payload["decision"]["decision"] != Decision.ALLOW.value:
         raise PermissionError("execution authorization requires ALLOW")
@@ -129,6 +130,11 @@ def issue_execution_authorization(
         "authority_state": authority_state,
         "authority_state_sha256": authority_state_sha256,
         "authority_multiplier": authority_multiplier,
+        "effective_authority": effective_authority,
+        "effective_authority_sha256": (
+            hashlib.sha256(_canonical(effective_authority)).hexdigest()
+            if effective_authority is not None else None
+        ),
         "action": receipt.payload["intent"],
         "action_sha256": action_digest(receipt.payload["intent"]),
         "constraints_sha256": hashlib.sha256(_canonical(receipt.payload["intent"].get("constraints", {}))).hexdigest(),
@@ -295,6 +301,14 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
         expected_constraints = hashlib.sha256(_canonical(action.get("constraints", {}))).hexdigest()
         if constraints_sha256 != expected_constraints:
             return False, "authorized constraints fingerprint mismatch"
+        effective = payload.get("effective_authority")
+        effective_sha256 = payload.get("effective_authority_sha256")
+        if effective is not None:
+            if not isinstance(effective, dict) or not isinstance(effective_sha256, str) or len(effective_sha256) != 64:
+                return False, "invalid effective authority fingerprint"
+            expected_effective = hashlib.sha256(_canonical(effective)).hexdigest()
+            if effective_sha256 != expected_effective:
+                return False, "effective authority fingerprint mismatch"
         _verify(payload, auth["signature"], public_key)
         return True, "valid execution authorization"
     except (KeyError, TypeError, ValueError, InvalidSignature):

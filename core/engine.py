@@ -264,6 +264,7 @@ class GuardrailEngine:
             capability=capability,
             identity=identity,
             authority=authority,
+            policy=self.policy,
             signed_policy=self.signed_policy_version(private_key),
         )
         return self._persist_authorization(
@@ -305,6 +306,7 @@ class GuardrailEngine:
             nonce=intent.intent_id,
             capability=capability,
             authority=authority,
+            policy=self.policy,
             signed_policy=self.signed_policy_version(private_key),
         )
         return self._persist_authorization(artifacts, intent.intent_id)
@@ -340,6 +342,7 @@ class GuardrailEngine:
             capability=capability,
             identity=identity,
             authority=authority,
+            policy=self.policy,
             signed_policy=self.signed_policy_version(private_key),
         )
         return self._persist_authorization(

@@ -10,6 +10,8 @@ from typing import Any
 
 from .models import ActionIntent, AgentIdentity, Capability, Decision, GuardrailDecision
 from .authority_state import AuthoritySnapshot
+from .effective_authority import effective_authority
+from .policy import Policy
 from attest.receipt import issue_execution_authorization, sign_receipt
 
 
@@ -28,6 +30,7 @@ class AuthorizationService:
         capability: Capability | None = None,
         identity: AgentIdentity | None = None,
         authority: AuthoritySnapshot | None = None,
+        policy: Policy | None = None,
         signed_policy: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if action.intent_id != decision.intent_id or action.agent_id != decision.agent_id:
@@ -56,7 +59,10 @@ class AuthorizationService:
             signed_policy_version=signed_policy,
         )
         execution = None
+        effective = None
         if decision.decision == Decision.ALLOW:
+            if capability is not None and authority is not None and policy is not None:
+                effective = effective_authority(action, capability, policy, authority)
             execution = issue_execution_authorization(
                 receipt,
                 private_key,
@@ -70,6 +76,7 @@ class AuthorizationService:
                 authority_state=authority.as_dict() if authority else None,
                 authority_state_sha256=authority.digest if authority else None,
                 authority_multiplier=authority.multiplier if authority else None,
+                effective_authority=effective,
             )
 
         return {
