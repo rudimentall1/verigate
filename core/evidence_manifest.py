@@ -107,6 +107,16 @@ def _validate_profile(payload: dict[str, Any], profile: str) -> tuple[bool, str]
     if any(value is None for value in required.values()):
         return False, "authority lifecycle profile requires exactly one canonical node of each required type"
 
+    verification = payload.get("verification")
+    if not isinstance(verification, dict) or verification.get("all_signed_artifacts_valid") is not True:
+        return False, "authority lifecycle proof requires all signed artifacts to be independently verified"
+    invalid_evidence = [
+        key for key, item in verification.items()
+        if isinstance(item, dict) and item.get("valid") is False
+    ]
+    if invalid_evidence:
+        return False, "authority lifecycle proof contains invalid signed evidence: " + ", ".join(sorted(invalid_evidence))
+
     intent = required["action_intent"]
     decision = required["decision"]
     decision_receipt = required["decision_receipt"]

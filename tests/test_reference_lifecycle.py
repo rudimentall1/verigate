@@ -363,5 +363,19 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
                 result = verify_manifest(manifest, manifest["issuer_public_key_b64"])
                 self.assertFalse(result["valid"], label)
 
+    def test_authority_lifecycle_requires_independent_artifact_verification(self):
+        valid_manifest = self._valid_manifest()
+        for variant in ("missing", "false"):
+            with self.subTest(variant=variant):
+                manifest = json.loads(json.dumps(valid_manifest))
+                if variant == "missing":
+                    manifest["payload"].pop("verification", None)
+                else:
+                    manifest["payload"]["verification"]["all_signed_artifacts_valid"] = False
+                self._resign_mutated_manifest(manifest)
+                result = verify_manifest(manifest, manifest["issuer_public_key_b64"])
+                self.assertFalse(result["valid"])
+                self.assertIn("all signed artifacts", result["reason"])
+
 if __name__ == "__main__":
     unittest.main()
