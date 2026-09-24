@@ -56,6 +56,34 @@ def check_context_constraints(intent: ActionIntent, policy: Policy) -> RuleMatch
     return None
 
 
+def check_execution_graph(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
+    """Enforce the declared execution path as a deterministic policy boundary.
+
+    The graph is part of the signed ActionIntent, so a valid signature does
+    not grant permission to route through an unapproved module, hook, router,
+    or target. Missing graph data is denied when a graph policy is configured.
+    """
+    expected = policy.execution_graph
+    if not expected:
+        return None
+    metadata = intent.metadata or {}
+    actual = metadata.get("execution_graph")
+    if not isinstance(actual, dict):
+        return RuleMatch(
+            "execution_graph_missing",
+            Severity.BLOCK,
+            "execution graph is required by policy",
+        )
+    for key, value in expected.items():
+        if actual.get(key) != value:
+            return RuleMatch(
+                "execution_graph_not_allowed",
+                Severity.BLOCK,
+                f"execution graph field '{key}' is not allowed by policy",
+            )
+    return None
+
+
 def check_target_allowed(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
     blocked = {p.lower() for p in policy.blocked_payees}
     if intent.target.lower() in blocked:
