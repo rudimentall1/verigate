@@ -16,6 +16,7 @@ from attest.receipt import (
 
 from core.storage import Storage
 from core.execution_graph import verify_execution_graph
+from core.execution_artifact import verify_execution_artifact
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.local import ExecutionGate
 from enforcement.networks import NetworkRegistry, UnsupportedNetworkError
@@ -144,6 +145,12 @@ class ExecutionRouter:
             "target": action.get("target"),
         }
         ok, reason = verify_execution_graph(expected, actual)
+        if not ok:
+            raise ValueError(reason)
+        expected_artifact = authorization["payload"].get("execution_artifact")
+        if not isinstance(expected_artifact, dict):
+            raise ValueError("execution authorization is missing execution artifact binding")
+        ok, reason = verify_execution_artifact(expected_artifact, action)
         if not ok:
             raise ValueError(reason)
 

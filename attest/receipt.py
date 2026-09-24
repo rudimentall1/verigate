@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 from core.models import ActionIntent, GuardrailDecision, Decision
 from core.effective_authority import verify_effective_action
 from core.execution_graph import execution_graph_digest, normalize_execution_graph
+from core.execution_artifact import canonical_execution_artifact, execution_artifact_digest, verify_execution_artifact
 
 
 def _canonical(payload: dict[str, Any]) -> bytes:
@@ -140,6 +141,8 @@ def issue_execution_authorization(
         ),
         "execution_graph": normalize_execution_graph(execution_graph),
         "execution_graph_sha256": execution_graph_digest(execution_graph),
+        "execution_artifact": canonical_execution_artifact(receipt.payload["intent"]),
+        "execution_artifact_sha256": execution_artifact_digest(receipt.payload["intent"]),
         "action": receipt.payload["intent"],
         "action_sha256": action_digest(receipt.payload["intent"]),
         "constraints_sha256": hashlib.sha256(_canonical(receipt.payload["intent"].get("constraints", {}))).hexdigest(),
@@ -316,6 +319,15 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
             return False, "execution authorization is missing execution graph binding"
         if execution_graph_digest(execution_graph) != execution_graph_sha256:
             return False, "execution graph fingerprint mismatch"
+
+        execution_artifact = payload.get("execution_artifact")
+        execution_artifact_sha256 = payload.get("execution_artifact_sha256")
+        if not isinstance(execution_artifact, dict) or not isinstance(execution_artifact_sha256, str) or len(execution_artifact_sha256) != 64:
+            return False, "execution authorization is missing execution artifact binding"
+        if hashlib.sha256(_canonical(execution_artifact)).hexdigest() != execution_artifact_sha256:
+            return False, "execution artifact fingerprint mismatch"
+        ok, reason = verify_execution_artifact(execution_artifact, action)
+        if not ok: return False, reason
 
         constraints_sha256 = payload.get("constraints_sha256")
         if not isinstance(constraints_sha256, str) or len(constraints_sha256) != 64:
