@@ -82,6 +82,34 @@ class EVMExecutionAdapterTest(unittest.TestCase):
         finally:
             adapter.gate.storage.close()
 
+    def test_execute_bound_requires_atomic_guard_binding(self):
+        result, tx = self._authorized()
+        adapter = EVMExecutionAdapter(Storage(self.db), load_public_key(self.pub))
+        try:
+            auth = result["execution_authorization"]
+            state = {"kind": "evm.state", "atomic_guard": {}}
+            with self.assertRaises(ValueError):
+                adapter.execute_bound(auth, state, lambda value: "tx-hash")
+        finally:
+            adapter.gate.storage.close()
+
+    def test_execute_bound_requires_guard_target(self):
+        result, _ = self._authorized()
+        adapter = EVMExecutionAdapter(Storage(self.db), load_public_key(self.pub))
+        try:
+            auth = result["execution_authorization"]
+            state = {"kind": "evm.state", "atomic_guard": {
+                "address": "0xGuard",
+                "oracle": "0xOracle",
+                "reference": "0x" + "11" * 32,
+                "expected": "0x" + "22" * 32,
+                "data_sha256": "0" * 64,
+            }}
+            with self.assertRaises(ValueError):
+                adapter.execute_bound(auth, state, lambda value: "tx-hash")
+        finally:
+            adapter.gate.storage.close()
+
     def test_replay_does_not_broadcast_twice(self):
         result, _ = self._authorized()
         adapter = EVMExecutionAdapter(Storage(self.db), load_public_key(self.pub))

@@ -1,4 +1,3 @@
-"""Dependency-light EVM execution adapter."""
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -11,7 +10,13 @@ from enforcement.protocol import ExecutionAdapter
 
 
 class EVMExecutionAdapter(ExecutionAdapter):
-    """Fail-closed EVM bridge without taking a web3 dependency."""
+    """Fail-closed EVM bridge.
+
+    Required EVM external-state authorizations must target a deployed
+    VerigateAtomicStateGuard envelope. The guard performs the state check and
+    target call inside the same EVM transaction; an off-chain preflight alone
+    is deliberately insufficient.
+    """
 
     def __init__(self, storage: Storage, public_key: Ed25519PublicKey):
         self.gate = ExecutionGate(storage, public_key)
@@ -40,12 +45,7 @@ class EVMExecutionAdapter(ExecutionAdapter):
         if not isinstance(data, str) or not data.startswith("0x"):
             raise ValueError("invalid EVM calldata")
 
-        result = {
-            "chain_id": chain_id,
-            "to": to,
-            "value_wei": value_wei,
-            "data": data,
-        }
+        result = {"chain_id": chain_id, "to": to, "value_wei": value_wei, "data": data}
         if signed_raw_transaction is not None:
             if (
                 not isinstance(signed_raw_transaction, str)
@@ -66,12 +66,58 @@ class EVMExecutionAdapter(ExecutionAdapter):
             return False, str(exc)
         return self.gate.consume(authorization)
 
+    @staticmethod
+    def _atomic_guard_binding(
+        authorization: dict[str, Any], external_state: dict[str, Any]
+    ) -> dict[str, Any]:
+        binding = external_state.get("atomic_guard")
+        if not isinstance(binding, dict):
+            raise ValueError("EVM state binding is missing atomic_guard commitment")
+        guard = binding.get("address")
+        oracle = binding.get("oracle")
+        reference = binding.get("reference")
+        expected = binding.get("expected")
+        data_sha256 = binding.get("data_sha256")
+        if not all(isinstance(v, str) and v for v in (guard, oracle, reference, expected, data_sha256)):
+            raise ValueError("invalid atomic_guard commitment")
+        if not reference.startswith("0x") or len(reference) != 66:
+            raise ValueError("invalid atomic_guard reference")
+        if not expected.startswith("0x") or len(expected) != 66:
+            raise ValueError("invalid atomic_guard expected value")
+        if len(data_sha256) != 64 or any(c not in "0123456789abcdefABCDEF" for c in data_sha256):
+            raise ValueError("invalid atomic_guard calldata digest")
+
+        action = authorization["payload"]["action"]
+        tx = EVMExecutionAdapter._transaction(action)
+        if tx["to"].lower() != guard.lower():
+            raise ValueError("EVM transaction does not target the committed atomic guard")
+        import hashlib
+        actual_data_sha256 = hashlib.sha256(tx["data"].encode("utf-8")).hexdigest()
+        if actual_data_sha256 != data_sha256.lower():
+            raise ValueError("EVM transaction calldata does not match atomic guard commitment")
+        return binding
+
+    def execute_bound(
+        self,
+        authorization: dict[str, Any],
+        external_state: dict[str, Any],
+        broadcaster: Callable[[dict[str, Any]], Any],
+    ) -> Any:
+        """Broadcast only a transaction whose on-chain guard enforces state atomically."""
+        if external_state.get("kind") != "evm.state":
+            raise ValueError("atomic EVM enforcement requires evm.state")
+        self._atomic_guard_binding(authorization, external_state)
+        tx = self._transaction(authorization["payload"]["action"])
+        ok, reason = self.gate.consume(authorization)
+        if not ok:
+            raise PermissionError(reason)
+        return broadcaster(tx)
+
     def execute(
         self,
         authorization: dict[str, Any],
         broadcaster: Callable[[dict[str, Any]], Any],
     ) -> Any:
-        """Consume authorization and broadcast only the signed transaction envelope."""
         action = authorization["payload"]["action"]
         tx = self._transaction(action)
         ok, reason = self.gate.consume(authorization)
