@@ -82,6 +82,11 @@ class ActionIntent:
     amount: float | None = None
     asset: str | None = None
     network: str | None = None
+    purpose: str = ""
+    declared_context: dict[str, Any] = field(default_factory=dict)
+    parent_intent_id: str | None = None
+    requested_capability: str | None = None
+    constraints: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     intent_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: float = field(default_factory=time.time)
@@ -96,6 +101,11 @@ class ActionIntent:
             "amount": self.amount,
             "asset": self.asset,
             "network": self.network,
+            "purpose": self.purpose,
+            "declared_context": self.declared_context,
+            "parent_intent_id": self.parent_intent_id,
+            "requested_capability": self.requested_capability,
+            "constraints": self.constraints,
             "metadata": self.metadata,
             "timestamp": self.timestamp,
         }
