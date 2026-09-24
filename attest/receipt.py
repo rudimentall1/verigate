@@ -131,6 +131,7 @@ def issue_execution_authorization(
         "authority_multiplier": authority_multiplier,
         "action": receipt.payload["intent"],
         "action_sha256": action_digest(receipt.payload["intent"]),
+        "context_sha256": receipt.payload["decision"].get("context_sha256"),
         "nonce": nonce,
         "issued_at": now,
         "expires_at": now + ttl_seconds,
@@ -150,6 +151,26 @@ def verify_receipt(receipt: dict[str, Any], public_key: Ed25519PublicKey) -> tup
             return False, "intent and decision IDs do not match"
         if intent["agent_id"] != decision["agent_id"]:
             return False, "intent and decision agents do not match"
+        expected_context = ActionIntent(
+            agent_id=intent["agent_id"],
+            action_type=intent["action_type"],
+            target=intent["target"],
+            resource=intent.get("resource", ""),
+            amount=intent.get("amount"),
+            asset=intent.get("asset"),
+            network=intent.get("network"),
+            purpose=intent.get("purpose", ""),
+            declared_context=intent.get("declared_context", {}),
+            parent_intent_id=intent.get("parent_intent_id"),
+            requested_capability=intent.get("requested_capability"),
+            constraints=intent.get("constraints", {}),
+            metadata=intent.get("metadata", {}),
+            intent_id=intent["intent_id"],
+            timestamp=intent.get("timestamp", 0),
+        ).context_digest
+        context_sha256 = decision.get("context_sha256")
+        if context_sha256 and context_sha256 != expected_context:
+            return False, "decision context fingerprint does not match the canonical intent context"
         if (not isinstance(policy_digest, str) or len(policy_digest) != 64
                 or any(c not in "0123456789abcdef" for c in policy_digest)):
             return False, "invalid policy fingerprint"

@@ -1,3 +1,4 @@
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import tempfile
 import unittest
 from pathlib import Path
@@ -135,3 +136,14 @@ class AuthorizationReceiptTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_decision_receipt_rejects_context_fingerprint_drift():
+    key = Ed25519PrivateKey.generate()
+    action = ActionIntent(agent_id="agent", action_type="api.request", target="payments", purpose="invoice")
+    decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, (), context_digest=action.context_digest)
+    receipt = sign_receipt(action, decision, "a" * 64, key).as_dict()
+    receipt["payload"]["decision"]["context_sha256"] = "b" * 64
+    ok, reason = verify_receipt(receipt, key.public_key())
+    assert not ok
+    assert "context fingerprint" in reason
