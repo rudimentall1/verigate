@@ -264,7 +264,10 @@ class GuardrailEngine:
 
         capability = None
         authority = None
-        if capability_id is not None:
+        # A denied action still gets a signed DecisionReceipt. Static/dynamic
+        # authority is required only when the policy decision is ALLOW; a
+        # denied request must never fail closed by disappearing as an error.
+        if capability_id is not None and decision.decision == Decision.ALLOW:
             capability = CapabilityRegistry(self.storage).assert_authority(
                 capability_id,
                 action,
