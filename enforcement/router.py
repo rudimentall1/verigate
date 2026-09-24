@@ -260,11 +260,9 @@ class ExecutionRouter:
             )
 
         try:
-            adapter = self._adapter(authorization)
-            self._verify_authorization(authorization)
-            self._verify_execution_path(authorization, adapter)
-            self._verify_external_state(authorization)
-            result = adapter.execute(authorization, broadcaster)
+            # Use the same execution boundary as direct execution so required
+            # atomic state enforcement cannot be bypassed by receipt generation.
+            result = self.execute(authorization, broadcaster)
             transaction_ref = self._transaction_ref(result)
             if not transaction_ref:
                 raise ValueError("broadcaster returned no transaction reference")

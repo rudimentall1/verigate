@@ -113,6 +113,28 @@ class ExternalStateTest(unittest.TestCase):
         with self.assertRaises(ValueError): router.execute(auth,lambda a:sent.append(a) or 'bad')
         self.assertEqual(sent,[])
 
+    def test_execution_receipt_cannot_bypass_atomic_state_requirement(self):
+        action=ActionIntent(agent_id='a',action_type='orders.create',target='orders',metadata={'external_state':{'kind':'http.state','reference':'orders','digest':'b'*64}})
+        policy=Policy(external_state_requirements=[{'action_type':'orders.create','target':'orders','kind':'http.state'}])
+        auth=self.auth(action,policy); sent=[]
+        registry=ExternalStateVerifierRegistry({'http.state': lambda b,a:(True,'match')})
+        router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),load_private_key(self.private),generic_adapters={'orders.create':Adapter()},external_state_registry=registry)
+        receipt=router.execute_with_receipt(auth,lambda a:sent.append(a) or 'should-not-run')
+        self.assertEqual(receipt.payload['status'],'FAILED')
+        self.assertIn('atomic external state enforcement is required',receipt.payload['error'])
+        self.assertEqual(sent,[])
+
+    def test_execution_receipt_uses_atomic_state_boundary(self):
+        action=ActionIntent(agent_id='a',action_type='orders.create',target='orders',metadata={'external_state':{'kind':'http.state','reference':'orders','digest':'b'*64}})
+        policy=Policy(external_state_requirements=[{'action_type':'orders.create','target':'orders','kind':'http.state'}])
+        auth=self.auth(action,policy); sent=[]
+        registry=ExternalStateVerifierRegistry({'http.state': lambda b,a:(True,'match')})
+        router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),load_private_key(self.private),generic_adapters={'orders.create':BoundAdapter()},external_state_registry=registry)
+        receipt=router.execute_with_receipt(auth,lambda a:sent.append(a) or 'atomic-ok')
+        self.assertEqual(receipt.payload['status'],'SUBMITTED')
+        self.assertEqual(receipt.payload['transaction_ref'],'atomic-ok')
+        self.assertEqual(len(sent),1)
+
     def test_required_verifier_missing_blocks(self):
         action=ActionIntent(agent_id='a',action_type='orders.create',target='orders',metadata={'external_state':{'kind':'http.state','reference':'orders','digest':'b'*64}})
         policy=Policy(external_state_requirements=[{'action_type':'orders.create','target':'orders','kind':'http.state'}])
