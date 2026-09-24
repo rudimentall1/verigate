@@ -1,6 +1,9 @@
-{
+﻿{
   "name": "verigate-contract-tooling",
-  "private": true,`n  "scripts": {`n    "test:atomic": "node scripts/e2e_atomic_state.mjs"`n  },
+  "private": true,
+  "scripts": {
+    "test:atomic": "node scripts/e2e_atomic_state.mjs"
+  },
   "devDependencies": {
     "ethers": "^6.17.0",
     "ganache": "^7.9.2",
