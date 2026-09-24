@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 
 from core.models import ActionIntent, GuardrailDecision, Decision
 from core.effective_authority import verify_effective_action
+from core.execution_graph import execution_graph_digest, normalize_execution_graph
 
 
 def _canonical(payload: dict[str, Any]) -> bytes:
@@ -110,6 +111,7 @@ def issue_execution_authorization(
     authority_state_sha256: str | None = None,
     authority_multiplier: float | None = None,
     effective_authority: dict[str, Any] | None = None,
+    execution_graph: dict[str, Any] | None = None,
 ) -> ExecutionAuthorization:
     if receipt.payload["decision"]["decision"] != Decision.ALLOW.value:
         raise PermissionError("execution authorization requires ALLOW")
@@ -136,6 +138,8 @@ def issue_execution_authorization(
             hashlib.sha256(_canonical(effective_authority)).hexdigest()
             if effective_authority is not None else None
         ),
+        "execution_graph": normalize_execution_graph(execution_graph),
+        "execution_graph_sha256": execution_graph_digest(execution_graph),
         "action": receipt.payload["intent"],
         "action_sha256": action_digest(receipt.payload["intent"]),
         "constraints_sha256": hashlib.sha256(_canonical(receipt.payload["intent"].get("constraints", {}))).hexdigest(),
@@ -306,6 +310,13 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
             return False, "invalid action fingerprint"
         if action_digest(action) != action_sha256:
             return False, "authorized action fingerprint mismatch"
+        execution_graph = payload.get("execution_graph")
+        execution_graph_sha256 = payload.get("execution_graph_sha256")
+        if not isinstance(execution_graph, dict) or not isinstance(execution_graph_sha256, str) or len(execution_graph_sha256) != 64:
+            return False, "execution authorization is missing execution graph binding"
+        if execution_graph_digest(execution_graph) != execution_graph_sha256:
+            return False, "execution graph fingerprint mismatch"
+
         constraints_sha256 = payload.get("constraints_sha256")
         if not isinstance(constraints_sha256, str) or len(constraints_sha256) != 64:
             return False, "invalid constraints fingerprint"

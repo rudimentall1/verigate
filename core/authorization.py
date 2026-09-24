@@ -106,6 +106,7 @@ class AuthorizationService:
                 authority_state_sha256=authority.digest if authority else None,
                 authority_multiplier=authority.multiplier if authority else None,
                 effective_authority=effective,
+                execution_graph=(action.metadata or {}).get("execution_graph"),
             )
 
         return {

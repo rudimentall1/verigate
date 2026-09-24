@@ -15,6 +15,7 @@ from attest.receipt import (
 )
 
 from core.storage import Storage
+from core.execution_graph import verify_execution_graph
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.local import ExecutionGate
 from enforcement.networks import NetworkRegistry, UnsupportedNetworkError
@@ -127,19 +128,42 @@ class ExecutionRouter:
         if not valid:
             raise ValueError(f"execution authorization rejected: {reason}")
 
+    def _verify_execution_path(self, authorization: dict[str, Any], adapter: ExecutionAdapter) -> None:
+        action = self._action(authorization)
+        expected = authorization["payload"].get("execution_graph")
+        if not isinstance(expected, dict):
+            raise ValueError("execution authorization is missing execution graph binding")
+        # Empty graph means this authorization predates optional execution-path
+        # policy. When a graph is declared, however, it is mandatory at runtime.
+        if not expected:
+            return
+        actual = {
+            "module": adapter.__class__.__module__,
+            "hook": adapter.__class__.__name__,
+            "router": self.__class__.__name__,
+            "target": action.get("target"),
+        }
+        ok, reason = verify_execution_graph(expected, actual)
+        if not ok:
+            raise ValueError(reason)
+
     def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         try:
             # The router is itself an execution boundary. Do not trust a
             # protocol adapter (including custom generic adapters) to perform
             # cryptographic verification on our behalf.
             self._verify_authorization(authorization)
-            return self._adapter(authorization).consume(authorization)
+            adapter = self._adapter(authorization)
+            self._verify_execution_path(authorization, adapter)
+            return adapter.consume(authorization)
         except (KeyError, TypeError, ValueError, UnsupportedNetworkError) as exc:
             return False, str(exc)
 
     def execute(self, authorization: dict[str, Any], broadcaster: Callable[[dict[str, Any]], Any]) -> Any:
         self._verify_authorization(authorization)
-        return self._adapter(authorization).execute(authorization, broadcaster)
+        adapter = self._adapter(authorization)
+        self._verify_execution_path(authorization, adapter)
+        return adapter.execute(authorization, broadcaster)
 
 
     @staticmethod
@@ -177,7 +201,10 @@ class ExecutionRouter:
             )
 
         try:
-            result = self._adapter(authorization).execute(authorization, broadcaster)
+            adapter = self._adapter(authorization)
+            self._verify_authorization(authorization)
+            self._verify_execution_path(authorization, adapter)
+            result = adapter.execute(authorization, broadcaster)
             transaction_ref = self._transaction_ref(result)
             if not transaction_ref:
                 raise ValueError("broadcaster returned no transaction reference")
