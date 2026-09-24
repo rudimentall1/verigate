@@ -356,6 +356,7 @@ class EvidenceGraph:
                     })
                     for attestation in self.storage.outcome_attestations_by_claim(claim_id):
                         attestation_id = attestation["payload"]["attestation_id"]
+                        attestor_id = attestation["payload"]["attestor_id"]
                         try:
                             outcome_check = outcome_service.verify_existing(attestation)
                             verification[f"outcome_attestation:{attestation_id}"] = {
@@ -370,6 +371,62 @@ class EvidenceGraph:
                                 "valid": False,
                                 "reason": str(exc),
                             }
+
+                        attestor = self.storage.outcome_attestor(attestor_id)
+                        if attestor is None:
+                            verification[f"attestor:{attestor_id}"] = {
+                                "valid": False,
+                                "reason": "attestor registry entry is missing",
+                            }
+                        else:
+                            if not any(
+                                node["type"] == "attestor_authority"
+                                and node["id"] == attestor_id
+                                for node in nodes
+                            ):
+                                nodes.append(_node("attestor_authority", attestor_id, attestor))
+                            edges.append({
+                                "from": f"attestor_authority:{attestor_id}",
+                                "relation": "AUTHORIZES",
+                                "to": f"outcome_attestation:{attestation_id}",
+                            })
+                            governance_history = self.storage.attestor_governance_actions(attestor_id)
+                            if not governance_history:
+                                verification[f"attestor_governance:{attestor_id}"] = {
+                                    "valid": True,
+                                    "governed": False,
+                                    "reason": "attestor uses explicitly permitted bootstrap authority",
+                                }
+                            for envelope in governance_history:
+                                action = envelope.get("action", {})
+                                action_id = action.get("action_id")
+                                if not action_id:
+                                    verification[f"attestor_governance:{attestor_id}"] = {
+                                        "valid": False,
+                                        "reason": "attestor governance action is missing action_id",
+                                    }
+                                    continue
+                                if any(
+                                    node["type"] == "governance_action"
+                                    and node["id"] == action_id
+                                    for node in nodes
+                                ):
+                                    continue
+                                self._add_governance_envelope(
+                                    envelope,
+                                    subject_type="attestor_authority",
+                                    subject_id=attestor_id,
+                                    relation="GOVERNS",
+                                    verification=verification,
+                                    nodes=nodes,
+                                    edges=edges,
+                                )
+                                edges.append({
+                                    "from": f"attestor_authority:{attestor_id}",
+                                    "relation": "DERIVED_FROM",
+                                    "to": f"governance_action:{action_id}",
+                                })
+
                         nodes.append(_node(
                             "outcome_attestation",
                             attestation_id,

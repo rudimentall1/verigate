@@ -1,5 +1,7 @@
 import base64
 import hashlib
+import json
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,8 +11,10 @@ from cryptography.hazmat.primitives import serialization
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.effect_verification import MCPToolVerifier
+from core.attestor import AttestorAuthorityService
 from core.engine import GuardrailEngine
 from core.evidence import EvidenceGraph
+from core.governance import GovernanceMember, GovernancePolicy, governor_id
 from core.evidence_manifest import build_manifest, verify_manifest
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.outcome import OutcomeAttestationService, build_outcome_attestation, build_outcome_claim
@@ -22,6 +26,30 @@ from enforcement.router import ExecutionRouter
 from enforcement.tool import ToolExecutionAdapter
 
 
+def _governance_approval(action, private_key):
+    payload = {
+        "governance_version": 1,
+        "action_digest": hashlib.sha256(
+            json.dumps(action, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        ).hexdigest(),
+        "governor_id": governor_id(private_key.public_key()),
+        "role": "governor",
+        "approval_id": "approval-" + action["action_id"],
+        "issued_at": time.time(),
+        "expires_at": time.time() + 120,
+        "nonce": "nonce-" + action["action_id"],
+    }
+    return {
+        "payload": payload,
+        "signature": base64.b64encode(
+            private_key.sign(
+                json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+            )
+        ).decode(),
+        "algorithm": "Ed25519",
+    }
+
+
 class VerigateReferenceLifecycleTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -31,6 +59,18 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.private_key = load_private_key(self.private_path)
         self.public_key = load_public_key(self.public_path)
         self.storage = Storage(root / "verigate.db")
+        self.governance_key = Ed25519PrivateKey.generate()
+        self.governance_policy = GovernancePolicy(
+            policy_id="reference-governance",
+            version=1,
+            threshold=1,
+            members=(
+                GovernanceMember.from_public_key(
+                    self.governance_key.public_key(), "governor"
+                ),
+            ),
+            allowed_actions=("ATTESTOR_REGISTER",),
+        )
 
     def tearDown(self):
         self.storage.close()
@@ -105,10 +145,19 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         raw = key.public_key().public_bytes(
             serialization.Encoding.Raw, serialization.PublicFormat.Raw
         )
-        OutcomeAttestationService(self.storage, self.public_key).register_attestor(
+        service = AttestorAuthorityService(self.storage)
+        action = service.build_action(
+            action="ATTESTOR_REGISTER",
             attestor_id="external-reference",
+            reason="reference lifecycle verifier",
+            governance_policy_sha256=self.governance_policy.digest,
             public_key_b64=base64.b64encode(raw).decode(),
             attestor_type="EXTERNAL_VERIFIER",
+        )
+        service.apply(
+            action,
+            [_governance_approval(action, self.governance_key)],
+            self.governance_policy,
         )
         return key
 
@@ -149,8 +198,17 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         result = verify_manifest(manifest, manifest["issuer_public_key_b64"])
         self.assertTrue(result["valid"])
         types = {node["type"] for node in manifest["payload"]["nodes"]}
-        for required in ("execution_authorization", "execution_receipt", "outcome_attestation", "authority_event"):
+        for required in (
+            "execution_authorization",
+            "execution_receipt",
+            "outcome_attestation",
+            "attestor_authority",
+            "governance_action",
+            "governance_approval",
+            "authority_event",
+        ):
             self.assertIn(required, types)
+        self.assertTrue(graph["verification"]["all_signed_artifacts_valid"])
 
     def test_invalid_independent_outcome_cannot_update_authority(self):
         authorization, receipt = self._authorized_execution()
