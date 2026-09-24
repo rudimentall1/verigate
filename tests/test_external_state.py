@@ -5,6 +5,7 @@ from core.authorization import AuthorizationService
 from core.authority_state import DynamicAuthorityService
 from core.models import ActionIntent, Capability, GuardrailDecision, Decision
 from core.policy import Policy
+from core.external_state import ExternalStateVerifierRegistry
 from core.storage import Storage
 from enforcement.router import ExecutionRouter
 from enforcement.networks import NetworkRegistry
@@ -43,5 +44,46 @@ class ExternalStateTest(unittest.TestCase):
         auth=self.auth(action); sent=[]
         router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),generic_adapters={'orders.create':Adapter()},external_state_verifier=lambda b,a:(True,'match'))
         self.assertEqual(router.execute(auth,lambda a:sent.append(a) or 'ok'),'ok'); self.assertEqual(len(sent),1)
+
+    def test_policy_requirement_is_bound_to_authorization(self):
+        action=ActionIntent(agent_id='a',action_type='orders.create',target='orders')
+        policy=Policy(external_state_requirements=[{'action_type':'orders.create','target':'orders','kind':'http.state'}])
+        auth=self.auth(action,policy)
+        self.assertTrue(auth['payload']['external_state_required'])
+        self.assertEqual(auth['payload']['external_state_requirement']['kind'],'http.state')
+        self.assertEqual(len(auth['payload']['external_state_requirement_sha256']),64)
+
+    def test_required_kind_blocks_missing_binding(self):
+        action=ActionIntent(agent_id='a',action_type='orders.create',target='orders')
+        policy=Policy(external_state_requirements=[{'action_type':'orders.create','target':'orders','kind':'http.state'}])
+        auth=self.auth(action,policy)
+        registry=ExternalStateVerifierRegistry({'http.state': lambda b,a:(True,'ok')})
+        router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),generic_adapters={'orders.create':Adapter()},external_state_registry=registry)
+        with self.assertRaises(ValueError): router.execute(auth,lambda a:'side-effect')
+
+    def test_required_kind_mismatch_blocks_before_side_effect(self):
+        action=ActionIntent(agent_id='a',action_type='orders.create',target='orders',metadata={'external_state':{'kind':'mcp.state','reference':'orders','digest':'b'*64}})
+        policy=Policy(external_state_requirements=[{'action_type':'orders.create','target':'orders','kind':'http.state'}])
+        auth=self.auth(action,policy); sent=[]
+        registry=ExternalStateVerifierRegistry({'mcp.state': lambda b,a:(True,'ok'), 'http.state': lambda b,a:(True,'ok')})
+        router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),generic_adapters={'orders.create':Adapter()},external_state_registry=registry)
+        with self.assertRaises(ValueError): router.execute(auth,lambda a:sent.append(a) or 'bad')
+        self.assertEqual(sent,[])
+
+    def test_registry_dispatch_executes_valid_required_state(self):
+        action=ActionIntent(agent_id='a',action_type='orders.create',target='orders',metadata={'external_state':{'kind':'http.state','reference':'orders','digest':'b'*64}})
+        policy=Policy(external_state_requirements=[{'action_type':'orders.create','target':'orders','kind':'http.state'}])
+        auth=self.auth(action,policy); sent=[]; calls=[]
+        registry=ExternalStateVerifierRegistry({'http.state': lambda b,a:calls.append(b['kind']) or (True,'match')})
+        router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),generic_adapters={'orders.create':Adapter()},external_state_registry=registry)
+        self.assertEqual(router.execute(auth,lambda a:sent.append(a) or 'ok'),'ok')
+        self.assertEqual(calls,['http.state']); self.assertEqual(len(sent),1)
+
+    def test_required_verifier_missing_blocks(self):
+        action=ActionIntent(agent_id='a',action_type='orders.create',target='orders',metadata={'external_state':{'kind':'http.state','reference':'orders','digest':'b'*64}})
+        policy=Policy(external_state_requirements=[{'action_type':'orders.create','target':'orders','kind':'http.state'}])
+        auth=self.auth(action,policy)
+        router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),generic_adapters={'orders.create':Adapter()},external_state_registry=ExternalStateVerifierRegistry())
+        with self.assertRaises(ValueError): router.execute(auth,lambda a:'side-effect')
 
 if __name__=='__main__': unittest.main()

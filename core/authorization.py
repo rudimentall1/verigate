@@ -12,6 +12,7 @@ from .models import ActionIntent, AgentIdentity, Capability, Decision, Guardrail
 from .authority_state import AuthoritySnapshot
 from .effective_authority import effective_authority
 from .policy import Policy
+from .external_state import external_state_requirement_for_action
 from attest.receipt import issue_execution_authorization, sign_receipt
 
 
@@ -107,7 +108,8 @@ class AuthorizationService:
                 authority_multiplier=authority.multiplier if authority else None,
                 effective_authority=effective,
                 execution_graph=(action.metadata or {}).get("execution_graph"),
-                external_state_required=policy.require_external_state_binding,
+                external_state_required=(policy.require_external_state_binding or external_state_requirement_for_action(policy.external_state_requirements, action.as_dict()) is not None),
+                external_state_requirement=external_state_requirement_for_action(policy.external_state_requirements, action.as_dict()),
             )
 
         return {

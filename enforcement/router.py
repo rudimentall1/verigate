@@ -17,7 +17,12 @@ from attest.receipt import (
 from core.storage import Storage
 from core.execution_graph import verify_execution_graph
 from core.execution_artifact import verify_execution_artifact
-from core.external_state import verify_external_state_binding
+from core.external_state import (
+    ExternalStateVerifierRegistry,
+    external_state_requirement_for_action,
+    validate_external_state_requirement,
+    verify_external_state_binding,
+)
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.local import ExecutionGate
 from enforcement.networks import NetworkRegistry, UnsupportedNetworkError
@@ -41,6 +46,7 @@ class ExecutionRouter:
         private_key: Ed25519PrivateKey | None = None,
         generic_adapters: dict[str, ExecutionAdapter] | None = None,
         external_state_verifier: Callable[[dict[str, Any], dict[str, Any]], tuple[bool, str]] | None = None,
+        external_state_registry: ExternalStateVerifierRegistry | None = None,
     ):
         self.registry = registry
         self.storage = storage
@@ -48,6 +54,7 @@ class ExecutionRouter:
         self.private_key = private_key
         self.generic_adapters = dict(generic_adapters or {})
         self.external_state_verifier = external_state_verifier
+        self.external_state_registry = external_state_registry
 
     @staticmethod
     def _action(authorization: dict[str, Any]) -> dict[str, Any]:
@@ -146,9 +153,19 @@ class ExecutionRouter:
             if required:
                 raise ValueError("external state binding required before execution")
             return
-        if self.external_state_verifier is None:
+        requirement = payload.get("external_state_requirement")
+        if requirement is not None:
+            valid, reason = validate_external_state_requirement(requirement)
+            if not valid:
+                raise ValueError(reason)
+            if expected.get("kind") != requirement.get("kind"):
+                raise ValueError("external state kind does not satisfy policy requirement")
+        if self.external_state_registry is not None:
+            ok, reason = self.external_state_registry.verify(expected, action)
+        elif self.external_state_verifier is not None:
+            ok, reason = self.external_state_verifier(expected, action)
+        else:
             raise ValueError("live external state verifier is required before execution")
-        ok, reason = self.external_state_verifier(expected, action)
         if not ok:
             raise ValueError(f"external state drift: {reason}")
 

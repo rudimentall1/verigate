@@ -115,6 +115,7 @@ def issue_execution_authorization(
     effective_authority: dict[str, Any] | None = None,
     execution_graph: dict[str, Any] | None = None,
     external_state_required: bool = False,
+    external_state_requirement: dict[str, Any] | None = None,
 ) -> ExecutionAuthorization:
     if receipt.payload["decision"]["decision"] != Decision.ALLOW.value:
         raise PermissionError("execution authorization requires ALLOW")
@@ -148,6 +149,8 @@ def issue_execution_authorization(
         "external_state": canonical_external_state(receipt.payload["intent"]),
         "external_state_sha256": external_state_digest(receipt.payload["intent"]),
         "external_state_required": bool(external_state_required),
+        "external_state_requirement": external_state_requirement,
+        "external_state_requirement_sha256": (hashlib.sha256(_canonical(external_state_requirement)).hexdigest() if external_state_requirement is not None else None),
         "action": receipt.payload["intent"],
         "action_sha256": action_digest(receipt.payload["intent"]),
         "constraints_sha256": hashlib.sha256(_canonical(receipt.payload["intent"].get("constraints", {}))).hexdigest(),
@@ -342,6 +345,15 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
             return False, "external state fingerprint mismatch"
         ok, reason = verify_external_state_binding(external_state, action)
         if not ok: return False, reason
+        requirement = payload.get("external_state_requirement")
+        requirement_sha256 = payload.get("external_state_requirement_sha256")
+        if requirement is not None:
+            if not isinstance(requirement, dict) or not isinstance(requirement_sha256, str) or len(requirement_sha256) != 64:
+                return False, "invalid external state requirement binding"
+            if hashlib.sha256(_canonical(requirement)).hexdigest() != requirement_sha256:
+                return False, "external state requirement fingerprint mismatch"
+            if external_state.get("kind") != requirement.get("kind"):
+                return False, "external state kind does not satisfy policy requirement"
         if payload.get("external_state_required") and not external_state:
             return False, "execution authorization requires external state binding"
 

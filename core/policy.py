@@ -20,6 +20,7 @@ class Policy:
     context_constraints: dict[str, Any] = field(default_factory=dict)
     execution_graph: dict[str, Any] = field(default_factory=dict)
     require_external_state_binding: bool = False
+    external_state_requirements: list[dict[str, Any]] = field(default_factory=list)
     allowed_targets: list[str] | None = None
     allowed_networks: list[str] | None = None
     allowed_assets: list[str] | None = None
@@ -42,6 +43,10 @@ class Policy:
             effective_raw["require_external_state_binding"] = True
         else:
             effective_raw.pop("require_external_state_binding", None)
+        if self.external_state_requirements:
+            effective_raw["external_state_requirements"] = self.external_state_requirements
+        else:
+            effective_raw.pop("external_state_requirements", None)
         canonical = json.dumps(
             effective_raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         ).encode("utf-8")
@@ -59,6 +64,7 @@ class Policy:
             context_constraints=raw.get("context_constraints", {}) or {},
             execution_graph=raw.get("execution_graph", {}) or {},
             require_external_state_binding=bool(raw.get("require_external_state_binding", False)),
+            external_state_requirements=raw.get("external_state_requirements", []) or [],
             allowed_targets=raw.get("allowed_targets"),
             allowed_networks=raw.get("allowed_networks"),
             allowed_assets=raw.get("allowed_assets"),
