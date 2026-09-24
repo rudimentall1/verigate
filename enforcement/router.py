@@ -146,13 +146,14 @@ class ExecutionRouter:
         required = bool(payload.get("external_state_required"))
         if not isinstance(expected, dict):
             raise ValueError("execution authorization is missing external state binding")
+        verified_binding = expected
         ok, reason = verify_external_state_binding(expected, action)
         if not ok:
             raise ValueError(reason)
         if not expected:
             if required:
                 raise ValueError("external state binding required before execution")
-            return
+            return None
         requirement = payload.get("external_state_requirement")
         if requirement is not None:
             valid, reason = validate_external_state_requirement(requirement)
@@ -168,6 +169,7 @@ class ExecutionRouter:
             raise ValueError("live external state verifier is required before execution")
         if not ok:
             raise ValueError(f"external state drift: {reason}")
+        return verified_binding
 
     def _verify_execution_path(self, authorization: dict[str, Any], adapter: ExecutionAdapter) -> None:
         action = self._action(authorization)
@@ -211,7 +213,15 @@ class ExecutionRouter:
         self._verify_authorization(authorization)
         adapter = self._adapter(authorization)
         self._verify_execution_path(authorization, adapter)
-        self._verify_external_state(authorization)
+        state_required = bool(authorization["payload"].get("external_state_required"))
+        external_state = self._verify_external_state(authorization)
+        if state_required and external_state:
+            bound = getattr(adapter, "execute_bound", None)
+            if not callable(bound):
+                raise ValueError(
+                    "atomic external state enforcement is required for this authorization"
+                )
+            return bound(authorization, external_state, broadcaster)
         return adapter.execute(authorization, broadcaster)
 
 

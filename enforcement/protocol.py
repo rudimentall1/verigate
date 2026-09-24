@@ -21,3 +21,12 @@ class ExecutionAdapter(Protocol):
         side_effect: Callable[[dict[str, Any]], Any],
     ) -> Any:
         ...
+
+    def execute_bound(
+        self,
+        authorization: dict[str, Any],
+        external_state: dict[str, Any],
+        side_effect: Callable[[dict[str, Any]], Any],
+    ) -> Any:
+        """Execute while enforcing the supplied state precondition atomically."""
+        ...

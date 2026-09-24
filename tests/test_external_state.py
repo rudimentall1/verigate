@@ -14,6 +14,13 @@ class Adapter:
     def execute(self, authorization, side_effect): return side_effect(authorization["payload"]["action"])
     def consume(self, authorization): return True, "ok"
 
+class BoundAdapter(Adapter):
+    def execute_bound(self, authorization, external_state, side_effect):
+        # Test adapter models an execution backend that atomically consumes the
+        # state precondition together with the side effect.
+        assert external_state == authorization["payload"]["external_state"]
+        return side_effect(authorization["payload"]["action"])
+
 class ExternalStateTest(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); root=Path(self.tmp.name)
@@ -75,7 +82,7 @@ class ExternalStateTest(unittest.TestCase):
         policy=Policy(external_state_requirements=[{'action_type':'orders.create','target':'orders','kind':'http.state'}])
         auth=self.auth(action,policy); sent=[]; calls=[]
         registry=ExternalStateVerifierRegistry({'http.state': lambda b,a:calls.append(b['kind']) or (True,'match')})
-        router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),generic_adapters={'orders.create':Adapter()},external_state_registry=registry)
+        router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),generic_adapters={'orders.create':BoundAdapter()},external_state_registry=registry)
         self.assertEqual(router.execute(auth,lambda a:sent.append(a) or 'ok'),'ok')
         self.assertEqual(calls,['http.state']); self.assertEqual(len(sent),1)
 
@@ -96,6 +103,15 @@ class ExternalStateTest(unittest.TestCase):
         ])
         auth=self.auth(action,policy)
         self.assertEqual(auth['payload']['external_state_requirement']['kind'],'http.state')
+
+    def test_required_state_blocks_non_atomic_adapter(self):
+        action=ActionIntent(agent_id='a',action_type='orders.create',target='orders',metadata={'external_state':{'kind':'http.state','reference':'orders','digest':'b'*64}})
+        policy=Policy(external_state_requirements=[{'action_type':'orders.create','target':'orders','kind':'http.state'}])
+        auth=self.auth(action,policy); sent=[]
+        registry=ExternalStateVerifierRegistry({'http.state': lambda b,a:(True,'match')})
+        router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),generic_adapters={'orders.create':Adapter()},external_state_registry=registry)
+        with self.assertRaises(ValueError): router.execute(auth,lambda a:sent.append(a) or 'bad')
+        self.assertEqual(sent,[])
 
     def test_required_verifier_missing_blocks(self):
         action=ActionIntent(agent_id='a',action_type='orders.create',target='orders',metadata={'external_state':{'kind':'http.state','reference':'orders','digest':'b'*64}})
