@@ -33,7 +33,7 @@ def test_execution_consume_is_one_time():
             first = client.post("/v1/execution/consume", json={"authorization": auth})
             assert first.status_code == 200
             assert first.json()["execute"] is False
-            assert "payload.action" in first.json()["reason"]
+            assert "unsupported execution authorization version" in first.json()["reason"]
         main._storage.close()
         main._storage = main._engine = main._policy = None
 

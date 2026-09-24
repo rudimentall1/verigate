@@ -8,7 +8,11 @@ from typing import Any, Callable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
-from attest.receipt import ExecutionReceipt, sign_execution_receipt
+from attest.receipt import (
+    ExecutionReceipt,
+    sign_execution_receipt,
+    verify_execution_authorization,
+)
 
 from core.storage import Storage
 from enforcement.evm import EVMExecutionAdapter
@@ -118,13 +122,23 @@ class ExecutionRouter:
 
         raise UnsupportedNetworkError(f"unsupported execution network: {network}")
 
+    def _verify_authorization(self, authorization: dict[str, Any]) -> None:
+        valid, reason = verify_execution_authorization(authorization, self.public_key)
+        if not valid:
+            raise ValueError(f"execution authorization rejected: {reason}")
+
     def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         try:
+            # The router is itself an execution boundary. Do not trust a
+            # protocol adapter (including custom generic adapters) to perform
+            # cryptographic verification on our behalf.
+            self._verify_authorization(authorization)
             return self._adapter(authorization).consume(authorization)
         except (KeyError, TypeError, ValueError, UnsupportedNetworkError) as exc:
             return False, str(exc)
 
     def execute(self, authorization: dict[str, Any], broadcaster: Callable[[dict[str, Any]], Any]) -> Any:
+        self._verify_authorization(authorization)
         return self._adapter(authorization).execute(authorization, broadcaster)
 
 
