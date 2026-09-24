@@ -201,6 +201,7 @@ class GuardrailEngine:
             matches: list[RuleMatch] = []
             for check in (
                 R.check_action_type_allowed,
+                R.check_purpose_allowed,
                 R.check_target_allowed,
                 R.check_generic_network_allowed,
                 R.check_generic_asset_allowed,

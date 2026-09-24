@@ -21,6 +21,20 @@ def check_action_type_allowed(intent: ActionIntent, policy: Policy) -> RuleMatch
     return None
 
 
+def check_purpose_allowed(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
+    allowed = policy.allowed_purposes
+    if allowed is None:
+        return None
+    purpose = intent.purpose.strip()
+    if purpose.lower() not in {p.strip().lower() for p in allowed}:
+        return RuleMatch(
+            "purpose_not_allowed",
+            Severity.BLOCK,
+            f"purpose '{purpose}' is not allowed by policy",
+        )
+    return None
+
+
 def check_target_allowed(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
     blocked = {p.lower() for p in policy.blocked_payees}
     if intent.target.lower() in blocked:
