@@ -17,6 +17,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 from core.models import ActionIntent, GuardrailDecision, Decision
+from core.effective_authority import verify_effective_action
 
 
 def _canonical(payload: dict[str, Any]) -> bytes:
@@ -309,6 +310,9 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
             expected_effective = hashlib.sha256(_canonical(effective)).hexdigest()
             if effective_sha256 != expected_effective:
                 return False, "effective authority fingerprint mismatch"
+            ok, reason = verify_effective_action(action, effective)
+            if not ok:
+                return False, reason
         _verify(payload, auth["signature"], public_key)
         return True, "valid execution authorization"
     except (KeyError, TypeError, ValueError, InvalidSignature):

@@ -42,6 +42,30 @@ def _context_intersection(capability: dict[str, Any], policy: dict[str, Any]) ->
     return result
 
 
+def verify_effective_action(action: dict[str, Any], authority: dict[str, Any]) -> tuple[bool, str]:
+    """Enforce the signed effective ceiling at the execution boundary."""
+    for field in ("action_type", "target", "resource", "network", "asset"):
+        allowed = authority.get(field)
+        if allowed and action.get(field) not in allowed:
+            return False, f"execution action outside effective {field} authority"
+    purposes = authority.get("purpose")
+    if purposes and action.get("purpose", "").lower() not in {str(p).lower() for p in purposes}:
+        return False, "execution purpose outside effective authority"
+    for key, expected in authority.get("context_constraints", {}).items():
+        actual = (action.get("declared_context") or {}).get(key)
+        if isinstance(expected, list):
+            if actual not in expected:
+                return False, f"execution context '{key}' outside effective authority"
+        elif actual != expected:
+            return False, f"execution context '{key}' outside effective authority"
+    limits = authority.get("per_action_limits", {})
+    asset = action.get("asset")
+    amount = action.get("amount")
+    if asset in limits and (amount is None or amount > limits[asset]):
+        return False, "execution amount exceeds effective authority"
+    return True, "execution action is within effective authority"
+
+
 def effective_authority(
     action: ActionIntent,
     capability: Capability,
