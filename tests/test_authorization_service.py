@@ -81,3 +81,18 @@ class AuthorizationServiceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestConstraintBinding(unittest.TestCase):
+    def test_execution_authorization_binds_constraints(self):
+        from attest.receipt import issue_execution_authorization, sign_receipt, verify_execution_authorization
+        from core.models import ActionIntent, Decision, GuardrailDecision
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        key = Ed25519PrivateKey.generate()
+        action = ActionIntent(agent_id="agent", action_type="api.request", target="orders", constraints={"max_amount": 10})
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+        receipt = sign_receipt(action, decision, "a" * 64, key)
+        auth = issue_execution_authorization(receipt, key, nonce="n")
+        self.assertIn("constraints_sha256", auth.payload)
+        tampered = dict(auth.payload); tampered["action"] = dict(tampered["action"]); tampered["action"]["constraints"] = {"max_amount": 100}
+        self.assertFalse(verify_execution_authorization({"payload": tampered, "signature": auth.signature, "algorithm": auth.algorithm}, key.public_key())[0])

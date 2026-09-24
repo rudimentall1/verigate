@@ -131,6 +131,7 @@ def issue_execution_authorization(
         "authority_multiplier": authority_multiplier,
         "action": receipt.payload["intent"],
         "action_sha256": action_digest(receipt.payload["intent"]),
+        "constraints_sha256": hashlib.sha256(_canonical(receipt.payload["intent"].get("constraints", {}))).hexdigest(),
         "context_sha256": receipt.payload["decision"].get("context_sha256"),
         "nonce": nonce,
         "issued_at": now,
@@ -288,6 +289,12 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
             return False, "invalid action fingerprint"
         if action_digest(action) != action_sha256:
             return False, "authorized action fingerprint mismatch"
+        constraints_sha256 = payload.get("constraints_sha256")
+        if not isinstance(constraints_sha256, str) or len(constraints_sha256) != 64:
+            return False, "invalid constraints fingerprint"
+        expected_constraints = hashlib.sha256(_canonical(action.get("constraints", {}))).hexdigest()
+        if constraints_sha256 != expected_constraints:
+            return False, "authorized constraints fingerprint mismatch"
         _verify(payload, auth["signature"], public_key)
         return True, "valid execution authorization"
     except (KeyError, TypeError, ValueError, InvalidSignature):
