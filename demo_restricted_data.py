@@ -40,7 +40,7 @@ def main() -> None:
                 capability_id="cap-public-data",
                 agent_id=action.agent_id,
                 allowed_actions=("data.read",),
-                allowed_targets=("medicare.restricted-records",),
+                allowed_targets=("medicare.public-records",),
             )
             storage.register_capability(capability)
             decision = engine.evaluate_action(action)
