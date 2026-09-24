@@ -32,6 +32,8 @@ class AuthorizationService:
     ) -> dict[str, Any]:
         if action.intent_id != decision.intent_id or action.agent_id != decision.agent_id:
             raise ValueError("action and decision identities do not match")
+        if decision.context_digest and decision.context_digest != action.context_digest:
+            raise ValueError("action context does not match the authorized decision")
 
         # A capability is the authority source for the exact action. Keep the
         # optional parameter during migration so existing integrations remain

@@ -179,6 +179,7 @@ class GuardrailEngine:
                 agent_id=intent.agent_id,
                 decision=final,
                 matched_rules=tuple(matches),
+                context_digest=intent.context_digest,
             )
 
             # IMPORTANT:
@@ -226,6 +227,7 @@ class GuardrailEngine:
                 agent_id=action.agent_id,
                 decision=final,
                 matched_rules=tuple(matches),
+                context_digest=action.context_digest,
             )
             self.storage.record_action(action, decision, commit=False)
             return decision

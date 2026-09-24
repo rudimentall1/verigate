@@ -50,6 +50,10 @@ class PaymentIntent:
     timestamp: float = field(default_factory=time.time)
 
 
+    @property
+    def context_digest(self) -> str:
+        return self.as_action_intent().context_digest
+
     def as_action_intent(self) -> "ActionIntent":
         """Normalize a payment into the protocol-agnostic action model."""
         return ActionIntent(
@@ -90,6 +94,19 @@ class ActionIntent:
     metadata: dict[str, Any] = field(default_factory=dict)
     intent_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: float = field(default_factory=time.time)
+
+    @property
+    def context_digest(self) -> str:
+        """Stable fingerprint of the declared execution context."""
+        payload = {
+            "purpose": self.purpose,
+            "declared_context": self.declared_context,
+            "parent_intent_id": self.parent_intent_id,
+            "requested_capability": self.requested_capability,
+            "constraints": self.constraints,
+        }
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -242,6 +259,7 @@ class GuardrailDecision:
     agent_id: str
     decision: Decision
     matched_rules: tuple[RuleMatch, ...]
+    context_digest: str = ""
     evaluated_at: float = field(default_factory=time.time)
 
     def as_dict(self) -> dict[str, Any]:
@@ -249,6 +267,7 @@ class GuardrailDecision:
             "intent_id": self.intent_id,
             "agent_id": self.agent_id,
             "decision": self.decision.value,
+            "context_sha256": self.context_digest,
             "matched_rules": [
                 {"rule": m.rule_id, "severity": m.severity.value, "message": m.message}
                 for m in self.matched_rules
