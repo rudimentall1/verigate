@@ -234,27 +234,47 @@ class GuardrailEngine:
             self.storage.record_action(action, decision, commit=False)
             return decision
 
-    def authorize_action(
+    def _authorize_control_plane(
         self,
         action: ActionIntent,
-        capability_id: str,
-        identity_id: str,
-        agent_signature: str,
         private_key,
+        *,
+        capability_id: str | None = None,
+        identity_id: str | None = None,
+        agent_signature: str | None = None,
+        decision: GuardrailDecision | None = None,
     ) -> dict:
-        """Canonical control-plane authorization for a non-payment action."""
-        identity = IdentityRegistry(self.storage).authorize_action(
-            identity_id,
-            action,
-            agent_signature,
-        )
-        decision = self.evaluate_action(action)
-        capability = CapabilityRegistry(self.storage).assert_authority(
-            capability_id,
-            action,
-            identity_id=identity_id,
-        )
-        authority = DynamicAuthorityService(self.storage).assert_action(capability, action)
+        """Single authorization pipeline for every protocol adapter.
+
+        Adapters may provide legacy payment inputs, but authorization issuance,
+        policy evaluation, authority binding, and persistence happen here.
+        """
+        identity = None
+        if identity_id is not None:
+            if not agent_signature:
+                raise ValueError("agent signature is required for identity-bound authorization")
+            identity = IdentityRegistry(self.storage).authorize_action(
+                identity_id,
+                action,
+                agent_signature,
+            )
+
+        if decision is None:
+            decision = self.evaluate_action(action)
+
+        capability = None
+        authority = None
+        if capability_id is not None:
+            capability = CapabilityRegistry(self.storage).assert_authority(
+                capability_id,
+                action,
+                identity_id=identity_id,
+            )
+            authority = DynamicAuthorityService(self.storage).assert_action(
+                capability,
+                action,
+            )
+
         artifacts = AuthorizationService().issue(
             action,
             decision,
@@ -264,7 +284,7 @@ class GuardrailEngine:
             capability=capability,
             identity=identity,
             authority=authority,
-            policy=self.policy,
+            policy=self.policy if capability is not None else None,
             signed_policy=self.signed_policy_version(private_key),
         )
         return self._persist_authorization(
@@ -273,19 +293,30 @@ class GuardrailEngine:
             agent_signature=agent_signature,
         )
 
-    def authorize(self, intent: PaymentIntent, private_key) -> dict:
-        """Legacy authorization path retained for compatibility."""
-        decision = self.evaluate(intent)
-        action = intent.as_action_intent()
-        artifacts = AuthorizationService().issue(
+    def authorize_action(
+        self,
+        action: ActionIntent,
+        capability_id: str,
+        identity_id: str,
+        agent_signature: str,
+        private_key,
+    ) -> dict:
+        """Protocol-agnostic adapter into the single control-plane pipeline."""
+        return self._authorize_control_plane(
             action,
-            decision,
-            self.policy.digest,
             private_key,
-            nonce=intent.intent_id,
-            signed_policy=self.signed_policy_version(private_key),
+            capability_id=capability_id,
+            identity_id=identity_id,
+            agent_signature=agent_signature,
         )
-        return self._persist_authorization(artifacts, intent.intent_id)
+
+    def authorize(self, intent: PaymentIntent, private_key) -> dict:
+        """Legacy payment adapter into the canonical control-plane pipeline."""
+        return self._authorize_control_plane(
+            intent.as_action_intent(),
+            private_key,
+            decision=self.evaluate(intent),
+        )
 
     def authorize_with_capability(
         self,
@@ -293,23 +324,13 @@ class GuardrailEngine:
         capability_id: str,
         private_key,
     ) -> dict:
-        """Canonical capability-bound path retained for compatible callers."""
-        decision = self.evaluate(intent)
-        action = intent.as_action_intent()
-        capability = CapabilityRegistry(self.storage).assert_authority(capability_id, action)
-        authority = DynamicAuthorityService(self.storage).assert_action(capability, action)
-        artifacts = AuthorizationService().issue(
-            action,
-            decision,
-            self.policy.digest,
+        """Payment adapter with explicit static/dynamic authority binding."""
+        return self._authorize_control_plane(
+            intent.as_action_intent(),
             private_key,
-            nonce=intent.intent_id,
-            capability=capability,
-            authority=authority,
-            policy=self.policy,
-            signed_policy=self.signed_policy_version(private_key),
+            capability_id=capability_id,
+            decision=self.evaluate(intent),
         )
-        return self._persist_authorization(artifacts, intent.intent_id)
 
     def authorize_with_identity(
         self,
@@ -319,34 +340,12 @@ class GuardrailEngine:
         agent_signature: str,
         private_key,
     ) -> dict:
-        """Canonical identity + capability authority path."""
-        action = intent.as_action_intent()
-        identity = IdentityRegistry(self.storage).authorize_action(
-            identity_id,
-            action,
-            agent_signature,
-        )
-        decision = self.evaluate(intent)
-        capability = CapabilityRegistry(self.storage).assert_authority(
-            capability_id,
-            action,
-            identity_id=identity_id,
-        )
-        authority = DynamicAuthorityService(self.storage).assert_action(capability, action)
-        artifacts = AuthorizationService().issue(
-            action,
-            decision,
-            self.policy.digest,
+        """Payment adapter with identity + capability authority binding."""
+        return self._authorize_control_plane(
+            intent.as_action_intent(),
             private_key,
-            nonce=intent.intent_id,
-            capability=capability,
-            identity=identity,
-            authority=authority,
-            policy=self.policy,
-            signed_policy=self.signed_policy_version(private_key),
-        )
-        return self._persist_authorization(
-            artifacts,
-            intent.intent_id,
+            capability_id=capability_id,
+            identity_id=identity_id,
             agent_signature=agent_signature,
+            decision=self.evaluate(intent),
         )
