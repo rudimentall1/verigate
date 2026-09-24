@@ -199,3 +199,19 @@ class OutcomeEvidenceResponse(BaseModel):
     authorization_id: str
     claims: list[dict]
     attestations: list[dict]
+
+
+class AttestorGovernanceRequest(BaseModel):
+    action: dict
+    approvals: list[dict]
+
+
+class AttestorGovernanceResponse(BaseModel):
+    status: str
+    attestor: dict | None
+    governance_action: dict
+
+
+class AttestorResponse(BaseModel):
+    attestor: dict
+    governance_history: list[dict]

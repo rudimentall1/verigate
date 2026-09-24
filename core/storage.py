@@ -266,8 +266,21 @@ CREATE TABLE IF NOT EXISTS outcome_attestors (
     attestor_type TEXT NOT NULL,
     status TEXT NOT NULL,
     created_at REAL NOT NULL,
-    revoked_at REAL
+    revoked_at REAL,
+    expires_at REAL
 );
+
+CREATE TABLE IF NOT EXISTS attestor_governance_actions (
+    action_id TEXT PRIMARY KEY,
+    action_sha256 TEXT NOT NULL UNIQUE,
+    attestor_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    envelope_json TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_attestor_governance_attestor
+    ON attestor_governance_actions(attestor_id, created_at);
 
 CREATE TABLE IF NOT EXISTS execution_outcome_claims (
     claim_id TEXT PRIMARY KEY,
@@ -322,6 +335,13 @@ class Storage:
         if "agent_signature" not in columns:
             self._conn.execute(
                 "ALTER TABLE authorization_artifacts ADD COLUMN agent_signature TEXT"
+            )
+        attestor_columns = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(outcome_attestors)")
+        }
+        if "expires_at" not in attestor_columns:
+            self._conn.execute(
+                "ALTER TABLE outcome_attestors ADD COLUMN expires_at REAL"
             )
         self._conn.commit()
 
@@ -1454,8 +1474,8 @@ class Storage:
             try:
                 self._conn.execute(
                     "INSERT INTO outcome_attestors "
-                    "(attestor_id, key_id, public_key_b64, attestor_type, status, created_at, revoked_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, NULL)",
+                    "(attestor_id, key_id, public_key_b64, attestor_type, status, created_at, revoked_at, expires_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",
                     (
                         attestor["attestor_id"],
                         attestor["key_id"],
@@ -1463,6 +1483,7 @@ class Storage:
                         attestor["attestor_type"],
                         attestor.get("status", "ACTIVE"),
                         time.time(),
+                        attestor.get("expires_at"),
                     ),
                 )
                 self._conn.commit()
@@ -1474,14 +1495,14 @@ class Storage:
         with self._lock:
             row = self._conn.execute(
                 "SELECT attestor_id, key_id, public_key_b64, attestor_type, status, "
-                "created_at, revoked_at FROM outcome_attestors WHERE attestor_id = ?",
+                "created_at, revoked_at, expires_at FROM outcome_attestors WHERE attestor_id = ?",
                 (attestor_id,),
             ).fetchone()
         if row is None:
             return None
         return dict(zip(
             ("attestor_id", "key_id", "public_key_b64", "attestor_type", "status",
-             "created_at", "revoked_at"),
+             "created_at", "revoked_at", "expires_at"),
             row,
         ))
 
@@ -1496,6 +1517,75 @@ class Storage:
                 self._conn.rollback()
                 raise ValueError("active outcome attestor not found")
             self._conn.commit()
+
+    def set_outcome_attestor_status(self, attestor_id: str, status: str) -> None:
+        if status not in {"ACTIVE", "EXPIRED", "REVOKED"}:
+            raise ValueError("invalid attestor status")
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE outcome_attestors SET status = ?, revoked_at = CASE WHEN ? = 'REVOKED' THEN ? ELSE revoked_at END "
+                "WHERE attestor_id = ?",
+                (status, status, time.time(), attestor_id),
+            )
+            if cursor.rowcount != 1:
+                self._conn.rollback()
+                raise ValueError("outcome attestor not found")
+            self._conn.commit()
+
+    def rotate_outcome_attestor(
+        self,
+        attestor_id: str,
+        *,
+        key_id: str,
+        public_key_b64: str,
+        attestor_type: str,
+        expires_at: float | None,
+    ) -> None:
+        with self._lock:
+            try:
+                cursor = self._conn.execute(
+                    "UPDATE outcome_attestors SET key_id = ?, public_key_b64 = ?, attestor_type = ?, "
+                    "status = 'ACTIVE', revoked_at = NULL, expires_at = ? WHERE attestor_id = ?",
+                    (key_id, public_key_b64, attestor_type, expires_at, attestor_id),
+                )
+                if cursor.rowcount != 1:
+                    self._conn.rollback()
+                    raise ValueError("outcome attestor not found")
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("attestor key is already registered") from exc
+
+    def record_attestor_governance_action(self, envelope: dict) -> None:
+        action = envelope["action"]
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO attestor_governance_actions "
+                    "(action_id, action_sha256, attestor_id, action, envelope_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        action["action_id"],
+                        envelope["action_sha256"],
+                        action["attestor_id"],
+                        action["action"],
+                        json.dumps(envelope, sort_keys=True, separators=(",", ":")),
+                        time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("attestor governance action already recorded") from exc
+
+    def attestor_governance_actions(self, attestor_id: str) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT envelope_json FROM attestor_governance_actions "
+                "WHERE attestor_id = ? ORDER BY created_at",
+                (attestor_id,),
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]
 
     @staticmethod
     def _object_digest(value: dict) -> str:

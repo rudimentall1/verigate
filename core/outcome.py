@@ -1,5 +1,3 @@
-"""Independent execution outcome claims and attestations for Verigate."""
-from __future__ import annotations
 
 import base64
 import hashlib
@@ -175,6 +173,8 @@ class OutcomeAttestationService:
         registered = self.storage.outcome_attestor(attestor_id)
         if registered is None or registered["status"] != "ACTIVE":
             raise PermissionError("outcome attestor is not registered and active")
+        if registered.get("expires_at") is not None and registered["expires_at"] <= time.time():
+            raise PermissionError("outcome attestor authority has expired")
         if payload.get("outcome_attestation_version") != 1:
             raise ValueError("unsupported outcome attestation version")
         if payload.get("claim_sha256") != digest(claim):

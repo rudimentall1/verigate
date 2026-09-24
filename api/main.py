@@ -44,6 +44,7 @@ from attest.sign import sign_decision
 from attest.verify import verify_attestation
 from attest.receipt import verify_execution_authorization
 from core.adversarial import AdversarialVerificationPlane
+from core.attestor import AttestorAuthorityService
 from core.authority import AuthorityGraph
 from core.authority_state import DynamicAuthorityService
 from core.engine import GuardrailEngine
@@ -84,6 +85,9 @@ from .schemas import (
     OutcomeAttestationRequest,
     OutcomeAttestationResponse,
     OutcomeEvidenceResponse,
+    AttestorGovernanceRequest,
+    AttestorGovernanceResponse,
+    AttestorResponse,
     PaymentIntentRequest,
     VerifyRequest,
     VerifyResponse,
@@ -115,6 +119,9 @@ REQUIRE_GOVERNED_POLICY = os.environ.get(
     "",
 ).lower() in {"1", "true", "yes"}
 OUTCOME_ATTESTORS_JSON = os.environ.get("VERIGATE_OUTCOME_ATTESTORS", "")
+ALLOW_UNGOVERNED_ATTESTOR_BOOTSTRAP = os.environ.get(
+    "VERIGATE_ALLOW_UNGOVERNED_ATTESTOR_BOOTSTRAP", ""
+).lower() in {"1", "true", "yes"}
 
 app = FastAPI(
     title="Verigate",
@@ -142,6 +149,14 @@ def _load_governance_policy() -> GovernancePolicy:
         version=1,
         threshold=1,
         members=(GovernanceMember.from_public_key(public_key, "governor"),),
+        allowed_actions=(
+            "AUTHORITY_RESET",
+            "ATTESTOR_REGISTER",
+            "ATTESTOR_ACTIVATE",
+            "ATTESTOR_ROTATE",
+            "ATTESTOR_REVOKE",
+            "ATTESTOR_EXPIRE",
+        ),
     )
     policy.validate()
     return policy
@@ -150,6 +165,12 @@ def _load_governance_policy() -> GovernancePolicy:
 def _load_outcome_attestors() -> None:
     if not OUTCOME_ATTESTORS_JSON:
         return
+    if not ALLOW_UNGOVERNED_ATTESTOR_BOOTSTRAP:
+        raise RuntimeError(
+            "VERIGATE_OUTCOME_ATTESTORS requires explicit "
+            "VERIGATE_ALLOW_UNGOVERNED_ATTESTOR_BOOTSTRAP=true; "
+            "use /v1/governance/attestors for governed lifecycle"
+        )
     assert _storage is not None
     data = json.loads(OUTCOME_ATTESTORS_JSON)
     if not isinstance(data, list):
@@ -407,6 +428,41 @@ def consume_execution(req: ExecutionConsumeRequest) -> dict:
     )
     ok, reason = router.consume(req.authorization.model_dump())
     return {"execute": ok, "reason": reason}
+
+
+@app.post(
+    "/v1/governance/attestors",
+    response_model=AttestorGovernanceResponse,
+)
+def govern_attestor(req: AttestorGovernanceRequest) -> dict:
+    assert _storage is not None and _governance_policy is not None
+    try:
+        return AttestorAuthorityService(_storage).apply(
+            req.action,
+            req.approvals,
+            _governance_policy,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get(
+    "/v1/governance/attestors/{attestor_id}",
+    response_model=AttestorResponse,
+)
+def get_attestor(attestor_id: str) -> dict:
+    assert _storage is not None
+    attestor = _storage.outcome_attestor(attestor_id)
+    if attestor is None:
+        raise HTTPException(status_code=404, detail="attestor not found")
+    return {
+        "attestor": attestor,
+        "governance_history": _storage.attestor_governance_actions(attestor_id),
+    }
 
 
 @app.post(
