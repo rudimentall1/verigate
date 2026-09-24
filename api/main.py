@@ -49,6 +49,7 @@ from core.authority import AuthorityGraph
 from core.authority_state import DynamicAuthorityService
 from core.engine import GuardrailEngine
 from core.evidence import EvidenceGraph
+from core.evidence_manifest import build_manifest, verify_manifest
 from core.outcome import OutcomeAttestationService
 from core.governance import (
     AuthorityGovernanceService,
@@ -745,6 +746,27 @@ def verify_adversarial(req: AdversarialVerificationRequest) -> dict:
         ],
         "all_blocked": all_blocked,
     }
+
+
+@app.get("/v1/evidence/manifest/{authorization_id}")
+def evidence_manifest(authorization_id: str) -> dict:
+    """Export a signed, portable evidence package for offline verification."""
+    assert _storage is not None
+    try:
+        graph = EvidenceGraph(
+            _storage,
+            load_public_key(PUBLIC_KEY_PATH),
+            load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
+        ).build(authorization_id)
+        return build_manifest(graph, load_private_key(PRIVATE_KEY_PATH))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/v1/evidence/manifest/verify")
+def verify_evidence_manifest(manifest: dict, trusted_issuer_public_key_b64: str | None = None) -> dict:
+    """Verify a portable evidence package without reading Verigate storage."""
+    return verify_manifest(manifest, trusted_issuer_public_key_b64)
 
 
 @app.get("/v1/evidence/authorization/{authorization_id}")
