@@ -103,7 +103,18 @@ def external_state_requirement_for_action(
         matches.append((specificity, requirement))
     if not matches:
         return None
-    _, selected = max(matches, key=lambda item: item[0])
+    max_specificity = max(item[0] for item in matches)
+    candidates = [item[1] for item in matches if item[0] == max_specificity]
+    canonical = {
+        json.dumps({str(k): candidate[k] for k in sorted(candidate)}, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        for candidate in candidates
+    }
+    kinds = {candidate.get("kind") for candidate in candidates}
+    if len(canonical) > 1 or len(kinds) > 1:
+        raise ValueError(
+            "ambiguous external state requirements at equal policy specificity"
+        )
+    selected = candidates[0]
     return {str(k): selected[k] for k in sorted(selected)}
 
 

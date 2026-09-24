@@ -79,6 +79,24 @@ class ExternalStateTest(unittest.TestCase):
         self.assertEqual(router.execute(auth,lambda a:sent.append(a) or 'ok'),'ok')
         self.assertEqual(calls,['http.state']); self.assertEqual(len(sent),1)
 
+    def test_ambiguous_equal_specificity_requirements_fail_closed(self):
+        action=ActionIntent(agent_id='a',action_type='orders.create',target='orders')
+        policy=Policy(external_state_requirements=[
+            {'action_type':'orders.create','target':'orders','kind':'http.state'},
+            {'action_type':'orders.create','target':'orders','kind':'mcp.state'},
+        ])
+        with self.assertRaises(ValueError):
+            self.auth(action,policy)
+
+    def test_duplicate_equal_specificity_requirement_is_deterministic(self):
+        action=ActionIntent(agent_id='a',action_type='orders.create',target='orders')
+        policy=Policy(external_state_requirements=[
+            {'action_type':'orders.create','target':'orders','kind':'http.state'},
+            {'action_type':'orders.create','target':'orders','kind':'http.state'},
+        ])
+        auth=self.auth(action,policy)
+        self.assertEqual(auth['payload']['external_state_requirement']['kind'],'http.state')
+
     def test_required_verifier_missing_blocks(self):
         action=ActionIntent(agent_id='a',action_type='orders.create',target='orders',metadata={'external_state':{'kind':'http.state','reference':'orders','digest':'b'*64}})
         policy=Policy(external_state_requirements=[{'action_type':'orders.create','target':'orders','kind':'http.state'}])
