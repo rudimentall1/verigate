@@ -36,8 +36,9 @@ def test_authorize_endpoint_returns_receipt_and_persists_signature():
             assert body["decision_receipt"]["payload"]["intent"]["action_type"] == "payment"
             assert body["decision_receipt"]["payload"]["decision"]["decision"] == "ALLOW"
             assert len(body["decision_receipt"]["signature"]) > 0
-            assert body["execution_authorization"] is not None
-            assert body["execution_authorization"]["payload"]["intent_id"] == body["decision_receipt"]["payload"]["intent"]["intent_id"]
+            # Legacy /authorize is decision-only. Executable authority must
+            # come from an explicit capability-bound authorization endpoint.
+            assert body["execution_authorization"] is None
 
         main._storage.close()
         main._storage = None

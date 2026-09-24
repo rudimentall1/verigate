@@ -5,8 +5,10 @@ from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.authorization import AuthorizationService
-from core.models import ActionIntent, Decision, GuardrailDecision
+from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 from core.storage import Storage
+from core.authority_state import DynamicAuthorityService
+from core.policy import Policy
 from enforcement.router import ExecutionRouter
 from enforcement.networks import NetworkRegistry
 
@@ -36,7 +38,7 @@ class TamperEnforcementTest(unittest.TestCase):
             action_type="tool.execute",
             target="approved-merchant",
             resource="https://api.approved.example/pay",
-            amount=500.0,
+            amount=10.0,
             asset="USDC",
             network="base",
             metadata={
@@ -55,12 +57,30 @@ class TamperEnforcementTest(unittest.TestCase):
             decision=Decision.ALLOW,
             matched_rules=(),
         )
+        capability = Capability(
+            capability_id="cap-tamper-test",
+            agent_id=intent.agent_id,
+            allowed_actions=("tool.execute",),
+            allowed_targets=("approved-merchant",),
+            allowed_resources=("https://api.approved.example/pay",),
+            allowed_networks=("base",),
+            allowed_assets=("USDC",),
+            max_per_action={"USDC": 100.0},
+        )
+        self.storage.register_capability(capability)
+        authority = DynamicAuthorityService(self.storage).snapshot(
+            intent.agent_id, capability.capability_id
+        )
+        policy = Policy()
         return AuthorizationService().issue(
             intent,
             decision,
-            "tamper-test-policy",
+            policy.digest,
             load_private_key(self.private),
             nonce=intent.intent_id,
+            capability=capability,
+            authority=authority,
+            policy=policy,
         )["execution_authorization"]
 
     def _assert_mutation_is_blocked(self, mutate):

@@ -8,7 +8,7 @@ from attest.receipt import issue_execution_authorization
 from core.engine import GuardrailEngine
 from core.policy import Policy
 from core.storage import Storage
-from core.models import PaymentIntent
+from core.models import Capability, PaymentIntent
 from enforcement.local import ExecutionGate
 from enforcement.protocol import ExecutionAdapter
 
@@ -36,7 +36,19 @@ class ExecutionGateTest(unittest.TestCase):
             agent_id="agent-1", payee="merchant", asset="USDC",
             network="base", amount=1.0,
         )
-        result = engine.authorize(intent, load_private_key(self.priv))
+        capability = Capability(
+            capability_id="cap-gate-test",
+            agent_id=intent.agent_id,
+            allowed_actions=("payment",),
+            allowed_targets=("merchant",),
+            allowed_networks=("base",),
+            allowed_assets=("USDC",),
+            max_per_action={"USDC": 10.0},
+        )
+        storage.register_capability(capability)
+        result = engine.authorize_with_capability(
+            intent, capability.capability_id, load_private_key(self.priv)
+        )
         storage.close()
         return result
 
@@ -155,7 +167,7 @@ class ExecutionGateTest(unittest.TestCase):
     def test_expired_authorization_is_rejected(self):
         result = self._authorization()
         receipt = result["decision_receipt"]
-        action = receipt["payload"]["intent"]
+        valid = result["execution_authorization"]
         expired = issue_execution_authorization(
             type("Receipt", (), {
                 "payload": receipt["payload"],
@@ -164,6 +176,13 @@ class ExecutionGateTest(unittest.TestCase):
             load_private_key(self.priv),
             nonce=receipt["payload"]["intent"]["intent_id"],
             ttl_seconds=-1,
+            capability_id=valid["payload"]["capability_id"],
+            capability_version=valid["payload"]["capability_version"],
+            capability_sha256=valid["payload"]["capability_sha256"],
+            authority_state=valid["payload"]["authority_state"],
+            authority_state_sha256=valid["payload"]["authority_state_sha256"],
+            authority_multiplier=valid["payload"]["authority_multiplier"],
+            effective_authority=valid["payload"]["effective_authority"],
         ).as_dict()
         storage = Storage(self.db)
         try:

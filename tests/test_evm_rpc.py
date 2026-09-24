@@ -4,8 +4,10 @@ from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.authorization import AuthorizationService
-from core.models import ActionIntent, Decision, GuardrailDecision
+from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 from core.storage import Storage
+from core.authority_state import DynamicAuthorityService
+from core.policy import Policy
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.evm_rpc import EvmRpcClient, EvmRpcError
 
@@ -79,8 +81,27 @@ class EvmRpcExecutionIntegrationTest(unittest.TestCase):
                     decision=Decision.ALLOW,
                     matched_rules=(),
                 )
+                capability = Capability(
+                    capability_id="cap-evm-rpc",
+                    agent_id=intent.agent_id,
+                    allowed_actions=("token.transfer",),
+                    allowed_targets=("merchant",),
+                    allowed_networks=("base",),
+                    allowed_assets=("USDC",),
+                )
+                storage.register_capability(capability)
+                authority = DynamicAuthorityService(storage).snapshot(
+                    intent.agent_id, capability.capability_id
+                )
                 auth = AuthorizationService().issue(
-                    intent, decision, "policy", load_private_key(private), nonce=intent.intent_id
+                    intent,
+                    decision,
+                    "policy",
+                    load_private_key(private),
+                    nonce=intent.intent_id,
+                    capability=capability,
+                    authority=authority,
+                    policy=Policy(),
                 )["execution_authorization"]
                 adapter = EVMExecutionAdapter(storage, load_public_key(public))
                 rpc = EvmRpcClient(

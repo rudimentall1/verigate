@@ -50,7 +50,7 @@ class AuthorizationReceiptTest(unittest.TestCase):
         self.assertTrue(ok, reason)
 
 
-    def test_engine_authorize_produces_and_persists_receipt(self):
+    def test_engine_authorize_produces_decision_receipt_without_execution_authority(self):
         policy_path = Path(self.tmpdir.name) / "policy.yaml"
         policy_path.write_text("allowed_networks: [base]\nallowed_assets: [USDC]\n", encoding="utf-8")
         policy = Policy.load(policy_path)
@@ -66,10 +66,7 @@ class AuthorizationReceiptTest(unittest.TestCase):
             execution = result["execution_authorization"]
             self.assertEqual(receipt["payload"]["intent"]["action_type"], "payment")
             self.assertEqual(receipt["payload"]["policy_sha256"], policy.digest)
-            self.assertIsNotNone(execution)
-            self.assertEqual(execution["payload"]["action"], receipt["payload"]["intent"])
-            self.assertEqual(len(execution["payload"]["action_sha256"]), 64)
-            self.assertTrue(verify_execution_authorization(execution, load_public_key(self.pub))[0])
+            self.assertIsNone(execution)
             self.assertEqual(storage.count_intent(intent.intent_id), 1)
             row = storage._conn.execute(
                 "SELECT signature FROM audit_log WHERE intent_id = ?", (intent.intent_id,)

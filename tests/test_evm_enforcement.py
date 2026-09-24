@@ -4,8 +4,9 @@ from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.engine import GuardrailEngine
-from core.models import PaymentIntent
+from core.models import Capability, PaymentIntent
 from core.policy import Policy
+from core.authority_state import DynamicAuthorityService
 from core.storage import Storage
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.protocol import ExecutionAdapter
@@ -32,7 +33,19 @@ class EVMExecutionAdapterTest(unittest.TestCase):
             agent_id="agent-evm", payee="merchant", asset="USDC", network="base", amount=1.0,
             metadata={"evm_transaction": tx},
         )
-        result = engine.authorize(intent, load_private_key(self.priv))
+        capability = Capability(
+            capability_id="cap-evm-test",
+            agent_id="agent-evm",
+            allowed_actions=("payment",),
+            allowed_targets=("merchant",),
+            allowed_networks=("base",),
+            allowed_assets=("USDC",),
+            max_per_action={"USDC": 10.0},
+        )
+        storage.register_capability(capability)
+        result = engine.authorize_with_capability(
+            intent, capability.capability_id, load_private_key(self.priv)
+        )
         storage.close()
         return result, tx
 

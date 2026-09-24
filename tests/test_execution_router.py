@@ -5,8 +5,10 @@ from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.authorization import AuthorizationService
-from core.models import ActionIntent, Decision, GuardrailDecision
+from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 from core.storage import Storage
+from core.authority_state import DynamicAuthorityService
+from core.policy import Policy
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.networks import NetworkRegistry, UnsupportedNetworkError
 from enforcement.router import ExecutionRouter
@@ -35,8 +37,31 @@ class ExecutionRouterTest(unittest.TestCase):
             decision=decision,
             matched_rules=(),
         )
+        if decision != Decision.ALLOW:
+            return AuthorizationService().issue(
+                intent, guardrail, "router-test-policy", load_private_key(self.private), nonce=intent.intent_id
+            )
+        capability = Capability(
+            capability_id=f"cap-router-{intent.intent_id}",
+            agent_id=intent.agent_id,
+            allowed_actions=(intent.action_type,),
+            allowed_targets=(intent.target,),
+            allowed_networks=(intent.network,) if intent.network else (),
+            allowed_assets=(intent.asset,) if intent.asset else (),
+        )
+        self.storage.register_capability(capability)
+        authority = DynamicAuthorityService(self.storage).snapshot(
+            intent.agent_id, capability.capability_id
+        )
         return AuthorizationService().issue(
-            intent, guardrail, "router-test-policy", load_private_key(self.private), nonce=intent.intent_id
+            intent,
+            guardrail,
+            Policy().digest,
+            load_private_key(self.private),
+            nonce=intent.intent_id,
+            capability=capability,
+            authority=authority,
+            policy=Policy(),
         )
 
     def test_routes_base_to_evm_adapter(self):

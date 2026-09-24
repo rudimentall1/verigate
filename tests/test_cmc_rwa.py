@@ -167,7 +167,7 @@ class RwaPolicyTest(unittest.TestCase):
         decision = evaluator.evaluate(action, quote, 100)
         self.assertEqual(decision.decision.value, "BLOCK")
 
-    def test_allow_mints_execution_capability_with_cmc_evidence(self):
+    def test_allow_records_cmc_decision_without_execution_authority(self):
         with tempfile.TemporaryDirectory() as td:
             private = Path(td) / "issuer.key"
             public = Path(td) / "issuer.pub"
@@ -187,17 +187,10 @@ class RwaPolicyTest(unittest.TestCase):
                 },
             )
             self.assertEqual(artifacts["decision"]["decision"], "ALLOW")
-            execution = artifacts["execution_authorization"]
-            self.assertIsNotNone(execution)
+            self.assertIsNone(artifacts["execution_authorization"])
             self.assertEqual(
-                execution["payload"]["action"]["metadata"]["source"],
+                artifacts["decision_receipt"]["payload"]["intent"]["metadata"]["source"],
                 "coinmarketcap.rwa.v5",
-            )
-            self.assertTrue(
-                verify_execution_authorization(
-                    execution,
-                    load_public_key(public),
-                )[0]
             )
     def test_block_does_not_mint_execution_capability(self):
         evaluator = RwaPurchaseEvaluator()

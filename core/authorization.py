@@ -18,6 +18,32 @@ from attest.receipt import issue_execution_authorization, sign_receipt
 class AuthorizationService:
     """Mint decision receipts and execution capabilities for any action."""
 
+    def issue_decision_receipt(
+        self,
+        action: ActionIntent,
+        decision: GuardrailDecision,
+        policy_digest: str,
+        private_key: Any,
+        *,
+        signed_policy: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Record a signed decision without granting execution authority."""
+        if action.intent_id != decision.intent_id or action.agent_id != decision.agent_id:
+            raise ValueError("action and decision identities do not match")
+        if decision.context_digest and decision.context_digest != action.context_digest:
+            raise ValueError("action context does not match the authorized decision")
+        receipt = sign_receipt(
+            action,
+            decision,
+            policy_digest,
+            private_key,
+            signed_policy_version=signed_policy,
+        )
+        return {
+            "decision_receipt": receipt.as_dict(),
+            "execution_authorization": None,
+        }
+
     def issue(
         self,
         action: ActionIntent,
@@ -61,8 +87,11 @@ class AuthorizationService:
         execution = None
         effective = None
         if decision.decision == Decision.ALLOW:
-            if capability is not None and authority is not None and policy is not None:
-                effective = effective_authority(action, capability, policy, authority)
+            if capability is None or authority is None or policy is None:
+                raise PermissionError(
+                    "executable authorization requires capability, dynamic authority, and policy binding"
+                )
+            effective = effective_authority(action, capability, policy, authority)
             execution = issue_execution_authorization(
                 receipt,
                 private_key,

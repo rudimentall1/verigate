@@ -4,8 +4,10 @@ from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.authorization import AuthorizationService
-from core.models import ActionIntent, Decision, GuardrailDecision
+from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 from core.storage import Storage
+from core.authority_state import DynamicAuthorityService
+from core.policy import Policy
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
 from attest.receipt import verify_execution_receipt
@@ -47,6 +49,19 @@ class ConfirmationRouterTest(unittest.TestCase):
                 }
             },
         )
+        capability = Capability(
+            capability_id="cap-confirm-001",
+            agent_id=intent.agent_id,
+            allowed_actions=("token.transfer",),
+            allowed_targets=("merchant",),
+            allowed_networks=("base",),
+            allowed_assets=("USDC",),
+        )
+        self.storage.register_capability(capability)
+        authority = DynamicAuthorityService(self.storage).snapshot(
+            intent.agent_id, capability.capability_id
+        )
+        policy = Policy()
         decision = GuardrailDecision(
             intent_id=intent.intent_id,
             agent_id=intent.agent_id,
@@ -56,9 +71,12 @@ class ConfirmationRouterTest(unittest.TestCase):
         return AuthorizationService().issue(
             intent,
             decision,
-            "confirmation-policy",
+            policy.digest,
             load_private_key(self.private),
             nonce=intent.intent_id,
+            capability=capability,
+            authority=authority,
+            policy=policy,
         )["execution_authorization"]
 
     def test_pending_confirmation_keeps_submitted_receipt(self):

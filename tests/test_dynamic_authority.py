@@ -23,6 +23,7 @@ from core.outcome import (
     build_outcome_claim,
 )
 from core.storage import Storage
+from core.policy import Policy
 
 
 class DynamicAuthorityTest(unittest.TestCase):
@@ -178,6 +179,7 @@ class DynamicAuthorityTest(unittest.TestCase):
             load_private_key(private_path),
             capability=self.capability,
             authority=snapshot,
+            policy=Policy(),
         )["execution_authorization"]
 
         self.assertEqual(
@@ -231,6 +233,7 @@ class DynamicAuthorityTest(unittest.TestCase):
             load_private_key(private_path),
             capability=self.capability,
             authority=snapshot,
+            policy=Policy(),
         )["execution_authorization"]
         router = ExecutionRouter(
             NetworkRegistry(),

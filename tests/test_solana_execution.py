@@ -4,9 +4,11 @@ import unittest
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
-from core.models import ActionIntent
+from core.models import ActionIntent, Capability
 from core.authorization import AuthorizationService
 from core.models import GuardrailDecision, Decision
+from core.authority_state import DynamicAuthorityService
+from core.policy import Policy
 from enforcement.solana import SolanaExecutionAdapter
 from core.storage import Storage
 
@@ -34,12 +36,27 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
                     decision=Decision.ALLOW,
                     matched_rules=(),
                 )
+                capability = Capability(
+                    capability_id="cap-solana-exec",
+                    agent_id=intent.agent_id,
+                    allowed_actions=("token.transfer",),
+                    allowed_targets=("recipient",),
+                    allowed_networks=("solana",),
+                    allowed_assets=("USDC",),
+                )
+                storage.register_capability(capability)
+                authority = DynamicAuthorityService(storage).snapshot(
+                    intent.agent_id, capability.capability_id
+                )
                 artifacts = AuthorizationService().issue(
                     intent,
                     decision,
-                    "test-policy",
+                    Policy().digest,
                     load_private_key(private),
                     nonce=intent.intent_id,
+                    capability=capability,
+                    authority=authority,
+                    policy=Policy(),
                 )
                 adapter = SolanaExecutionAdapter(storage, load_public_key(public))
                 sent = []
@@ -73,8 +90,27 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
                     decision=Decision.ALLOW,
                     matched_rules=(),
                 )
+                capability = Capability(
+                    capability_id="cap-solana-invalid",
+                    agent_id=intent.agent_id,
+                    allowed_actions=("token.transfer",),
+                    allowed_targets=("recipient",),
+                    allowed_networks=("solana",),
+                    allowed_assets=("USDC",),
+                )
+                storage.register_capability(capability)
+                authority = DynamicAuthorityService(storage).snapshot(
+                    intent.agent_id, capability.capability_id
+                )
                 artifacts = AuthorizationService().issue(
-                    intent, decision, "test-policy", load_private_key(private), nonce=intent.intent_id
+                    intent,
+                    decision,
+                    Policy().digest,
+                    load_private_key(private),
+                    nonce=intent.intent_id,
+                    capability=capability,
+                    authority=authority,
+                    policy=Policy(),
                 )
                 adapter = SolanaExecutionAdapter(storage, load_public_key(public))
                 ok, reason = adapter.consume(artifacts["execution_authorization"])

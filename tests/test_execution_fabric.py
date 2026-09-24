@@ -4,8 +4,10 @@ from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.authorization import AuthorizationService
-from core.models import ActionIntent, Decision, GuardrailDecision
+from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 from core.storage import Storage
+from core.authority_state import DynamicAuthorityService
+from core.policy import Policy
 from enforcement.http import HTTPExecutionAdapter
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
@@ -29,15 +31,29 @@ class ExecutionFabricTest(unittest.TestCase):
         self.tmpdir.cleanup()
 
     def _auth(self, action: ActionIntent):
+        capability = Capability(
+            capability_id=f"cap-fabric-{action.intent_id}",
+            agent_id=action.agent_id,
+            allowed_actions=(action.action_type,),
+            allowed_targets=(action.target,),
+        )
+        self.storage.register_capability(capability)
+        authority = DynamicAuthorityService(self.storage).snapshot(
+            action.agent_id, capability.capability_id
+        )
+        policy = Policy()
         decision = GuardrailDecision(
             action.intent_id, action.agent_id, Decision.ALLOW, ()
         )
         return AuthorizationService().issue(
             action,
             decision,
-            "f" * 64,
+            policy.digest,
             self.private_key,
             nonce=action.intent_id,
+            capability=capability,
+            authority=authority,
+            policy=policy,
         )["execution_authorization"]
 
     def test_tool_execution_uses_signed_action_arguments(self):

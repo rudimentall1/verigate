@@ -22,7 +22,7 @@ from core.policy_version import (
     sign_policy_version,
     verify_policy_version,
 )
-from core.models import PaymentIntent
+from core.models import Capability, PaymentIntent
 from core.storage import Storage
 
 
@@ -98,8 +98,19 @@ class PolicyVersionTest(unittest.TestCase):
                 network="base",
                 amount=1.0,
             )
-            result = engine.authorize(
+            capability = Capability(
+                capability_id="cap-policy-version",
+                agent_id=intent.agent_id,
+                allowed_actions=("payment",),
+                allowed_targets=("merchant",),
+                allowed_networks=("base",),
+                allowed_assets=("USDC",),
+                max_per_action={"USDC": 10.0},
+            )
+            storage.register_capability(capability)
+            result = engine.authorize_with_capability(
                 intent,
+                capability.capability_id,
                 load_private_key(self.private),
             )
             receipt = result["decision_receipt"]
@@ -171,8 +182,19 @@ class PolicyVersionTest(unittest.TestCase):
                 network="base",
                 amount=1.0,
             )
-            authorization = engine.authorize(
+            capability = Capability(
+                capability_id="cap-policy-lineage",
+                agent_id=intent.agent_id,
+                allowed_actions=("payment",),
+                allowed_targets=("merchant",),
+                allowed_networks=("base",),
+                allowed_assets=("USDC",),
+                max_per_action={"USDC": 10.0},
+            )
+            storage.register_capability(capability)
+            authorization = engine.authorize_with_capability(
                 intent,
+                capability.capability_id,
                 load_private_key(self.private),
             )["execution_authorization"]
             router = ExecutionRouter(

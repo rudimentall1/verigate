@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
@@ -7,6 +8,8 @@ from attest.receipt import verify_execution_authorization
 from core.capabilities import CapabilityRegistry
 from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 from core.storage import Storage
+from core.authority_state import DynamicAuthorityService
+from core.policy import Policy
 
 
 class CapabilityRegistryTest(unittest.TestCase):
@@ -60,8 +63,9 @@ class CapabilityRegistryTest(unittest.TestCase):
         with self.assertRaisesRegex(PermissionError, "action type outside"):
             self.registry.authorize(self.capability.capability_id, tampered)
     def test_revocation_does_not_mutate_an_already_issued_authorization(self):
+        action = replace(self.action, amount=10.0)
         self.registry.register(self.capability)
-        permitted = self.registry.authorize(self.capability.capability_id, self.action)
+        permitted = self.registry.authorize(self.capability.capability_id, action)
         self.assertEqual(permitted.digest, self.capability.digest)
 
         private_path = Path(self.tmp.name) / "issuer.key"
@@ -69,25 +73,33 @@ class CapabilityRegistryTest(unittest.TestCase):
         generate_keypair(private_path, public_path)
 
         decision = GuardrailDecision(
-            self.action.intent_id,
-            self.action.agent_id,
+            action.intent_id,
+            action.agent_id,
             Decision.ALLOW,
             (),
         )
+        policy = Policy()
+        authority = DynamicAuthorityService(self.storage).snapshot(
+            action.agent_id,
+            permitted.capability_id,
+        )
         from core.authorization import AuthorizationService
         artifacts = AuthorizationService().issue(
-            self.action,
+            action,
             decision,
             "e" * 64,
             load_private_key(private_path),
             capability=permitted,
+            authority=authority,
+            policy=policy,
         )
         execution = artifacts["execution_authorization"]
 
         self.assertTrue(self.registry.revoke(self.capability.capability_id))
-        self.assertTrue(
-            verify_execution_authorization(execution, load_public_key(public_path))[0]
+        ok, reason = verify_execution_authorization(
+            execution, load_public_key(public_path)
         )
+        self.assertTrue(ok, reason)
 
 
 if __name__ == "__main__":

@@ -237,15 +237,25 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
             if signed_policy["payload"].get("policy_sha256") != payload.get("policy_sha256"):
                 return False, "policy version does not match effective policy"
 
-        for id_field, digest_field in (("identity_id", "identity_sha256"), ("capability_id", "capability_sha256")):
-            identifier = payload.get(id_field)
-            digest = payload.get(digest_field)
-            if identifier is None and digest is None:
-                continue
-            if not isinstance(identifier, str) or not identifier:
-                return False, f"invalid execution authorization field: {id_field}"
-            if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
-                return False, f"invalid execution authorization fingerprint: {digest_field}"
+        # An execution authorization is an executable authority artifact, not
+        # merely a signed ALLOW. It must carry a capability-bound authority
+        # ceiling; legacy decision-only envelopes must never reach execution.
+        capability_id = payload.get("capability_id")
+        capability_sha256 = payload.get("capability_sha256")
+        if not isinstance(capability_id, str) or not capability_id:
+            return False, "execution authorization is missing capability binding"
+        if (not isinstance(capability_sha256, str) or len(capability_sha256) != 64
+                or any(c not in "0123456789abcdef" for c in capability_sha256)):
+            return False, "invalid execution authorization fingerprint: capability_sha256"
+
+        identity_id = payload.get("identity_id")
+        identity_sha256 = payload.get("identity_sha256")
+        if identity_id is not None or identity_sha256 is not None:
+            if not isinstance(identity_id, str) or not identity_id:
+                return False, "invalid execution authorization field: identity_id"
+            if (not isinstance(identity_sha256, str) or len(identity_sha256) != 64
+                    or any(c not in "0123456789abcdef" for c in identity_sha256)):
+                return False, "invalid execution authorization fingerprint: identity_sha256"
 
         authority_state = payload.get("authority_state")
         authority_state_sha256 = payload.get("authority_state_sha256")
@@ -304,15 +314,16 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
             return False, "authorized constraints fingerprint mismatch"
         effective = payload.get("effective_authority")
         effective_sha256 = payload.get("effective_authority_sha256")
-        if effective is not None:
-            if not isinstance(effective, dict) or not isinstance(effective_sha256, str) or len(effective_sha256) != 64:
-                return False, "invalid effective authority fingerprint"
-            expected_effective = hashlib.sha256(_canonical(effective)).hexdigest()
-            if effective_sha256 != expected_effective:
-                return False, "effective authority fingerprint mismatch"
-            ok, reason = verify_effective_action(action, effective)
-            if not ok:
-                return False, reason
+        if not isinstance(effective, dict) or not isinstance(effective_sha256, str) or len(effective_sha256) != 64:
+            return False, "execution authorization is missing effective authority"
+        expected_effective = hashlib.sha256(_canonical(effective)).hexdigest()
+        if effective_sha256 != expected_effective:
+            return False, "effective authority fingerprint mismatch"
+        ok, reason = verify_effective_action(action, effective)
+        if not ok:
+            return False, reason
+        if payload.get("authority_state") is None or payload.get("authority_multiplier") is None:
+            return False, "execution authorization is missing dynamic authority binding"
         _verify(payload, auth["signature"], public_key)
         return True, "valid execution authorization"
     except (KeyError, TypeError, ValueError, InvalidSignature):

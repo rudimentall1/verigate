@@ -7,6 +7,7 @@ from core.adversarial import AdversarialVerificationPlane
 from core.authorization import AuthorizationService
 from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 from core.authority_state import DynamicAuthorityService
+from core.policy import Policy
 from core.storage import Storage
 
 
@@ -41,6 +42,12 @@ class AdversarialVerificationTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def authorization(self):
+        policy_path = Path(self.tmp.name) / "policy.yaml"
+        policy_path.write_text(
+            "allowed_action_types: [payment]\nallowed_targets: [merchant]\nallowed_networks: [base]\nallowed_assets: [USDC]\nper_tx_cap: {USDC: 100}\n",
+            encoding="utf-8",
+        )
+        policy = Policy.load(policy_path)
         snapshot = DynamicAuthorityService(self.storage).snapshot(
             self.action.agent_id,
             self.capability.capability_id,
@@ -54,10 +61,11 @@ class AdversarialVerificationTest(unittest.TestCase):
         return AuthorizationService().issue(
             self.action,
             decision,
-            "e" * 64,
+            policy.digest,
             load_private_key(self.private),
             capability=self.capability,
             authority=snapshot,
+            policy=policy,
         )["execution_authorization"]
 
     def test_all_mutations_are_rejected(self):

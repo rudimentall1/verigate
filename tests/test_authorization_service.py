@@ -6,6 +6,9 @@ from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import verify_execution_authorization, verify_receipt
 from core.authorization import AuthorizationService
 from core.models import ActionIntent, Capability, Decision, GuardrailDecision
+from core.authority_state import DynamicAuthorityService
+from core.policy import Policy
+from core.storage import Storage
 
 
 class AuthorizationServiceTest(unittest.TestCase):
@@ -27,17 +30,15 @@ class AuthorizationServiceTest(unittest.TestCase):
             metadata={"evm_transaction": {"chain_id": 8453, "to": "0xasset", "value_wei": 0, "data": "0x"}},
         )
 
-    def test_generic_action_can_mint_portable_capability(self):
+    def test_generic_action_is_decision_only_without_authority(self):
         action = self._action()
         decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
-        artifacts = AuthorizationService().issue(
+        artifacts = AuthorizationService().issue_decision_receipt(
             action, decision, "a" * 64, load_private_key(self.priv)
         )
         receipt = artifacts["decision_receipt"]
-        execution = artifacts["execution_authorization"]
         self.assertTrue(verify_receipt(receipt, load_public_key(self.pub))[0])
-        self.assertTrue(verify_execution_authorization(execution, load_public_key(self.pub))[0])
-        self.assertEqual(execution["payload"]["action"], action.as_dict())
+        self.assertIsNone(artifacts["execution_authorization"])
 
     def test_warn_never_mints_execution_capability(self):
         action = self._action()
@@ -55,10 +56,29 @@ class AuthorizationServiceTest(unittest.TestCase):
             allowed_actions=("evm.transaction",),
             allowed_targets=(action.target,),
         )
+        storage = Storage(Path(self.tmpdir.name) / "authority.db")
+        policy = Policy(
+            allowed_action_types=["evm.transaction"],
+            allowed_targets=["0xasset"],
+            raw={
+                "allowed_action_types": ["evm.transaction"],
+                "allowed_targets": ["0xasset"],
+            },
+        )
+        snapshot = DynamicAuthorityService(storage).snapshot(
+            action.agent_id, capability.capability_id
+        )
         decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
         artifacts = AuthorizationService().issue(
-            action, decision, "c" * 64, load_private_key(self.priv), capability=capability
+            action,
+            decision,
+            policy.digest,
+            load_private_key(self.priv),
+            capability=capability,
+            authority=snapshot,
+            policy=policy,
         )
+        storage.close()
         execution = artifacts["execution_authorization"]
         self.assertEqual(execution["payload"]["capability_id"], capability.capability_id)
         self.assertEqual(execution["payload"]["capability_version"], capability.version)

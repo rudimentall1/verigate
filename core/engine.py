@@ -311,12 +311,21 @@ class GuardrailEngine:
         )
 
     def authorize(self, intent: PaymentIntent, private_key) -> dict:
-        """Legacy payment adapter into the canonical control-plane pipeline."""
-        return self._authorize_control_plane(
-            intent.as_action_intent(),
+        """Legacy payment decision endpoint; never mints execution authority.
+
+        Executable authorization requires an explicit capability-bound control
+        plane path via ``authorize_with_capability`` or ``authorize_with_identity``.
+        """
+        action = intent.as_action_intent()
+        decision = self.evaluate(intent)
+        artifacts = AuthorizationService().issue_decision_receipt(
+            action,
+            decision,
+            self.policy.digest,
             private_key,
-            decision=self.evaluate(intent),
+            signed_policy=self.signed_policy_version(private_key),
         )
+        return self._persist_authorization(artifacts, intent.intent_id)
 
     def authorize_with_capability(
         self,

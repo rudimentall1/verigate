@@ -222,12 +222,13 @@ class RwaPurchaseEvaluator:
             agent_id=agent_id,
         )
         decision = self.evaluate(action, quote, purchase_usd)
-        artifacts = AuthorizationService().issue(
+        # CMC is a decision/evidence adapter. It must not mint executable
+        # authority without an explicit capability-bound control-plane call.
+        artifacts = AuthorizationService().issue_decision_receipt(
             action,
             decision,
             policy_digest or self.policy.digest,
             private_key,
-            nonce=action.intent_id,
         )
         return {
             "action": action.as_dict(),

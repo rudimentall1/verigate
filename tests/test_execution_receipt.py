@@ -6,8 +6,10 @@ from pathlib import Path
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import verify_execution_receipt
 from core.authorization import AuthorizationService
-from core.models import ActionIntent, Decision, GuardrailDecision
+from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 from core.storage import Storage
+from core.authority_state import DynamicAuthorityService
+from core.policy import Policy
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
@@ -49,12 +51,28 @@ class ExecutionReceiptTest(unittest.TestCase):
             decision=Decision.ALLOW,
             matched_rules=(),
         )
+        capability = Capability(
+            capability_id=f"cap-receipt-{intent.intent_id}",
+            agent_id=intent.agent_id,
+            allowed_actions=("token.transfer",),
+            allowed_targets=("merchant",),
+            allowed_networks=(network,),
+            allowed_assets=("USDC",),
+        )
+        self.storage.register_capability(capability)
+        authority = DynamicAuthorityService(self.storage).snapshot(
+            intent.agent_id, capability.capability_id
+        )
+        policy = Policy()
         return AuthorizationService().issue(
             intent,
             decision,
-            "receipt-policy",
+            policy.digest,
             load_private_key(self.private),
             nonce=intent.intent_id,
+            capability=capability,
+            authority=authority,
+            policy=policy,
         )["execution_authorization"]
 
     def test_success_receipt_binds_transaction_and_persists(self):
