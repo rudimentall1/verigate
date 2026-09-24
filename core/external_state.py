@@ -39,3 +39,8 @@ def verify_external_state_binding(expected: dict[str, Any], action: dict[str, An
     if expected != actual:
         return False, "external state binding drift"
     return validate_external_state_binding(expected)
+
+
+def external_state_digest_from_observation(observation: dict[str, Any]) -> str:
+    data = json.dumps(observation, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()

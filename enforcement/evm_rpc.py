@@ -47,6 +47,27 @@ class EvmRpcClient:
             raise EvmRpcError(f"EVM RPC error: {body['error']}")
         return body.get("result")
 
+    def get_code(self, address: str, block_tag: str = "latest") -> str:
+        result = self._request("eth_getCode", [address, block_tag])
+        if not isinstance(result, str) or not result.startswith("0x"):
+            raise EvmRpcError("eth_getCode returned invalid result")
+        return result
+
+    def get_storage_at(self, address: str, slot: str, block_tag: str = "latest") -> str:
+        result = self._request("eth_getStorageAt", [address, slot, block_tag])
+        if not isinstance(result, str) or not result.startswith("0x"):
+            raise EvmRpcError("eth_getStorageAt returned invalid result")
+        return result
+
+    def block_number(self) -> int:
+        result = self._request("eth_blockNumber", [])
+        if not isinstance(result, str) or not result.startswith("0x"):
+            raise EvmRpcError("eth_blockNumber returned invalid result")
+        try:
+            return int(result, 16)
+        except ValueError as exc:
+            raise EvmRpcError("eth_blockNumber returned invalid hex") from exc
+
     def chain_id(self) -> int:
         result = self._request("eth_chainId", [])
         if not isinstance(result, str) or not result.startswith("0x"):
