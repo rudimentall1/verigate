@@ -17,6 +17,7 @@ from attest.receipt import (
 from core.storage import Storage
 from core.execution_graph import verify_execution_graph
 from core.execution_artifact import verify_execution_artifact
+from core.external_state import verify_external_state_binding
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.local import ExecutionGate
 from enforcement.networks import NetworkRegistry, UnsupportedNetworkError
@@ -39,12 +40,14 @@ class ExecutionRouter:
         public_key: Ed25519PublicKey,
         private_key: Ed25519PrivateKey | None = None,
         generic_adapters: dict[str, ExecutionAdapter] | None = None,
+        external_state_verifier: Callable[[dict[str, Any], dict[str, Any]], tuple[bool, str]] | None = None,
     ):
         self.registry = registry
         self.storage = storage
         self.public_key = public_key
         self.private_key = private_key
         self.generic_adapters = dict(generic_adapters or {})
+        self.external_state_verifier = external_state_verifier
 
     @staticmethod
     def _action(authorization: dict[str, Any]) -> dict[str, Any]:
@@ -129,6 +132,26 @@ class ExecutionRouter:
         if not valid:
             raise ValueError(f"execution authorization rejected: {reason}")
 
+    def _verify_external_state(self, authorization: dict[str, Any]) -> None:
+        payload = authorization["payload"]
+        action = self._action(authorization)
+        expected = payload.get("external_state")
+        required = bool(payload.get("external_state_required"))
+        if not isinstance(expected, dict):
+            raise ValueError("execution authorization is missing external state binding")
+        ok, reason = verify_external_state_binding(expected, action)
+        if not ok:
+            raise ValueError(reason)
+        if not expected:
+            if required:
+                raise ValueError("external state binding required before execution")
+            return
+        if self.external_state_verifier is None:
+            raise ValueError("live external state verifier is required before execution")
+        ok, reason = self.external_state_verifier(expected, action)
+        if not ok:
+            raise ValueError(f"external state drift: {reason}")
+
     def _verify_execution_path(self, authorization: dict[str, Any], adapter: ExecutionAdapter) -> None:
         action = self._action(authorization)
         expected = authorization["payload"].get("execution_graph")
@@ -162,6 +185,7 @@ class ExecutionRouter:
             self._verify_authorization(authorization)
             adapter = self._adapter(authorization)
             self._verify_execution_path(authorization, adapter)
+            self._verify_external_state(authorization)
             return adapter.consume(authorization)
         except (KeyError, TypeError, ValueError, UnsupportedNetworkError) as exc:
             return False, str(exc)
@@ -170,6 +194,7 @@ class ExecutionRouter:
         self._verify_authorization(authorization)
         adapter = self._adapter(authorization)
         self._verify_execution_path(authorization, adapter)
+        self._verify_external_state(authorization)
         return adapter.execute(authorization, broadcaster)
 
 
@@ -211,6 +236,7 @@ class ExecutionRouter:
             adapter = self._adapter(authorization)
             self._verify_authorization(authorization)
             self._verify_execution_path(authorization, adapter)
+            self._verify_external_state(authorization)
             result = adapter.execute(authorization, broadcaster)
             transaction_ref = self._transaction_ref(result)
             if not transaction_ref:

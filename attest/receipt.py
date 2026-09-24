@@ -20,6 +20,7 @@ from core.models import ActionIntent, GuardrailDecision, Decision
 from core.effective_authority import verify_effective_action
 from core.execution_graph import execution_graph_digest, normalize_execution_graph
 from core.execution_artifact import canonical_execution_artifact, execution_artifact_digest, verify_execution_artifact
+from core.external_state import canonical_external_state, external_state_digest, verify_external_state_binding
 
 
 def _canonical(payload: dict[str, Any]) -> bytes:
@@ -113,6 +114,7 @@ def issue_execution_authorization(
     authority_multiplier: float | None = None,
     effective_authority: dict[str, Any] | None = None,
     execution_graph: dict[str, Any] | None = None,
+    external_state_required: bool = False,
 ) -> ExecutionAuthorization:
     if receipt.payload["decision"]["decision"] != Decision.ALLOW.value:
         raise PermissionError("execution authorization requires ALLOW")
@@ -143,6 +145,9 @@ def issue_execution_authorization(
         "execution_graph_sha256": execution_graph_digest(execution_graph),
         "execution_artifact": canonical_execution_artifact(receipt.payload["intent"]),
         "execution_artifact_sha256": execution_artifact_digest(receipt.payload["intent"]),
+        "external_state": canonical_external_state(receipt.payload["intent"]),
+        "external_state_sha256": external_state_digest(receipt.payload["intent"]),
+        "external_state_required": bool(external_state_required),
         "action": receipt.payload["intent"],
         "action_sha256": action_digest(receipt.payload["intent"]),
         "constraints_sha256": hashlib.sha256(_canonical(receipt.payload["intent"].get("constraints", {}))).hexdigest(),
@@ -328,6 +333,17 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
             return False, "execution artifact fingerprint mismatch"
         ok, reason = verify_execution_artifact(execution_artifact, action)
         if not ok: return False, reason
+
+        external_state = payload.get("external_state")
+        external_state_sha256 = payload.get("external_state_sha256")
+        if not isinstance(external_state, dict) or not isinstance(external_state_sha256, str) or len(external_state_sha256) != 64:
+            return False, "execution authorization is missing external state binding"
+        if hashlib.sha256(_canonical(external_state)).hexdigest() != external_state_sha256:
+            return False, "external state fingerprint mismatch"
+        ok, reason = verify_external_state_binding(external_state, action)
+        if not ok: return False, reason
+        if payload.get("external_state_required") and not external_state:
+            return False, "execution authorization requires external state binding"
 
         constraints_sha256 = payload.get("constraints_sha256")
         if not isinstance(constraints_sha256, str) or len(constraints_sha256) != 64:

@@ -107,6 +107,7 @@ class AuthorizationService:
                 authority_multiplier=authority.multiplier if authority else None,
                 effective_authority=effective,
                 execution_graph=(action.metadata or {}).get("execution_graph"),
+                external_state_required=policy.require_external_state_binding,
             )
 
         return {

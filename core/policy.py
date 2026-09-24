@@ -19,6 +19,7 @@ class Policy:
     allowed_purposes: list[str] | None = None
     context_constraints: dict[str, Any] = field(default_factory=dict)
     execution_graph: dict[str, Any] = field(default_factory=dict)
+    require_external_state_binding: bool = False
     allowed_targets: list[str] | None = None
     allowed_networks: list[str] | None = None
     allowed_assets: list[str] | None = None
@@ -36,8 +37,13 @@ class Policy:
         The digest is suitable for binding an authorization receipt to the
         exact policy content that produced the decision.
         """
+        effective_raw = dict(self.raw)
+        if self.require_external_state_binding:
+            effective_raw["require_external_state_binding"] = True
+        else:
+            effective_raw.pop("require_external_state_binding", None)
         canonical = json.dumps(
-            self.raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            effective_raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         ).encode("utf-8")
         return hashlib.sha256(canonical).hexdigest()
 
@@ -52,6 +58,7 @@ class Policy:
             allowed_purposes=raw.get("allowed_purposes"),
             context_constraints=raw.get("context_constraints", {}) or {},
             execution_graph=raw.get("execution_graph", {}) or {},
+            require_external_state_binding=bool(raw.get("require_external_state_binding", False)),
             allowed_targets=raw.get("allowed_targets"),
             allowed_networks=raw.get("allowed_networks"),
             allowed_assets=raw.get("allowed_assets"),
