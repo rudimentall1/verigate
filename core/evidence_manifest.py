@@ -15,6 +15,8 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
+from core.proof_profiles import PROOF_PROFILES, assurance_claims, profile_spec
+
 
 def canonical(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -52,32 +54,8 @@ def graph_root(graph: dict[str, Any]) -> str:
     return merkle_root(leaves)
 
 
-PROOF_PROFILES: dict[str, dict[str, Any]] = {
-    "integrity": {"required_nodes": set(), "required_edges": set()},
-    "authority_lifecycle": {
-        "required_nodes": {
-            "identity", "capability", "action_intent", "decision", "decision_receipt",
-            "policy_version", "execution_authorization", "execution_receipt", "outcome_claim",
-            "outcome_attestation", "attestor_authority", "governance_action", "governance_approval",
-            "authority_event",
-        },
-        "required_edges": {
-            ("identity", "AUTHENTICATES", "action_intent"),
-            ("capability", "AUTHORIZES", "action_intent"),
-            ("decision", "MINTS", "execution_authorization"),
-            ("execution_authorization", "PRODUCES", "execution_receipt"),
-            ("execution_receipt", "OBSERVED_BY", "outcome_claim"),
-            ("outcome_attestation", "ATTESTS", "outcome_claim"),
-            ("attestor_authority", "AUTHORIZES", "outcome_attestation"),
-            ("attestor_authority", "DERIVED_FROM", "governance_action"),
-            ("outcome_claim", "INFORMS", "authority_event"),
-        },
-    },
-}
-
-
 def _validate_profile(payload: dict[str, Any], profile: str) -> tuple[bool, str]:
-    spec = PROOF_PROFILES.get(profile)
+    spec = profile_spec(profile)
     if spec is None:
         return False, f"unsupported proof profile: {profile}"
     node_types = {node["type"] for node in payload.get("nodes", [])}
@@ -342,15 +320,6 @@ def verify_manifest(
             "invalid_evidence": invalid_evidence,
             "root_digest": expected_root,
         }
-    assurance_claims = {
-        "integrity": ["signed_manifest", "graph_integrity"],
-        "authority_lifecycle": [
-            "signed_manifest", "graph_integrity", "verified_signed_artifacts",
-            "identity_bound_authority", "policy_bound_decision",
-            "authorization_bound_execution", "independent_outcome_attestation",
-            "governed_attestor_lineage", "authority_transition_provenance",
-        ],
-    }
     return {
         "valid": True,
         "reason": "valid signed evidence manifest",
@@ -361,6 +330,6 @@ def verify_manifest(
         "invalid_evidence": invalid_evidence,
         "assurance": {
             "profile": proof_profile,
-            "claims": assurance_claims.get(proof_profile, []),
+            "claims": assurance_claims(proof_profile),
         },
     }
