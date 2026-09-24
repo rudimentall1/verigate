@@ -35,6 +35,27 @@ def check_purpose_allowed(intent: ActionIntent, policy: Policy) -> RuleMatch | N
     return None
 
 
+def check_context_constraints(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
+    constraints = policy.context_constraints
+    if not constraints:
+        return None
+    context = intent.declared_context or {}
+    for key, expected in constraints.items():
+        actual = context.get(key)
+        if isinstance(expected, list):
+            if actual not in expected:
+                return RuleMatch(
+                    "context_not_allowed", Severity.BLOCK,
+                    f"context '{key}' value '{actual}' is not allowed by policy",
+                )
+        elif actual != expected:
+            return RuleMatch(
+                "context_not_allowed", Severity.BLOCK,
+                f"context '{key}' does not match policy constraint",
+            )
+    return None
+
+
 def check_target_allowed(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
     blocked = {p.lower() for p in policy.blocked_payees}
     if intent.target.lower() in blocked:
