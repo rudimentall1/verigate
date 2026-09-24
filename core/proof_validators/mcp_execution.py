@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Any
 from core.proof_engine import digest
-from .common import validate_requirements
+from .common import validate_requirements, validate_context_binding
 
 def validate(payload: dict[str, Any], profile: str = "mcp_execution") -> tuple[bool, str]:
     spec, node_types, edges, error = validate_requirements(payload, profile)
@@ -31,6 +31,10 @@ def validate(payload: dict[str, Any], profile: str = "mcp_execution") -> tuple[b
     decision_data = decision["data"] if isinstance(decision["data"], dict) else {"decision": decision["data"]}
     if decision["id"] != intent["id"] or decision_data.get("decision") != "ALLOW":
         return False, "MCP execution proof requires an ALLOW decision bound to the canonical intent"
+
+    context_ok, context_reason = validate_context_binding(intent_data, decision_data)
+    if not context_ok:
+        return False, context_reason
 
     execution_payload = execution["data"].get("payload", {})
     authorized_action = execution_payload.get("action")

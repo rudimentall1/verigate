@@ -7,6 +7,7 @@ import unittest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from core.evidence_manifest import build_manifest, verify_manifest, canonical, graph_root
+from core.proof_validators.common import intent_context_digest
 from core.proof_profiles import PROOF_PROFILES, assurance_claims, profile_spec
 
 
@@ -27,6 +28,11 @@ def _mcp_graph():
         "asset": None,
         "network": None,
         "metadata": {},
+        "purpose": "order execution",
+        "declared_context": {"environment": "production", "order_id": "ORD-1"},
+        "parent_intent_id": None,
+        "requested_capability": "orders.execute",
+        "constraints": {"max_items": 10},
         "timestamp": 1.0,
     }
     receipt = {
@@ -62,7 +68,7 @@ def _mcp_graph():
     }
     nodes = [
         {"type": "action_intent", "id": "intent", "data": action},
-        {"type": "decision", "id": "intent", "data": {"decision": "ALLOW", "intent_id": "intent"}},
+        {"type": "decision", "id": "intent", "data": {"decision": "ALLOW", "intent_id": "intent", "context_sha256": intent_context_digest(action)}},
         {"type": "execution_authorization", "id": "auth", "data": {"payload": {
             "authorization_id": "auth", "intent_id": "intent", "agent_id": "agent",
             "action": action, "action_sha256": _digest(action),

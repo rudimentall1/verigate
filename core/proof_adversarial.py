@@ -50,6 +50,7 @@ def default_mutations(profile: str) -> tuple[ProofMutation, ...]:
             ProofMutation("MCP-AUTH-ACTION-SWAP", "change the action inside the execution authorization", lambda m: _node(m, "execution_authorization")["data"]["payload"]["action"].update(target="tampered.tool")),
             ProofMutation("MCP-CLAIM-RECEIPT-SWAP", "replace the outcome claim's execution receipt digest", lambda m: _node(m, "outcome_claim")["data"].update(execution_receipt_sha256="0" * 64)),
             ProofMutation("MCP-SELF-REPORT", "replace independent attestation with executor self-report", lambda m: (_node(m, "outcome_attestation")["data"]["payload"].update(attestor_type="EXECUTOR_SELF_REPORT"), _node(m, "attestor_authority")["data"].update(attestor_type="EXECUTOR"))),
+            ProofMutation("MCP-CONTEXT-DRIFT", "change declared execution context", lambda m: _node(m, "action_intent")["data"].setdefault("declared_context", {}).update(environment="staging")),
         ])
     elif profile == "authority_lifecycle":
         mutations.extend([

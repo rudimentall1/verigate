@@ -19,6 +19,7 @@ class ProofAdversarialEngineTests(unittest.TestCase):
             "MCP-AUTH-ACTION-SWAP",
             "MCP-CLAIM-RECEIPT-SWAP",
             "MCP-SELF-REPORT",
+            "MCP-CONTEXT-DRIFT",
         })
         assert_all_rejected(results)
 

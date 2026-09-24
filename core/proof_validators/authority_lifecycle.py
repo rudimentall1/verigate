@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Any
 from core.proof_engine import digest
-from .common import validate_requirements
+from .common import validate_requirements, validate_context_binding
 
 def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> tuple[bool, str]:
     spec, node_types, edges, error = validate_requirements(payload, profile)
@@ -49,6 +49,10 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
     receipt_decision = receipt_payload.get("decision", {})
     if decision["id"] != intent["id"] or decision_data.get("decision") != "ALLOW":
         return False, "authority lifecycle proof requires an ALLOW decision bound to the canonical intent"
+
+    context_ok, context_reason = validate_context_binding(intent["data"], decision_data)
+    if not context_ok:
+        return False, context_reason
     if receipt_intent.get("intent_id") != intent["id"] or receipt_decision.get("intent_id") != intent["id"]:
         return False, "decision receipt is not bound to the canonical intent"
     if receipt_decision.get("decision") != decision_data.get("decision"):
