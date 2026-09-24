@@ -204,12 +204,22 @@ def _validate_profile(payload: dict[str, Any], profile: str) -> tuple[bool, str]
     if not governed_actions:
         return False, "attestor authority has no matching governed registration lineage"
     action_ids = {node["id"] for node in governed_actions}
-    if not any(
-        edge.get("relation") == "APPROVES"
+    approval_edges = [
+        edge for edge in edges
+        if edge.get("relation") == "APPROVES"
         and edge.get("to") in {f"governance_action:{action_id}" for action_id in action_ids}
-        for edge in edges
-    ):
+    ]
+    if not approval_edges:
         return False, "governed attestor action has no linked governance approval"
+    nodes_by_ref = {f"{node['type']}:{node['id']}": node for node in payload.get("nodes", [])}
+    for edge in approval_edges:
+        approval = nodes_by_ref.get(edge.get("from"))
+        action = nodes_by_ref.get(edge.get("to"))
+        if approval is None or action is None:
+            return False, "governance approval lineage references missing canonical nodes"
+        approval_payload = approval["data"].get("payload", {})
+        if approval_payload.get("action_digest") != digest(action["data"]):
+            return False, "governance approval is not bound to the approved governance action"
 
     return True, "authority lifecycle proof profile satisfied"
 

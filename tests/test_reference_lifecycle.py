@@ -15,7 +15,7 @@ from core.attestor import AttestorAuthorityService
 from core.engine import GuardrailEngine
 from core.evidence import EvidenceGraph
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
-from core.evidence_manifest import build_manifest, verify_manifest
+from core.evidence_manifest import build_manifest, verify_manifest, canonical, graph_root
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.outcome import OutcomeAttestationService, build_outcome_attestation, build_outcome_claim
 from core.identity import sign_action_intent
@@ -239,6 +239,129 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             self.storage.authority_events(agent_id="reference-agent", capability_id="reference-capability"), []
         )
 
+
+    def _valid_manifest(self):
+        authorization, receipt = self._authorized_execution()
+        observed = MCPToolVerifier().verify_result(
+            authorization,
+            tool_name="orders.create",
+            result={"order_id": "order-1", "status": "created"},
+            evidence_ref="mcp://orders.create/order-1",
+            target_identity="orders-service",
+        )
+        attestor_key = self._attestor()
+        claim = build_outcome_claim(
+            receipt.as_dict(),
+            status="SUCCEEDED",
+            executor_id="executor-reference",
+            evidence_kind=observed.evidence_kind,
+            evidence_ref=observed.evidence_ref,
+            result_sha256=observed.result_sha256,
+        )
+        attestation = build_outcome_attestation(
+            claim,
+            attestor_id="external-reference",
+            attestor_type="EXTERNAL_VERIFIER",
+            private_key=attestor_key,
+        )
+        OutcomeAttestationService(self.storage, self.public_key).verify_and_record(attestation)
+        graph = EvidenceGraph(self.storage, self.public_key).build(
+            authorization["payload"]["authorization_id"]
+        )
+        return build_manifest(graph, self.private_key, proof_profile="authority_lifecycle")
+
+    def _resign_mutated_manifest(self, manifest):
+        payload = manifest["payload"]
+        for node in payload["nodes"]:
+            node["sha256"] = hashlib.sha256(
+                canonical(node["data"])
+            ).hexdigest()
+        payload["root_digest"] = graph_root(payload)
+        manifest["signature"] = base64.b64encode(
+            self.private_key.sign(canonical(payload))
+        ).decode()
+        return manifest
+
+    def test_adversarial_semantic_mutations_are_rejected(self):
+        mutations = []
+
+        def mutate(label, fn):
+            mutations.append((label, fn))
+
+        mutate("wrong intent", lambda p: p.__setitem__("intent_id", "forged-intent"))
+        mutate("wrong authorization", lambda p: p.__setitem__("authorization_id", "forged-auth"))
+
+        def wrong_receipt(p):
+            node = next(n for n in p["nodes"] if n["type"] == "execution_receipt")
+            node["data"]["payload"]["authorization_id"] = "forged-auth"
+        mutate("wrong receipt", wrong_receipt)
+
+        def wrong_claim(p):
+            node = next(n for n in p["nodes"] if n["type"] == "outcome_claim")
+            node["data"]["authorization_id"] = "forged-auth"
+        mutate("wrong claim", wrong_claim)
+
+        def wrong_attestor(p):
+            node = next(n for n in p["nodes"] if n["type"] == "outcome_attestation")
+            node["data"]["payload"]["attestor_id"] = "forged-attestor"
+        mutate("wrong attestor", wrong_attestor)
+
+        def wrong_governance_action(p):
+            node = next(n for n in p["nodes"] if n["type"] == "governance_action")
+            node["data"]["attestor_id"] = "forged-attestor"
+        mutate("wrong governance action", wrong_governance_action)
+
+        def wrong_governance_approval(p):
+            node = next(n for n in p["nodes"] if n["type"] == "governance_approval")
+            node["data"]["payload"]["action_digest"] = "00" * 32
+        mutate("wrong governance approval", wrong_governance_approval)
+
+        def blocked_decision(p):
+            node = next(n for n in p["nodes"] if n["type"] == "decision")
+            node["data"] = "BLOCK"
+        mutate("BLOCK decision", blocked_decision)
+
+        def wrong_capability(p):
+            node = next(n for n in p["nodes"] if n["type"] == "execution_authorization")
+            node["data"]["payload"]["capability_id"] = "forged-capability"
+        mutate("wrong capability", wrong_capability)
+
+        def wrong_identity(p):
+            node = next(n for n in p["nodes"] if n["type"] == "execution_authorization")
+            node["data"]["payload"]["identity_id"] = "forged-identity"
+        mutate("wrong identity", wrong_identity)
+
+        def wrong_authority_event(p):
+            node = next(n for n in p["nodes"] if n["type"] == "authority_event")
+            node["data"]["evidence_ref"] = "forged-claim"
+        mutate("wrong authority event", wrong_authority_event)
+
+        def disconnected_edge(p):
+            edge = next(
+                e for e in p["edges"]
+                if e["relation"] == "AUTHORIZES"
+            )
+            edge["to"] = "action_intent:forged-intent"
+        mutate("disconnected canonical edge", disconnected_edge)
+
+        def mismatched_claim_receipt_digest(p):
+            node = next(n for n in p["nodes"] if n["type"] == "outcome_claim")
+            node["data"]["execution_receipt_sha256"] = "00" * 32
+        mutate("mismatched claim receipt digest", mismatched_claim_receipt_digest)
+
+        def swapped_attestation(p):
+            node = next(n for n in p["nodes"] if n["type"] == "outcome_attestation")
+            node["data"]["payload"]["claim"]["claim_id"] = "forged-claim"
+        mutate("swapped attestation", swapped_attestation)
+
+        valid_manifest = self._valid_manifest()
+        for label, mutation in mutations:
+            with self.subTest(label=label):
+                manifest = json.loads(json.dumps(valid_manifest))
+                mutation(manifest["payload"])
+                self._resign_mutated_manifest(manifest)
+                result = verify_manifest(manifest, manifest["issuer_public_key_b64"])
+                self.assertFalse(result["valid"], label)
 
 if __name__ == "__main__":
     unittest.main()
