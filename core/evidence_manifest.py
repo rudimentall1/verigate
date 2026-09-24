@@ -141,6 +141,13 @@ def verify_manifest(
         key for key, item in verification.items()
         if isinstance(item, dict) and item.get("valid") is False
     ]
+    if invalid_evidence:
+        return {
+            "valid": False,
+            "reason": "evidence verification failed",
+            "invalid_evidence": invalid_evidence,
+            "root_digest": expected_root,
+        }
     return {
         "valid": True,
         "reason": "valid signed evidence manifest",

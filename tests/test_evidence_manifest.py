@@ -59,6 +59,15 @@ class EvidenceManifestTests(unittest.TestCase):
         self.assertFalse(result["valid"])
         self.assertEqual(result["reason"], "invalid manifest signature")
 
+    def test_invalid_evidence_cannot_be_presented_as_valid_proof(self):
+        graph = json.loads(json.dumps(self.graph))
+        graph["verification"]["execution_receipt"] = {"valid": False, "reason": "tampered receipt"}
+        manifest = build_manifest(graph, self.key)
+        result = verify_manifest(manifest)
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["reason"], "evidence verification failed")
+        self.assertEqual(result["invalid_evidence"], ["execution_receipt"])
+
     def test_trusted_issuer_key_is_explicit(self):
         manifest = build_manifest(self.graph, self.key)
         raw = self.key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
