@@ -37,6 +37,8 @@ class EvidenceManifestTests(unittest.TestCase):
         self.assertTrue(result["valid"])
         self.assertEqual(result["node_count"], 2)
         self.assertEqual(result["edge_count"], 1)
+        self.assertEqual(result["assurance"]["profile"], "integrity")
+        self.assertEqual(result["assurance"]["claims"], ["signed_manifest", "graph_integrity"])
 
     def test_node_tamper_fails_before_signature_trust(self):
         manifest = build_manifest(self.graph, self.key)

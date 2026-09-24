@@ -342,6 +342,15 @@ def verify_manifest(
             "invalid_evidence": invalid_evidence,
             "root_digest": expected_root,
         }
+    assurance_claims = {
+        "integrity": ["signed_manifest", "graph_integrity"],
+        "authority_lifecycle": [
+            "signed_manifest", "graph_integrity", "verified_signed_artifacts",
+            "identity_bound_authority", "policy_bound_decision",
+            "authorization_bound_execution", "independent_outcome_attestation",
+            "governed_attestor_lineage", "authority_transition_provenance",
+        ],
+    }
     return {
         "valid": True,
         "reason": "valid signed evidence manifest",
@@ -350,4 +359,8 @@ def verify_manifest(
         "edge_count": len(payload["edges"]),
         "embedded_issuer_trusted": trusted_public_key_b64 is not None,
         "invalid_evidence": invalid_evidence,
+        "assurance": {
+            "profile": proof_profile,
+            "claims": assurance_claims.get(proof_profile, []),
+        },
     }
