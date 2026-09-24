@@ -1,8 +1,9 @@
-﻿{
+{
   "name": "verigate-contract-tooling",
   "private": true,
   "scripts": {
-    "test:atomic": "node scripts/e2e_atomic_state.mjs"
+    "test:atomic": "node scripts/e2e_atomic_state.mjs",
+    "test:atomic:arb": "node scripts/e2e_atomic_state_arbitrum_sepolia.mjs"
   },
   "devDependencies": {
     "ethers": "^6.17.0",
