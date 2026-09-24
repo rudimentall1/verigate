@@ -2,7 +2,7 @@
 from __future__ import annotations
 import hashlib
 import json
-from typing import Any
+from typing import Any, Protocol
 
 def canonical_external_state(action: dict[str, Any]) -> dict[str, Any]:
     metadata = action.get("metadata") if isinstance(action, dict) else None
@@ -44,3 +44,9 @@ def verify_external_state_binding(expected: dict[str, Any], action: dict[str, An
 def external_state_digest_from_observation(observation: dict[str, Any]) -> str:
     data = json.dumps(observation, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(data).hexdigest()
+
+
+class ExternalStateVerifier(Protocol):
+    """Execution-boundary contract for live external state verification."""
+
+    def __call__(self, binding: dict[str, Any], action: dict[str, Any]) -> tuple[bool, str]: ...
