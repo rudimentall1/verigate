@@ -38,6 +38,11 @@ class ActionAuthorizationRequest(BaseModel):
     amount: float | None = Field(None, gt=0)
     asset: str | None = None
     network: str | None = None
+    purpose: str = ""
+    declared_context: dict = Field(default_factory=dict)
+    parent_intent_id: str | None = None
+    requested_capability: str | None = None
+    constraints: dict = Field(default_factory=dict)
     metadata: dict = Field(default_factory=dict)
 
 
