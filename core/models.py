@@ -170,6 +170,8 @@ class Capability:
     delegated_by_identity_id: str | None = None
     delegation_depth: int = 0
     allowed_actions: tuple[str, ...] = ()
+    allowed_purposes: tuple[str, ...] = ()
+    context_constraints: dict[str, Any] = field(default_factory=dict)
     allowed_targets: tuple[str, ...] = ()
     allowed_resources: tuple[str, ...] = ()
     allowed_networks: tuple[str, ...] = ()
@@ -193,6 +195,8 @@ class Capability:
             "delegated_by_identity_id": self.delegated_by_identity_id,
             "delegation_depth": self.delegation_depth,
             "allowed_actions": self.allowed_actions,
+            "allowed_purposes": self.allowed_purposes,
+            "context_constraints": self.context_constraints,
             "allowed_targets": self.allowed_targets,
             "allowed_resources": self.allowed_resources,
             "allowed_networks": self.allowed_networks,
@@ -217,6 +221,15 @@ class Capability:
             return False, "capability expired"
         if self.allowed_actions and action.action_type not in self.allowed_actions:
             return False, "action type outside capability"
+        if self.allowed_purposes and action.purpose.lower() not in {p.lower() for p in self.allowed_purposes}:
+            return False, "purpose outside capability"
+        for key, expected in self.context_constraints.items():
+            actual = (action.declared_context or {}).get(key)
+            if isinstance(expected, (list, tuple, set)):
+                if actual not in expected:
+                    return False, f"context '{key}' outside capability"
+            elif actual != expected:
+                return False, f"context '{key}' outside capability"
         if self.allowed_targets and action.target not in self.allowed_targets:
             return False, "target outside capability"
         if self.allowed_resources and action.resource not in self.allowed_resources:
