@@ -52,9 +52,54 @@ def graph_root(graph: dict[str, Any]) -> str:
     return merkle_root(leaves)
 
 
-def _manifest_payload(graph: dict[str, Any]) -> dict[str, Any]:
+PROOF_PROFILES: dict[str, dict[str, Any]] = {
+    "integrity": {"required_nodes": set(), "required_edges": set()},
+    "authority_lifecycle": {
+        "required_nodes": {
+            "identity", "capability", "action_intent", "decision", "decision_receipt",
+            "policy_version", "execution_authorization", "execution_receipt", "outcome_claim",
+            "outcome_attestation", "attestor_authority", "governance_action", "governance_approval",
+            "authority_event",
+        },
+        "required_edges": {
+            ("identity", "AUTHENTICATES", "action_intent"),
+            ("capability", "AUTHORIZES", "action_intent"),
+            ("decision", "MINTS", "execution_authorization"),
+            ("execution_authorization", "PRODUCES", "execution_receipt"),
+            ("execution_receipt", "OBSERVED_BY", "outcome_claim"),
+            ("outcome_attestation", "ATTESTS", "outcome_claim"),
+            ("attestor_authority", "AUTHORIZES", "outcome_attestation"),
+            ("attestor_authority", "DERIVED_FROM", "governance_action"),
+            ("outcome_claim", "INFORMS", "authority_event"),
+        },
+    },
+}
+
+
+def _validate_profile(payload: dict[str, Any], profile: str) -> tuple[bool, str]:
+    spec = PROOF_PROFILES.get(profile)
+    if spec is None:
+        return False, f"unsupported proof profile: {profile}"
+    node_types = {node["type"] for node in payload.get("nodes", [])}
+    missing_nodes = sorted(spec["required_nodes"] - node_types)
+    if missing_nodes:
+        return False, "proof profile missing required nodes: " + ", ".join(missing_nodes)
+    edge_pairs = {
+        (edge["from"].split(":", 1)[0], edge["relation"], edge["to"].split(":", 1)[0])
+        for edge in payload.get("edges", [])
+    }
+    missing_edges = sorted(spec["required_edges"] - edge_pairs)
+    if missing_edges:
+        return False, "proof profile missing required relations: " + ", ".join(
+            f"{source}->{relation}->{target}" for source, relation, target in missing_edges
+        )
+    return True, "proof profile satisfied"
+
+
+def _manifest_payload(graph: dict[str, Any], proof_profile: str = "integrity") -> dict[str, Any]:
     return {
         "manifest_version": 1,
+        "proof_profile": proof_profile,
         "authorization_id": graph["authorization_id"],
         "intent_id": graph["intent_id"],
         "agent_id": graph["agent_id"],
@@ -67,8 +112,15 @@ def _manifest_payload(graph: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_manifest(graph: dict[str, Any], private_key: Ed25519PrivateKey) -> dict[str, Any]:
-    payload = _manifest_payload(graph)
+def build_manifest(
+    graph: dict[str, Any],
+    private_key: Ed25519PrivateKey,
+    proof_profile: str = "integrity",
+) -> dict[str, Any]:
+    payload = _manifest_payload(graph, proof_profile)
+    profile_ok, profile_reason = _validate_profile(payload, proof_profile)
+    if not profile_ok:
+        raise ValueError(profile_reason)
     signature = base64.b64encode(private_key.sign(canonical(payload))).decode("ascii")
     public_key = private_key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
@@ -118,9 +170,13 @@ def verify_manifest(
         return {"valid": False, "reason": "manifest envelope is incomplete"}
     if payload.get("manifest_version") != 1:
         return {"valid": False, "reason": "unsupported manifest version"}
+    proof_profile = payload.get("proof_profile", "integrity")
     graph_ok, graph_reason = _verify_nodes(payload)
     if not graph_ok:
         return {"valid": False, "reason": graph_reason}
+    profile_ok, profile_reason = _validate_profile(payload, proof_profile)
+    if not profile_ok:
+        return {"valid": False, "reason": profile_reason, "proof_profile": proof_profile}
     expected_root = graph_root(payload)
     if payload.get("root_digest") != expected_root:
         return {"valid": False, "reason": "evidence Merkle root mismatch"}

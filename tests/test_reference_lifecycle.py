@@ -194,7 +194,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertIsNotNone(outcome["authority_event"])
 
         graph = EvidenceGraph(self.storage, self.public_key).build(authorization["payload"]["authorization_id"])
-        manifest = build_manifest(graph, self.private_key)
+        manifest = build_manifest(graph, self.private_key, proof_profile="authority_lifecycle")
         result = verify_manifest(manifest, manifest["issuer_public_key_b64"])
         self.assertTrue(result["valid"])
         types = {node["type"] for node in manifest["payload"]["nodes"]}

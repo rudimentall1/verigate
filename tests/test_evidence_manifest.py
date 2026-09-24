@@ -59,6 +59,19 @@ class EvidenceManifestTests(unittest.TestCase):
         self.assertFalse(result["valid"])
         self.assertEqual(result["reason"], "invalid manifest signature")
 
+    def test_authority_lifecycle_profile_requires_complete_chain(self):
+        with self.assertRaises(ValueError):
+            build_manifest(self.graph, self.key, proof_profile="authority_lifecycle")
+
+    def test_authority_lifecycle_profile_rejects_signed_stripped_graph(self):
+        graph = json.loads(json.dumps(self.graph))
+        graph["manifest_version"] = 1
+        graph["proof_profile"] = "authority_lifecycle"
+        manifest = {"payload": graph, "signature": "", "algorithm": "Ed25519", "issuer_public_key_b64": ""}
+        result = verify_manifest(manifest)
+        self.assertFalse(result["valid"])
+        self.assertIn("proof profile missing required nodes", result["reason"])
+
     def test_invalid_evidence_cannot_be_presented_as_valid_proof(self):
         graph = json.loads(json.dumps(self.graph))
         graph["verification"]["execution_receipt"] = {"valid": False, "reason": "tampered receipt"}
