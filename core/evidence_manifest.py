@@ -1,4 +1,4 @@
-﻿"""Portable, signed Evidence Manifest and offline verification.
+"""Portable, signed Evidence Manifest and offline verification.
 
 The manifest is a deterministic export of the authority lifecycle for one
 consequential action. It is deliberately independent of SQLite and the API so
@@ -72,6 +72,38 @@ def _validate_profile(payload: dict[str, Any], profile: str) -> tuple[bool, str]
         return False, "proof profile missing required relations: " + ", ".join(
             f"{source}->{relation}->{target}" for source, relation, target in missing_edges
         )
+    if profile == "mcp_execution":
+        by_type = {node_type: [n for n in payload.get("nodes", []) if n["type"] == node_type] for node_type in node_types}
+        required = {name: items[0] for name, items in by_type.items() if name in spec["required_nodes"] and len(items) == 1}
+        if len(required) != len(spec["required_nodes"]):
+            return False, "MCP execution profile requires exactly one canonical execution node of each required type"
+        intent = required["action_intent"]
+        execution = required["execution_authorization"]
+        receipt = required["execution_receipt"]
+        claim = required["outcome_claim"]
+        attestation = required["outcome_attestation"]
+        attestor = required["attestor_authority"]
+        action = intent["data"].get("action", {})
+        if action.get("action_type") != "mcp.tool.call":
+            return False, "MCP execution proof requires action_type=mcp.tool.call"
+        target = action.get("target")
+        if not target:
+            return False, "MCP execution proof requires an authorized MCP target"
+        execution_payload = execution["data"].get("payload", {})
+        if execution_payload.get("intent_id") != intent["id"]:
+            return False, "MCP execution authorization is not bound to the canonical intent"
+        receipt_payload = receipt["data"].get("payload", {})
+        if receipt_payload.get("authorization_id") != execution["id"] or receipt_payload.get("action_sha256") != execution_payload.get("action_sha256"):
+            return False, "MCP execution receipt is not bound to the exact authorization"
+        if claim["data"].get("execution_receipt_sha256") != digest(receipt["data"]):
+            return False, "MCP outcome claim is not bound to the exact execution receipt"
+        if claim["data"].get("evidence_kind") != "MCP_RESULT":
+            return False, "MCP execution proof requires MCP_RESULT evidence"
+        if attestation["data"].get("attestor_id") != attestor["id"]:
+            return False, "MCP outcome attestation is not bound to the registered attestor"
+        if not any(edge.get("from") == f"action_intent:{intent['id']}" and edge.get("relation") == "EVALUATED_AS" for edge in edges):
+            return False, "MCP execution proof is missing intent evaluation provenance"
+        return True, "MCP execution proof profile satisfied"
     if profile != "authority_lifecycle":
         return True, "proof profile satisfied"
 
