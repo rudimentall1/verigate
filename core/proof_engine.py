@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -66,7 +68,7 @@ def verify_signed_proof(
         return ProofVerification(False, "issuer public key is not trusted", expected_root)
 
     try:
-        public_key.verify(base64.b64decode(signature, validate=True), _canonical(payload))
+        public_key.verify(base64.b64decode(signature, validate=True), canonical(payload))
     except (InvalidSignature, ValueError, TypeError):
         return ProofVerification(False, "invalid manifest signature", expected_root)
 
@@ -95,6 +97,9 @@ def verify_signed_proof(
     )
 
 
-def _canonical(value: Any) -> bytes:
-    import json
+def canonical(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def digest(value: Any) -> str:
+    return hashlib.sha256(canonical(value)).hexdigest()
