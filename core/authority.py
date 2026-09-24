@@ -38,6 +38,8 @@ def _capability_payload(capability: Capability) -> dict[str, Any]:
         "delegated_by_identity_id": capability.delegated_by_identity_id,
         "delegation_depth": capability.delegation_depth,
         "allowed_actions": capability.allowed_actions,
+        "allowed_purposes": capability.allowed_purposes,
+        "context_constraints": capability.context_constraints,
         "allowed_targets": capability.allowed_targets,
         "allowed_resources": capability.allowed_resources,
         "allowed_networks": capability.allowed_networks,
@@ -133,6 +135,7 @@ def validate_delegation_scope(
 
     for field_name in (
         "allowed_actions",
+        "allowed_purposes",
         "allowed_targets",
         "allowed_resources",
         "allowed_networks",
@@ -143,6 +146,19 @@ def validate_delegation_scope(
             getattr(parent, field_name),
         ):
             return False, f"delegated {field_name} exceeds parent scope"
+
+    for key, parent_expected in parent.context_constraints.items():
+        if key not in child.context_constraints:
+            return False, f"delegated context constraint '{key}' was removed"
+        child_expected = child.context_constraints[key]
+        if isinstance(parent_expected, (list, tuple, set)):
+            if isinstance(child_expected, (list, tuple, set)):
+                if not set(child_expected).issubset(set(parent_expected)):
+                    return False, f"delegated context constraint '{key}' exceeds parent scope"
+            elif child_expected not in parent_expected:
+                return False, f"delegated context constraint '{key}' exceeds parent scope"
+        elif child_expected != parent_expected:
+            return False, f"delegated context constraint '{key}' exceeds parent scope"
 
     if not _limits_subset(child.max_per_action, parent.max_per_action):
         return False, "delegated per-action limits exceed parent authority"

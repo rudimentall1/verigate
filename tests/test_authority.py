@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 
 from core.authority import (
+    validate_delegation_scope,
     AuthorityGraph,
     CapabilityDelegationService,
     sign_delegation,
@@ -186,3 +187,12 @@ class AuthorityGraphTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDelegationConstraintNarrowing(unittest.TestCase):
+    def test_purpose_and_context_must_narrow(self):
+        parent = Capability(capability_id="parent", agent_id="a", identity_id="id", allowed_purposes=("pay", "refund"), context_constraints={"region": ("EU", "UK"), "channel": "mcp"})
+        narrowed = Capability(capability_id="child", agent_id="b", identity_id="child-id", delegated_from="parent", delegated_by_identity_id="id", delegation_depth=1, allowed_purposes=("pay",), context_constraints={"region": ("EU",), "channel": "mcp"})
+        widened = Capability(capability_id="child2", agent_id="b", identity_id="child-id", delegated_from="parent", delegated_by_identity_id="id", delegation_depth=1, allowed_purposes=("pay", "refund", "charge"), context_constraints={"region": ("EU", "US"), "channel": "mcp"})
+        self.assertEqual(validate_delegation_scope(parent, narrowed)[0], True)
+        self.assertEqual(validate_delegation_scope(parent, widened)[0], False)
