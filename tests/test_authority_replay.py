@@ -25,11 +25,14 @@ class AuthorityReplayTest(unittest.TestCase):
         from pathlib import Path
 
         storage = Storage(":memory:")
-        storage.append_authority_ledger({
-            "event_id": "e1", "agent_id": "a", "capability_id": "c",
-            "event_type": "EXECUTION_CONFIRMED",
-        })
+        from core.authority_state import DynamicAuthorityService
+        service = DynamicAuthorityService(storage)
+        service.record_event(
+            agent_id="a", capability_id="c",
+            event_type="EXECUTION_CONFIRMED", evidence_ref="e1",
+        )
         head = storage.authority_ledger_head("a", "c")
+        snapshot = DynamicAuthorityService(storage).snapshot("a", "c")
         storage.append_authority_ledger({
             "event_id": "e2", "agent_id": "a", "capability_id": "c",
             "event_type": "EXECUTION_CONFIRMED",
@@ -47,6 +50,9 @@ class AuthorityReplayTest(unittest.TestCase):
                 "agent_id": "a",
                 "capability_id": "c",
                 "authority_ledger_head_hash": head,
+                "authority_state": snapshot.as_dict(),
+                "authority_state_sha256": snapshot.digest,
+                "authority_multiplier": snapshot.multiplier,
             }}
             with patch("core.authority_replay.verify_execution_authorization", return_value=(True, "valid")):
                 ok, reason, details = replay_authority_decision(storage, auth, public)
