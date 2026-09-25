@@ -71,6 +71,7 @@ class DynamicAuthorityTest(unittest.TestCase):
         )
         self.assertEqual(snapshot.state, AuthorityState.PROBATION)
         self.assertAlmostEqual(snapshot.multiplier, 0.10)
+        self.assertEqual(snapshot.ledger_head_hash, "0" * 64)
         allowed = ActionIntent(**{**self.action.__dict__, "amount": 50.0})
         self.service.assert_action(self.capability, allowed)
         blocked = ActionIntent(**{**self.action.__dict__, "amount": 50.01})

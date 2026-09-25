@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+import time
 from typing import Any
 
 from .evidence import EvidenceGraph
@@ -28,6 +29,10 @@ class EvidenceGraphService:
 
     def snapshot(self, authorization_id: str) -> dict[str, Any]:
         graph = self.graph.build(authorization_id)
+        # A snapshot is a point-in-time observation. Include its capture time so
+        # repeated captures remain distinct immutable history entries even when
+        # the underlying evidence has not changed.
+        graph["snapshot_at"] = time.time()
         digest = graph_sha256(graph)
         snapshot = {
             "snapshot_id": f"egs-{uuid.uuid4().hex}",

@@ -112,6 +112,7 @@ def issue_execution_authorization(
     authority_state: dict[str, Any] | None = None,
     authority_state_sha256: str | None = None,
     authority_multiplier: float | None = None,
+    authority_ledger_head_hash: str | None = None,
     effective_authority: dict[str, Any] | None = None,
     execution_graph: dict[str, Any] | None = None,
     external_state_required: bool = False,
@@ -137,6 +138,7 @@ def issue_execution_authorization(
         "authority_state": authority_state,
         "authority_state_sha256": authority_state_sha256,
         "authority_multiplier": authority_multiplier,
+        "authority_ledger_head_hash": authority_ledger_head_hash,
         "effective_authority": effective_authority,
         "effective_authority_sha256": (
             hashlib.sha256(_canonical(effective_authority)).hexdigest()
@@ -295,6 +297,12 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
             ).hexdigest()
             if expected_authority_sha256 != authority_state_sha256:
                 return False, "execution authority state fingerprint mismatch"
+            ledger_head = payload.get("authority_ledger_head_hash")
+            if ledger_head is not None:
+                if not isinstance(ledger_head, str) or len(ledger_head) != 64 or any(c not in "0123456789abcdef" for c in ledger_head):
+                    return False, "invalid execution authority ledger head fingerprint"
+                if ledger_head != authority_state.get("ledger_head_hash"):
+                    return False, "execution authority ledger head mismatch"
 
         issued_at = payload.get("issued_at")
         expires_at = payload.get("expires_at")
@@ -425,6 +433,7 @@ def execution_receipt_payload(
         "authority_state": auth_payload.get("authority_state"),
         "authority_state_sha256": auth_payload.get("authority_state_sha256"),
         "authority_multiplier": auth_payload.get("authority_multiplier"),
+        "authority_ledger_head_hash": auth_payload.get("authority_ledger_head_hash"),
         "action_sha256": auth_payload["action_sha256"],
         "network": action.get("network"),
         "status": status,
@@ -514,6 +523,10 @@ def verify_execution_receipt(
                 return False, "execution receipt authority fingerprint mismatch"
             if payload.get("authority_multiplier") != auth.get("authority_multiplier"):
                 return False, "execution receipt authority multiplier mismatch"
+            auth_ledger_head = auth.get("authority_ledger_head_hash")
+            receipt_ledger_head = payload.get("authority_ledger_head_hash")
+            if auth_ledger_head is not None and receipt_ledger_head is not None and receipt_ledger_head != auth_ledger_head:
+                return False, "execution receipt authority ledger head mismatch"
         return True, "valid execution receipt"
     except (KeyError, TypeError, ValueError, InvalidSignature):
         return False, "invalid or tampered execution receipt"

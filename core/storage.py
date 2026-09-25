@@ -1109,6 +1109,10 @@ class Storage:
             ).fetchall()
         return [{"sequence": r[0], "event_id": r[1], "prev_event_hash": r[2], "event_hash": r[3], "event": json.loads(r[4]), "created_at": r[5]} for r in rows]
 
+    def authority_ledger_head(self, agent_id: str, capability_id: str) -> str:
+        rows = self.authority_ledger(agent_id, capability_id)
+        return rows[-1]["event_hash"] if rows else "0" * 64
+
     def verify_authority_ledger(self, agent_id: str, capability_id: str) -> tuple[bool, str]:
         rows = self.authority_ledger(agent_id, capability_id)
         previous = "0" * 64

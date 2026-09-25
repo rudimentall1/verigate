@@ -62,6 +62,7 @@ class AuthoritySnapshot:
     multiplier: float
     evaluated_at: float = field(default_factory=time.time)
     reason: str = ""
+    ledger_head_hash: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -74,6 +75,7 @@ class AuthoritySnapshot:
             "multiplier": self.multiplier,
             "evaluated_at": self.evaluated_at,
             "reason": self.reason,
+            "ledger_head_hash": self.ledger_head_hash,
         }
 
     @property
@@ -156,6 +158,7 @@ class DynamicAuthorityService:
             multiplier=self.policy.multiplier(state),
             evaluated_at=now,
             reason=reason,
+            ledger_head_hash=self.storage.authority_ledger_head(agent_id, capability_id),
         )
         self.storage.set_authority_state(
             agent_id,
