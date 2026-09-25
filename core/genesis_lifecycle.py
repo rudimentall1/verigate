@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from core.engine import GuardrailEngine
 from core.evidence import EvidenceGraph
 from core.evidence_manifest import build_manifest, verify_manifest
+from core.proof_engine import digest
 from core.outcome import OutcomeAttestationService
 from core.authority_protocol import LifecycleStage
 from enforcement.router import ExecutionRouter
@@ -24,6 +25,7 @@ class GenesisLifecycleResult:
     execution_receipt: dict[str, Any] | None
     outcome: dict[str, Any] | None
     manifest: dict[str, Any] | None
+    learning: dict[str, Any] | None
     stage: LifecycleStage
 
 class GenesisLifecycle:
@@ -51,6 +53,7 @@ class GenesisLifecycle:
         self._receipt: dict[str, Any] | None = None
         self._outcome: dict[str, Any] | None = None
         self._manifest: dict[str, Any] | None = None
+        self._learning: dict[str, Any] | None = None
 
     @property
     def authorization(self) -> dict[str, Any]:
@@ -119,7 +122,10 @@ class GenesisLifecycle:
     def observe(self, attestation: dict[str, Any]) -> dict[str, Any]:
         if self._receipt is None:
             raise RuntimeError("execution receipt is required before observation")
-        self._outcome = self.outcome_service.verify_and_record(attestation)
+        self._outcome = self.outcome_service.verify_and_record(
+            attestation,
+            record_authority_event=False,
+        )
         self.stage = LifecycleStage.PROVE
         return self._outcome
 
@@ -139,8 +145,63 @@ class GenesisLifecycle:
         if not verification["valid"]:
             raise ValueError(f"Genesis proof verification failed: {verification['reason']}")
         self._manifest = manifest
-        self.stage = LifecycleStage.LEARN
+        self.stage = LifecycleStage.PROVE
         return manifest
+
+    def learn(self) -> dict[str, Any]:
+        """Feed only the proven, independently verified outcome back into authority."""
+        if self._outcome is None:
+            raise RuntimeError("verified outcome is required before learning")
+        if self._manifest is None:
+            raise RuntimeError("Genesis proof is required before learning")
+        if not self._outcome.get("valid"):
+            raise PermissionError("unverified outcome cannot change authority")
+
+        claim = self._outcome["claim"]
+        attestation_type = self._outcome.get("attestation_type")
+        receipt_payload = self.execution_receipt["payload"]
+        capability_id = receipt_payload.get("capability_id")
+        if not capability_id:
+            raise ValueError("execution receipt has no capability binding")
+
+        from core.authority_state import DynamicAuthorityService
+
+        event = None
+        if (
+            claim["status"] in {"SUCCEEDED", "FAILED"}
+            and attestation_type != "EXECUTOR_SELF_REPORT"
+        ):
+            event_type = (
+                "EXECUTION_CONFIRMED"
+                if claim["status"] == "SUCCEEDED"
+                else "EXECUTION_FAILED"
+            )
+            event = DynamicAuthorityService(self.outcome_service.storage).record_event(
+                agent_id=claim["agent_id"],
+                capability_id=capability_id,
+                identity_id=receipt_payload.get("identity_id"),
+                event_type=event_type,
+                evidence_ref=digest(self._manifest),
+                metadata={
+                    "outcome_claim_id": claim["claim_id"],
+                    "outcome_claim_sha256": self._outcome["claim_sha256"],
+                    "outcome_attestation_id": self._outcome["attestation_id"],
+                    "proof_profile": self._manifest["payload"]["proof_profile"],
+                },
+            )
+
+        snapshot = DynamicAuthorityService(
+            self.outcome_service.storage
+        ).snapshot(claim["agent_id"], capability_id)
+        self._learning = {
+            "valid": True,
+            "authority_event": event,
+            "authority_snapshot": snapshot.as_dict(),
+            "authority_snapshot_sha256": snapshot.digest,
+            "proof_manifest_sha256": digest(self._manifest),
+        }
+        self.stage = LifecycleStage.LEARN
+        return self._learning
 
     def result(self) -> GenesisLifecycleResult:
         return GenesisLifecycleResult(
@@ -148,5 +209,6 @@ class GenesisLifecycle:
             execution_receipt=self._receipt,
             outcome=self._outcome,
             manifest=self._manifest,
+            learning=self._learning,
             stage=self.stage,
         )

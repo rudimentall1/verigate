@@ -19,6 +19,7 @@ from core.outcome import (
     build_outcome_claim,
 )
 from core.policy import Policy
+from core.proof_engine import digest
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
@@ -89,9 +90,9 @@ class GenesisLifecycleTest(unittest.TestCase):
             serialization.Encoding.Raw, serialization.PublicFormat.Raw
         )
         outcome_service.register_attestor(
-            attestor_id="executor-1",
+            attestor_id="verifier-1",
             public_key_b64=base64.b64encode(attestor_raw).decode(),
-            attestor_type="EXECUTOR",
+            attestor_type="EXTERNAL_VERIFIER",
         )
         lifecycle = GenesisLifecycle(
             engine,
@@ -135,18 +136,30 @@ class GenesisLifecycleTest(unittest.TestCase):
         )
         attestation = build_outcome_attestation(
             claim,
-            attestor_id="executor-1",
-            attestor_type="EXECUTOR_SELF_REPORT",
+            attestor_id="verifier-1",
+            attestor_type="EXTERNAL_VERIFIER",
             private_key=attestor_key,
         )
         outcome = lifecycle.observe(attestation)
         self.assertTrue(outcome["valid"])
         manifest = lifecycle.prove()
         self.assertTrue(lifecycle.result().manifest is manifest)
-        self.assertEqual(lifecycle.stage.value, "LEARN")
+        self.assertEqual(lifecycle.stage.value, "PROVE")
         self.assertEqual(
             manifest["payload"]["proof_profile"],
             "integrity",
+        )
+        learning = lifecycle.learn()
+        self.assertTrue(learning["valid"])
+        self.assertIsNotNone(learning["authority_event"])
+        self.assertEqual(
+            learning["proof_manifest_sha256"],
+            digest(manifest),
+        )
+        self.assertEqual(lifecycle.stage.value, "LEARN")
+        self.assertEqual(
+            lifecycle.result().learning["authority_snapshot"]["agent_id"],
+            "genesis-agent",
         )
         types = {node["type"] for node in manifest["payload"]["nodes"]}
         self.assertIn("execution_authorization", types)

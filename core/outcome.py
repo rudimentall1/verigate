@@ -166,7 +166,12 @@ class OutcomeAttestationService:
         self.storage.register_outcome_attestor(item)
         return item
 
-    def verify_and_record(self, attestation: dict[str, Any]) -> dict[str, Any]:
+    def verify_and_record(
+        self,
+        attestation: dict[str, Any],
+        *,
+        record_authority_event: bool = True,
+    ) -> dict[str, Any]:
         payload = attestation["payload"]
         claim = payload["claim"]
         attestor_id = payload["attestor_id"]
@@ -210,7 +215,8 @@ class OutcomeAttestationService:
 
         authority_event = None
         if (
-            claim["status"] in {"SUCCEEDED", "FAILED"}
+            record_authority_event
+            and claim["status"] in {"SUCCEEDED", "FAILED"}
             and payload["attestor_type"] != "EXECUTOR_SELF_REPORT"
         ):
             receipt = self.storage.execution_receipt_by_authorization(
@@ -239,6 +245,7 @@ class OutcomeAttestationService:
             "claim": claim,
             "claim_sha256": digest(claim),
             "attestation_id": payload["attestation_id"],
+            "attestation_type": payload["attestor_type"],
             "attestation_sha256": digest(attestation),
             "authority_event": authority_event,
             "claim_verification": claim_ok,
