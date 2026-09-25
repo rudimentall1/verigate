@@ -164,8 +164,7 @@ class GenesisLifecycle:
         if not capability_id:
             raise ValueError("execution receipt has no capability binding")
 
-        from core.authority_state import DynamicAuthorityService
-
+        authority_service = self.engine.authority_service
         event = None
         if (
             claim["status"] in {"SUCCEEDED", "FAILED"}
@@ -176,7 +175,7 @@ class GenesisLifecycle:
                 if claim["status"] == "SUCCEEDED"
                 else "EXECUTION_FAILED"
             )
-            event = DynamicAuthorityService(self.outcome_service.storage).record_event(
+            event = authority_service.record_event(
                 agent_id=claim["agent_id"],
                 capability_id=capability_id,
                 identity_id=receipt_payload.get("identity_id"),
@@ -190,9 +189,9 @@ class GenesisLifecycle:
                 },
             )
 
-        snapshot = DynamicAuthorityService(
-            self.outcome_service.storage
-        ).snapshot(claim["agent_id"], capability_id)
+        snapshot = authority_service.snapshot(
+            claim["agent_id"], capability_id
+        )
         self._learning = {
             "valid": True,
             "authority_event": event,

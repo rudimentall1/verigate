@@ -19,6 +19,7 @@ from core.outcome import (
     build_outcome_claim,
 )
 from core.policy import Policy
+from core.authority_state import AuthorityPolicy, AuthorityState, DynamicAuthorityService
 from core.proof_engine import digest
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
@@ -58,18 +59,30 @@ class GenesisLifecycleTest(unittest.TestCase):
             identity_id=identity_id,
             allowed_actions=("mcp.tool.call",),
             allowed_targets=("orders.create",),
+            allowed_assets=("USDC",),
+            max_per_action={"USDC": 100.0},
         )
         self.storage.register_capability(capability)
         policy = Policy(raw={
             "allowed_action_types": ["mcp.tool.call"],
             "allowed_targets": ["orders.create"],
         })
-        engine = GuardrailEngine(policy, self.storage)
+        authority_service = DynamicAuthorityService(
+            self.storage,
+            AuthorityPolicy(probation_successes=1),
+        )
+        engine = GuardrailEngine(
+            policy,
+            self.storage,
+            authority_service=authority_service,
+        )
 
         action = ActionIntent(
             agent_id="genesis-agent",
             action_type="mcp.tool.call",
             target="orders.create",
+            asset="USDC",
+            amount=5.0,
             metadata={"arguments": {"sku": "VERIGATE", "quantity": 1}},
         )
         adapter = ToolExecutionAdapter(
@@ -160,6 +173,42 @@ class GenesisLifecycleTest(unittest.TestCase):
         self.assertEqual(
             lifecycle.result().learning["authority_snapshot"]["agent_id"],
             "genesis-agent",
+        )
+
+        learned_snapshot = lifecycle.result().learning["authority_snapshot"]
+        self.assertEqual(learned_snapshot["state"], AuthorityState.STANDARD.value)
+        self.assertEqual(learned_snapshot["multiplier"], 0.50)
+        self.assertLessEqual(learned_snapshot["multiplier"], 1.0)
+        self.assertEqual(capability.digest, self.storage.capability(capability.capability_id).digest)
+
+        next_action = ActionIntent(
+            agent_id="genesis-agent",
+            action_type="mcp.tool.call",
+            target="orders.create",
+            asset="USDC",
+            amount=20.0,
+            metadata={"arguments": {"sku": "VERIGATE-NEXT", "quantity": 1}},
+        )
+        next_artifacts = engine.authorize_action(
+            next_action,
+            capability.capability_id,
+            identity_id,
+            sign_action_intent(next_action, identity_id, agent_key),
+            self.private,
+        )
+        next_authorization = next_artifacts["execution_authorization"]
+        self.assertIsNotNone(next_authorization)
+        self.assertEqual(
+            next_authorization["payload"]["authority_state"]["state"],
+            AuthorityState.STANDARD.value,
+        )
+        self.assertEqual(
+            next_authorization["payload"]["authority_multiplier"],
+            0.50,
+        )
+        self.assertEqual(
+            next_authorization["payload"]["capability_sha256"],
+            capability.digest,
         )
         types = {node["type"] for node in manifest["payload"]["nodes"]}
         self.assertIn("execution_authorization", types)

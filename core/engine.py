@@ -31,11 +31,13 @@ class GuardrailEngine:
         policy_version_number: int | None = None,
         policy_parent_sha256: str | None = None,
         require_governed_policy: bool = False,
+        authority_service: DynamicAuthorityService | None = None,
     ):
         self.policy = policy
         self.storage = storage
         self.policy_source_ref = policy_source_ref
         self.require_governed_policy = require_governed_policy
+        self.authority_service = authority_service or DynamicAuthorityService(storage)
         self.policy_version_number = (
             policy_version_number
             if policy_version_number is not None
@@ -316,7 +318,7 @@ class GuardrailEngine:
                 action,
                 identity_id=identity_id,
             )
-            authority = DynamicAuthorityService(self.storage).assert_action(
+            authority = self.authority_service.assert_action(
                 capability,
                 action,
             )
