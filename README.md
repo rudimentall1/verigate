@@ -207,6 +207,7 @@ process.
 ```
 core/
     models.py       PaymentIntent, ActionIntent, AgentIdentity, Capability, AuthorityEdge
+    authority_protocol.py Canonical Genesis 2.0 Authority / lifecycle primitives
     identity.py     Cryptographic identity registry + agent-signed intent verification
     authorization.py Protocol-agnostic receipt + execution-capability minting
     capabilities.py Capability registry + effective authority + revocation
