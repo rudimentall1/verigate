@@ -304,6 +304,18 @@ CREATE TABLE IF NOT EXISTS outcome_attestations (
     created_at REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS evidence_graph_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    authorization_id TEXT NOT NULL,
+    graph_sha256 TEXT NOT NULL UNIQUE,
+    graph_version INTEGER NOT NULL,
+    graph_json TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_evidence_graph_snapshots_authorization
+    ON evidence_graph_snapshots(authorization_id, created_at);
+
 CREATE INDEX IF NOT EXISTS idx_outcome_attestations_claim
     ON outcome_attestations(claim_id, created_at);
 """
@@ -1684,6 +1696,68 @@ class Storage:
                 (claim_id,),
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
+
+    def record_evidence_graph_snapshot(self, snapshot: dict) -> None:
+        payload = snapshot["graph"]
+        with self._lock:
+            try:
+                self._conn.execute(
+                    "INSERT INTO evidence_graph_snapshots "
+                    "(snapshot_id, authorization_id, graph_sha256, graph_version, graph_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        snapshot["snapshot_id"],
+                        snapshot["authorization_id"],
+                        snapshot["graph_sha256"],
+                        int(payload.get("graph_version", 1)),
+                        json.dumps(payload, sort_keys=True, separators=(",", ":")),
+                        time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("evidence graph snapshot already exists") from exc
+
+    def evidence_graph_snapshot(self, snapshot_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT snapshot_id, authorization_id, graph_sha256, graph_version, graph_json, created_at "
+                "FROM evidence_graph_snapshots WHERE snapshot_id = ?",
+                (snapshot_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "snapshot_id": row[0],
+            "authorization_id": row[1],
+            "graph_sha256": row[2],
+            "graph_version": row[3],
+            "graph": json.loads(row[4]),
+            "created_at": row[5],
+        }
+
+    def evidence_graph_snapshots(self, authorization_id: str, limit: int = 50) -> list[dict]:
+        if limit < 1:
+            return []
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT snapshot_id, authorization_id, graph_sha256, graph_version, graph_json, created_at "
+                "FROM evidence_graph_snapshots WHERE authorization_id = ? "
+                "ORDER BY created_at DESC LIMIT ?",
+                (authorization_id, limit),
+            ).fetchall()
+        return [
+            {
+                "snapshot_id": row[0],
+                "authorization_id": row[1],
+                "graph_sha256": row[2],
+                "graph_version": row[3],
+                "graph": json.loads(row[4]),
+                "created_at": row[5],
+            }
+            for row in rows
+        ]
 
     def close(self) -> None:
         with self._lock:

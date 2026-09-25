@@ -49,6 +49,7 @@ from core.authority import AuthorityGraph
 from core.authority_state import DynamicAuthorityService
 from core.engine import GuardrailEngine
 from core.evidence import EvidenceGraph
+from core.evidence_service import EvidenceGraphService
 from core.evidence_manifest import build_manifest, verify_manifest
 from core.outcome import OutcomeAttestationService
 from core.governance import (
@@ -518,6 +519,23 @@ def execution_networks() -> list[dict]:
     return NetworkRegistry().as_dict()
 
 
+@app.get("/v1/authority/graph/{node_type}/{node_id}")
+def authority_graph_node(node_type: str, node_id: str, direction: str = "both") -> dict:
+    """Query durable authority provenance around one graph node."""
+    assert _storage is not None
+    if direction not in {"in", "out", "both"}:
+        raise HTTPException(status_code=400, detail="direction must be in, out, or both")
+    graph = AuthorityGraph(_storage)
+    incoming = graph.incoming(node_type, node_id) if direction in {"in", "both"} else []
+    outgoing = graph.outgoing(node_type, node_id) if direction in {"out", "both"} else []
+    return {
+        "node": {"type": node_type, "id": node_id},
+        "direction": direction,
+        "incoming": incoming,
+        "outgoing": outgoing,
+    }
+
+
 @app.get("/v1/authority/capabilities/{capability_id}")
 def authority_capability(capability_id: str) -> dict:
     """Explain the authority provenance of one capability."""
@@ -772,6 +790,40 @@ def evidence_manifest(authorization_id: str) -> dict:
 def verify_evidence_manifest(manifest: dict, trusted_issuer_public_key_b64: str | None = None) -> dict:
     """Verify a portable evidence package without reading Verigate storage."""
     return verify_manifest(manifest, trusted_issuer_public_key_b64)
+
+
+@app.post("/v1/evidence/graph/{authorization_id}/snapshot")
+def snapshot_evidence_graph(authorization_id: str) -> dict:
+    """Persist an immutable, content-addressed evidence graph snapshot."""
+    assert _storage is not None
+    try:
+        graph = EvidenceGraph(
+            _storage,
+            load_public_key(PUBLIC_KEY_PATH),
+            load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
+        )
+        return EvidenceGraphService(_storage, graph).snapshot(authorization_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/v1/evidence/graph/{authorization_id}/snapshots")
+def evidence_graph_snapshots(authorization_id: str, limit: int = 50) -> dict:
+    assert _storage is not None
+    return {
+        "authorization_id": authorization_id,
+        "snapshots": _storage.evidence_graph_snapshots(authorization_id, limit=limit),
+    }
+
+
+@app.get("/v1/evidence/graph/snapshot/{snapshot_id}")
+def evidence_graph_snapshot(snapshot_id: str) -> dict:
+    assert _storage is not None
+    snapshot = _storage.evidence_graph_snapshot(snapshot_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="evidence graph snapshot not found")
+    valid, reason = EvidenceGraphService.verify_snapshot(snapshot)
+    return {**snapshot, "verification": {"valid": valid, "reason": reason}}
 
 
 @app.get("/v1/evidence/authorization/{authorization_id}")
