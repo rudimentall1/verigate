@@ -24,17 +24,27 @@ def replay_authority_decision(storage, authorization: dict[str, Any], public_key
     if not valid_ledger:
         return False, reason, {"ledger_valid": False}
     rows = storage.authority_ledger(agent_id, capability_id)
-    actual_head = rows[-1]["event_hash"] if rows else "0" * 64
-    if actual_head != expected_head:
-        return False, "historical authority ledger head mismatch", {
-            "ledger_valid": True, "expected_head": expected_head, "actual_head": actual_head,
-        }
+    committed = []
+    if expected_head != "0" * 64:
+        for row in rows:
+            committed.append(row)
+            if row["event_hash"] == expected_head:
+                break
+        if not committed or committed[-1]["event_hash"] != expected_head:
+            return False, "historical authority ledger head not found", {
+                "ledger_valid": True, "expected_head": expected_head,
+                "actual_head": rows[-1]["event_hash"] if rows else "0" * 64,
+            }
     auth_valid, auth_reason = verify_execution_authorization(authorization, public_key)
     if not auth_valid:
         return False, auth_reason, {"ledger_valid": True, "head_match": True}
     return True, "historical authority decision verified", {
-        "ledger_valid": True, "head_match": True, "ledger_sequence": len(rows),
+        "ledger_valid": True,
+        "head_match": True,
+        "ledger_sequence": len(committed),
+        "live_ledger_sequence": len(rows),
         "authority_state": payload.get("authority_state"),
         "authority_multiplier": payload.get("authority_multiplier"),
-        "ledger_head_hash": actual_head,
+        "ledger_head_hash": expected_head,
+        "historical_events": [row["event"] for row in committed],
     }
