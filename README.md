@@ -208,6 +208,8 @@ process.
 core/
     models.py       PaymentIntent, ActionIntent, AgentIdentity, Capability, AuthorityEdge
     authority_protocol.py Canonical Genesis 2.0 Authority / lifecycle primitives
+    intent_graph.py Intent Graph for consequential plans and dependencies
+    authority_intent_graph.py Authority-aware plan assessment; eligibility is not authorization
     identity.py     Cryptographic identity registry + agent-signed intent verification
     authorization.py Protocol-agnostic receipt + execution-capability minting
     capabilities.py Capability registry + effective authority + revocation
