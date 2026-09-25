@@ -98,8 +98,8 @@ class IntentGraph:
 
     def dependencies_of(self, node_id: str) -> tuple[str, ...]:
         return tuple(
-            e.target_id for e in self.edges
-            if e.source_id == node_id and e.relation == IntentRelation.DEPENDS_ON
+            e.source_id for e in self.edges
+            if e.target_id == node_id and e.relation == IntentRelation.DEPENDS_ON
         )
 
     def validate(self) -> tuple[bool, tuple[str, ...]]:
