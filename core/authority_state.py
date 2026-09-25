@@ -213,7 +213,8 @@ class DynamicAuthorityService:
             "occurred_at": time.time() if occurred_at is None else occurred_at,
         }
         self.storage.record_authority_event(event)
-        return event
+        ledger = self.storage.append_authority_ledger(event)
+        return {**event, "ledger": ledger}
 
     def explain(self, agent_id: str, capability_id: str) -> dict[str, Any]:
         snapshot = self.snapshot(agent_id, capability_id)
@@ -231,6 +232,7 @@ class DynamicAuthorityService:
                     ),
                 ),
             ),
+            "authority_ledger": self.storage.authority_ledger(agent_id, capability_id),
             "governance_reset": self.storage.latest_authority_reset(
                 agent_id,
                 capability_id,

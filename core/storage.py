@@ -170,6 +170,22 @@ CREATE TABLE IF NOT EXISTS authority_events (
 CREATE INDEX IF NOT EXISTS idx_authority_events_scope_time
     ON authority_events(agent_id, capability_id, occurred_at);
 
+CREATE TABLE IF NOT EXISTS authority_ledger (
+    ledger_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL,
+    capability_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    event_id TEXT NOT NULL UNIQUE,
+    prev_event_hash TEXT NOT NULL,
+    event_hash TEXT NOT NULL UNIQUE,
+    event_json TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    UNIQUE(agent_id, capability_id, sequence)
+);
+
+CREATE INDEX IF NOT EXISTS idx_authority_ledger_scope
+    ON authority_ledger(agent_id, capability_id, sequence);
+
 CREATE TABLE IF NOT EXISTS authority_states (
     agent_id TEXT NOT NULL,
     capability_id TEXT NOT NULL,
@@ -1060,6 +1076,51 @@ class Storage:
                 ).fetchone()
                 if existing is None:
                     raise ValueError("authority evidence reference already exists")
+
+    def append_authority_ledger(self, event: dict) -> dict:
+        """Append an immutable hash-chained authority event."""
+        canonical = json.dumps(event, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        event_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        with self._lock:
+            existing = self._conn.execute(
+                "SELECT sequence, prev_event_hash, event_hash, event_json, created_at "
+                "FROM authority_ledger WHERE event_id = ?", (event["event_id"],)
+            ).fetchone()
+            if existing is not None:
+                return {"sequence": existing[0], "prev_event_hash": existing[1], "event_hash": existing[2], "event": json.loads(existing[3]), "created_at": existing[4]}
+            row = self._conn.execute(
+                "SELECT sequence, event_hash FROM authority_ledger WHERE agent_id = ? AND capability_id = ? ORDER BY sequence DESC LIMIT 1",
+                (event["agent_id"], event["capability_id"]),
+            ).fetchone()
+            sequence = 1 if row is None else int(row[0]) + 1
+            prev = "0" * 64 if row is None else row[1]
+            self._conn.execute(
+                "INSERT INTO authority_ledger (agent_id, capability_id, sequence, event_id, prev_event_hash, event_hash, event_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (event["agent_id"], event["capability_id"], sequence, event["event_id"], prev, event_hash, canonical, time.time()),
+            )
+            self._conn.commit()
+            return {"sequence": sequence, "prev_event_hash": prev, "event_hash": event_hash, "event": event}
+
+    def authority_ledger(self, agent_id: str, capability_id: str) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT sequence, event_id, prev_event_hash, event_hash, event_json, created_at FROM authority_ledger WHERE agent_id = ? AND capability_id = ? ORDER BY sequence ASC",
+                (agent_id, capability_id),
+            ).fetchall()
+        return [{"sequence": r[0], "event_id": r[1], "prev_event_hash": r[2], "event_hash": r[3], "event": json.loads(r[4]), "created_at": r[5]} for r in rows]
+
+    def verify_authority_ledger(self, agent_id: str, capability_id: str) -> tuple[bool, str]:
+        rows = self.authority_ledger(agent_id, capability_id)
+        previous = "0" * 64
+        for expected_sequence, row in enumerate(rows, 1):
+            if row["sequence"] != expected_sequence or row["prev_event_hash"] != previous:
+                return False, "authority ledger chain mismatch"
+            canonical = json.dumps(row["event"], sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+            actual = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+            if actual != row["event_hash"]:
+                return False, "authority ledger event digest mismatch"
+            previous = actual
+        return True, "valid"
 
     def authority_events(
         self,
