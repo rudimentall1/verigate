@@ -13,6 +13,7 @@ from .authority_state import AuthoritySnapshot
 from .effective_authority import effective_authority
 from .policy import Policy
 from .external_state import external_state_requirement_for_action
+from .authority_intent_graph import IntentAuthorityAssessment, PlanAuthorityStatus
 from attest.receipt import issue_execution_authorization, sign_receipt
 
 
@@ -59,11 +60,20 @@ class AuthorizationService:
         authority: AuthoritySnapshot | None = None,
         policy: Policy | None = None,
         signed_policy: dict[str, Any] | None = None,
+        authority_assessment: IntentAuthorityAssessment | None = None,
     ) -> dict[str, Any]:
         if action.intent_id != decision.intent_id or action.agent_id != decision.agent_id:
             raise ValueError("action and decision identities do not match")
         if decision.context_digest and decision.context_digest != action.context_digest:
             raise ValueError("action context does not match the authorized decision")
+
+        if authority_assessment is not None:
+            if authority_assessment.status != PlanAuthorityStatus.ELIGIBLE:
+                raise PermissionError("authority assessment is not execution-eligible")
+            if authority_assessment.is_execution_authorization:
+                raise ValueError("authority assessment cannot itself be execution authorization")
+            if authority_assessment.intent_id != action.intent_id or authority_assessment.agent_id != action.agent_id:
+                raise ValueError("authority assessment does not match action")
 
         # A capability is the authority source for the exact action. Keep the
         # optional parameter during migration so existing integrations remain
@@ -93,6 +103,13 @@ class AuthorizationService:
                     "executable authorization requires capability, dynamic authority, and policy binding"
                 )
             effective = effective_authority(action, capability, policy, authority)
+            execution_graph = dict((action.metadata or {}).get("execution_graph") or {})
+            if authority_assessment is not None:
+                execution_graph.update({
+                    "intent_graph_digest": authority_assessment.graph_digest,
+                    "intent_graph_node_id": authority_assessment.node_id,
+                    "authority_assessment_digest": authority_assessment.digest,
+                })
             execution = issue_execution_authorization(
                 receipt,
                 private_key,
@@ -108,7 +125,7 @@ class AuthorizationService:
                 authority_multiplier=authority.multiplier if authority else None,
                 authority_ledger_head_hash=authority.ledger_head_hash if authority else None,
                 effective_authority=effective,
-                execution_graph=(action.metadata or {}).get("execution_graph"),
+                execution_graph=execution_graph,
                 external_state_required=(policy.require_external_state_binding or external_state_requirement_for_action(policy.external_state_requirements, action.as_dict()) is not None),
                 external_state_requirement=external_state_requirement_for_action(policy.external_state_requirements, action.as_dict()),
             )
