@@ -326,6 +326,8 @@ class ExecutionRouter:
             "authority_state": current.get("authority_state"),
             "authority_state_sha256": current.get("authority_state_sha256"),
             "authority_multiplier": current.get("authority_multiplier"),
+            "genesis_authority": current.get("genesis_authority"),
+            "genesis_authority_sha256": current.get("genesis_authority_sha256"),
             "action": {"network": current.get("network")},
         }}
         updated = sign_execution_receipt(auth, status=state, transaction_ref=transaction_ref, executor=executor, private_key=self.private_key, error=confirmation.get("error"), receipt_id=current["receipt_id"], previous_receipt_sha256=self._receipt_digest(receipt), confirmation_ref=confirmation.get("block_ref") or confirmation.get("slot"), confirmation_data=confirmation)

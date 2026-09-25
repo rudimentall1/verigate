@@ -113,6 +113,14 @@ class GenesisLifecycleTest(unittest.TestCase):
             lambda _action: {"transaction_hash": "mcp-effect-1"},
             executor="executor-1",
         )
+        self.assertEqual(
+            receipt["payload"]["genesis_authority"],
+            lifecycle.authorization["execution_authorization"]["payload"]["genesis_authority"],
+        )
+        self.assertEqual(
+            receipt["payload"]["genesis_authority_sha256"],
+            lifecycle.authorization["execution_authorization"]["payload"]["genesis_authority_sha256"],
+        )
         lifecycle.confirm({
             "state": "CONFIRMED",
             "transaction_ref": "mcp-effect-1",

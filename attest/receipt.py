@@ -440,6 +440,8 @@ def execution_receipt_payload(
         "authority_state_sha256": auth_payload.get("authority_state_sha256"),
         "authority_multiplier": auth_payload.get("authority_multiplier"),
         "authority_ledger_head_hash": auth_payload.get("authority_ledger_head_hash"),
+        "genesis_authority": auth_payload.get("genesis_authority"),
+        "genesis_authority_sha256": auth_payload.get("genesis_authority_sha256"),
         "action_sha256": auth_payload["action_sha256"],
         "network": action.get("network"),
         "status": status,
@@ -533,6 +535,18 @@ def verify_execution_receipt(
             receipt_ledger_head = payload.get("authority_ledger_head_hash")
             if auth_ledger_head is not None and receipt_ledger_head is not None and receipt_ledger_head != auth_ledger_head:
                 return False, "execution receipt authority ledger head mismatch"
+            if payload.get("genesis_authority") != auth.get("genesis_authority"):
+                return False, "execution receipt Genesis authority mismatch"
+            if payload.get("genesis_authority_sha256") != auth.get("genesis_authority_sha256"):
+                return False, "execution receipt Genesis authority fingerprint mismatch"
+            genesis = payload.get("genesis_authority")
+            genesis_sha256 = payload.get("genesis_authority_sha256")
+            if genesis is not None:
+                if not isinstance(genesis, dict) or not isinstance(genesis_sha256, str):
+                    return False, "invalid execution receipt Genesis authority binding"
+                expected_genesis_sha256 = hashlib.sha256(_canonical(genesis)).hexdigest()
+                if genesis_sha256 != expected_genesis_sha256:
+                    return False, "execution receipt Genesis authority fingerprint mismatch"
         return True, "valid execution receipt"
     except (KeyError, TypeError, ValueError, InvalidSignature):
         return False, "invalid or tampered execution receipt"
