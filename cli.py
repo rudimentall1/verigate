@@ -16,6 +16,7 @@ from core.engine import GuardrailEngine
 from core.models import PaymentIntent
 from core.policy import Policy
 from core.storage import Storage
+from core.offline_verifier import verify_proof
 
 DEFAULT_POLICY = "policies/default.yaml"
 DEFAULT_DB = "data/verigate.db"
@@ -59,9 +60,18 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
+    document = json.loads(Path(args.attestation_file).read_text(encoding="utf-8"))
+    if isinstance(document, dict) and "payload" in document and "issuer_public_key_b64" in document:
+        trusted = None
+        if args.public_key and Path(args.public_key).exists():
+            raw = Path(args.public_key).read_bytes()
+            import base64
+            trusted = base64.b64encode(raw).decode("ascii")
+        result = verify_proof(document, trusted_public_key_b64=trusted)
+        print(json.dumps(result, indent=2))
+        return 0 if result["valid"] else 1
     pub = load_public_key(args.public_key)
-    attestation = json.loads(Path(args.attestation_file).read_text())
-    ok, reason = verify_attestation(attestation, pub)
+    ok, reason = verify_attestation(document, pub)
     print(json.dumps({"valid": ok, "reason": reason}, indent=2))
     return 0 if ok else 1
 
@@ -96,8 +106,8 @@ def build_parser() -> argparse.ArgumentParser:
     ck.add_argument("--private-key", default=DEFAULT_PRIV_KEY)
     ck.set_defaults(func=cmd_check)
 
-    vf = sub.add_parser("verify", help="independently verify a signed attestation")
-    vf.add_argument("attestation_file", help="path to a JSON file produced by 'check --sign'")
+    vf = sub.add_parser("verify", help="independently verify a signed attestation or portable evidence proof")
+    vf.add_argument("attestation_file", help="path to a signed attestation or portable evidence manifest JSON")
     vf.add_argument("--public-key", default=DEFAULT_PUB_KEY)
     vf.set_defaults(func=cmd_verify)
 
@@ -118,3 +128,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
