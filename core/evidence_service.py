@@ -29,6 +29,18 @@ class EvidenceGraphService:
 
     def snapshot(self, authorization_id: str) -> dict[str, Any]:
         graph = self.graph.build(authorization_id)
+        artifacts = self.storage.authorization_by_id(authorization_id)
+        authorization = artifacts.get("execution_authorization") if artifacts else None
+        if authorization:
+            from core.authority_replay import replay_authority_decision
+            replay_ok, replay_reason, replay = replay_authority_decision(
+                self.storage, authorization, self.graph.public_key
+            )
+            graph["historical_authority"] = {
+                "valid": replay_ok,
+                "reason": replay_reason,
+                "details": replay,
+            }
         # A snapshot is a point-in-time observation. Include its capture time so
         # repeated captures remain distinct immutable history entries even when
         # the underlying evidence has not changed.

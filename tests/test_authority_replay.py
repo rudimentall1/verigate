@@ -12,6 +12,12 @@ class AuthorityReplayTest(unittest.TestCase):
         storage.append_authority_ledger(event)
         self.assertTrue(storage.verify_authority_ledger("a", "c")[0])
 
+    def test_historical_head_mismatch_is_rejected(self):
+        from core.storage import Storage
+        storage = Storage(":memory:")
+        storage.append_authority_ledger({"event_id": "e1", "agent_id": "a", "capability_id": "c", "event_type": "EXECUTION_CONFIRMED"})
+        self.assertNotEqual(storage.authority_ledger_head("a", "c"), "1" * 64)
+
     def test_ledger_tamper_is_rejected(self):
         from core.storage import Storage
         storage = Storage(":memory:")

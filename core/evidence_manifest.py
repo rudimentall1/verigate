@@ -62,6 +62,7 @@ def _manifest_payload(graph: dict[str, Any], proof_profile: str = "integrity") -
         "verification": graph.get("verification", {}),
         "audit": graph.get("audit", {}),
         "root_digest": graph_root(graph),
+        "historical_authority": graph.get("historical_authority", {}),
     }
 
 
