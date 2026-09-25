@@ -199,6 +199,57 @@ external_state_requirements:
         self.assertIsNotNone(storage.execution_receipt_by_authorization(auth["payload"]["authorization_id"]))
         storage.close()
 
+    def test_stale_authorization_is_blocked_after_external_state_drift(self):
+        from enforcement.router import ExecutionRouter
+        from enforcement.networks import NetworkRegistry
+        from core.external_state import ExternalStateVerifierRegistry
+        import hashlib, json
+
+        storage = Storage(self.db)
+        policy_path = Path(self.tmpdir.name) / "stale-state-policy.yaml"
+        policy_path.write_text("""allowed_networks: [arbitrum-sepolia]
+allowed_assets: [USDC]
+external_state_requirements:
+  - action_type: payment
+    target: merchant
+    kind: evm.state
+""", encoding="utf-8")
+        engine = GuardrailEngine(Policy.load(policy_path), storage)
+        guard = "0x" + "11" * 20
+        oracle = "0x" + "22" * 20
+        reference = "0x" + "33" * 32
+        expected = "0x" + "44" * 32
+        data = "0x1234"
+        observation = {"kind":"evm.state","chain_id":421614,"address":oracle.lower(),"block_tag":"latest","code":"0x6000","storage":{"0x"+"00"*32:"0x"+"44"*32}}
+        state_digest = hashlib.sha256(json.dumps(observation, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+        state = {"kind":"evm.state","reference":"oracle:live","digest":state_digest,"chain_id":421614,"address":oracle,"block_tag":"latest","storage_slots":["0x"+"00"*32],"atomic_guard":{"address":guard,"oracle":oracle,"reference":reference,"expected":expected,"data_sha256":hashlib.sha256(data.encode()).hexdigest()}}
+        tx = {"chain_id":421614,"to":guard,"value_wei":0,"data":data}
+        intent = PaymentIntent(agent_id="agent-evm", payee="merchant", asset="USDC", network="arbitrum-sepolia", amount=1.0, metadata={"evm_transaction":tx,"external_state":state,"network_family":"evm"})
+        capability = Capability(capability_id="cap-stale-state", agent_id="agent-evm", allowed_actions=("payment",), allowed_targets=("merchant",), allowed_networks=("arbitrum-sepolia",), allowed_assets=("USDC",), max_per_action={"USDC":10.0})
+        storage.register_capability(capability)
+        result = engine.authorize_with_capability(intent, capability.capability_id, load_private_key(self.priv))
+        auth = result["execution_authorization"]
+        self.assertIsNotNone(auth)
+
+        drifted = {"value": False}
+        class LiveVerifier:
+            def __call__(self, binding, action):
+                if drifted["value"]:
+                    return False, "oracle state changed after authorization"
+                return True, "live state matches"
+
+        registry = ExternalStateVerifierRegistry({"evm.state": LiveVerifier()})
+        router = ExecutionRouter(NetworkRegistry(), storage, load_public_key(self.pub), private_key=load_private_key(self.priv), external_state_registry=registry)
+        calls = []
+        drifted["value"] = True
+        receipt = router.execute_with_receipt(auth, lambda value: calls.append(value) or "0xmust-not-broadcast")
+
+        self.assertEqual(receipt.payload["status"], "FAILED")
+        self.assertIn("external state drift", receipt.payload["error"])
+        self.assertEqual(calls, [])
+        self.assertIsNone(receipt.payload["transaction_ref"])
+        storage.close()
+
     def test_execute_bound_requires_atomic_guard_binding(self):
         result, tx = self._authorized()
         adapter = EVMExecutionAdapter(Storage(self.db), load_public_key(self.pub))
