@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives import serialization
 
 from core.evidence import EvidenceGraph
 from core.evidence_service import EvidenceGraphService
+from core.authority_state import DynamicAuthorityService
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.identity import sign_action_intent
 from core.engine import GuardrailEngine
@@ -56,6 +57,25 @@ class EvidenceGraphServiceTest(unittest.TestCase):
         self.assertIsNotNone(stored)
         ok, reason = service.verify_snapshot(stored)
         self.assertTrue(ok, reason)
+
+    def test_snapshot_includes_verified_authority_ledger(self):
+        authorization_id = self._authorization()
+        capability = self.storage.capability("cap-snapshot")
+        DynamicAuthorityService(self.storage).record_event(
+            agent_id=capability.agent_id,
+            capability_id=capability.capability_id,
+            event_type="EXECUTION_CONFIRMED",
+            evidence_ref="evidence-ledger-test",
+        )
+        service = EvidenceGraphService(self.storage, EvidenceGraph(self.storage, self.public_key))
+        snapshot = service.snapshot(authorization_id)
+        graph = snapshot["graph"]
+        ledger_nodes = [n for n in graph["nodes"] if n["type"] == "authority_ledger"]
+        entry_nodes = [n for n in graph["nodes"] if n["type"] == "authority_ledger_entry"]
+        self.assertEqual(len(ledger_nodes), 1)
+        self.assertEqual(len(entry_nodes), 1)
+        self.assertTrue(graph["verification"]["authority_ledger"]["valid"])
+        self.assertEqual(graph["verification"]["authority_ledger"]["entry_count"], 1)
 
     def test_snapshot_tampering_is_detected(self):
         authorization_id = self._authorization()

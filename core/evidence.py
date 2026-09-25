@@ -281,6 +281,51 @@ class EvidenceGraph:
                 )
                 nodes.append(_node("authority_state", capability_id, dynamic))
                 edges.append({"from": f"authority_state:{capability_id}", "relation": "CONSTRAINS", "to": f"action_intent:{intent_id}"})
+
+                # The authority ledger is the cryptographically linked lifecycle
+                # history behind the current dynamic authority state. Include the
+                # chain itself in the evidence graph so a snapshot proves not only
+                # the current state but also the integrity of its transition history.
+                ledger = self.storage.authority_ledger(
+                    capability.agent_id,
+                    capability.capability_id,
+                )
+                ledger_ok, ledger_reason = self.storage.verify_authority_ledger(
+                    capability.agent_id,
+                    capability.capability_id,
+                )
+                ledger_id = f"{capability.agent_id}:{capability.capability_id}"
+                ledger_data = {
+                    "agent_id": capability.agent_id,
+                    "capability_id": capability.capability_id,
+                    "entries": ledger,
+                }
+                nodes.append(_node("authority_ledger", ledger_id, ledger_data))
+                verification["authority_ledger"] = {
+                    "valid": ledger_ok,
+                    "reason": ledger_reason,
+                    "entry_count": len(ledger),
+                }
+                edges.append({
+                    "from": f"authority_ledger:{ledger_id}",
+                    "relation": "PROVES_HISTORY_OF",
+                    "to": f"authority_state:{capability_id}",
+                })
+                for entry in ledger:
+                    entry_id = entry["event_id"]
+                    nodes.append(_node("authority_ledger_entry", entry_id, entry))
+                    edges.append({
+                        "from": f"authority_ledger:{ledger_id}",
+                        "relation": "CONTAINS",
+                        "to": f"authority_ledger_entry:{entry_id}",
+                    })
+                    event_node_id = f"authority_event:{entry_id}"
+                    if any(node["type"] == "authority_event" and node["id"] == entry_id for node in nodes):
+                        edges.append({
+                            "from": f"authority_ledger_entry:{entry_id}",
+                            "relation": "PROVES",
+                            "to": event_node_id,
+                        })
                 reset = self.storage.latest_authority_reset(
                     capability.agent_id,
                     capability.capability_id,
