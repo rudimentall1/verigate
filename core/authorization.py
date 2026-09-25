@@ -104,12 +104,16 @@ class AuthorizationService:
                 )
             effective = effective_authority(action, capability, policy, authority)
             execution_graph = dict((action.metadata or {}).get("execution_graph") or {})
+            genesis_authority = None
             if authority_assessment is not None:
-                execution_graph.update({
+                genesis_authority = {
+                    "protocol": "genesis-2.0",
                     "intent_graph_digest": authority_assessment.graph_digest,
                     "intent_graph_node_id": authority_assessment.node_id,
                     "authority_assessment_digest": authority_assessment.digest,
-                })
+                    "authority_digest": authority_assessment.authority_digest,
+                    "capability_digest": authority_assessment.capability_digest,
+                }
             execution = issue_execution_authorization(
                 receipt,
                 private_key,
@@ -126,6 +130,7 @@ class AuthorizationService:
                 authority_ledger_head_hash=authority.ledger_head_hash if authority else None,
                 effective_authority=effective,
                 execution_graph=execution_graph,
+                genesis_authority=genesis_authority,
                 external_state_required=(policy.require_external_state_binding or external_state_requirement_for_action(policy.external_state_requirements, action.as_dict()) is not None),
                 external_state_requirement=external_state_requirement_for_action(policy.external_state_requirements, action.as_dict()),
             )

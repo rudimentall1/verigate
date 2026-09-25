@@ -12,6 +12,9 @@ from .policy import Policy
 from .storage import Storage
 
 from .authorization import AuthorizationService
+from .authority_intent_graph import AuthorityAwareIntentGraph
+from .authority_protocol import Authority, AuthorityState as GenesisAuthorityState
+from .intent_graph import IntentGraphBuilder
 from .authority_state import DynamicAuthorityService
 from .capabilities import CapabilityRegistry
 from .identity import IdentityRegistry
@@ -235,6 +238,45 @@ class GuardrailEngine:
             self.storage.record_action(action, decision, commit=False)
             return decision
 
+    @staticmethod
+    def _genesis_assessment(action, capability, authority):
+        """Project proven runtime authority into the Genesis 2.0 protocol.
+
+        This is a boundary adapter, not a second authority implementation:
+        the existing capability/authority snapshot remains authoritative, while
+        Genesis receives an immutable envelope and assessment for provenance.
+        """
+        if capability.identity_id is None:
+            return None
+        identity_id = capability.identity_id
+        genesis_authority = Authority(
+            authority_id=f"{action.agent_id}:{capability.capability_id}:{authority.ledger_head_hash or authority.digest}",
+            agent_id=action.agent_id,
+            identity_id=identity_id,
+            capability_id=capability.capability_id,
+            capability_version=capability.version,
+            capability_sha256=capability.digest,
+            state=GenesisAuthorityState(authority.state.value),
+            multiplier=authority.multiplier,
+            ledger_head_hash=authority.ledger_head_hash,
+            effective_from=authority.evaluated_at,
+            metadata={
+                "source": "core.authority_state.AuthoritySnapshot",
+                "successes": authority.successes,
+                "adverse_events": authority.adverse_events,
+                "critical_events": authority.critical_events,
+                "reason": authority.reason,
+            },
+        )
+        graph = (
+            IntentGraphBuilder(graph_id=f"intent:{action.intent_id}")
+            .add_action(action)
+            .build()
+        )
+        return AuthorityAwareIntentGraph(
+            graph, genesis_authority, capability
+        ).assess(action.intent_id)
+
     def _authorize_control_plane(
         self,
         action: ActionIntent,
@@ -279,6 +321,12 @@ class GuardrailEngine:
                 action,
             )
 
+        authority_assessment = None
+        if capability is not None and authority is not None:
+            authority_assessment = self._genesis_assessment(
+                action, capability, authority
+            )
+
         artifacts = AuthorizationService().issue(
             action,
             decision,
@@ -290,6 +338,7 @@ class GuardrailEngine:
             authority=authority,
             policy=self.policy if capability is not None else None,
             signed_policy=self.signed_policy_version(private_key),
+            authority_assessment=authority_assessment,
         )
         return self._persist_authorization(
             artifacts,

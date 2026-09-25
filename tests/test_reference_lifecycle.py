@@ -120,6 +120,10 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             self.private_key,
         )
         authorization = artifacts["execution_authorization"]
+        genesis_binding = authorization["payload"]["genesis_authority"]
+        self.assertTrue(genesis_binding["intent_graph_digest"])
+        self.assertEqual(genesis_binding["intent_graph_node_id"], action.intent_id)
+        self.assertTrue(genesis_binding["authority_assessment_digest"])
         adapter = ToolExecutionAdapter(
             self.storage, self.public_key,
             {"orders.create": lambda _action: {"order_id": "order-1", "status": "created"}},

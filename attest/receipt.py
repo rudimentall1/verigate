@@ -115,6 +115,7 @@ def issue_execution_authorization(
     authority_ledger_head_hash: str | None = None,
     effective_authority: dict[str, Any] | None = None,
     execution_graph: dict[str, Any] | None = None,
+    genesis_authority: dict[str, Any] | None = None,
     external_state_required: bool = False,
     external_state_requirement: dict[str, Any] | None = None,
 ) -> ExecutionAuthorization:
@@ -146,6 +147,11 @@ def issue_execution_authorization(
         ),
         "execution_graph": normalize_execution_graph(execution_graph),
         "execution_graph_sha256": execution_graph_digest(execution_graph),
+        "genesis_authority": genesis_authority,
+        "genesis_authority_sha256": (
+            hashlib.sha256(_canonical(genesis_authority)).hexdigest()
+            if genesis_authority is not None else None
+        ),
         "execution_artifact": canonical_execution_artifact(receipt.payload["intent"]),
         "execution_artifact_sha256": execution_artifact_digest(receipt.payload["intent"]),
         "external_state": canonical_external_state(receipt.payload["intent"]),

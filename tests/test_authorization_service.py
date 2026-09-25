@@ -139,10 +139,11 @@ class AuthorizationServiceTest(unittest.TestCase):
         storage.close()
 
         execution = artifacts["execution_authorization"]
-        graph_binding = execution["payload"]["execution_graph"]
-        self.assertEqual(graph_binding["intent_graph_digest"], graph.digest)
-        self.assertEqual(graph_binding["intent_graph_node_id"], action.intent_id)
-        self.assertEqual(graph_binding["authority_assessment_digest"], assessment.digest)
+        genesis_binding = execution["payload"]["genesis_authority"]
+        self.assertEqual(genesis_binding["intent_graph_digest"], graph.digest)
+        self.assertEqual(genesis_binding["intent_graph_node_id"], action.intent_id)
+        self.assertEqual(genesis_binding["authority_assessment_digest"], assessment.digest)
+        self.assertEqual(genesis_binding["authority_digest"], assessment.authority_digest)
         self.assertTrue(verify_execution_authorization(execution, load_public_key(self.pub))[0])
 
     def test_blocked_authority_assessment_cannot_mint_execution_authorization(self):
