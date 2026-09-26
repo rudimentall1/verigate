@@ -18,6 +18,10 @@ class CapabilityRegistry:
         self.storage = storage
 
     def register(self, capability: Capability) -> Capability:
+        if capability.delegated_from is not None:
+            raise PermissionError(
+                "delegated capabilities must be registered through CapabilityDelegationService"
+            )
         if capability.identity_id is not None:
             identity = self.storage.identity(capability.identity_id)
             if identity is None:

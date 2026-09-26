@@ -217,6 +217,27 @@ class AuthorizationServiceTest(unittest.TestCase):
             )
 
 
+    def test_direct_registry_registration_cannot_bypass_delegation_validation(self):
+        from core.capabilities import CapabilityRegistry
+
+        storage = Storage(Path(self.tmpdir.name) / "delegation-register.db")
+        registry = CapabilityRegistry(storage)
+        parent = Capability(
+            capability_id="cap-parent",
+            agent_id="agent-rwa",
+            allowed_actions=("evm.transaction",),
+        )
+        child = Capability(
+            capability_id="cap-child",
+            agent_id="agent-rwa",
+            delegated_from=parent.capability_id,
+            allowed_actions=("cloud.delete",),
+        )
+        registry.register(parent)
+        with self.assertRaisesRegex(PermissionError, "CapabilityDelegationService"):
+            registry.register(child)
+        storage.close()
+
     def test_delegated_capability_requires_registry_backed_chain(self):
         from core.capabilities import CapabilityRegistry
 
@@ -237,7 +258,7 @@ class AuthorizationServiceTest(unittest.TestCase):
             allowed_targets=(action.target,),
         )
         registry.register(parent)
-        registry.register(child)
+        storage.register_delegated_capability(child, parent.capability_id)
         decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
 
         with self.assertRaisesRegex(PermissionError, "registry-backed authority-chain"):
@@ -274,7 +295,7 @@ class AuthorizationServiceTest(unittest.TestCase):
             allowed_targets=(action.target,),
         )
         registry.register(parent)
-        registry.register(child)
+        storage.register_delegated_capability(child, parent.capability_id)
         registry.revoke(parent.capability_id)
         decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
 
