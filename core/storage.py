@@ -1523,6 +1523,22 @@ class Storage:
             ).fetchone()
         return json.loads(row[0]) if row else None
 
+    def latest_authority_reset_at(
+        self,
+        agent_id: str,
+        capability_id: str,
+        evaluated_at: float,
+    ) -> dict | None:
+        """Return the latest reset that existed at a historical evaluation time."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT signed_reset_json FROM authority_resets "
+                "WHERE agent_id = ? AND capability_id = ? AND issued_at <= ? "
+                "ORDER BY issued_at DESC, epoch DESC LIMIT 1",
+                (agent_id, capability_id, evaluated_at),
+            ).fetchone()
+        return json.loads(row[0]) if row else None
+
     def update_signature(self, intent_id: str, signature: str) -> None:
         """Attach a signature to an existing audit row.
 

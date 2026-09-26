@@ -99,7 +99,7 @@ def replay_authority_decision(storage, authorization: dict[str, Any], public_key
         return False, "invalid authority policy window", {
             "ledger_valid": True, "head_match": True, "snapshot_valid": True,
         }
-    reset = storage.latest_authority_reset(agent_id, capability_id)
+    reset = storage.latest_authority_reset_at(agent_id, capability_id, float(evaluated_at))
     if reset is not None:
         expected_history_start = max(expected_history_start, float(reset["payload"]["issued_at"]))
     if history_start_at != expected_history_start:

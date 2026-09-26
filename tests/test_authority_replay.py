@@ -115,6 +115,50 @@ class AuthorityReplayTest(unittest.TestCase):
         self.assertEqual(snapshot.history_start_at, 900.0)
         self.assertEqual(snapshot.evaluated_at, 1000.0)
 
+    def test_replay_ignores_reset_issued_after_historical_snapshot(self):
+        from core.storage import Storage
+        from core.authority_state import DynamicAuthorityService, AuthorityPolicy
+        from unittest.mock import patch
+
+        storage = Storage(":memory:")
+        policy = AuthorityPolicy(window_seconds=100)
+        service = DynamicAuthorityService(storage, policy)
+        service.record_event(
+            agent_id="a", capability_id="c",
+            event_type="EXECUTION_CONFIRMED", evidence_ref="historical-success",
+            occurred_at=950.0,
+        )
+        snapshot = service.snapshot("a", "c", now=1000.0)
+        head = snapshot.ledger_head_hash
+
+        storage.register_authority_reset({
+            "payload": {
+                "reset_id": "reset-later", "agent_id": "a", "capability_id": "c",
+                "governor_id": "governor", "epoch": 1,
+                "reason": "later incident review", "issued_at": 2000.0,
+                "nonce": "nonce-later",
+            },
+            "signature": "not-used-by-replay",
+        })
+
+        auth = {"payload": {
+            "agent_id": "a",
+            "capability_id": "c",
+            "authority_ledger_head_hash": head,
+            "authority_state": snapshot.as_dict(),
+            "authority_state_sha256": snapshot.digest,
+            "authority_multiplier": snapshot.multiplier,
+            "authority_policy_sha256": policy.digest,
+            "authority_policy": policy.as_dict(),
+            "evaluated_at": snapshot.evaluated_at,
+            "history_start_at": snapshot.history_start_at,
+        }}
+        with patch("core.authority_replay.verify_execution_authorization", return_value=(True, "valid")):
+            ok, reason, details = replay_authority_decision(storage, auth, object())
+        self.assertTrue(ok, reason)
+        self.assertEqual(details["authority_state"]["history_start_at"], 900.0)
+        self.assertEqual(details["authority_state"]["successes"], 1)
+
     def test_ledger_tamper_is_rejected(self):
         from core.storage import Storage
         storage = Storage(":memory:")
