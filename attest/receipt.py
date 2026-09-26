@@ -229,7 +229,7 @@ def verify_receipt(receipt: dict[str, Any], public_key: Ed25519PublicKey) -> tup
         return False, "invalid or tampered decision receipt"
 
 
-def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519PublicKey) -> tuple[bool, str]:
+def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519PublicKey, verification_time: int | None = None) -> tuple[bool, str]:
     try:
         if auth.get("algorithm") != "Ed25519":
             return False, "unsupported signature algorithm"
@@ -334,7 +334,9 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
             return False, "invalid execution authorization issued_at"
         if isinstance(expires_at, bool) or not isinstance(expires_at, int):
             return False, "invalid execution authorization expires_at"
-        now = int(time.time())
+        now = int(time.time()) if verification_time is None else verification_time
+        if isinstance(now, bool) or not isinstance(now, int):
+            return False, "invalid execution authorization verification time"
         if expires_at < now:
             return False, "execution authorization expired"
         if expires_at <= issued_at:

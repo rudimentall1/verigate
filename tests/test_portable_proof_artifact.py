@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import json
 import unittest
 from pathlib import Path
@@ -22,6 +22,14 @@ class CheckedInPortableProofTests(unittest.TestCase):
         result = verify_proof_package(proof.read_bytes(), trusted_public_key_b64=trusted)
         self.assertTrue(result["valid"], result)
         self.assertTrue(result["package_valid"])
+        receipt_node = next(
+            node for node in package["package"]["manifest"]["payload"]["nodes"]
+            if node["type"] == "execution_receipt"
+        )
+        self.assertEqual(
+            result["checks"]["execution_authorization"]["historical_verification_time"],
+            receipt_node["data"]["payload"]["executed_at"],
+        )
         self.assertEqual(
             package["package"]["manifest"]["issuer_public_key_b64"],
             trusted,

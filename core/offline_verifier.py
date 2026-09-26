@@ -117,9 +117,13 @@ def verify_proof(manifest: dict[str, Any], *, trusted_public_key_b64: str | None
     except (ValueError, TypeError, base64.binascii.Error): return {"valid": False, "reason": "invalid embedded issuer public key", "checks": checks}
     auth_node = _node(payload, "execution_authorization")
     if auth_node is not None:
-        ok, reason = verify_execution_authorization(auth_node["data"], public_key); checks["execution_authorization"] = {"valid": ok, "reason": reason}
-        if not ok: return {"valid": False, "reason": reason, "checks": checks}
         receipt_node = _node(payload, "execution_receipt")
+        verification_time = None
+        if receipt_node is not None:
+            receipt_payload = receipt_node["data"].get("payload", {})
+            verification_time = receipt_payload.get("executed_at")
+        ok, reason = verify_execution_authorization(auth_node["data"], public_key, verification_time=verification_time); checks["execution_authorization"] = {"valid": ok, "reason": reason, "historical_verification_time": verification_time}
+        if not ok: return {"valid": False, "reason": reason, "checks": checks}
         if receipt_node is not None:
             ok, reason = verify_execution_receipt(receipt_node["data"], public_key, auth_node["data"]); checks["execution_receipt"] = {"valid": ok, "reason": reason}
             if not ok: return {"valid": False, "reason": reason, "checks": checks}

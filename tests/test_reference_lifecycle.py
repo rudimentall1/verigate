@@ -78,7 +78,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.storage.close()
         self.tmp.cleanup()
 
-    def _authorized_execution(self):
+    def _authorized_execution(self, policy_source_ref=None):
         agent_key = Ed25519PrivateKey.generate()
         raw = agent_key.public_key().public_bytes(
             serialization.Encoding.Raw, serialization.PublicFormat.Raw
@@ -106,7 +106,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             encoding="utf-8",
         )
         engine = GuardrailEngine(
-            Policy.load(policy_path), self.storage, policy_source_ref=str(policy_path)
+            Policy.load(policy_path), self.storage, policy_source_ref=policy_source_ref or str(policy_path)
         )
         action = ActionIntent(
             agent_id=identity.agent_id,
@@ -277,8 +277,8 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         )
 
 
-    def _valid_manifest(self):
-        authorization, receipt = self._authorized_execution()
+    def _valid_manifest(self, policy_source_ref=None):
+        authorization, receipt = self._authorized_execution(policy_source_ref=policy_source_ref)
         observed = MCPToolVerifier().verify_result(
             authorization,
             tool_name="orders.create",
