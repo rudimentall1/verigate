@@ -1,4 +1,4 @@
-﻿# Portable Authority Proof
+# Portable Authority Proof
 
 This directory contains a real, self-contained Verigate authority proof that can be verified **without a Verigate server, SQLite database, API, or live runtime**.
 
@@ -94,7 +94,7 @@ python examples/authority-proof/generate_artifact.py
 
 The generator uses a stable logical policy source reference (`examples/authority-proof/policy.yaml`) rather than embedding a developer machine path. The generated private issuer key is temporary and is never written into the repository.
 
-## Standalone protocol verifier
+## Genesis 2.0 demo\n\nRun the complete portable-proof demonstration:\n\n```bash\npython examples/authority-proof/run_demo.py\n```\n\nThe demo invokes the standalone verifier in a separate process using only `authority-proof.json` and `issuer.pub`. It does not start or query a Verigate runtime. It then mutates the proof and requires the independent verifier to reject it. A successful run ends with `GENESIS 2.0 DEMO: PASS`.\n\n## Standalone protocol verifier
 
 A verifier implementation that imports no `core` or `attest` modules is included at `tools/verigate_proof_verifier.py`.
 
