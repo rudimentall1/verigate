@@ -94,7 +94,23 @@ python examples/authority-proof/generate_artifact.py
 
 The generator uses a stable logical policy source reference (`examples/authority-proof/policy.yaml`) rather than embedding a developer machine path. The generated private issuer key is temporary and is never written into the repository.
 
-## Genesis 2.0 demo\n\nRun the complete portable-proof demonstration:\n\n```bash\npython examples/authority-proof/run_demo.py\n```\n\nThe demo invokes the standalone verifier in a separate process using only `authority-proof.json` and `issuer.pub`. It does not start or query a Verigate runtime. It then mutates the proof and requires the independent verifier to reject it. A successful run ends with `GENESIS 2.0 DEMO: PASS`.\n\n## Standalone protocol verifier
+## Genesis 2.0 demo
+
+Run the complete judge-oriented lifecycle demonstration:
+
+```bash
+python examples/genesis_demo.py
+```
+
+This command first runs the real Genesis lifecycle integration contract: identity, capability, intent, authority, authorization, an actual local execution side effect, independently attested outcome, learning, post-learning authority, and proof packaging. It then starts a separate standalone verifier using only the checked-in proof and public key, and finally mutates the proof and requires the independent verifier to reject it.
+
+For the proof-only demonstration, use:
+
+```bash
+python examples/authority-proof/run_demo.py
+```
+
+A successful end-to-end run ends with `GENESIS 2.0 DEMO: PASS`.\n\n## Standalone protocol verifier
 
 A verifier implementation that imports no `core` or `attest` modules is included at `tools/verigate_proof_verifier.py`.
 

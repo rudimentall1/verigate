@@ -10,7 +10,24 @@ from core.proof_package import build_proof_package, serialize_proof_package
 from tests.test_reference_lifecycle import VerigateReferenceLifecycleTest
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 class PortableProofCliTests(unittest.TestCase):
+    def test_genesis_demo_script_completes_end_to_end(self):
+        script = ROOT / "examples" / "genesis_demo.py"
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("GENESIS 2.0 DEMO: PASS", result.stdout)
+        self.assertIn("RESULT: VALID", result.stdout)
+        self.assertIn("RESULT: INVALID", result.stdout)
+
     def test_authority_package_verifies_after_runtime_shutdown(self):
         lifecycle = VerigateReferenceLifecycleTest("test_reference_lifecycle_is_offline_verifiable")
         lifecycle.setUp()
