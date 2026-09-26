@@ -25,6 +25,35 @@ DEFAULT_PRIV_KEY = "keys/issuer.key"
 DEFAULT_PUB_KEY = "keys/issuer.pub"
 
 
+def render_proof_report(result: dict) -> str:
+    labels = {
+        "authority_protocol": "AUTHORITY PROTOCOL",
+        "execution_authorization": "AUTHORIZATION",
+        "execution_receipt": "EXECUTION",
+        "historical_authority": "HISTORICAL AUTHORITY",
+        "authority_transition": "LEARNING / POST-AUTHORITY",
+        "manifest": "CRYPTOGRAPHIC MANIFEST",
+    }
+    lines = [
+        "VERIGATE AUTHORITY PROOF",
+        f"Protocol: {result.get('proof_protocol', 'evidence-manifest')}",
+        "",
+    ]
+    checks = result.get("checks", {})
+    for key, check in checks.items():
+        status = "PASS" if check.get("valid") else "FAIL"
+        lines.append(f"{labels.get(key, key.upper()):<26} {status}")
+    lines.extend([
+        "",
+        f"RESULT: {'VALID' if result.get('valid') else 'INVALID'}",
+    ])
+    if result.get("reason") and not result.get("valid"):
+        lines.append(f"Reason: {result['reason']}")
+    if result.get("root_digest"):
+        lines.append(f"Root: {result['root_digest']}")
+    return "\n".join(lines)
+
+
 def cmd_keygen(args: argparse.Namespace) -> int:
     generate_keypair(args.private_key, args.public_key)
     print(f"Wrote {args.private_key} and {args.public_key}")
@@ -74,11 +103,11 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     if isinstance(document, dict) and "package" in document and "package_sha256" in document:
         result = verify_proof_package(raw_document, trusted_public_key_b64=trusted)
-        print(json.dumps(result, indent=2))
+        print(render_proof_report(result) if args.format == "text" else json.dumps(result, indent=2))
         return 0 if result["valid"] else 1
     if isinstance(document, dict) and "payload" in document and "issuer_public_key_b64" in document:
         result = verify_proof(document, trusted_public_key_b64=trusted)
-        print(json.dumps(result, indent=2))
+        print(render_proof_report(result) if args.format == "text" else json.dumps(result, indent=2))
         return 0 if result["valid"] else 1
     pub = load_public_key(args.public_key)
     ok, reason = verify_attestation(document, pub)
@@ -119,6 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     vf = sub.add_parser("verify", help="independently verify a signed attestation or portable evidence proof")
     vf.add_argument("attestation_file", help="path to a signed attestation, evidence manifest, or self-contained proof package JSON")
     vf.add_argument("--public-key", default=DEFAULT_PUB_KEY)
+    vf.add_argument("--format", choices=("json", "text"), default="json", help="verification report format")
     vf.set_defaults(func=cmd_verify)
 
     hi = sub.add_parser("history", help="show recent decisions for an agent")
