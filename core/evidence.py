@@ -567,6 +567,18 @@ class EvidenceGraph:
         verification["audit_present"] = True
         verification["all_signed_artifacts_valid"] = all(item["valid"] for key, item in verification.items() if isinstance(item, dict) and "valid" in item)
 
+        historical_authority = {}
+        if execution is not None:
+            from core.authority_replay import replay_authority_decision
+            replay_ok, replay_reason, replay = replay_authority_decision(
+                self.storage, execution, self.public_key
+            )
+            historical_authority = {
+                "valid": replay_ok,
+                "reason": replay_reason,
+                "details": replay,
+            }
+
         return {
             "authorization_id": authorization_id,
             "intent_id": intent_id,
@@ -576,4 +588,5 @@ class EvidenceGraph:
             "edges": edges,
             "verification": verification,
             "audit": audit,
+            "historical_authority": historical_authority,
         }

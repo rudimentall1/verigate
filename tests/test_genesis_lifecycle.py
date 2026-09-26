@@ -226,7 +226,7 @@ class GenesisLifecycleTest(unittest.TestCase):
         self.assertEqual(package_result["proof_profile"], "authority_lifecycle")
         self.assertEqual(package_result["node_count"], len(manifest["payload"]["nodes"]))
 
-        learned_snapshot = lifecycle.result()["learning"]["authority_snapshot"]
+        learned_snapshot = lifecycle.result().learning["authority_snapshot"]
         self.assertEqual(learned_snapshot["state"], AuthorityState.STANDARD.value)
         self.assertEqual(learned_snapshot["multiplier"], 0.50)
         self.assertLessEqual(learned_snapshot["multiplier"], 1.0)

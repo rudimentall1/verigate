@@ -4,7 +4,8 @@ import base64, hashlib
 from typing import Any
 from attest.receipt import verify_execution_authorization, verify_execution_receipt
 from core.evidence_manifest import verify_manifest
-from core.proof_engine import canonical
+from core.proof_engine import canonical, digest
+from core.authority_protocol import Authority, AuthorityState as GenesisAuthorityState
 
 def _nodes(payload: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
     return {(n["type"], n["id"]): n for n in payload.get("nodes", [])}
@@ -127,8 +128,36 @@ def verify_proof(manifest: dict[str, Any], *, trusted_public_key_b64: str | None
             auth_payload = auth_node["data"]["payload"]
             if auth_payload.get("authority_state_sha256") != hashlib.sha256(canonical(authority_state)).hexdigest():
                 return {"valid": False, "reason": "historical authority snapshot digest mismatch", "checks": checks}
-            if genesis.get("authority_digest") and genesis.get("authority_digest") != auth_payload.get("authority_state_sha256"):
-                return {"valid": False, "reason": "Genesis authority does not bind historical authority", "checks": checks}
+            if genesis.get("authority_digest"):
+                capability_node = _node(payload, "capability")
+                try:
+                    if capability_node is None:
+                        raise ValueError("capability evidence is missing")
+                    state_data = authority_state
+                    capability_data = capability_node["data"]
+                    reconstructed_authority = Authority(
+                        authority_id=f"{auth_payload['agent_id']}:{capability_node['id']}:{state_data.get('ledger_head_hash') or digest(state_data)}",
+                        agent_id=auth_payload["agent_id"],
+                        identity_id=auth_payload.get("identity_id", ""),
+                        capability_id=capability_node["id"],
+                        capability_version=capability_data.get("version", 1),
+                        capability_sha256=auth_payload.get("capability_sha256", ""),
+                        state=GenesisAuthorityState(state_data["state"]),
+                        multiplier=float(state_data["multiplier"]),
+                        ledger_head_hash=state_data.get("ledger_head_hash", ""),
+                        effective_from=float(state_data.get("evaluated_at", 0.0)),
+                        metadata={
+                            "source": "core.authority_state.AuthoritySnapshot",
+                            "successes": state_data.get("successes", 0),
+                            "adverse_events": state_data.get("adverse_events", 0),
+                            "critical_events": state_data.get("critical_events", 0),
+                            "reason": state_data.get("reason", ""),
+                        },
+                    )
+                except (KeyError, TypeError, ValueError):
+                    return {"valid": False, "reason": "historical authority snapshot cannot reconstruct Genesis authority", "checks": checks}
+                if genesis.get("authority_digest") != reconstructed_authority.digest:
+                    return {"valid": False, "reason": "Genesis authority does not bind historical authority", "checks": checks}
             ok, reason, details = _check_authority_transition(payload)
             checks["authority_transition"] = {"valid": ok, "reason": reason, "details": details}
             if not ok: return {"valid": False, "reason": reason, "checks": checks}
