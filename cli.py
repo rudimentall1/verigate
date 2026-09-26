@@ -99,7 +99,14 @@ def cmd_verify(args: argparse.Namespace) -> int:
     trusted = None
     if args.public_key and Path(args.public_key).exists():
         import base64
-        trusted = base64.b64encode(Path(args.public_key).read_bytes()).decode("ascii")
+        from cryptography.hazmat.primitives import serialization
+        trusted_key = load_public_key(args.public_key)
+        trusted = base64.b64encode(
+            trusted_key.public_bytes(
+                serialization.Encoding.Raw,
+                serialization.PublicFormat.Raw,
+            )
+        ).decode("ascii")
 
     if isinstance(document, dict) and "package" in document and "package_sha256" in document:
         result = verify_proof_package(raw_document, trusted_public_key_b64=trusted)
