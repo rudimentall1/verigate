@@ -221,8 +221,15 @@ curl http://localhost:8000/v1/public-key
 
 Policies are plain YAML — see `policies/default.yaml` for a real, working
 starting point (blocklist, allowlist, per-network/asset restrictions,
-per-transaction cap, new-payee cap, daily cap, confirmation threshold,
-rate limit — all commented).
+destination/egress scope, per-transaction cap, new-payee cap, daily cap,
+confirmation threshold, rate limit — all commented).
+
+For agent/tool integrations, `allowed_destinations` and
+`blocked_destinations` bind the signed ActionIntent to its execution egress.
+If a policy configures destination scope, a missing or out-of-scope destination
+is **BLOCKED before executable authority is issued**. This closes the
+zero-click pattern `untrusted input → tool invocation → attacker destination`
+without relying on the model to recognize the attack.
 
 No code changes needed to adjust any of it — edit the YAML, restart the
 process.

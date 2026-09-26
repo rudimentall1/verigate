@@ -209,6 +209,7 @@ class GuardrailEngine:
                 R.check_purpose_allowed,
                 R.check_context_constraints,
                 R.check_execution_graph,
+                R.check_destination_allowed,
                 R.check_target_allowed,
                 R.check_generic_network_allowed,
                 R.check_generic_asset_allowed,

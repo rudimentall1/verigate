@@ -84,6 +84,47 @@ def check_execution_graph(intent: ActionIntent, policy: Policy) -> RuleMatch | N
     return None
 
 
+def _action_destination(intent: ActionIntent) -> str | None:
+    """Return the execution destination carried by the signed action."""
+    metadata = intent.metadata or {}
+    destination = metadata.get("destination")
+    if isinstance(destination, str) and destination.strip():
+        return destination.strip()
+    invocation = metadata.get("tool_invocation")
+    if isinstance(invocation, dict):
+        destination = invocation.get("destination")
+        if isinstance(destination, str) and destination.strip():
+            return destination.strip()
+    return None
+
+
+def check_destination_allowed(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
+    """Fail closed on destinations outside the configured egress scope."""
+    if policy.allowed_destinations is None and not policy.blocked_destinations:
+        return None
+    destination = _action_destination(intent)
+    if destination is None:
+        return RuleMatch(
+            "destination_missing",
+            Severity.BLOCK,
+            "execution destination is required by policy",
+        )
+    lowered = destination.lower()
+    if lowered in {d.lower() for d in policy.blocked_destinations}:
+        return RuleMatch(
+            "destination_blocked",
+            Severity.BLOCK,
+            f"destination '{destination}' is blocked by policy",
+        )
+    if policy.allowed_destinations is not None and lowered not in {d.lower() for d in policy.allowed_destinations}:
+        return RuleMatch(
+            "destination_not_allowed",
+            Severity.BLOCK,
+            f"destination '{destination}' is outside the allowed execution scope",
+        )
+    return None
+
+
 def check_target_allowed(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
     blocked = {p.lower() for p in policy.blocked_payees}
     if intent.target.lower() in blocked:

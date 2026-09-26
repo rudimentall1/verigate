@@ -19,6 +19,8 @@ class Policy:
     allowed_purposes: list[str] | None = None
     context_constraints: dict[str, Any] = field(default_factory=dict)
     execution_graph: dict[str, Any] = field(default_factory=dict)
+    allowed_destinations: list[str] | None = None
+    blocked_destinations: list[str] = field(default_factory=list)
     require_external_state_binding: bool = False
     external_state_requirements: list[dict[str, Any]] = field(default_factory=list)
     allowed_targets: list[str] | None = None
@@ -63,6 +65,8 @@ class Policy:
             allowed_purposes=raw.get("allowed_purposes"),
             context_constraints=raw.get("context_constraints", {}) or {},
             execution_graph=raw.get("execution_graph", {}) or {},
+            allowed_destinations=raw.get("allowed_destinations"),
+            blocked_destinations=raw.get("blocked_destinations", []) or [],
             require_external_state_binding=bool(raw.get("require_external_state_binding", False)),
             external_state_requirements=raw.get("external_state_requirements", []) or [],
             allowed_targets=raw.get("allowed_targets"),

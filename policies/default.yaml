@@ -9,6 +9,14 @@ blocked_payees: []
 # allowed_payees:
 #   - "0xYourTrustedMerchant"
 
+# Execution egress controls for agent/tool actions. If configured, a
+# destination outside this scope is BLOCKed before executable authority is issued.
+# This is the deterministic boundary for untrusted-input -> tool -> egress abuse.
+# allowed_destinations:
+#   - "https://api.your-company.example"
+# blocked_destinations:
+#   - "https://attacker.example"
+
 # Networks / assets this agent is permitted to pay on/with.
 allowed_networks:
   - base
