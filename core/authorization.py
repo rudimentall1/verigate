@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .models import ActionIntent, AgentIdentity, Capability, Decision, GuardrailDecision
+from .capabilities import CapabilityRegistry
 from .authority_state import AuthoritySnapshot
 from .effective_authority import effective_authority
 from .policy import Policy
@@ -56,6 +57,7 @@ class AuthorizationService:
         nonce: str | None = None,
         ttl_seconds: int = 300,
         capability: Capability | None = None,
+        capability_registry: CapabilityRegistry | None = None,
         identity: AgentIdentity | None = None,
         authority: AuthoritySnapshot | None = None,
         authority_policy: Any | None = None,
@@ -85,6 +87,14 @@ class AuthorizationService:
                 and action.requested_capability != capability.capability_id
             ):
                 raise PermissionError("requested capability does not match supplied capability")
+            if capability.delegated_from is not None:
+                if capability_registry is None:
+                    raise PermissionError(
+                        "delegated capability requires registry-backed authority-chain verification"
+                    )
+                resolved = capability_registry.resolve(capability.capability_id)
+                if resolved.digest != capability.digest:
+                    raise PermissionError("supplied capability does not match registered capability")
             permitted, reason = capability.permits(action)
             if not permitted:
                 raise PermissionError(reason)

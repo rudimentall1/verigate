@@ -338,6 +338,7 @@ class GuardrailEngine:
             private_key,
             nonce=action.intent_id,
             capability=capability,
+            capability_registry=CapabilityRegistry(self.storage),
             identity=identity,
             authority=authority,
             authority_policy=self.authority_service.policy if authority is not None else None,

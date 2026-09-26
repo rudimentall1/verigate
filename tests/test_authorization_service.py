@@ -217,6 +217,82 @@ class AuthorizationServiceTest(unittest.TestCase):
             )
 
 
+    def test_delegated_capability_requires_registry_backed_chain(self):
+        from core.capabilities import CapabilityRegistry
+
+        action = self._action()
+        storage = Storage(Path(self.tmpdir.name) / "delegation.db")
+        registry = CapabilityRegistry(storage)
+        parent = Capability(
+            capability_id="cap-parent",
+            agent_id="agent-rwa",
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+        )
+        child = Capability(
+            capability_id="cap-child",
+            agent_id="agent-rwa",
+            delegated_from=parent.capability_id,
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+        )
+        registry.register(parent)
+        registry.register(child)
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+
+        with self.assertRaisesRegex(PermissionError, "registry-backed authority-chain"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                "f" * 64,
+                load_private_key(self.priv),
+                capability=child,
+                authority=DynamicAuthorityService(storage).snapshot(
+                    action.agent_id, child.capability_id
+                ),
+                policy=Policy(),
+            )
+        storage.close()
+
+    def test_parent_revocation_blocks_new_delegated_authorization(self):
+        from core.capabilities import CapabilityRegistry
+
+        action = self._action()
+        storage = Storage(Path(self.tmpdir.name) / "delegation-revocation.db")
+        registry = CapabilityRegistry(storage)
+        parent = Capability(
+            capability_id="cap-parent",
+            agent_id="agent-rwa",
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+        )
+        child = Capability(
+            capability_id="cap-child",
+            agent_id="agent-rwa",
+            delegated_from=parent.capability_id,
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+        )
+        registry.register(parent)
+        registry.register(child)
+        registry.revoke(parent.capability_id)
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+
+        with self.assertRaisesRegex(PermissionError, "ineffective authority chain"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                "f" * 64,
+                load_private_key(self.priv),
+                capability=child,
+                capability_registry=registry,
+                authority=DynamicAuthorityService(storage).snapshot(
+                    action.agent_id, child.capability_id
+                ),
+                policy=Policy(),
+            )
+        storage.close()
+
 if __name__ == "__main__":
     unittest.main()
 
