@@ -14,6 +14,7 @@ from core.engine import GuardrailEngine
 from core.evidence import EvidenceGraph
 from core.evidence_manifest import build_manifest, verify_manifest
 from core.proof_engine import digest
+from core.proof_package import build_proof_package
 from core.outcome import OutcomeAttestationService
 from core.authority_protocol import LifecycleStage
 from enforcement.router import ExecutionRouter
@@ -158,6 +159,14 @@ class GenesisLifecycle:
             self._learning["proof_manifest_sha256"] = digest(manifest)
         self.stage = LifecycleStage.PROVE
         return manifest
+
+    def package(self) -> dict[str, Any]:
+        """Export the completed lifecycle proof as one portable package."""
+        if self._manifest is None:
+            raise RuntimeError("proof manifest is required before packaging")
+        if self._manifest["payload"].get("proof_profile") != "authority_lifecycle":
+            raise RuntimeError("Genesis packaging requires an authority lifecycle proof")
+        return build_proof_package(self._manifest)
 
     def learn(self) -> dict[str, Any]:
         """Feed only the independently verified outcome back into authority."""

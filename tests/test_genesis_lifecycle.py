@@ -25,6 +25,7 @@ from core.outcome import (
 from core.policy import Policy
 from core.authority_state import AuthorityPolicy, AuthorityState, DynamicAuthorityService
 from core.proof_engine import digest
+from core.proof_package import serialize_proof_package, verify_proof_package
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
@@ -217,7 +218,15 @@ class GenesisLifecycleTest(unittest.TestCase):
             "genesis-agent",
         )
 
-        learned_snapshot = lifecycle.result().learning["authority_snapshot"]
+        package = lifecycle.package()
+        package_bytes = serialize_proof_package(package)
+        package_result = verify_proof_package(package_bytes)
+        self.assertTrue(package_result["valid"], package_result)
+        self.assertTrue(package_result["package_valid"])
+        self.assertEqual(package_result["proof_profile"], "authority_lifecycle")
+        self.assertEqual(package_result["node_count"], len(manifest["payload"]["nodes"]))
+
+        learned_snapshot = lifecycle.result()["learning"]["authority_snapshot"]
         self.assertEqual(learned_snapshot["state"], AuthorityState.STANDARD.value)
         self.assertEqual(learned_snapshot["multiplier"], 0.50)
         self.assertLessEqual(learned_snapshot["multiplier"], 1.0)
@@ -251,6 +260,21 @@ class GenesisLifecycleTest(unittest.TestCase):
         self.assertEqual(
             next_authorization["payload"]["capability_sha256"],
             capability.digest,
+        )
+
+        authority_service.record_event(
+            agent_id="genesis-agent",
+            capability_id=capability.capability_id,
+            identity_id=identity_id,
+            event_type="EXECUTION_FAILED",
+            evidence_ref="post-package-mutation",
+            metadata={"reason": "package independence regression"},
+        )
+        package_after_mutation = verify_proof_package(package_bytes)
+        self.assertTrue(package_after_mutation["valid"], package_after_mutation)
+        self.assertEqual(
+            package_after_mutation["checks"]["historical_authority"]["details"]["ledger_sequence"],
+            package_result["checks"]["historical_authority"]["details"]["ledger_sequence"],
         )
         types = {node["type"] for node in manifest["payload"]["nodes"]}
         self.assertIn("execution_authorization", types)
