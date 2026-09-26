@@ -12,10 +12,12 @@ from cryptography.hazmat.primitives import serialization
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.effect_verification import MCPToolVerifier
 from core.attestor import AttestorAuthorityService
+from core.authority_state import DynamicAuthorityService
 from core.engine import GuardrailEngine
 from core.evidence import EvidenceGraph
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
 from core.evidence_manifest import build_manifest, verify_manifest, canonical, graph_root
+from core.offline_verifier import verify_proof
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.outcome import OutcomeAttestationService, build_outcome_attestation, build_outcome_claim
 from core.identity import sign_action_intent
@@ -197,7 +199,17 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         ).verify_and_record(attestation)
         self.assertIsNotNone(outcome["authority_event"])
 
-        graph = EvidenceGraph(self.storage, self.public_key).build(authorization["payload"]["authorization_id"])
+        authority_snapshot = DynamicAuthorityService(self.storage).snapshot(
+            "reference-agent", "reference-capability"
+        ).as_dict()
+        event = self.storage.authority_events(
+            agent_id="reference-agent", capability_id="reference-capability"
+        )[-1]
+        authority_snapshot["source_event_id"] = event["event_id"]
+        graph = EvidenceGraph(self.storage, self.public_key).build(
+            authorization["payload"]["authorization_id"],
+            authority_snapshot_after=authority_snapshot,
+        )
         manifest = build_manifest(graph, self.private_key, proof_profile="authority_lifecycle")
         result = verify_manifest(manifest, manifest["issuer_public_key_b64"])
         self.assertTrue(result["valid"])
@@ -269,8 +281,16 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             private_key=attestor_key,
         )
         OutcomeAttestationService(self.storage, self.public_key).verify_and_record(attestation)
+        authority_snapshot = DynamicAuthorityService(self.storage).snapshot(
+            "reference-agent", "reference-capability"
+        ).as_dict()
+        event = self.storage.authority_events(
+            agent_id="reference-agent", capability_id="reference-capability"
+        )[-1]
+        authority_snapshot["source_event_id"] = event["event_id"]
         graph = EvidenceGraph(self.storage, self.public_key).build(
-            authorization["payload"]["authorization_id"]
+            authorization["payload"]["authorization_id"],
+            authority_snapshot_after=authority_snapshot,
         )
         return build_manifest(graph, self.private_key, proof_profile="authority_lifecycle")
 
@@ -350,6 +370,11 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             node["data"]["evidence_ref"] = "forged-claim"
         mutate("wrong authority event", wrong_authority_event)
 
+        def wrong_authority_state_after(p):
+            node = next(n for n in p["nodes"] if n["type"] == "authority_state_after")
+            node["data"]["source_event_id"] = "forged-event"
+        mutate("wrong post-learning authority state", wrong_authority_state_after)
+
         def disconnected_edge(p):
             edge = next(
                 e for e in p["edges"]
@@ -374,7 +399,10 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
                 manifest = json.loads(json.dumps(valid_manifest))
                 mutation(manifest["payload"])
                 self._resign_mutated_manifest(manifest)
-                result = verify_manifest(manifest, manifest["issuer_public_key_b64"])
+                result = verify_proof(
+                    manifest,
+                    trusted_public_key_b64=manifest["issuer_public_key_b64"],
+                )
                 self.assertFalse(result["valid"], label)
 
     def test_authority_lifecycle_requires_independent_artifact_verification(self):

@@ -137,7 +137,14 @@ class GenesisLifecycle:
         authorization_id = self.authorization["execution_authorization"]["payload"][
             "authorization_id"
         ]
-        graph = self.evidence_graph.build(authorization_id)
+        graph = self.evidence_graph.build(
+            authorization_id,
+            authority_snapshot_after=(
+                self._learning.get("authority_snapshot")
+                if self._learning is not None
+                else None
+            ),
+        )
         manifest = build_manifest(
             graph,
             self.proof_private_key,
@@ -194,10 +201,13 @@ class GenesisLifecycle:
         snapshot = authority_service.snapshot(
             claim["agent_id"], capability_id
         )
+        learned_snapshot = snapshot.as_dict()
+        if event is not None:
+            learned_snapshot["source_event_id"] = event["event_id"]
         self._learning = {
             "valid": True,
             "authority_event": event,
-            "authority_snapshot": snapshot.as_dict(),
+            "authority_snapshot": learned_snapshot,
             "authority_snapshot_sha256": snapshot.digest,
             "proof_manifest_sha256": None,
         }

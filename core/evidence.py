@@ -114,13 +114,28 @@ class EvidenceGraph:
         synthetic_id = _digest(decision)
         return self._build_artifacts(synthetic_id, artifacts)
 
-    def build(self, authorization_id: str) -> dict[str, Any]:
+    def build(
+        self,
+        authorization_id: str,
+        *,
+        authority_snapshot_after: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         artifacts = self.storage.authorization_by_id(authorization_id)
         if artifacts is None:
             raise LookupError("authorization evidence not found")
-        return self._build_artifacts(authorization_id, artifacts)
+        return self._build_artifacts(
+            authorization_id,
+            artifacts,
+            authority_snapshot_after=authority_snapshot_after,
+        )
 
-    def _build_artifacts(self, authorization_id: str, artifacts: dict) -> dict[str, Any]:
+    def _build_artifacts(
+        self,
+        authorization_id: str,
+        artifacts: dict,
+        *,
+        authority_snapshot_after: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         decision = artifacts["decision_receipt"]
         execution = artifacts.get("execution_authorization")
         intent = decision["payload"]["intent"]
@@ -289,6 +304,23 @@ class EvidenceGraph:
                     )
                     nodes.append(_node("authority_state", capability_id, dynamic))
                 edges.append({"from": f"authority_state:{capability_id}", "relation": "CONSTRAINS", "to": f"action_intent:{intent_id}"})
+
+                if authority_snapshot_after is not None:
+                    after_id = _digest(authority_snapshot_after)
+                    nodes.append(_node("authority_state_after", after_id, authority_snapshot_after))
+                    verification["authority_state_after"] = {
+                        "valid": (
+                            authority_snapshot_after.get("agent_id") == capability.agent_id
+                            and authority_snapshot_after.get("capability_id") == capability.capability_id
+                            and isinstance(authority_snapshot_after.get("ledger_head_hash"), str)
+                        ),
+                        "reason": "post-learning authority snapshot is identity- and ledger-bound",
+                    }
+                    edges.append({
+                        "from": f"authority_event:{authority_snapshot_after.get('source_event_id', '')}",
+                        "relation": "TRANSITIONS_TO",
+                        "to": f"authority_state_after:{after_id}",
+                    })
 
                 # The authority ledger is the cryptographically linked lifecycle
                 # history behind the current dynamic authority state. Include the

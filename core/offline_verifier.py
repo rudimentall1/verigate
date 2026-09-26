@@ -64,6 +64,42 @@ def _check_authority_binding(payload: dict[str, Any]) -> tuple[bool, str, dict[s
         "ledger_head_hash": committed,
     }
 
+def _check_authority_transition(payload: dict[str, Any]) -> tuple[bool, str, dict[str, Any]]:
+    event_node = _node(payload, "authority_event")
+    after_node = _node(payload, "authority_state_after")
+    claim_node = _node(payload, "outcome_claim")
+    ledger_node = _node(payload, "authority_ledger")
+    if event_node is None or after_node is None:
+        return False, "authority transition evidence is incomplete", {}
+    if claim_node is None or ledger_node is None:
+        return False, "authority transition is missing outcome or ledger evidence", {}
+    event = event_node["data"]
+    snapshot = after_node["data"]
+    claim = claim_node["data"]
+    entries = ledger_node["data"].get("entries")
+    if not isinstance(event, dict) or not isinstance(snapshot, dict) or not isinstance(claim, dict):
+        return False, "authority transition evidence is malformed", {}
+    if event.get("evidence_ref") != claim.get("claim_id"):
+        return False, "authority event is not bound to the outcome claim", {}
+    if snapshot.get("source_event_id") != event.get("event_id"):
+        return False, "post-learning authority snapshot is not bound to its event", {}
+    if snapshot.get("agent_id") != event.get("agent_id") or snapshot.get("capability_id") != event.get("capability_id"):
+        return False, "post-learning authority snapshot identity mismatch", {}
+    if not isinstance(entries, list):
+        return False, "authority ledger evidence is malformed", {}
+    matching = [row for row in entries if row.get("event_id") == event.get("event_id")]
+    if len(matching) != 1:
+        return False, "authority transition event is absent from the ledger", {}
+    if snapshot.get("ledger_head_hash") != matching[0].get("event_hash"):
+        return False, "post-learning authority snapshot is not bound to ledger head", {}
+    return True, "post-learning authority transition verified", {
+        "event_id": event.get("event_id"),
+        "claim_id": claim.get("claim_id"),
+        "authority_snapshot_sha256": hashlib.sha256(canonical(snapshot)).hexdigest(),
+        "ledger_head_hash": snapshot.get("ledger_head_hash"),
+    }
+
+
 def verify_proof(manifest: dict[str, Any], *, trusted_public_key_b64: str | None = None) -> dict[str, Any]:
     envelope = verify_manifest(manifest, trusted_public_key_b64); checks: dict[str, dict[str, Any]] = {}
     if not envelope["valid"]:
@@ -81,4 +117,19 @@ def verify_proof(manifest: dict[str, Any], *, trusted_public_key_b64: str | None
             if not ok: return {"valid": False, "reason": reason, "checks": checks}
         ok, reason, details = _check_authority_binding(payload); checks["historical_authority"] = {"valid": ok, "reason": reason, "details": details}
         if not ok: return {"valid": False, "reason": reason, "checks": checks}
+        if payload.get("proof_profile") == "authority_lifecycle":
+            genesis_node = _node(payload, "genesis_authority")
+            authority_node = _node(payload, "authority_state")
+            if genesis_node is None or authority_node is None:
+                return {"valid": False, "reason": "Genesis authority evidence is incomplete", "checks": checks}
+            genesis = genesis_node["data"]
+            authority_state = authority_node["data"]
+            auth_payload = auth_node["data"]["payload"]
+            if auth_payload.get("authority_state_sha256") != hashlib.sha256(canonical(authority_state)).hexdigest():
+                return {"valid": False, "reason": "historical authority snapshot digest mismatch", "checks": checks}
+            if genesis.get("authority_digest") and genesis.get("authority_digest") != auth_payload.get("authority_state_sha256"):
+                return {"valid": False, "reason": "Genesis authority does not bind historical authority", "checks": checks}
+            ok, reason, details = _check_authority_transition(payload)
+            checks["authority_transition"] = {"valid": ok, "reason": reason, "details": details}
+            if not ok: return {"valid": False, "reason": reason, "checks": checks}
     return {"valid": True, "reason": "valid portable Verigate proof", "proof_profile": payload.get("proof_profile", "integrity"), "root_digest": payload["root_digest"], "checks": checks, "node_count": len(payload.get("nodes", [])), "edge_count": len(payload.get("edges", []))}
