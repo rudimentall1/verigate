@@ -66,7 +66,26 @@ def replay_authority_decision(storage, authorization: dict[str, Any], public_key
             "ledger_valid": True, "head_match": True,
         }
 
-    policy = AuthorityPolicy()
+    policy_artifact = payload.get("authority_policy")
+    policy_digest = payload.get("authority_policy_sha256")
+    if not isinstance(policy_artifact, dict) or not isinstance(policy_digest, str):
+        return False, "authorization has no authority policy binding", {
+            "ledger_valid": True, "head_match": True, "snapshot_valid": True,
+        }
+    try:
+        policy = AuthorityPolicy.from_dict(policy_artifact)
+    except (KeyError, TypeError, ValueError):
+        return False, "invalid authority policy binding", {
+            "ledger_valid": True, "head_match": True, "snapshot_valid": True,
+        }
+    if policy.digest != policy_digest:
+        return False, "authority policy digest mismatch", {
+            "ledger_valid": True, "head_match": True, "snapshot_valid": True,
+        }
+    if snapshot.get("authority_policy_sha256") != policy_digest:
+        return False, "authority snapshot is bound to a different authority policy", {
+            "ledger_valid": True, "head_match": True, "snapshot_valid": True,
+        }
     if snapshot.get("state") == AuthorityState.SUSPENDED.value and critical < policy.suspension_critical_events:
         return False, "authority snapshot state is not justified by historical critical events", {
             "ledger_valid": True, "head_match": True,

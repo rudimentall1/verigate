@@ -41,6 +41,44 @@ class AuthorityPolicy:
     elevated_multiplier: float = 1.00
     elevated_only_actions: tuple[str, ...] = ("irreversible_operation",)
 
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "window_seconds": self.window_seconds,
+            "probation_successes": self.probation_successes,
+            "standard_successes": self.standard_successes,
+            "limited_adverse_events": self.limited_adverse_events,
+            "suspension_critical_events": self.suspension_critical_events,
+            "probation_multiplier": self.probation_multiplier,
+            "limited_multiplier": self.limited_multiplier,
+            "standard_multiplier": self.standard_multiplier,
+            "elevated_multiplier": self.elevated_multiplier,
+            "elevated_only_actions": list(self.elevated_only_actions),
+        }
+
+    @property
+    def digest(self) -> str:
+        canonical = json.dumps(
+            self.as_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "AuthorityPolicy":
+        if not isinstance(value, dict):
+            raise ValueError("authority policy must be an object")
+        return cls(
+            window_seconds=int(value["window_seconds"]),
+            probation_successes=int(value["probation_successes"]),
+            standard_successes=int(value["standard_successes"]),
+            limited_adverse_events=int(value["limited_adverse_events"]),
+            suspension_critical_events=int(value["suspension_critical_events"]),
+            probation_multiplier=float(value["probation_multiplier"]),
+            limited_multiplier=float(value["limited_multiplier"]),
+            standard_multiplier=float(value["standard_multiplier"]),
+            elevated_multiplier=float(value["elevated_multiplier"]),
+            elevated_only_actions=tuple(value["elevated_only_actions"]),
+        )
+
     def multiplier(self, state: AuthorityState) -> float:
         return {
             AuthorityState.PROBATION: self.probation_multiplier,
@@ -63,6 +101,7 @@ class AuthoritySnapshot:
     evaluated_at: float = field(default_factory=time.time)
     reason: str = ""
     ledger_head_hash: str = ""
+    authority_policy_sha256: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -76,6 +115,7 @@ class AuthoritySnapshot:
             "evaluated_at": self.evaluated_at,
             "reason": self.reason,
             "ledger_head_hash": self.ledger_head_hash,
+            "authority_policy_sha256": self.authority_policy_sha256,
         }
 
     @property
@@ -159,6 +199,7 @@ class DynamicAuthorityService:
             evaluated_at=now,
             reason=reason,
             ledger_head_hash=self.storage.authority_ledger_head(agent_id, capability_id),
+            authority_policy_sha256=self.policy.digest,
         )
         self.storage.set_authority_state(
             agent_id,

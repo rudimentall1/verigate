@@ -338,6 +338,7 @@ class GuardrailEngine:
             capability=capability,
             identity=identity,
             authority=authority,
+            authority_policy=self.authority_service.policy if authority is not None else None,
             policy=self.policy if capability is not None else None,
             signed_policy=self.signed_policy_version(private_key),
             authority_assessment=authority_assessment,

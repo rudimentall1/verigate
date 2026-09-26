@@ -113,6 +113,8 @@ def issue_execution_authorization(
     authority_state_sha256: str | None = None,
     authority_multiplier: float | None = None,
     authority_ledger_head_hash: str | None = None,
+    authority_policy_sha256: str | None = None,
+    authority_policy: dict[str, Any] | None = None,
     effective_authority: dict[str, Any] | None = None,
     execution_graph: dict[str, Any] | None = None,
     genesis_authority: dict[str, Any] | None = None,
@@ -140,6 +142,9 @@ def issue_execution_authorization(
         "authority_state_sha256": authority_state_sha256,
         "authority_multiplier": authority_multiplier,
         "authority_ledger_head_hash": authority_ledger_head_hash,
+        "authority_policy_sha256": authority_policy_sha256,
+        "authority_policy": authority_policy,
+        "authority_policy_artifact_sha256": (hashlib.sha256(_canonical(authority_policy)).hexdigest() if authority_policy is not None else None),
         "effective_authority": effective_authority,
         "effective_authority_sha256": (
             hashlib.sha256(_canonical(effective_authority)).hexdigest()
@@ -309,6 +314,19 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
                     return False, "invalid execution authority ledger head fingerprint"
                 if ledger_head != authority_state.get("ledger_head_hash"):
                     return False, "execution authority ledger head mismatch"
+            authority_policy = payload.get("authority_policy")
+            authority_policy_sha256 = payload.get("authority_policy_sha256")
+            authority_policy_artifact_sha256 = payload.get("authority_policy_artifact_sha256")
+            if authority_policy is not None:
+                if not isinstance(authority_policy, dict) or not isinstance(authority_policy_sha256, str):
+                    return False, "invalid execution authority policy binding"
+                expected_policy_sha256 = hashlib.sha256(_canonical(authority_policy)).hexdigest()
+                if authority_policy_sha256 != expected_policy_sha256:
+                    return False, "execution authority policy fingerprint mismatch"
+                if authority_policy_artifact_sha256 != expected_policy_sha256:
+                    return False, "execution authority policy artifact fingerprint mismatch"
+                if authority_state is not None and authority_state.get("authority_policy_sha256") != authority_policy_sha256:
+                    return False, "execution authority policy does not match authority state"
 
         issued_at = payload.get("issued_at")
         expires_at = payload.get("expires_at")
@@ -440,6 +458,9 @@ def execution_receipt_payload(
         "authority_state_sha256": auth_payload.get("authority_state_sha256"),
         "authority_multiplier": auth_payload.get("authority_multiplier"),
         "authority_ledger_head_hash": auth_payload.get("authority_ledger_head_hash"),
+        "authority_policy_sha256": auth_payload.get("authority_policy_sha256"),
+        "authority_policy": auth_payload.get("authority_policy"),
+        "authority_policy_artifact_sha256": auth_payload.get("authority_policy_artifact_sha256"),
         "genesis_authority": auth_payload.get("genesis_authority"),
         "genesis_authority_sha256": auth_payload.get("genesis_authority_sha256"),
         "action_sha256": auth_payload["action_sha256"],
@@ -535,6 +556,12 @@ def verify_execution_receipt(
             receipt_ledger_head = payload.get("authority_ledger_head_hash")
             if auth_ledger_head is not None and receipt_ledger_head is not None and receipt_ledger_head != auth_ledger_head:
                 return False, "execution receipt authority ledger head mismatch"
+            if payload.get("authority_policy_sha256") != auth.get("authority_policy_sha256"):
+                return False, "execution receipt authority policy fingerprint mismatch"
+            if payload.get("authority_policy") != auth.get("authority_policy"):
+                return False, "execution receipt authority policy mismatch"
+            if payload.get("authority_policy_artifact_sha256") != auth.get("authority_policy_artifact_sha256"):
+                return False, "execution receipt authority policy artifact fingerprint mismatch"
             if payload.get("genesis_authority") != auth.get("genesis_authority"):
                 return False, "execution receipt Genesis authority mismatch"
             if payload.get("genesis_authority_sha256") != auth.get("genesis_authority_sha256"):

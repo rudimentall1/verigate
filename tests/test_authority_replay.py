@@ -1,6 +1,6 @@
 import unittest
 
-from attest.keys import generate_keypair
+from attest.keys import generate_keypair, load_public_key
 from core.authority_replay import replay_authority_decision
 
 
@@ -20,7 +20,7 @@ class AuthorityReplayTest(unittest.TestCase):
 
     def test_historical_replay_survives_later_authority_events(self):
         from core.storage import Storage
-        from attest.keys import generate_keypair, load_private_key, load_public_key
+        from attest.keys import generate_keypair, load_public_key, load_private_key, load_public_key
         import tempfile
         from pathlib import Path
 
@@ -53,6 +53,8 @@ class AuthorityReplayTest(unittest.TestCase):
                 "authority_state": snapshot.as_dict(),
                 "authority_state_sha256": snapshot.digest,
                 "authority_multiplier": snapshot.multiplier,
+                "authority_policy_sha256": service.policy.digest,
+                "authority_policy": service.policy.as_dict(),
             }}
             with patch("core.authority_replay.verify_execution_authorization", return_value=(True, "valid")):
                 ok, reason, details = replay_authority_decision(storage, auth, public)
@@ -60,6 +62,39 @@ class AuthorityReplayTest(unittest.TestCase):
             self.assertEqual(details["ledger_sequence"], 1)
             self.assertEqual(details["live_ledger_sequence"], 2)
             self.assertEqual(details["ledger_head_hash"], head)
+
+    def test_replay_uses_historically_bound_authority_policy(self):
+        from core.storage import Storage
+        from core.authority_state import DynamicAuthorityService, AuthorityPolicy
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        storage = Storage(":memory:")
+        historical_policy = AuthorityPolicy(probation_successes=1, standard_successes=3, standard_multiplier=0.40)
+        service = DynamicAuthorityService(storage, historical_policy)
+        service.record_event(agent_id="a", capability_id="c", event_type="EXECUTION_CONFIRMED", evidence_ref="e1")
+        snapshot = service.snapshot("a", "c")
+        head = snapshot.ledger_head_hash
+        with tempfile.TemporaryDirectory() as tmp:
+            private_path = Path(tmp) / "issuer.key"
+            public_path = Path(tmp) / "issuer.pub"
+            generate_keypair(private_path, public_path)
+            public = load_public_key(public_path)
+            auth = {"payload": {
+                "agent_id": "a",
+                "capability_id": "c",
+                "authority_ledger_head_hash": head,
+                "authority_state": snapshot.as_dict(),
+                "authority_state_sha256": snapshot.digest,
+                "authority_multiplier": snapshot.multiplier,
+                "authority_policy_sha256": historical_policy.digest,
+                "authority_policy": historical_policy.as_dict(),
+            }}
+            with patch("core.authority_replay.verify_execution_authorization", return_value=(True, "valid")):
+                ok, reason, details = replay_authority_decision(storage, auth, public)
+            self.assertTrue(ok, reason)
+            self.assertEqual(details["authority_multiplier"], 0.40)
 
     def test_ledger_tamper_is_rejected(self):
         from core.storage import Storage
