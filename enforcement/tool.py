@@ -2,6 +2,20 @@
 from __future__ import annotations
 
 from typing import Any, Callable
+import hashlib
+
+
+def _handler_fingerprint(handler: Callable[..., Any]) -> str:
+    """Stable identity for the registered executable handler."""
+    code = getattr(handler, "__code__", None)
+    payload = {
+        "module": getattr(handler, "__module__", ""),
+        "qualname": getattr(handler, "__qualname__", ""),
+        "code": getattr(code, "co_code", b"").hex(),
+        "consts": repr(getattr(code, "co_consts", ())),
+    }
+    raw = repr(sorted(payload.items())).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
@@ -36,8 +50,16 @@ class ToolExecutionAdapter(ExecutionGate):
             tool = self._tool_name(authorization)
         except (KeyError, TypeError, ValueError) as exc:
             return False, str(exc)
-        if tool not in self.handlers:
+        handler = self.handlers.get(tool)
+        if handler is None:
             return False, f"tool is not registered: {tool}"
+        action = authorization["payload"]["action"]
+        metadata = action.get("metadata")
+        graph = metadata.get("execution_graph") if isinstance(metadata, dict) else None
+        if isinstance(graph, dict) and graph.get("handler_sha256"):
+            actual = _handler_fingerprint(handler)
+            if graph["handler_sha256"] != actual:
+                return False, "execution handler drift"
         return super().consume(authorization)
 
     def execute_registered(self, authorization: dict[str, Any]) -> Any:
