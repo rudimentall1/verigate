@@ -129,6 +129,79 @@ class ExecutionFabricTest(unittest.TestCase):
             router.execute(auth, lambda signed_action: side_effects.append(signed_action) or "sent")
         self.assertEqual(side_effects, [])
 
+    def test_transitive_execution_claim_is_rejected_by_direct_only_tool_adapter(self):
+        target = "github.create_issue"
+        side_effects = []
+
+        def handler(_signed_action):
+            side_effects.append("child-side-effect")
+            return "ok"
+
+        action = ActionIntent(
+            agent_id="tool-agent",
+            action_type="mcp.tool.call",
+            target=target,
+            metadata={
+                "arguments": {"title": "signed"},
+                "execution_graph": {
+                    "module": "enforcement.tool",
+                    "hook": "ToolExecutionAdapter",
+                    "router": "ExecutionRouter",
+                    "target": target,
+                    "enforcement_scope": "transitive",
+                    "handler_sha256": _handler_fingerprint(handler),
+                },
+            },
+        )
+        auth = self._auth(action)
+        adapter = ToolExecutionAdapter(
+            self.storage,
+            self.public_key,
+            {target: handler},
+        )
+        router = ExecutionRouter(
+            NetworkRegistry(),
+            self.storage,
+            self.public_key,
+            generic_adapters={"mcp.tool.call": adapter},
+        )
+
+        with self.assertRaises(ValueError) as exc:
+            router.execute(auth, lambda signed_action: side_effects.append(signed_action) or "sent")
+        self.assertIn("transitive enforcement", str(exc.exception))
+        self.assertEqual(side_effects, [])
+
+    def test_direct_execution_scope_remains_compatible(self):
+        target = "github.create_issue"
+        action = ActionIntent(
+            agent_id="tool-agent",
+            action_type="mcp.tool.call",
+            target=target,
+            metadata={
+                "arguments": {"title": "signed"},
+                "execution_graph": {
+                    "module": "enforcement.tool",
+                    "hook": "ToolExecutionAdapter",
+                    "router": "ExecutionRouter",
+                    "target": target,
+                    "enforcement_scope": "direct",
+                },
+            },
+        )
+        auth = self._auth(action)
+        adapter = ToolExecutionAdapter(
+            self.storage,
+            self.public_key,
+            {target: lambda _signed_action: "registered"},
+        )
+        router = ExecutionRouter(
+            NetworkRegistry(),
+            self.storage,
+            self.public_key,
+            generic_adapters={"mcp.tool.call": adapter},
+        )
+        self.assertEqual(router.execute(auth, lambda _signed_action: "sent"), "sent")
+
     def test_http_execution_uses_exact_signed_url_and_method(self):
         action = ActionIntent(
             agent_id="api-agent",

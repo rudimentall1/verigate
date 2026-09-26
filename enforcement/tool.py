@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import Any, Callable
 import hashlib
 
-
 def _handler_fingerprint(handler: Callable[..., Any]) -> str:
     """Stable identity for the registered executable handler."""
     code = getattr(handler, "__code__", None)
@@ -22,9 +21,15 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from core.storage import Storage
 from enforcement.local import ExecutionGate
 
-
 class ToolExecutionAdapter(ExecutionGate):
-    """Execute an MCP-style tool call only from signed action data."""
+    """Execute an MCP-style tool call only from signed action data.
+
+    The adapter enforces the direct execution boundary. A handler may not
+    advertise transitive side-effect confinement unless a future adapter
+    explicitly implements that stronger contract.
+    """
+
+    execution_enforcement_scope = "direct"
 
     def __init__(
         self,

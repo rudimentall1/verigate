@@ -89,8 +89,32 @@ This repository contains a runnable Genesis 2.0 authority lifecycle and its veri
 | Policy Freeze / Rollback | **Real.** Governance can freeze a governed policy immediately or activate a previously governed digest; strict runtimes enforce the control state on every authority issuance and persist control actions against replay. |
 | Governance / Authority Reset | **Real.** SUSPENDED authority can only enter a new epoch through a signed governance action; static capability revocation remains final. Single-governor compatibility exists, and the hardened path supports configurable multi-party quorum and role separation. |
 | Authorization service | **Real.** Generic `ActionIntent` decisions can mint the same portable receipt and one-time authority used by payment and other execution flows. |
-| Execution enforcement boundary | **Real.** One-time signed capabilities are consumed fail-closed; the local and dependency-light EVM adapters share the same gate. |
+| Execution enforcement boundary | **Real.** One-time signed capabilities are consumed fail-closed; the router binds the exact adapter, target, and execution artifact. Tool handlers are also identity-bound by fingerprint. |
+| Transitive executor confinement | **Explicit boundary.** The default tool scope is **direct**: Verigate proves which registered handler it invoked, but does not claim to sandbox arbitrary subprocesses, Git hooks, child tools, or other effects created inside that trusted handler. A `transitive` execution claim is rejected unless the adapter explicitly implements that stronger enforcement scope. |
 | Multi-tenant / hosted key management | **Not built.** Today, one issuer keypair per deployment, loaded from a local file. |
+
+### Execution boundary and transitive effects
+
+Verigate deliberately distinguishes **execution-path binding** from **executor confinement**.
+
+    SIGNED AUTHORIZATION
+            ↓
+    ExecutionRouter
+            ↓
+    registered adapter / handler       ← Verigate binds this identity
+            ↓
+    trusted executor
+            ├── direct side effect      ← covered by the execution boundary
+            └── child effect / process  ← NOT automatically covered
+
+A handler fingerprint prevents silent substitution of the registered executable component. It does **not** make arbitrary code inside that component safe: a trusted handler can still spawn a subprocess, invoke a Git hook, call another tool, or create a secondary side effect.
+
+Therefore execution graphs carry an `enforcement_scope`:
+
+- `direct` — the adapter/handler and signed action are bound and checked before the side effect.
+- `transitive` — a stronger claim that every delegated/child effect is itself constrained by Verigate; adapters that do not explicitly implement this contract are rejected before execution.
+
+This is intentional. Verigate must not produce a cryptographic proof that says “all transitive effects were controlled” when the runtime actually only controlled the first executable boundary.
 
 ---
 

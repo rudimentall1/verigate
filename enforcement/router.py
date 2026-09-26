@@ -185,6 +185,7 @@ class ExecutionRouter:
             "hook": adapter.__class__.__name__,
             "router": self.__class__.__name__,
             "target": action.get("target"),
+            "enforcement_scope": getattr(adapter, "execution_enforcement_scope", "direct"),
         }
         ok, reason = verify_execution_graph(expected, actual)
         if not ok:
