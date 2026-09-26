@@ -1,0 +1,93 @@
+﻿import copy
+import unittest
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from core.evidence_manifest import build_manifest
+from core.offline_verifier import verify_proof
+from core.proof_engine import canonical
+from core.proof_package import (
+    PACKAGE_MEDIA_TYPE,
+    build_proof_package,
+    parse_proof_package,
+    serialize_proof_package,
+    verify_proof_package,
+)
+
+
+def node(kind, ident, data):
+    import hashlib
+    return {
+        "type": kind,
+        "id": ident,
+        "sha256": hashlib.sha256(canonical(data)).hexdigest(),
+        "data": data,
+    }
+
+
+class ProofPackageTests(unittest.TestCase):
+    def _manifest(self):
+        key = Ed25519PrivateKey.generate()
+        graph = {
+            "authorization_id": "auth-1",
+            "intent_id": "intent-1",
+            "agent_id": "agent-1",
+            "graph_version": 1,
+            "nodes": [node("action_intent", "intent-1", {"intent_id": "intent-1"})],
+            "edges": [],
+            "verification": {},
+            "audit": {},
+        }
+        return build_manifest(graph, key)
+
+    def test_round_trip_is_deterministic_and_offline(self):
+        manifest = self._manifest()
+        package = build_proof_package(manifest)
+        raw = serialize_proof_package(package)
+        self.assertEqual(raw, serialize_proof_package(parse_proof_package(raw)))
+        result = verify_proof_package(raw)
+        self.assertTrue(result["valid"], result)
+        self.assertTrue(result["package_valid"])
+        self.assertEqual(package["package"]["media_type"], PACKAGE_MEDIA_TYPE)
+        self.assertTrue(verify_proof(manifest)["valid"])
+
+    def test_package_digest_rejects_envelope_tampering(self):
+        package = build_proof_package(self._manifest())
+        tampered = copy.deepcopy(package)
+        tampered["package"]["manifest"]["payload"]["agent_id"] = "forged-agent"
+        result = verify_proof_package(tampered)
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["reason"], "proof package digest mismatch")
+
+    def test_manifest_signature_rejects_tampering_after_repacking(self):
+        package = build_proof_package(self._manifest())
+        tampered = copy.deepcopy(package)
+        tampered["package"]["manifest"]["payload"]["agent_id"] = "forged-agent"
+        import hashlib
+        tampered["package_sha256"] = hashlib.sha256(canonical(tampered["package"])).hexdigest()
+        result = verify_proof_package(tampered)
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["reason"], "invalid manifest signature")
+
+    def test_unsupported_version_fails_closed(self):
+        package = build_proof_package(self._manifest())
+        package["package"]["package_version"] = 999
+        result = verify_proof_package(package)
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["reason"], "unsupported proof package version")
+
+    def test_missing_manifest_fails_closed(self):
+        package = build_proof_package(self._manifest())
+        del package["package"]["manifest"]
+        result = verify_proof_package(package)
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["reason"], "proof package manifest is missing")
+
+    def test_invalid_bytes_are_rejected(self):
+        result = verify_proof_package(b"not-json")
+        self.assertFalse(result["valid"])
+        self.assertFalse(result["package_valid"])
+
+
+if __name__ == "__main__":
+    unittest.main()
