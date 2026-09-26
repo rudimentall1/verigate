@@ -6,6 +6,7 @@ from attest.receipt import verify_execution_authorization, verify_execution_rece
 from core.evidence_manifest import verify_manifest
 from core.proof_engine import canonical, digest
 from core.authority_protocol import Authority, AuthorityState as GenesisAuthorityState
+from core.proof_protocol import verify_authority_assertions
 
 def _nodes(payload: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
     return {(n["type"], n["id"]): n for n in payload.get("nodes", [])}
@@ -106,6 +107,12 @@ def verify_proof(manifest: dict[str, Any], *, trusted_public_key_b64: str | None
     if not envelope["valid"]:
         return {"valid": False, "reason": envelope["reason"], "checks": {"manifest": {"valid": False, "reason": envelope["reason"]}}}
     payload = manifest["payload"]; checks["manifest"] = {"valid": True, "reason": "signed manifest, graph integrity, and Merkle root verified"}
+    if payload.get("proof_profile") == "authority_lifecycle":
+        protocol_assertions = payload.get("authority_assertions")
+        ok, reason, details = verify_authority_assertions(manifest, protocol_assertions)
+        checks["authority_protocol"] = {"valid": ok, "reason": reason, "details": details}
+        if not ok:
+            return {"valid": False, "reason": reason, "checks": checks}
     try: public_key = _issuer_key(manifest)
     except (ValueError, TypeError, base64.binascii.Error): return {"valid": False, "reason": "invalid embedded issuer public key", "checks": checks}
     auth_node = _node(payload, "execution_authorization")

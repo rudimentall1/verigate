@@ -92,9 +92,11 @@ def assertion_set_digest(assertions: list[dict[str, Any]]) -> str:
     return digest(assertions)
 
 
-def verify_authority_assertions(manifest: dict[str, Any], assertions: Any) -> tuple[bool, str, dict[str, Any]]:
+def verify_authority_assertions(manifest: dict[str, Any], assertions: Any = None) -> tuple[bool, str, dict[str, Any]]:
     if manifest.get("payload", {}).get("proof_profile") != "authority_lifecycle":
         return True, "assertion protocol not required for this profile", {}
+    if assertions is None:
+        assertions = manifest.get("payload", {}).get("authority_assertions")
     if not isinstance(assertions, list):
         return False, "authority proof assertions are missing", {}
     try:

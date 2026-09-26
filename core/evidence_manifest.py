@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 from core.proof_engine import canonical, digest
+from core.proof_protocol import build_authority_assertions, assertion_set_digest
 from core.proof_profiles import assurance_claims
 from core.proof_validators import validate_profile
 
@@ -72,6 +73,13 @@ def build_manifest(
     proof_profile: str = "integrity",
 ) -> dict[str, Any]:
     payload = _manifest_payload(graph, proof_profile)
+    if proof_profile == "authority_lifecycle":
+        # Assertions are signed as part of the manifest itself, so the
+        # independent verifier does not need the ProofPackage envelope.
+        provisional = {"payload": payload}
+        assertions = build_authority_assertions(provisional)
+        payload["authority_assertions"] = assertions
+        payload["authority_assertions_sha256"] = assertion_set_digest(assertions)
     profile_ok, profile_reason = validate_profile(payload, proof_profile)
     if not profile_ok:
         raise ValueError(profile_reason)

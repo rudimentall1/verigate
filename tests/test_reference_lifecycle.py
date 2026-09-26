@@ -226,6 +226,27 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             self.assertIn(required, types)
         self.assertTrue(graph["verification"]["all_signed_artifacts_valid"])
 
+    def test_authority_protocol_is_verified_without_package_envelope(self):
+        authorization, receipt = self._authorized_execution()
+        observed = MCPToolVerifier().verify_result(
+            authorization, tool_name="orders.create",
+            result={"order_id": "order-1", "status": "created"},
+            evidence_ref="mcp://orders.create/order-1",
+        )
+        attestor_key = self._attestor()
+        claim = build_outcome_claim(receipt.as_dict(), status="SUCCEEDED", executor_id="executor-reference", evidence_kind=observed.evidence_kind, evidence_ref=observed.evidence_ref, result_sha256=observed.result_sha256)
+        attestation = build_outcome_attestation(claim, attestor_id="external-reference", attestor_type="EXTERNAL_VERIFIER", private_key=attestor_key)
+        OutcomeAttestationService(self.storage, self.public_key).verify_and_record(attestation)
+        snapshot = DynamicAuthorityService(self.storage).snapshot("reference-agent", "reference-capability").as_dict()
+        event = self.storage.authority_events(agent_id="reference-agent", capability_id="reference-capability")[-1]
+        snapshot["source_event_id"] = event["event_id"]
+        graph = EvidenceGraph(self.storage, self.public_key).build(authorization["payload"]["authorization_id"], authority_snapshot_after=snapshot)
+        manifest = build_manifest(graph, self.private_key, proof_profile="authority_lifecycle")
+        result = verify_proof(manifest, trusted_public_key_b64=manifest["issuer_public_key_b64"])
+        self.assertTrue(result["valid"], result)
+        self.assertTrue(result["checks"]["authority_protocol"]["valid"])
+        self.assertEqual(result["checks"]["authority_protocol"]["details"]["assertion_count"], 9)
+
     def test_invalid_independent_outcome_cannot_update_authority(self):
         authorization, receipt = self._authorized_execution()
         attestor_key = self._attestor()
