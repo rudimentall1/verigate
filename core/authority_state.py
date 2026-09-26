@@ -102,6 +102,7 @@ class AuthoritySnapshot:
     reason: str = ""
     ledger_head_hash: str = ""
     authority_policy_sha256: str = ""
+    history_start_at: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -116,6 +117,7 @@ class AuthoritySnapshot:
             "reason": self.reason,
             "ledger_head_hash": self.ledger_head_hash,
             "authority_policy_sha256": self.authority_policy_sha256,
+            "history_start_at": self.history_start_at,
         }
 
     @property
@@ -200,6 +202,7 @@ class DynamicAuthorityService:
             reason=reason,
             ledger_head_hash=self.storage.authority_ledger_head(agent_id, capability_id),
             authority_policy_sha256=self.policy.digest,
+            history_start_at=history_start,
         )
         self.storage.set_authority_state(
             agent_id,

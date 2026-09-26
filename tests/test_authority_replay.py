@@ -55,6 +55,8 @@ class AuthorityReplayTest(unittest.TestCase):
                 "authority_multiplier": snapshot.multiplier,
                 "authority_policy_sha256": service.policy.digest,
                 "authority_policy": service.policy.as_dict(),
+                "evaluated_at": snapshot.evaluated_at,
+                "history_start_at": snapshot.evaluated_at - service.policy.window_seconds,
             }}
             with patch("core.authority_replay.verify_execution_authorization", return_value=(True, "valid")):
                 ok, reason, details = replay_authority_decision(storage, auth, public)
@@ -90,11 +92,28 @@ class AuthorityReplayTest(unittest.TestCase):
                 "authority_multiplier": snapshot.multiplier,
                 "authority_policy_sha256": historical_policy.digest,
                 "authority_policy": historical_policy.as_dict(),
+                "evaluated_at": snapshot.evaluated_at,
+                "history_start_at": snapshot.evaluated_at - historical_policy.window_seconds,
             }}
             with patch("core.authority_replay.verify_execution_authorization", return_value=(True, "valid")):
                 ok, reason, details = replay_authority_decision(storage, auth, public)
             self.assertTrue(ok, reason)
             self.assertEqual(details["authority_multiplier"], 0.40)
+
+    def test_replay_respects_historical_policy_window(self):
+        from core.storage import Storage
+        from core.authority_state import DynamicAuthorityService, AuthorityPolicy
+        import time
+        storage = Storage(":memory:")
+        policy = AuthorityPolicy(window_seconds=100, probation_successes=1)
+        service = DynamicAuthorityService(storage, policy)
+        service.record_event(agent_id="a", capability_id="c", event_type="EXECUTION_CONFIRMED", evidence_ref="old", occurred_at=100.0)
+        service.record_event(agent_id="a", capability_id="c", event_type="EXECUTION_FAILED", evidence_ref="recent", occurred_at=950.0)
+        snapshot = service.snapshot("a", "c", now=1000.0)
+        self.assertEqual(snapshot.successes, 0)
+        self.assertEqual(snapshot.adverse_events, 1)
+        self.assertEqual(snapshot.history_start_at, 900.0)
+        self.assertEqual(snapshot.evaluated_at, 1000.0)
 
     def test_ledger_tamper_is_rejected(self):
         from core.storage import Storage
