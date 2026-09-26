@@ -6,6 +6,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from core.evidence_manifest import build_manifest
 from core.offline_verifier import verify_proof
 from core.proof_engine import canonical
+from core.evidence import EvidenceGraph
 from core.proof_package import (
     PACKAGE_MEDIA_TYPE,
     PACKAGE_PROTOCOL,
@@ -53,6 +54,10 @@ class ProofPackageTests(unittest.TestCase):
         self.assertEqual(package["package"]["protocol"], PACKAGE_PROTOCOL)
         self.assertEqual(package["package"]["proof_profile"], "integrity")
         self.assertTrue(package["package"]["manifest_sha256"])
+        self.assertEqual(package["package"]["node_count"], 1)
+        self.assertEqual(package["package"]["edge_count"], 0)
+        self.assertEqual(len(package["package"]["node_inventory"]), 1)
+        self.assertEqual(package["package"]["graph_root_digest"], manifest["payload"]["root_digest"])
         self.assertTrue(verify_proof(manifest)["valid"])
 
     def test_package_digest_rejects_envelope_tampering(self):
@@ -76,6 +81,17 @@ class ProofPackageTests(unittest.TestCase):
         result = verify_proof_package(tampered)
         self.assertFalse(result["valid"])
         self.assertEqual(result["reason"], "invalid manifest signature")
+
+    def test_node_inventory_tampering_fails_closed(self):
+        package = build_proof_package(self._manifest())
+        tampered = copy.deepcopy(package)
+        tampered["package"]["node_inventory"][0]["type"] = "forged"
+        tampered["package_sha256"] = __import__("hashlib").sha256(
+            canonical(tampered["package"])
+        ).hexdigest()
+        result = verify_proof_package(tampered)
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["reason"], "proof package node inventory mismatch")
 
     def test_manifest_metadata_tampering_fails_closed(self):
         package = build_proof_package(self._manifest())

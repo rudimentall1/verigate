@@ -24,6 +24,18 @@ def _package_payload(manifest: dict[str, Any]) -> dict[str, Any]:
     manifest_payload = manifest.get("payload")
     if not isinstance(manifest_payload, dict):
         raise ValueError("proof package manifest payload is missing")
+    nodes = manifest_payload.get("nodes")
+    edges = manifest_payload.get("edges")
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        raise ValueError("proof package manifest graph is missing")
+    inventory = [
+        {
+            "type": node.get("type"),
+            "id": node.get("id"),
+            "sha256": node.get("sha256"),
+        }
+        for node in nodes
+    ]
     return {
         "package_version": PACKAGE_VERSION,
         "media_type": PACKAGE_MEDIA_TYPE,
@@ -32,6 +44,10 @@ def _package_payload(manifest: dict[str, Any]) -> dict[str, Any]:
         "authorization_id": manifest_payload.get("authorization_id"),
         "intent_id": manifest_payload.get("intent_id"),
         "agent_id": manifest_payload.get("agent_id"),
+        "graph_root_digest": manifest_payload.get("root_digest"),
+        "node_inventory": inventory,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
         "manifest_sha256": digest(manifest),
         "manifest": manifest,
     }
@@ -99,6 +115,21 @@ def _validate_package_envelope(package: Any) -> tuple[bool, str]:
     for field in ("proof_profile", "authorization_id", "intent_id", "agent_id"):
         if payload.get(field) != manifest_payload.get(field):
             return False, f"proof package {field} mismatch"
+    if payload.get("graph_root_digest") != manifest_payload.get("root_digest"):
+        return False, "proof package graph root mismatch"
+    nodes = manifest_payload.get("nodes")
+    edges = manifest_payload.get("edges")
+    inventory = payload.get("node_inventory")
+    if not isinstance(nodes, list) or not isinstance(edges, list) or not isinstance(inventory, list):
+        return False, "proof package graph inventory is missing"
+    expected_inventory = [
+        {"type": n.get("type"), "id": n.get("id"), "sha256": n.get("sha256")}
+        for n in nodes
+    ]
+    if inventory != expected_inventory:
+        return False, "proof package node inventory mismatch"
+    if payload.get("node_count") != len(nodes) or payload.get("edge_count") != len(edges):
+        return False, "proof package graph counts mismatch"
     return True, "valid proof package envelope"
 
 
