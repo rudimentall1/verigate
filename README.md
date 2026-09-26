@@ -1,81 +1,76 @@
 # Verigate
 
-**Agent Authority Control Plane for autonomous agents.**
+**Agent Authority Control Plane / Agent Authority Infrastructure for autonomous agents.**
 
-An AI agent can propose an action. Verigate establishes the authority under which it may execute, then enforces and proves what actually happened. Identity, capabilities, policy, execution and evidence are protocol-agnostic; payments and blockchains are adapters, not the product boundary.
+AI agents can propose consequential actions. Verigate decides whether the agent has the authority to execute the exact action, enforces that authorization at the execution boundary, records what happened, and produces evidence that can be verified independently later.
 
-Your agent wants to pay for something — a data feed, an API call, an
-invoice, an x402 `PAYMENT-REQUIRED` offer. Verigate checks that payment
-against rules you wrote, before it happens, decides ALLOW / WARN / BLOCK,
-and cryptographically signs the decision — so a partner, auditor, or
-counter-party can verify it actually happened and hasn't been altered,
-**without trusting your server, your logs, or your dashboard.**
+> **AI may propose an action; only Verigate decides whether the agent has the authority to execute it.**
 
+The product boundary is not a wallet, risk score, policy dashboard, blockchain guard, or agent framework. Payments, EVM, Solana, HTTP and MCP are execution adapters around one protocol-agnostic authority model.
+
+```text
+AGENT
+  ↓
+ACTION INTENT
+  ↓
+IDENTITY + CAPABILITIES + CONTEXT + POLICY
+  ↓
+AUTHORITY DECISION
+  ↓
+SIGNED EXECUTION AUTHORIZATION
+  ↓
+EXECUTION-SIDE ENFORCEMENT
+  ↓
+REAL SIDE EFFECT
+  ↓
+OBSERVATION + OUTCOME ATTESTATION
+  ↓
+EVIDENCE + AUTHORITY UPDATE
+  ↓
+PORTABLE PROOF
+  ↓
+ANY THIRD PARTY → VALID / INVALID
 ```
-x402 offer / raw payment intent
-            |
-            v
-   ┌─────────────────────┐
-   │   Policy Engine       │   deterministic rules: caps, allowlists,
-   │   (guardrail/*)         │   rate limits, new-payee/daily limits
-   └─────────────────────┘
-            |
-            v
-     ALLOW / WARN / BLOCK
-            |
-            v
-   ┌─────────────────────┐
-   │  Ed25519 Attestation   │   signed with the issuer's private key
-   └─────────────────────┘
-            |
-            v
-   anyone with the PUBLIC key can verify the decision independently
+
+## The judge-level proof
+
+The strongest Verigate demonstration is not an ALLOW/BLOCK screen. It is the complete lifecycle:
+
+```text
+Give Verigate an agent action.
+        ↓
+Verigate decides authority.
+        ↓
+Execution produces evidence.
+        ↓
+The proof leaves the runtime.
+        ↓
+Anyone can verify that evidence without trusting Verigate.
+        ↓
+Change the evidence.
+        ↓
+Independent verification returns INVALID.
 ```
 
----
+Genesis 2.0 is executable locally:
 
-## Why this, not another agent-risk dashboard
+```bash
+python examples/genesis_demo.py
+```
 
-The core problem is broader than payments: autonomous agents increasingly
-need authority to call APIs, use MCP tools, change cloud resources, write
-data, move money, execute contracts and perform other consequential actions.
+It runs the real lifecycle contract, verifies the checked-in portable proof with the standalone verifier, then mutates the proof and requires independent rejection.
 
-Verigate therefore treats payment as one execution adapter inside a general
-authority lifecycle. The critical boundary is not a dashboard or a risk
-number; it is the verifiable chain from **identity → capability → exact
-intent → decision → authorization → execution → evidence**.
+## Why Verigate
 
-Most answers to that gap are "trust our dashboard" — a vendor's server
-decides, logs the decision, and shows you a UI. Verigate's decisions are
-**independently checkable**: the signature is a mathematical proof over
-the decision payload, verifiable by anyone holding the public key, with
-no API call back to Verigate required. If a decision is presented to you
-after the fact — by a counter-party, in a dispute, for an audit — you can
-verify it was genuine and untampered without ever trusting the party who
-handed it to you.
+Autonomous agents increasingly need to call APIs, use MCP tools, modify cloud resources, write data, move money, execute contracts, and trigger other irreversible operations. The hard problem is not merely deciding whether an action looks risky. It is proving that the principal had authority for **this exact action**, that the execution boundary enforced that authority, and that the resulting evidence was not rewritten afterward.
 
-It is also **not blockchain- or protocol-specific**. The policy engine
-operates on a normalized `PaymentIntent` — x402 is the first protocol
-adapter, but the same engine, same policy file, and same signed-decision
-model apply to any payment rail you write a normalizer for.
+Verigate makes **authority** a first-class protocol object: identity, capabilities, delegation, constraints, policy, context, time, budget, dynamic state, revocation and history combine into an authorization decision. Dynamic authority can change from verified outcomes, but never beyond the static capability ceiling.
 
 ---
 
-## Who this is for
+## Current state
 
-- Teams shipping agents that spend real money (via x402, AP2, or a custom
-  rail) who need org-level spend controls the protocol itself doesn't
-  provide.
-- Anyone who has to **prove** to a finance team, an auditor, or a
-  counter-party what an agent was and wasn't allowed to do — not just
-  assert it.
-
----
-
-## Honesty about the current state
-
-This is a real, runnable, tested policy engine and attestation
-system — not yet a hosted product. Specifically:
+This repository contains a runnable Genesis 2.0 authority lifecycle and its verification boundaries. It is a protocol implementation/demo, not a hosted multi-tenant service. Specifically:
 
 | Component | Status |
 |---|---|
@@ -89,7 +84,9 @@ system — not yet a hosted product. Specifically:
 | Capability Registry | **Real.** Capabilities are persistent, scoped, versioned and revocable; authority artifacts bind capability ID/version/digest. |
 | Dynamic Agent Authority | **Real.** Verified execution outcomes deterministically promote/demote effective authority inside the static capability ceiling; snapshots are persisted and bound to execution authorization. |
 | Adversarial Verification Plane | **Real.** A reusable mutation corpus challenges signed execution authority and exposes the result through an independent verification endpoint. |
-| Signed Policy Versions | **Real.** Policy identity, version, exact digest and provenance are signed and bound into decision, authorization and execution evidence. |\n| Governed Policy Publication | **Real.** A policy version can be published into the governed registry only after an exact-action quorum with role separation; strict engines reject unapproved policy versions. |\n| Policy Freeze / Rollback | **Real.** Governance can freeze a governed policy immediately or activate a previously governed digest; strict runtimes enforce the control state on every authority issuance and persist control actions against replay. |
+| Signed Policy Versions | **Real.** Policy identity, version, exact digest and provenance are signed and bound into decision, authorization and execution evidence. |
+| Governed Policy Publication | **Real.** A policy version can be published into the governed registry only after an exact-action quorum with role separation; strict engines reject unapproved policy versions. |
+| Policy Freeze / Rollback | **Real.** Governance can freeze a governed policy immediately or activate a previously governed digest; strict runtimes enforce the control state on every authority issuance and persist control actions against replay. |
 | Governance / Authority Reset | **Real.** SUSPENDED authority can only enter a new epoch through a signed governance action; static capability revocation remains final. Single-governor compatibility exists, and the hardened path supports configurable multi-party quorum and role separation. |
 | Authorization service | **Real.** Generic `ActionIntent` decisions can mint the same portable receipt and one-time authority used by payment and other execution flows. |
 | Execution enforcement boundary | **Real.** One-time signed capabilities are consumed fail-closed; the local and dependency-light EVM adapters share the same gate. |
@@ -102,11 +99,13 @@ system — not yet a hosted product. Specifically:
 ```bash
 pip install -r requirements.txt
 
-# Run the tests (fast, no network, no API layer needed)
+# Run the full automated suite
 PYTHONPATH=. python3 -m unittest discover -s tests -v
 
-# See the full story end-to-end: a real x402 header parsed, evaluated,
-# signed, and independently verified — including a tamper-detection check.
+# Run the Genesis 2.0 judge-grade lifecycle + portable proof + tamper demo
+PYTHONPATH=. python3 examples/genesis_demo.py
+
+# Legacy payment / attestation walkthrough
 PYTHONPATH=. python3 demo.py
 
 # Prove an ALLOW authorization gates a real side effect and blocks replay
@@ -172,7 +171,9 @@ PYTHONPATH=. python3 cli.py history --agent trading-agent-001
 
 ### Judge demo UI
 
-The browser UI lives at **http://localhost:8000/demo/**, but the demo execution endpoints are disabled by default. This is intentional: opening a web page must never implicitly expose a live blockchain execution endpoint.
+The browser UI lives at **http://localhost:8000/demo/**. It is a presentation layer over explicit demo endpoints; opening the page never implicitly enables live execution.
+
+The canonical judge proof is the Genesis 2.0 command above. The UI is the visual execution/enforcement layer, not the source of truth.
 
 For a safe local proof of execution-side enforcement:
 
@@ -319,9 +320,13 @@ Payment and x402 remain backward-compatible adapters while this general authorit
 
 ## Roadmap
 
-1. **Evidence Graph expansion** — independent non-chain outcome proofs, external attestations and tamper-evident evidence manifests.
-2. **Execution Fabric** — harden generic MCP/HTTP/API executors and attach independently verifiable effect evidence.
+The core Genesis 2.0 protocol is now in proof/demo hardening rather than feature accumulation.
+
+1. **Judge-grade presentation** — make the lifecycle, execution enforcement, portable proof and tamper rejection obvious in one short demo.
+2. **Protocol conformance** — formalize the exact `verigate-authority-proof-v1` validity contract and publish adversarial conformance vectors.
 3. **Hosted authority infrastructure** — multi-tenant key management, attestor lifecycle, governance operations and offline-verifiable evidence at service scale.
+
+The rule for the next phase: do not add architecture unless it strengthens an independently demonstrable authority or proof boundary.
 
 ## License
 
