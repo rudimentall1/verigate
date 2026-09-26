@@ -32,14 +32,15 @@ from enforcement.tool import ToolExecutionAdapter
 
 
 def _governance_approval(action, private_key):
+    now = time.time()
     payload = {
         "governance_version": 1,
         "action_digest": digest(action),
         "governor_id": governor_id(private_key.public_key()),
         "role": "governor",
         "approval_id": "approval-" + action["action_id"],
-        "issued_at": time.time(),
-        "expires_at": time.time() + 300,
+        "issued_at": now,
+        "expires_at": now + 300,
         "nonce": "nonce-" + action["action_id"],
     }
     return {
