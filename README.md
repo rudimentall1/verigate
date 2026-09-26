@@ -125,6 +125,32 @@ PYTHONPATH=. python3 demo_live_solana_devnet.py --sender-keypair path/to/devnet-
 # Optional: override the public Devnet RPC with VERIGATE_SOLANA_DEVNET_RPC_URL
 ```
 
+### Portable authority proof
+
+Verigate can export a **self-contained authority proof** that a third party can verify without access to the Verigate runtime, database, API, or live authority state.
+
+A checked-in reference artifact lives in [`examples/authority-proof/`](examples/authority-proof/): it contains the proof package and the issuer's public key. The private key is never distributed.
+
+Verify the artifact locally:
+
+```bash
+python cli.py verify examples/authority-proof/authority-proof.json \
+  --public-key examples/authority-proof/issuer.pub \
+  --format text
+```
+
+Or run the complete offline demonstration, which verifies the original artifact and then proves that a tampered copy is rejected:
+
+```bash
+python examples/authority-proof/verify_demo.py
+```
+
+The important property is **runtime independence**: after the proof is exported, verification consumes only the proof bytes and the trusted public key. The verifier does not query SQLite, the Verigate API, or a live authority ledger.
+
+See [`examples/authority-proof/README.md`](examples/authority-proof/README.md) for the third-party verification walkthrough and trust model.
+
+---
+
 ### CLI
 
 ```bash
