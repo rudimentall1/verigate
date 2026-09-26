@@ -107,7 +107,7 @@ def main():
   r=bad('verification failed closed: '+str(exc),{})
  if a.format=='json':print(json.dumps(r,indent=2,sort_keys=True))
  else:
-  print('VERIGATE AUTHORITY PROOF — STANDALONE');print('Protocol:',r.get('protocol',PROTOCOL));[print(f"{k.upper():28} {'PASS' if v.get('valid') else 'FAIL'}") for k,v in r.get('checks',{}).items()];print('RESULT:', 'VALID' if r.get('valid') else 'INVALID'); print('Reason:',r['reason']) if not r.get('valid') else None
+  print('VERIGATE AUTHORITY PROOF - STANDALONE');print('Protocol:',r.get('protocol',PROTOCOL));[print(f"{k.upper():28} {'PASS' if v.get('valid') else 'FAIL'}") for k,v in r.get('checks',{}).items()];print('RESULT:', 'VALID' if r.get('valid') else 'INVALID'); print('Reason:',r['reason']) if not r.get('valid') else None
  return 0 if r.get('valid') else 1
 if __name__=='__main__':raise SystemExit(main())
 
