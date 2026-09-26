@@ -129,9 +129,11 @@ class GenesisLifecycle:
         self.stage = LifecycleStage.PROVE
         return self._outcome
 
-    def prove(self, *, proof_profile: str = "integrity") -> dict[str, Any]:
+    def prove(self, *, proof_profile: str = "authority_lifecycle") -> dict[str, Any]:
         if self._outcome is None:
             raise RuntimeError("independent outcome observation is required before proof")
+        if proof_profile == "authority_lifecycle" and self._learning is None:
+            raise RuntimeError("authority lifecycle proof requires LEARN before PROVE")
         authorization_id = self.authorization["execution_authorization"]["payload"][
             "authorization_id"
         ]
@@ -145,15 +147,15 @@ class GenesisLifecycle:
         if not verification["valid"]:
             raise ValueError(f"Genesis proof verification failed: {verification['reason']}")
         self._manifest = manifest
+        if self._learning is not None:
+            self._learning["proof_manifest_sha256"] = digest(manifest)
         self.stage = LifecycleStage.PROVE
         return manifest
 
     def learn(self) -> dict[str, Any]:
-        """Feed only the proven, independently verified outcome back into authority."""
+        """Feed only the independently verified outcome back into authority."""
         if self._outcome is None:
             raise RuntimeError("verified outcome is required before learning")
-        if self._manifest is None:
-            raise RuntimeError("Genesis proof is required before learning")
         if not self._outcome.get("valid"):
             raise PermissionError("unverified outcome cannot change authority")
 
@@ -180,12 +182,12 @@ class GenesisLifecycle:
                 capability_id=capability_id,
                 identity_id=receipt_payload.get("identity_id"),
                 event_type=event_type,
-                evidence_ref=digest(self._manifest),
+                evidence_ref=claim["claim_id"],
                 metadata={
                     "outcome_claim_id": claim["claim_id"],
                     "outcome_claim_sha256": self._outcome["claim_sha256"],
                     "outcome_attestation_id": self._outcome["attestation_id"],
-                    "proof_profile": self._manifest["payload"]["proof_profile"],
+                    "proof_profile": "authority_lifecycle",
                 },
             )
 
@@ -197,7 +199,7 @@ class GenesisLifecycle:
             "authority_event": event,
             "authority_snapshot": snapshot.as_dict(),
             "authority_snapshot_sha256": snapshot.digest,
-            "proof_manifest_sha256": digest(self._manifest),
+            "proof_manifest_sha256": None,
         }
         self.stage = LifecycleStage.LEARN
         return self._learning

@@ -1,6 +1,8 @@
 import base64
 import hashlib
+import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -10,6 +12,8 @@ from cryptography.hazmat.primitives import serialization
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.engine import GuardrailEngine
 from core.evidence import EvidenceGraph
+from core.attestor import AttestorAuthorityService
+from core.governance import GovernanceMember, GovernancePolicy, governor_id
 from core.genesis_lifecycle import GenesisLifecycle
 from core.identity import sign_action_intent
 from core.models import ActionIntent, AgentIdentity, Capability
@@ -27,6 +31,26 @@ from enforcement.router import ExecutionRouter
 from enforcement.tool import ToolExecutionAdapter
 
 
+def _governance_approval(action, private_key):
+    payload = {
+        "governance_version": 1,
+        "action_digest": digest(action),
+        "governor_id": governor_id(private_key.public_key()),
+        "role": "governor",
+        "approval_id": "approval-" + action["action_id"],
+        "issued_at": time.time(),
+        "expires_at": time.time() + 300,
+        "nonce": "nonce-" + action["action_id"],
+    }
+    return {
+        "payload": payload,
+        "signature": base64.b64encode(private_key.sign(
+            json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        )).decode(),
+        "algorithm": "Ed25519",
+    }
+
+
 class GenesisLifecycleTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -37,6 +61,14 @@ class GenesisLifecycleTest(unittest.TestCase):
         self.private = load_private_key(self.private_path)
         self.public = load_public_key(self.public_path)
         self.storage = Storage(root / "verigate.db")
+        self.governance_key = Ed25519PrivateKey.generate()
+        self.governance_policy = GovernancePolicy(
+            policy_id="genesis-test-governance",
+            version=1,
+            threshold=1,
+            members=(GovernanceMember.from_public_key(self.governance_key.public_key(), "governor"),),
+            allowed_actions=("ATTESTOR_REGISTER",),
+        )
 
     def tearDown(self):
         self.storage.close()
@@ -102,10 +134,19 @@ class GenesisLifecycleTest(unittest.TestCase):
         attestor_raw = attestor_key.public_key().public_bytes(
             serialization.Encoding.Raw, serialization.PublicFormat.Raw
         )
-        outcome_service.register_attestor(
+        attestor_service = AttestorAuthorityService(self.storage)
+        attestor_action = attestor_service.build_action(
+            action="ATTESTOR_REGISTER",
             attestor_id="verifier-1",
+            reason="Genesis lifecycle test attestor",
+            governance_policy_sha256=self.governance_policy.digest,
             public_key_b64=base64.b64encode(attestor_raw).decode(),
             attestor_type="EXTERNAL_VERIFIER",
+        )
+        attestor_service.apply(
+            attestor_action,
+            [_governance_approval(attestor_action, self.governance_key)],
+            self.governance_policy,
         )
         lifecycle = GenesisLifecycle(
             engine,
@@ -155,21 +196,21 @@ class GenesisLifecycleTest(unittest.TestCase):
         )
         outcome = lifecycle.observe(attestation)
         self.assertTrue(outcome["valid"])
+        learning = lifecycle.learn()
+        self.assertTrue(learning["valid"])
+        self.assertIsNotNone(learning["authority_event"])
         manifest = lifecycle.prove()
         self.assertTrue(lifecycle.result().manifest is manifest)
         self.assertEqual(lifecycle.stage.value, "PROVE")
         self.assertEqual(
             manifest["payload"]["proof_profile"],
-            "integrity",
+            "authority_lifecycle",
         )
-        learning = lifecycle.learn()
-        self.assertTrue(learning["valid"])
-        self.assertIsNotNone(learning["authority_event"])
         self.assertEqual(
             learning["proof_manifest_sha256"],
             digest(manifest),
         )
-        self.assertEqual(lifecycle.stage.value, "LEARN")
+        self.assertEqual(lifecycle.stage.value, "PROVE")
         self.assertEqual(
             lifecycle.result().learning["authority_snapshot"]["agent_id"],
             "genesis-agent",
