@@ -26,23 +26,34 @@ DEFAULT_PUB_KEY = "keys/issuer.pub"
 
 
 def render_proof_report(result: dict) -> str:
+    """Render a stable, human-readable proof report for developers and judges."""
     labels = {
+        "package_integrity": "PACKAGE INTEGRITY",
+        "manifest_integrity": "MANIFEST INTEGRITY",
+        "trust_anchor": "TRUST ANCHOR",
+        "issuer_signature": "ISSUER SIGNATURE",
+        "graph_integrity": "GRAPH INTEGRITY",
         "authority_protocol": "AUTHORITY PROTOCOL",
         "execution_authorization": "AUTHORIZATION",
         "execution_receipt": "EXECUTION",
         "historical_authority": "HISTORICAL AUTHORITY",
+        "outcome": "OUTCOME",
+        "learning": "LEARNING",
+        "post_learning_authority": "POST-LEARNING AUTHORITY",
         "authority_transition": "LEARNING / POST-AUTHORITY",
         "manifest": "CRYPTOGRAPHIC MANIFEST",
     }
     lines = [
         "VERIGATE AUTHORITY PROOF",
-        f"Protocol: {result.get('proof_protocol', 'evidence-manifest')}",
+        f"Protocol: {result.get('proof_protocol', result.get('protocol', 'evidence-manifest'))}",
         "",
     ]
+    if "package_valid" in result:
+        lines.append(f"{'PACKAGE INTEGRITY':<28} {'PASS' if result['package_valid'] else 'FAIL'}")
     checks = result.get("checks", {})
     for key, check in checks.items():
         status = "PASS" if check.get("valid") else "FAIL"
-        lines.append(f"{labels.get(key, key.upper()):<26} {status}")
+        lines.append(f"{labels.get(key, key.upper()):<28} {status}")
     lines.extend([
         "",
         f"RESULT: {'VALID' if result.get('valid') else 'INVALID'}",

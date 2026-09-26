@@ -31,8 +31,16 @@ class PortableProofCliTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertIn("RESULT: VALID", result.stdout)
-                self.assertIn("AUTHORITY PROTOCOL", result.stdout)
-                self.assertIn("HISTORICAL AUTHORITY", result.stdout)
+                for label in (
+                    "PACKAGE INTEGRITY",
+                    "CRYPTOGRAPHIC MANIFEST",
+                    "AUTHORITY PROTOCOL",
+                    "AUTHORIZATION",
+                    "EXECUTION",
+                    "HISTORICAL AUTHORITY",
+                    "LEARNING / POST-AUTHORITY",
+                ):
+                    self.assertIn(label, result.stdout)
 
                 document = json.loads(proof_path.read_text(encoding="utf-8"))
                 document["package"]["agent_id"] = "tampered-agent"
