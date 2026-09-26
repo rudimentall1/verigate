@@ -15,14 +15,24 @@ from core.proof_engine import canonical, digest
 
 PACKAGE_VERSION = 1
 PACKAGE_MEDIA_TYPE = "application/vnd.verigate.proof-package+json"
+PACKAGE_PROTOCOL = "verigate-proof-package-v1"
 
 
 def _package_payload(manifest: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(manifest, dict):
         raise TypeError("manifest must be an object")
+    manifest_payload = manifest.get("payload")
+    if not isinstance(manifest_payload, dict):
+        raise ValueError("proof package manifest payload is missing")
     return {
         "package_version": PACKAGE_VERSION,
         "media_type": PACKAGE_MEDIA_TYPE,
+        "protocol": PACKAGE_PROTOCOL,
+        "proof_profile": manifest_payload.get("proof_profile"),
+        "authorization_id": manifest_payload.get("authorization_id"),
+        "intent_id": manifest_payload.get("intent_id"),
+        "agent_id": manifest_payload.get("agent_id"),
+        "manifest_sha256": digest(manifest),
         "manifest": manifest,
     }
 
@@ -74,10 +84,21 @@ def _validate_package_envelope(package: Any) -> tuple[bool, str]:
         return False, "unsupported proof package version"
     if payload.get("media_type") != PACKAGE_MEDIA_TYPE:
         return False, "unsupported proof package media type"
-    if not isinstance(payload.get("manifest"), dict):
-        return False, "proof package manifest is missing"
+    if payload.get("protocol") != PACKAGE_PROTOCOL:
+        return False, "unsupported proof package protocol"
     if digest(payload) != package_sha256:
         return False, "proof package digest mismatch"
+    manifest = payload.get("manifest")
+    if not isinstance(manifest, dict):
+        return False, "proof package manifest is missing"
+    manifest_payload = manifest.get("payload")
+    if not isinstance(manifest_payload, dict):
+        return False, "proof package manifest payload is missing"
+    if payload.get("manifest_sha256") != digest(manifest):
+        return False, "proof package manifest digest mismatch"
+    for field in ("proof_profile", "authorization_id", "intent_id", "agent_id"):
+        if payload.get(field) != manifest_payload.get(field):
+            return False, f"proof package {field} mismatch"
     return True, "valid proof package envelope"
 
 
@@ -106,6 +127,7 @@ def verify_proof_package(
 __all__ = [
     "PACKAGE_VERSION",
     "PACKAGE_MEDIA_TYPE",
+    "PACKAGE_PROTOCOL",
     "build_proof_package",
     "serialize_proof_package",
     "parse_proof_package",

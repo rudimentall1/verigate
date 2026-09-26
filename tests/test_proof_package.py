@@ -8,6 +8,7 @@ from core.offline_verifier import verify_proof
 from core.proof_engine import canonical
 from core.proof_package import (
     PACKAGE_MEDIA_TYPE,
+    PACKAGE_PROTOCOL,
     build_proof_package,
     parse_proof_package,
     serialize_proof_package,
@@ -49,6 +50,9 @@ class ProofPackageTests(unittest.TestCase):
         self.assertTrue(result["valid"], result)
         self.assertTrue(result["package_valid"])
         self.assertEqual(package["package"]["media_type"], PACKAGE_MEDIA_TYPE)
+        self.assertEqual(package["package"]["protocol"], PACKAGE_PROTOCOL)
+        self.assertEqual(package["package"]["proof_profile"], "integrity")
+        self.assertTrue(package["package"]["manifest_sha256"])
         self.assertTrue(verify_proof(manifest)["valid"])
 
     def test_package_digest_rejects_envelope_tampering(self):
@@ -63,11 +67,44 @@ class ProofPackageTests(unittest.TestCase):
         package = build_proof_package(self._manifest())
         tampered = copy.deepcopy(package)
         tampered["package"]["manifest"]["payload"]["agent_id"] = "forged-agent"
+        tampered["package"]["agent_id"] = "forged-agent"
+        tampered["package"]["manifest_sha256"] = __import__("hashlib").sha256(
+            canonical(tampered["package"]["manifest"])
+        ).hexdigest()
         import hashlib
         tampered["package_sha256"] = hashlib.sha256(canonical(tampered["package"])).hexdigest()
         result = verify_proof_package(tampered)
         self.assertFalse(result["valid"])
         self.assertEqual(result["reason"], "invalid manifest signature")
+
+    def test_manifest_metadata_tampering_fails_closed(self):
+        package = build_proof_package(self._manifest())
+        tampered = copy.deepcopy(package)
+        tampered["package"]["proof_profile"] = "authority_lifecycle"
+        tampered["package_sha256"] = __import__("hashlib").sha256(
+            canonical(tampered["package"])
+        ).hexdigest()
+        result = verify_proof_package(tampered)
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["reason"], "proof package proof_profile mismatch")
+
+    def test_manifest_replacement_with_recomputed_package_digest_fails_closed(self):
+        package = build_proof_package(self._manifest())
+        replacement = self._manifest()
+        package["package"]["manifest"] = replacement
+        package["package_sha256"] = __import__("hashlib").sha256(
+            canonical(package["package"])
+        ).hexdigest()
+        result = verify_proof_package(package)
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["reason"], "proof package manifest digest mismatch")
+
+    def test_unsupported_protocol_fails_closed(self):
+        package = build_proof_package(self._manifest())
+        package["package"]["protocol"] = "future-protocol"
+        result = verify_proof_package(package)
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["reason"], "unsupported proof package protocol")
 
     def test_unsupported_version_fails_closed(self):
         package = build_proof_package(self._manifest())
@@ -79,6 +116,9 @@ class ProofPackageTests(unittest.TestCase):
     def test_missing_manifest_fails_closed(self):
         package = build_proof_package(self._manifest())
         del package["package"]["manifest"]
+        package["package_sha256"] = __import__("hashlib").sha256(
+            canonical(package["package"])
+        ).hexdigest()
         result = verify_proof_package(package)
         self.assertFalse(result["valid"])
         self.assertEqual(result["reason"], "proof package manifest is missing")
