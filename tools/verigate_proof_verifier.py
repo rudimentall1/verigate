@@ -89,7 +89,11 @@ def verify(proof,key):
  if not c['post_learning_authority']['valid']:return bad('post-learning authority is not ledger-bound',c)
  return {'valid':True,'protocol':PROTOCOL,'root_digest':p['root_digest'],'package_sha256':ph,'assertion_set_sha256':pkg.get('assertion_set_sha256'),'checks':c}
 def main():
- x=argparse.ArgumentParser();x.add_argument('proof');x.add_argument('--public-key',required=True);x.add_argument('--format',choices=['text','json'],default='text');a=x.parse_args();r=verify(a.proof,a.public_key)
+ x=argparse.ArgumentParser();x.add_argument('proof');x.add_argument('--public-key',required=True);x.add_argument('--format',choices=['text','json'],default='text');a=x.parse_args()
+ try:
+  r=verify(a.proof,a.public_key)
+ except Exception as exc:
+  r=bad('verification failed closed: '+str(exc),{})
  if a.format=='json':print(json.dumps(r,indent=2,sort_keys=True))
  else:
   print('VERIGATE AUTHORITY PROOF — STANDALONE');print('Protocol:',r.get('protocol',PROTOCOL));[print(f"{k.upper():28} {'PASS' if v.get('valid') else 'FAIL'}") for k,v in r.get('checks',{}).items()];print('RESULT:', 'VALID' if r.get('valid') else 'INVALID'); print('Reason:',r['reason']) if not r.get('valid') else None
