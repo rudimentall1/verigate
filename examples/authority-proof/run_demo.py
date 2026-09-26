@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Genesis 2.0 end-to-end portable proof demonstration."""
 from __future__ import annotations
 import json
@@ -24,7 +24,7 @@ def main() -> int:
     print("[3] Portable proof loaded from disk")
     print("[4] Verigate runtime is not required")
     valid = run(PROOF)
-    print("\\n=== INDEPENDENT VERIFIER ===")
+    print("\n=== INDEPENDENT VERIFIER ===")
     print(valid.stdout, end="")
     if valid.returncode != 0 or "RESULT: VALID" not in valid.stdout:
         return 1
@@ -34,11 +34,11 @@ def main() -> int:
         document["package"]["agent_id"] = "tampered-agent"
         tampered.write_text(json.dumps(document), encoding="utf-8")
         invalid = run(tampered)
-        print("\\n=== TAMPER TEST ===")
+        print("\n=== TAMPER TEST ===")
         print(invalid.stdout, end="")
         if invalid.returncode == 0 or "RESULT: INVALID" not in invalid.stdout:
             return 1
-    print("\\nGENESIS 2.0 DEMO: PASS")
+    print("\nGENESIS 2.0 DEMO: PASS")
     return 0
 
 if __name__ == "__main__": raise SystemExit(main())

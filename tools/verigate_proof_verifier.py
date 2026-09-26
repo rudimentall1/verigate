@@ -1,8 +1,9 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 from __future__ import annotations
 import argparse,base64,hashlib,json
 from pathlib import Path
 from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 PROTOCOL='verigate-authority-proof-v1'; PKG='verigate-proof-package-v1'; MEDIA='application/vnd.verigate.proof-package+json'; ZERO='0'*64
 def canon(x): return json.dumps(x,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
@@ -33,8 +34,14 @@ def assertions(m):
  exp=[A('A1','identity',R['identity'],'possessed_capability',R['capability'],[R['identity'],R['capability']]),A('A2','intent',R['action_intent'],'proposed_by',n['identity']['data'].get('agent_id',p.get('agent_id')),[R['action_intent'],R['identity']]),A('A3','authority',R['authority_state'],'permitted',R['action_intent'],[R['authority_state'],R['action_intent'],R['capability']]),A('A4','authorization',R['execution_authorization'],'derived_from',R['authority_state'],[R['decision'],R['execution_authorization'],R['authority_state'],R['genesis_authority']]),A('A5','execution',R['execution_receipt'],'consumed_authorization',R['execution_authorization'],[R['execution_authorization'],R['execution_receipt']]),A('A6','observation',R['outcome_claim'],'observes',R['execution_receipt'],[R['execution_receipt'],R['outcome_claim'],R['outcome_attestation']]),A('A7','learning',R['authority_event'],'justified_by',R['outcome_claim'],[R['outcome_claim'],R['authority_event']]),A('A8','learning',R['authority_state_after'],'produced_by',R['authority_event'],[R['authority_event'],R['authority_state_after']]),A('A9','integrity',R['authority_state_after'],'ledger_bound',R['authority_ledger'],[R['authority_state_after'],R['authority_ledger']])]
  checks=[edge(p,R['identity'],'AUTHENTICATES',R['action_intent']),edge(p,R['capability'],'AUTHORIZES',R['action_intent']),ap.get('authority_state_sha256')==sha(n['authority_state']['data']),edge(p,R['decision'],'MINTS',R['execution_authorization']),edge(p,R['execution_authorization'],'PRODUCES',R['execution_receipt']),rp.get('authorization_id')==ap.get('authorization_id'),edge(p,R['execution_receipt'],'OBSERVED_BY',R['outcome_claim']),edge(p,R['outcome_attestation'],'ATTESTS',R['outcome_claim']),edge(p,R['outcome_claim'],'INFORMS',R['authority_event']),edge(p,R['authority_event'],'TRANSITIONS_TO',R['authority_state_after']),ep.get('evidence_ref')==cp.get('claim_id'),sp.get('source_event_id')==ep.get('event_id'),len([x for x in ent if x.get('event_id')==ep.get('event_id')])==1 and sp.get('ledger_head_hash')==next((x.get('event_hash') for x in ent if x.get('event_id')==ep.get('event_id')),None)]
  return (exp==p.get('authority_assertions') and all(checks) and sha(exp)==p.get('authority_assertions_sha256'),'signed authority assertions do not match evidence' if exp!=p.get('authority_assertions') else 'authority protocol preconditions failed')
+def load_trusted_key(path):
+ raw=Path(path).read_bytes()
+ public_key=serialization.load_pem_public_key(raw)
+ if not isinstance(public_key,Ed25519PublicKey): raise ValueError('issuer public key must be Ed25519')
+ return base64.b64encode(public_key.public_bytes(serialization.Encoding.Raw,serialization.PublicFormat.Raw)).decode()
+
 def verify(proof,key):
- c={}; d=json.loads(Path(proof).read_text()); kt=Path(key).read_text().strip(); der=base64.b64decode(''.join(x for x in kt.splitlines() if 'PUBLIC KEY' not in x)); trusted=base64.b64encode(der[-32:]).decode(); pkg=d.get('package'); ph=d.get('package_sha256')
+ c={}; d=json.loads(Path(proof).read_text(encoding='utf-8')); trusted=load_trusted_key(key); pkg=d.get('package'); ph=d.get('package_sha256')
  c['package_integrity']={'valid':isinstance(pkg,dict) and sha(pkg)==ph}
  if not c['package_integrity']['valid']:return bad('package digest mismatch',c)
  m=pkg.get('manifest'); p=m.get('payload') if isinstance(m,dict) else None
