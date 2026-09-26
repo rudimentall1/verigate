@@ -93,3 +93,13 @@ python examples/authority-proof/generate_artifact.py
 ```
 
 The generator uses a stable logical policy source reference (`examples/authority-proof/policy.yaml`) rather than embedding a developer machine path. The generated private issuer key is temporary and is never written into the repository.
+
+## Standalone protocol verifier
+
+A verifier implementation that imports no `core` or `attest` modules is included at `tools/verigate_proof_verifier.py`.
+
+```bash
+python tools/verigate_proof_verifier.py examples/authority-proof/authority-proof.json --public-key examples/authority-proof/issuer.pub
+```
+
+It validates the package, signed manifest, external trust anchor, graph/Merkle integrity, authority assertions, historical authority binding, authorization, execution, outcome, learning, and post-learning ledger binding without starting the Verigate runtime.
