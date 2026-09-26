@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Any
 from core.proof_engine import digest
+from core.authority_protocol import Authority, AuthorityState as GenesisAuthorityState
 from .common import validate_requirements, validate_context_binding
 
 def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> tuple[bool, str]:
@@ -32,6 +33,8 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
     decision = required["decision"]
     decision_receipt = required["decision_receipt"]
     policy = required["policy_version"]
+    authority_state = required["authority_state"]
+    genesis = required["genesis_authority"]
     execution = required["execution_authorization"]
     receipt = required["execution_receipt"]
     claim = required["outcome_claim"]
@@ -65,6 +68,55 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         return False, "execution authorization is not bound to manifest authorization_id"
     if execution_payload.get("intent_id") != intent["id"] or execution_payload.get("agent_id") != payload["agent_id"]:
         return False, "execution authorization identity binding is inconsistent"
+
+    if execution_payload.get("capability_id") != capability["id"]:
+        return False, "execution authorization capability binding is inconsistent"
+    if execution_payload.get("identity_id") != identity["id"]:
+        return False, "execution authorization identity binding is inconsistent"
+    if execution_payload.get("capability_sha256") != capability["data"].get("digest"):
+        return False, "execution authorization capability digest is not bound to the canonical capability"
+    if execution_payload.get("identity_sha256") != identity["data"].get("identity_sha256"):
+        return False, "execution authorization identity digest is not bound to the canonical identity"
+
+    state_data = authority_state["data"]
+    if execution_payload.get("authority_state_sha256") != digest(state_data):
+        return False, "execution authorization authority state is not bound to the canonical snapshot"
+    if execution_payload.get("authority_state") != state_data:
+        return False, "execution authorization authority state payload differs from the canonical snapshot"
+
+    genesis_data = genesis["data"]
+    if execution_payload.get("genesis_authority") != genesis_data:
+        return False, "execution authorization Genesis authority provenance differs from the canonical evidence"
+    if execution_payload.get("genesis_authority_sha256") != digest(genesis_data):
+        return False, "execution authorization Genesis authority fingerprint mismatch"
+    if genesis_data.get("protocol") != "genesis-2.0":
+        return False, "unsupported Genesis authority protocol"
+    try:
+        reconstructed_authority = Authority(
+            authority_id=f"{payload['agent_id']}:{capability['id']}:{state_data.get('ledger_head_hash') or digest(state_data)}",
+            agent_id=payload["agent_id"],
+            identity_id=identity["id"],
+            capability_id=capability["id"],
+            capability_version=capability["data"].get("version", 1),
+            capability_sha256=execution_payload.get("capability_sha256", ""),
+            state=GenesisAuthorityState(state_data["state"]),
+            multiplier=float(state_data["multiplier"]),
+            ledger_head_hash=state_data.get("ledger_head_hash", ""),
+            effective_from=float(state_data.get("evaluated_at", 0.0)),
+            metadata={
+                "source": "core.authority_state.AuthoritySnapshot",
+                "successes": state_data.get("successes", 0),
+                "adverse_events": state_data.get("adverse_events", 0),
+                "critical_events": state_data.get("critical_events", 0),
+                "reason": state_data.get("reason", ""),
+            },
+        )
+    except (KeyError, TypeError, ValueError):
+        return False, "historical authority snapshot cannot reconstruct Genesis authority"
+    if genesis_data.get("authority_digest") != reconstructed_authority.digest:
+        return False, "Genesis authority is not bound to the historical authority snapshot"
+    if genesis_data.get("capability_digest") != execution_payload.get("capability_sha256"):
+        return False, "Genesis authority is not bound to the execution capability"
 
     execution_receipt_payload = receipt["data"].get("payload", {})
     if execution_receipt_payload.get("authorization_id") != execution["id"] or execution_receipt_payload.get("intent_id") != intent["id"]:
@@ -110,6 +162,7 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         ("identity", identity["id"], "AUTHENTICATES", "action_intent", intent["id"]),
         ("capability", capability["id"], "AUTHORIZES", "action_intent", intent["id"]),
         ("decision", decision["id"], "MINTS", "execution_authorization", execution["id"]),
+        ("genesis_authority", genesis["id"], "JUSTIFIES", "execution_authorization", execution["id"]),
         ("execution_authorization", execution["id"], "PRODUCES", "execution_receipt", receipt["id"]),
         ("execution_receipt", receipt["id"], "OBSERVED_BY", "outcome_claim", claim["id"]),
         ("outcome_attestation", attestation["id"], "ATTESTS", "outcome_claim", claim["id"]),

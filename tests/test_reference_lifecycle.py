@@ -335,6 +335,16 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             node["data"]["payload"]["identity_id"] = "forged-identity"
         mutate("wrong identity", wrong_identity)
 
+        def wrong_authority_state(p):
+            node = next(n for n in p["nodes"] if n["type"] == "authority_state")
+            node["data"]["multiplier"] = 0.01
+        mutate("wrong authority state", wrong_authority_state)
+
+        def wrong_genesis_authority(p):
+            node = next(n for n in p["nodes"] if n["type"] == "genesis_authority")
+            node["data"]["authority_digest"] = "00" * 32
+        mutate("wrong Genesis authority", wrong_genesis_authority)
+
         def wrong_authority_event(p):
             node = next(n for n in p["nodes"] if n["type"] == "authority_event")
             node["data"]["evidence_ref"] = "forged-claim"

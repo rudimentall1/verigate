@@ -30,7 +30,7 @@ PROOF_PROFILES: dict[str, dict[str, Any]] = {
     "authority_lifecycle": {
         "required_nodes": {
             "identity", "capability", "action_intent", "decision", "decision_receipt",
-            "policy_version", "execution_authorization", "execution_receipt", "outcome_claim",
+            "policy_version", "authority_state", "genesis_authority", "execution_authorization", "execution_receipt", "outcome_claim",
             "outcome_attestation", "attestor_authority", "governance_action", "governance_approval",
             "authority_event",
         },

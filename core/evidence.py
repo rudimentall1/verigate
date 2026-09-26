@@ -386,6 +386,20 @@ class EvidenceGraph:
             nodes.append(_node("execution_authorization", execution_id, execution))
             edges.append({"from": f"decision:{intent_id}", "relation": "MINTS", "to": f"execution_authorization:{execution_id}"})
 
+            # Genesis 2.0 authority provenance is promoted to a first-class
+            # evidence node. The signed authorization remains the source of
+            # truth; this node only makes the WHY/authority decision lineage
+            # portable and independently addressable.
+            genesis_authority = execution["payload"].get("genesis_authority")
+            if isinstance(genesis_authority, dict):
+                genesis_id = execution["payload"].get("genesis_authority_sha256") or _digest(genesis_authority)
+                nodes.append(_node("genesis_authority", genesis_id, genesis_authority))
+                edges.append({
+                    "from": f"genesis_authority:{genesis_id}",
+                    "relation": "JUSTIFIES",
+                    "to": f"execution_authorization:{execution_id}",
+                })
+
             receipt = self.storage.execution_receipt_by_authorization(execution_id)
             if receipt is not None:
                 ok, reason = verify_execution_receipt(receipt, self.public_key, execution)
