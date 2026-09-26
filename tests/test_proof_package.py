@@ -170,6 +170,40 @@ class ProofPackageTests(unittest.TestCase):
                 pass
             lifecycle.tmp.cleanup()
 
+    def test_authority_lifecycle_package_contains_machine_verifiable_assertions(self):
+        from tests.test_reference_lifecycle import VerigateReferenceLifecycleTest
+        lifecycle = VerigateReferenceLifecycleTest("test_reference_lifecycle_is_offline_verifiable")
+        lifecycle.setUp()
+        try:
+            package = build_proof_package(lifecycle._valid_manifest())
+            envelope = package["package"]
+            self.assertEqual(envelope["proof_protocol"], "verigate-authority-proof-v1")
+            self.assertEqual(len(envelope["assertions"]), 9)
+            self.assertTrue(envelope["assertion_set_sha256"])
+            self.assertEqual(envelope["assertions"][0]["id"], "A1")
+            result = verify_proof_package(package)
+            self.assertTrue(result["valid"], result)
+            self.assertEqual(result["proof_protocol"], "verigate-authority-proof-v1")
+        finally:
+            lifecycle.tearDown()
+
+    def test_authority_assertion_tampering_fails_closed(self):
+        from tests.test_reference_lifecycle import VerigateReferenceLifecycleTest
+        lifecycle = VerigateReferenceLifecycleTest("test_reference_lifecycle_is_offline_verifiable")
+        lifecycle.setUp()
+        try:
+            package = build_proof_package(lifecycle._valid_manifest())
+            tampered = copy.deepcopy(package)
+            tampered["package"]["assertions"][2]["predicate"] = "forged"
+            import hashlib
+            tampered["package"]["assertion_set_sha256"] = hashlib.sha256(canonical(tampered["package"]["assertions"])).hexdigest()
+            tampered["package_sha256"] = hashlib.sha256(canonical(tampered["package"])).hexdigest()
+            result = verify_proof_package(tampered)
+            self.assertFalse(result["valid"])
+            self.assertIn("authority proof assertions", result["reason"])
+        finally:
+            lifecycle.tearDown()
+
     def test_manifest_metadata_tampering_fails_closed(self):
         package = build_proof_package(self._manifest())
         tampered = copy.deepcopy(package)

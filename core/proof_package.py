@@ -12,6 +12,7 @@ from typing import Any
 
 from core.offline_verifier import verify_proof
 from core.proof_engine import canonical, digest
+from core.proof_protocol import PROOF_PROTOCOL, assertion_set_digest, build_authority_assertions, verify_authority_assertions
 
 PACKAGE_VERSION = 1
 PACKAGE_MEDIA_TYPE = "application/vnd.verigate.proof-package+json"
@@ -56,6 +57,7 @@ def _package_payload(manifest: dict[str, Any]) -> dict[str, Any]:
         if proof_profile == "authority_lifecycle"
         else ()
     )
+    assertions = build_authority_assertions(manifest) if proof_profile == "authority_lifecycle" else []
     artifact_inventory = {kind: node_types.count(kind) for kind in sorted(set(node_types))}
     return {
         "package_version": PACKAGE_VERSION,
@@ -64,6 +66,9 @@ def _package_payload(manifest: dict[str, Any]) -> dict[str, Any]:
         "proof_profile": proof_profile,
         "self_contained": True,
         "required_artifact_types": list(required_types),
+        "proof_protocol": PROOF_PROTOCOL if proof_profile == "authority_lifecycle" else None,
+        "assertions": assertions,
+        "assertion_set_sha256": assertion_set_digest(assertions) if assertions else None,
         "artifact_inventory": artifact_inventory,
         "authorization_id": manifest_payload.get("authorization_id"),
         "intent_id": manifest_payload.get("intent_id"),
@@ -147,8 +152,16 @@ def _validate_package_envelope(package: Any) -> tuple[bool, str]:
         return False, "proof package is not marked self-contained"
     required_types = payload.get("required_artifact_types")
     artifact_inventory = payload.get("artifact_inventory")
+    proof_protocol = payload.get("proof_protocol")
+    assertions = payload.get("assertions")
+    assertion_sha = payload.get("assertion_set_sha256")
     if not isinstance(required_types, list) or not isinstance(artifact_inventory, dict):
         return False, "proof package artifact inventory is missing"
+    if payload.get("proof_profile") == "authority_lifecycle":
+        if proof_protocol != PROOF_PROTOCOL or not isinstance(assertions, list) or not isinstance(assertion_sha, str):
+            return False, "authority proof protocol assertions are missing"
+        if assertion_set_digest(assertions) != assertion_sha:
+            return False, "authority proof assertion digest mismatch"
     actual_types = [n.get("type") for n in nodes] if isinstance(nodes, list) else []
     actual_inventory = {kind: actual_types.count(kind) for kind in sorted(set(actual_types))}
     if artifact_inventory != actual_inventory:
@@ -157,6 +170,9 @@ def _validate_package_envelope(package: Any) -> tuple[bool, str]:
         missing = [kind for kind in required_types if actual_inventory.get(kind, 0) < 1]
         if missing:
             return False, f"authority lifecycle package is missing required artifacts: {', '.join(missing)}"
+        ok, reason, _ = verify_authority_assertions(manifest, assertions)
+        if not ok:
+            return False, reason
     inventory = payload.get("node_inventory")
     if not isinstance(nodes, list) or not isinstance(edges, list) or not isinstance(inventory, list):
         return False, "proof package graph inventory is missing"
@@ -188,6 +204,9 @@ def verify_proof_package(
         result = dict(result)
         result["package_valid"] = True
         result["package_sha256"] = package["package_sha256"]
+        if package["package"].get("proof_profile") == "authority_lifecycle":
+            result["proof_protocol"] = package["package"]["proof_protocol"]
+            result["assertion_set_sha256"] = package["package"]["assertion_set_sha256"]
         return result
     except (TypeError, ValueError, KeyError) as exc:
         return {"valid": False, "reason": str(exc), "package_valid": False}
