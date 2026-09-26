@@ -94,10 +94,16 @@ Genesis 2.0 is an architectural layer over the existing implementation.
 
 core.authority_protocol provides the canonical vocabulary and immutable envelopes that allow those proven primitives to converge without a rewrite.
 
-## Next protocol boundary
+## Implemented next boundary
 
-The next Genesis milestone is **Intent Graph v0.1**:
+**Intent Graph v0.1 is implemented.** A multi-step agent plan is addressable as one authority graph:
 
 Goal → Intent → Sub-intent → Action → Dependency → Consequence
 
-This should make a multi-step agent plan addressable as one authority graph while preserving exact execution authorization at each side-effect boundary.
+Each consequential side-effect still receives its own exact execution authorization. The graph therefore expands planning context without weakening the execution boundary.
+
+## Current protocol boundary
+
+The portable `verigate-authority-proof-v1` contract is now the verification boundary: a proof package must bind its transport metadata to the signed manifest, satisfy the nine authority assertions, preserve historical authority semantics, and fail closed under semantic or envelope tampering.
+
+The next work is conformance hardening and deployment ergonomics, not another authority abstraction.

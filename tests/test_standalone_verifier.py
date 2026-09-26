@@ -51,6 +51,35 @@ def test_standalone_mutation_matrix_manifest_payload():
 def test_standalone_mutation_matrix_assertions():
     _assert_invalid_mutation(lambda d: d["package"]["manifest"]["payload"]["authority_assertions"][0].__setitem__("predicate","tampered"))
 
+
+def test_standalone_rejects_unbound_package_assertions():
+    d=json.loads(PROOF.read_text())
+    d["package"]["assertions"][0]["predicate"]="tampered"
+    d["package"]["assertion_set_sha256"]="".join([])
+    import hashlib
+    from core.proof_engine import canonical
+    d["package"]["assertion_set_sha256"]=hashlib.sha256(canonical(d["package"]["assertions"])).hexdigest()
+    d["package_sha256"]=hashlib.sha256(canonical(d["package"])).hexdigest()
+    with tempfile.TemporaryDirectory() as td:
+        p=Path(td)/"unbound.json"; p.write_text(json.dumps(d))
+        r=run(p); result=json.loads(r.stdout)
+        assert r.returncode!=0
+        assert result["valid"] is False
+        assert "not bound to signed manifest" in result["reason"]
+
+
+def test_standalone_rejects_unbound_required_artifact_metadata():
+    d=json.loads(PROOF.read_text())
+    d["package"]["required_artifact_types"]=[]
+    import hashlib
+    from core.proof_engine import canonical
+    d["package_sha256"]=hashlib.sha256(canonical(d["package"])).hexdigest()
+    with tempfile.TemporaryDirectory() as td:
+        p=Path(td)/"unbound.json"; p.write_text(json.dumps(d))
+        r=run(p); result=json.loads(r.stdout)
+        assert r.returncode!=0
+        assert result["valid"] is False
+
 def test_standalone_mutation_matrix_graph_inventory():
     _assert_invalid_mutation(lambda d: d["package"]["node_inventory"][0].__setitem__("sha256","0"*64))
 

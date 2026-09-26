@@ -162,11 +162,17 @@ def _validate_package_envelope(package: Any) -> tuple[bool, str]:
             return False, "authority proof protocol assertions are missing"
         if assertion_set_digest(assertions) != assertion_sha:
             return False, "authority proof assertion digest mismatch"
+        signed_assertions = manifest_payload.get("authority_assertions")
+        signed_assertion_sha = manifest_payload.get("authority_assertions_sha256")
+        if assertions != signed_assertions or assertion_sha != signed_assertion_sha:
+            return False, "authority proof assertions in package are not bound to signed manifest"
     actual_types = [n.get("type") for n in nodes] if isinstance(nodes, list) else []
     actual_inventory = {kind: actual_types.count(kind) for kind in sorted(set(actual_types))}
     if artifact_inventory != actual_inventory:
         return False, "proof package artifact inventory mismatch"
     if payload.get("proof_profile") == "authority_lifecycle":
+        if required_types != list(AUTHORITY_LIFECYCLE_REQUIRED_TYPES):
+            return False, "authority lifecycle required artifact metadata mismatch"
         missing = [kind for kind in required_types if actual_inventory.get(kind, 0) < 1]
         if missing:
             return False, f"authority lifecycle package is missing required artifacts: {', '.join(missing)}"

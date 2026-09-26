@@ -6,6 +6,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 PROTOCOL='verigate-authority-proof-v1'; PKG='verigate-proof-package-v1'; MEDIA='application/vnd.verigate.proof-package+json'; ZERO='0'*64
+REQUIRED_AUTHORITY_TYPES=('action_intent','execution_authorization','execution_receipt','outcome_claim','outcome_attestation','authority_event','authority_state','authority_state_after','authority_ledger','genesis_authority','capability')
 def canon(x): return json.dumps(x,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
 def sha(x): return hashlib.sha256(canon(x)).hexdigest()
 def b64(x): return base64.b64decode(x,validate=True)
@@ -55,6 +56,8 @@ def verify(proof,key):
  inventory=[{'type':n.get('type'),'id':n.get('id'),'sha256':n.get('sha256')} for n in p.get('nodes',[])]
  if pkg.get('node_inventory')!=inventory or pkg.get('graph_root_digest')!=p.get('root_digest'): return bad('package graph inventory mismatch',c)
  if pkg.get('assertion_set_sha256')!=sha(pkg.get('assertions',[])): return bad('package assertion-set digest mismatch',c)
+ if p.get('proof_profile')=='authority_lifecycle' and pkg.get('required_artifact_types')!=list(REQUIRED_AUTHORITY_TYPES): return bad('authority lifecycle required artifact metadata mismatch',c)
+ if p.get('proof_profile')=='authority_lifecycle' and (pkg.get('assertions')!=p.get('authority_assertions') or pkg.get('assertion_set_sha256')!=p.get('authority_assertions_sha256')): return bad('package assertions are not bound to signed manifest',c)
  c['trust_anchor']={'valid':m.get('issuer_public_key_b64')==trusted}
  if not c['trust_anchor']['valid']:return bad('issuer public key is not trusted',c)
  try: pub=Ed25519PublicKey.from_public_bytes(b64(trusted)); pub.verify(b64(m['signature']),canon(p)); sig=True
