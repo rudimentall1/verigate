@@ -70,6 +70,21 @@ class AuthorizationService:
         if decision.context_digest and decision.context_digest != action.context_digest:
             raise ValueError("action context does not match the authorized decision")
 
+        # The policy object is an input to effective-authority calculation, so
+        # it must be the exact policy named by the decision receipt. Otherwise
+        # a low-level caller could claim digest X while using policy Y to mint
+        # executable authority. Fail closed before signing any artifact.
+        if policy is not None and policy.digest != policy_digest:
+            raise PermissionError("supplied policy does not match policy digest")
+        if signed_policy is not None:
+            signed_payload = signed_policy.get("payload")
+            if not isinstance(signed_payload, dict):
+                raise PermissionError("invalid signed policy version")
+            if signed_payload.get("policy_sha256") != policy_digest:
+                raise PermissionError("signed policy version does not match policy digest")
+            if policy is not None and signed_payload.get("policy_sha256") != policy.digest:
+                raise PermissionError("signed policy version does not match supplied policy")
+
         if authority_assessment is not None:
             if authority_assessment.status != PlanAuthorityStatus.ELIGIBLE:
                 raise PermissionError("authority assessment is not execution-eligible")

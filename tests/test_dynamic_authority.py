@@ -176,7 +176,7 @@ class DynamicAuthorityTest(unittest.TestCase):
         auth = AuthorizationService().issue(
             self.action,
             decision,
-            "e" * 64,
+            Policy().digest,
             load_private_key(private_path),
             capability=self.capability,
             authority=snapshot,
@@ -230,7 +230,7 @@ class DynamicAuthorityTest(unittest.TestCase):
         authorization = AuthorizationService().issue(
             self.action,
             decision,
-            "e" * 64,
+            Policy().digest,
             load_private_key(private_path),
             capability=self.capability,
             authority=snapshot,

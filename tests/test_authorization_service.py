@@ -221,7 +221,7 @@ class AuthorizationServiceTest(unittest.TestCase):
             AuthorizationService().issue(
                 action,
                 decision,
-                "a" * 64,
+                Policy().digest,
                 load_private_key(self.priv),
                 capability=cap_a,
                 authority=authority_b,
@@ -262,7 +262,7 @@ class AuthorizationServiceTest(unittest.TestCase):
             AuthorizationService().issue(
                 action,
                 decision,
-                "a" * 64,
+                Policy().digest,
                 load_private_key(self.priv),
                 capability=capability,
                 authority=forged,
@@ -270,6 +270,76 @@ class AuthorizationServiceTest(unittest.TestCase):
                 policy=Policy(),
             )
         storage.close()
+
+    def test_policy_object_cannot_mismatch_policy_digest(self):
+        action = self._action()
+        capability = Capability(
+            capability_id="cap-policy-binding",
+            agent_id=action.agent_id,
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+        )
+        storage = Storage(Path(self.tmpdir.name) / "policy-binding.db")
+        authority = DynamicAuthorityService(storage).snapshot(
+            action.agent_id, capability.capability_id
+        )
+        restrictive = Policy(
+            allowed_action_types=["evm.transaction"],
+            allowed_targets=["0xasset"],
+            raw={"allowed_action_types": ["evm.transaction"], "allowed_targets": ["0xasset"]},
+        )
+        permissive = Policy(
+            allowed_action_types=["evm.transaction"],
+            allowed_targets=["0xattacker"],
+            raw={"allowed_action_types": ["evm.transaction"], "allowed_targets": ["0xattacker"]},
+        )
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+        with self.assertRaisesRegex(PermissionError, "supplied policy does not match"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                restrictive.digest,
+                load_private_key(self.priv),
+                capability=capability,
+                authority=authority,
+                authority_policy=DynamicAuthorityService(storage).policy,
+                policy=permissive,
+            )
+        storage.close()
+
+    def test_signed_policy_version_cannot_mismatch_policy_digest(self):
+        action = self._action()
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+        policy = Policy(raw={"allowed_action_types": ["evm.transaction"]})
+        signed_policy = {
+            "payload": {"policy_sha256": "b" * 64, "version": 2, "source_ref": "test"},
+            "signature": "invalid",
+            "algorithm": "Ed25519",
+        }
+        with self.assertRaisesRegex(PermissionError, "signed policy version does not match"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                policy.digest,
+                load_private_key(self.priv),
+                policy=policy,
+                signed_policy=signed_policy,
+            )
+
+    def test_policy_and_signed_policy_must_share_digest(self):
+        action = self._action()
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+        policy = Policy(raw={"allowed_action_types": ["evm.transaction"]})
+        signed_policy = {"payload": {"policy_sha256": "c" * 64}}
+        with self.assertRaisesRegex(PermissionError, "signed policy version does not match"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                policy.digest,
+                load_private_key(self.priv),
+                policy=policy,
+                signed_policy=signed_policy,
+            )
 
     def test_requested_capability_cannot_mismatch_supplied_capability(self):
         action = ActionIntent(
@@ -343,7 +413,7 @@ class AuthorizationServiceTest(unittest.TestCase):
             AuthorizationService().issue(
                 action,
                 decision,
-                "f" * 64,
+                Policy().digest,
                 load_private_key(self.priv),
                 capability=child,
                 authority=DynamicAuthorityService(storage).snapshot(
@@ -381,7 +451,7 @@ class AuthorizationServiceTest(unittest.TestCase):
             AuthorizationService().issue(
                 action,
                 decision,
-                "f" * 64,
+                Policy().digest,
                 load_private_key(self.priv),
                 capability=child,
                 capability_registry=registry,

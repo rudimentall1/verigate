@@ -96,7 +96,7 @@ class EvmRpcExecutionIntegrationTest(unittest.TestCase):
                 auth = AuthorizationService().issue(
                     intent,
                     decision,
-                    "policy",
+                    Policy().digest,
                     load_private_key(private),
                     nonce=intent.intent_id,
                     capability=capability,

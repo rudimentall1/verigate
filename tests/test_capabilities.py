@@ -87,7 +87,7 @@ class CapabilityRegistryTest(unittest.TestCase):
         artifacts = AuthorizationService().issue(
             action,
             decision,
-            "e" * 64,
+            policy.digest,
             load_private_key(private_path),
             capability=permitted,
             authority=authority,
