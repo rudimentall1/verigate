@@ -275,11 +275,19 @@ class EvidenceGraph:
                             })
                 edges.append({"from": f"capability:{capability_id}", "relation": "AUTHORIZES", "to": f"action_intent:{intent_id}"})
 
-                dynamic = DynamicAuthorityService(self.storage).explain(
-                    capability.agent_id,
-                    capability.capability_id,
-                )
-                nodes.append(_node("authority_state", capability_id, dynamic))
+                historical_snapshot = None
+                if execution is not None:
+                    candidate = execution.get("payload", {}).get("authority_state")
+                    if isinstance(candidate, dict):
+                        historical_snapshot = candidate
+                if historical_snapshot is not None:
+                    nodes.append(_node("authority_state", capability_id, historical_snapshot))
+                else:
+                    dynamic = DynamicAuthorityService(self.storage).explain(
+                        capability.agent_id,
+                        capability.capability_id,
+                    )
+                    nodes.append(_node("authority_state", capability_id, dynamic))
                 edges.append({"from": f"authority_state:{capability_id}", "relation": "CONSTRAINS", "to": f"action_intent:{intent_id}"})
 
                 # The authority ledger is the cryptographically linked lifecycle
@@ -326,10 +334,20 @@ class EvidenceGraph:
                             "relation": "PROVES",
                             "to": event_node_id,
                         })
-                reset = self.storage.latest_authority_reset(
-                    capability.agent_id,
-                    capability.capability_id,
-                )
+                reset = None
+                if historical_snapshot is not None:
+                    evaluated_at = historical_snapshot.get("evaluated_at")
+                    if isinstance(evaluated_at, (int, float)) and not isinstance(evaluated_at, bool):
+                        reset = self.storage.latest_authority_reset_at(
+                            capability.agent_id,
+                            capability.capability_id,
+                            float(evaluated_at),
+                        )
+                if reset is None:
+                    reset = self.storage.latest_authority_reset(
+                        capability.agent_id,
+                        capability.capability_id,
+                    )
                 if reset is not None:
                     reset_payload = reset.get("payload", {})
                     reset_id = reset_payload.get("action_id") or reset_payload.get("reset_id") or _digest(reset)

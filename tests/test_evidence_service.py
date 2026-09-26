@@ -7,6 +7,8 @@ from cryptography.hazmat.primitives import serialization
 
 from core.evidence import EvidenceGraph
 from core.evidence_service import EvidenceGraphService
+from core.evidence_manifest import build_manifest
+from core.offline_verifier import verify_proof
 from core.authority_state import DynamicAuthorityService
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.identity import sign_action_intent
@@ -76,6 +78,35 @@ class EvidenceGraphServiceTest(unittest.TestCase):
         self.assertEqual(len(entry_nodes), 1)
         self.assertTrue(graph["verification"]["authority_ledger"]["valid"])
         self.assertEqual(graph["verification"]["authority_ledger"]["entry_count"], 1)
+
+    def test_portable_proof_survives_later_authority_event(self):
+        authorization_id = self._authorization()
+        capability = self.storage.capability("cap-snapshot")
+        service = EvidenceGraphService(self.storage, EvidenceGraph(self.storage, self.public_key))
+        DynamicAuthorityService(self.storage).record_event(
+            agent_id=capability.agent_id,
+            capability_id=capability.capability_id,
+            event_type="EXECUTION_CONFIRMED",
+            evidence_ref="later-event",
+        )
+        snapshot = service.snapshot(authorization_id)
+        historical = snapshot["graph"]["historical_authority"]
+        self.assertTrue(historical["valid"], historical["reason"])
+        self.assertEqual(
+            historical["details"]["ledger_sequence"],
+            0,
+        )
+        manifest = build_manifest(snapshot["graph"], self.private_key)
+        proof = verify_proof(manifest, trusted_public_key_b64=manifest["issuer_public_key_b64"])
+        self.assertTrue(proof["valid"], proof["reason"])
+        self.assertEqual(
+            proof["checks"]["historical_authority"]["details"]["ledger_sequence"],
+            0,
+        )
+        self.assertEqual(
+            proof["checks"]["historical_authority"]["details"]["live_ledger_sequence"],
+            1,
+        )
 
     def test_snapshot_tampering_is_detected(self):
         authorization_id = self._authorization()

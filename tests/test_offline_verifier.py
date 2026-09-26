@@ -57,6 +57,8 @@ class OfflineVerifierTests(unittest.TestCase):
         result=verify_proof(build_manifest(graph,key))
         self.assertTrue(result["valid"],result)
         self.assertTrue(result["checks"]["execution_authorization"]["valid"])
+        self.assertEqual(result["checks"]["historical_authority"]["details"]["ledger_sequence"], 1)
+
         self.assertTrue(result["checks"]["historical_authority"]["valid"])
 
     def test_committed_ledger_head_mismatch_is_rejected(self):

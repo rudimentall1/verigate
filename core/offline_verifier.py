@@ -43,13 +43,26 @@ def _check_authority_binding(payload: dict[str, Any]) -> tuple[bool, str, dict[s
     if not ok: return False, reason, {"ledger_head": head}
     committed = auth_payload.get("authority_ledger_head_hash")
     if not isinstance(committed, str): return False, "execution authorization has no historical authority binding", {}
-    if committed != head: return False, "historical authority ledger head mismatch", {"expected_head": committed, "actual_head": head}
+    if committed == "0" * 64:
+        historical_entries = []
+    else:
+        historical_entries = []
+        for row in entries:
+            historical_entries.append(row)
+            if row.get("event_hash") == committed:
+                break
+        if not historical_entries or historical_entries[-1].get("event_hash") != committed:
+            return False, "historical authority ledger head mismatch", {"expected_head": committed, "actual_head": head}
     if historical.get("valid") is not True: return False, "historical authority proof is not valid", {"historical_reason": historical.get("reason")}
     details = historical.get("details")
     if isinstance(details, dict):
-        if details.get("ledger_head_hash") not in (None, head): return False, "historical authority detail head mismatch", {}
+        if details.get("ledger_head_hash") not in (None, committed): return False, "historical authority detail head mismatch", {}
         if details.get("head_match") is False: return False, "historical authority head was reported as mismatched", {}
-    return True, "historical authority binding verified", {"ledger_sequence": len(entries), "ledger_head_hash": head}
+    return True, "historical authority binding verified", {
+        "ledger_sequence": len(historical_entries),
+        "live_ledger_sequence": len(entries),
+        "ledger_head_hash": committed,
+    }
 
 def verify_proof(manifest: dict[str, Any], *, trusted_public_key_b64: str | None = None) -> dict[str, Any]:
     envelope = verify_manifest(manifest, trusted_public_key_b64); checks: dict[str, dict[str, Any]] = {}
