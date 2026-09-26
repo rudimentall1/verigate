@@ -41,6 +41,11 @@ def verify(proof,key):
  c['manifest_integrity']={'valid':isinstance(m,dict) and pkg.get('manifest_sha256')==sha(m)}
  if not c['manifest_integrity']['valid']:return bad('manifest digest mismatch',c)
  if pkg.get('protocol')!=PKG or pkg.get('media_type')!=MEDIA or not isinstance(p,dict) or p.get('proof_profile')!='authority_lifecycle':return bad('unsupported proof package',c)
+ if pkg.get('proof_protocol')!=PROTOCOL or pkg.get('protocol')!=PKG: return bad('package protocol metadata mismatch',c)
+ if not pkg.get('self_contained') or pkg.get('node_count')!=len(p.get('nodes',[])) or pkg.get('edge_count')!=len(p.get('edges',[])): return bad('package graph metadata mismatch',c)
+ inventory=[{'type':n.get('type'),'id':n.get('id'),'sha256':n.get('sha256')} for n in p.get('nodes',[])]
+ if pkg.get('node_inventory')!=inventory or pkg.get('graph_root_digest')!=p.get('root_digest'): return bad('package graph inventory mismatch',c)
+ if pkg.get('assertion_set_sha256')!=sha(pkg.get('assertions',[])): return bad('package assertion-set digest mismatch',c)
  c['trust_anchor']={'valid':m.get('issuer_public_key_b64')==trusted}
  if not c['trust_anchor']['valid']:return bad('issuer public key is not trusted',c)
  try: pub=Ed25519PublicKey.from_public_bytes(b64(trusted)); pub.verify(b64(m['signature']),canon(p)); sig=True
@@ -83,6 +88,4 @@ def main():
   print('VERIGATE AUTHORITY PROOF — STANDALONE');print('Protocol:',r.get('protocol',PROTOCOL));[print(f"{k.upper():28} {'PASS' if v.get('valid') else 'FAIL'}") for k,v in r.get('checks',{}).items()];print('RESULT:', 'VALID' if r.get('valid') else 'INVALID'); print('Reason:',r['reason']) if not r.get('valid') else None
  return 0 if r.get('valid') else 1
 if __name__=='__main__':raise SystemExit(main())
-
-
 
