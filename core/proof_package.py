@@ -1,4 +1,4 @@
-﻿"""Self-contained, versioned ProofPackage export/import for offline verification.
+"""Self-contained, versioned ProofPackage export/import for offline verification.
 
 A ProofPackage is a transport artifact, not a second proof format. It wraps
 an existing signed evidence manifest so a third party can carry the complete
@@ -16,6 +16,19 @@ from core.proof_engine import canonical, digest
 PACKAGE_VERSION = 1
 PACKAGE_MEDIA_TYPE = "application/vnd.verigate.proof-package+json"
 PACKAGE_PROTOCOL = "verigate-proof-package-v1"
+AUTHORITY_LIFECYCLE_REQUIRED_TYPES = (
+    "action_intent",
+    "execution_authorization",
+    "execution_receipt",
+    "outcome_claim",
+    "outcome_attestation",
+    "authority_event",
+    "authority_state",
+    "authority_state_after",
+    "authority_ledger",
+    "genesis_authority",
+    "capability",
+)
 
 
 def _package_payload(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -36,11 +49,22 @@ def _package_payload(manifest: dict[str, Any]) -> dict[str, Any]:
         }
         for node in nodes
     ]
+    proof_profile = manifest_payload.get("proof_profile")
+    node_types = [node.get("type") for node in nodes]
+    required_types = (
+        AUTHORITY_LIFECYCLE_REQUIRED_TYPES
+        if proof_profile == "authority_lifecycle"
+        else ()
+    )
+    artifact_inventory = {kind: node_types.count(kind) for kind in sorted(set(node_types))}
     return {
         "package_version": PACKAGE_VERSION,
         "media_type": PACKAGE_MEDIA_TYPE,
         "protocol": PACKAGE_PROTOCOL,
-        "proof_profile": manifest_payload.get("proof_profile"),
+        "proof_profile": proof_profile,
+        "self_contained": True,
+        "required_artifact_types": list(required_types),
+        "artifact_inventory": artifact_inventory,
         "authorization_id": manifest_payload.get("authorization_id"),
         "intent_id": manifest_payload.get("intent_id"),
         "agent_id": manifest_payload.get("agent_id"),
@@ -119,6 +143,20 @@ def _validate_package_envelope(package: Any) -> tuple[bool, str]:
         return False, "proof package graph root mismatch"
     nodes = manifest_payload.get("nodes")
     edges = manifest_payload.get("edges")
+    if payload.get("self_contained") is not True:
+        return False, "proof package is not marked self-contained"
+    required_types = payload.get("required_artifact_types")
+    artifact_inventory = payload.get("artifact_inventory")
+    if not isinstance(required_types, list) or not isinstance(artifact_inventory, dict):
+        return False, "proof package artifact inventory is missing"
+    actual_types = [n.get("type") for n in nodes] if isinstance(nodes, list) else []
+    actual_inventory = {kind: actual_types.count(kind) for kind in sorted(set(actual_types))}
+    if artifact_inventory != actual_inventory:
+        return False, "proof package artifact inventory mismatch"
+    if payload.get("proof_profile") == "authority_lifecycle":
+        missing = [kind for kind in required_types if actual_inventory.get(kind, 0) < 1]
+        if missing:
+            return False, f"authority lifecycle package is missing required artifacts: {', '.join(missing)}"
     inventory = payload.get("node_inventory")
     if not isinstance(nodes, list) or not isinstance(edges, list) or not isinstance(inventory, list):
         return False, "proof package graph inventory is missing"
@@ -159,6 +197,7 @@ __all__ = [
     "PACKAGE_VERSION",
     "PACKAGE_MEDIA_TYPE",
     "PACKAGE_PROTOCOL",
+    "AUTHORITY_LIFECYCLE_REQUIRED_TYPES",
     "build_proof_package",
     "serialize_proof_package",
     "parse_proof_package",

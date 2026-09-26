@@ -52,6 +52,8 @@ class ProofPackageTests(unittest.TestCase):
         self.assertTrue(result["package_valid"])
         self.assertEqual(package["package"]["media_type"], PACKAGE_MEDIA_TYPE)
         self.assertEqual(package["package"]["protocol"], PACKAGE_PROTOCOL)
+        self.assertTrue(package["package"]["self_contained"])
+        self.assertEqual(package["package"]["required_artifact_types"], [])
         self.assertEqual(package["package"]["proof_profile"], "integrity")
         self.assertTrue(package["package"]["manifest_sha256"])
         self.assertEqual(package["package"]["node_count"], 1)
@@ -92,6 +94,59 @@ class ProofPackageTests(unittest.TestCase):
         result = verify_proof_package(tampered)
         self.assertFalse(result["valid"])
         self.assertEqual(result["reason"], "proof package node inventory mismatch")
+
+    def test_authority_lifecycle_package_requires_complete_artifact_inventory(self):
+        from tests.test_reference_lifecycle import VerigateReferenceLifecycleTest
+        lifecycle = VerigateReferenceLifecycleTest("test_reference_lifecycle_is_offline_verifiable")
+        lifecycle.setUp()
+        try:
+            manifest = lifecycle._valid_manifest()
+            package = build_proof_package(manifest)
+            required = package["package"]["required_artifact_types"]
+            self.assertIn("authority_state_after", required)
+            self.assertEqual(package["package"]["artifact_inventory"]["authority_state_after"], 1)
+            tampered = copy.deepcopy(package)
+            nodes = tampered["package"]["manifest"]["payload"]["nodes"]
+            tampered["package"]["manifest"]["payload"]["nodes"] = [
+                n for n in nodes if n["type"] != "authority_state_after"
+            ]
+            # Rebuild graph/root/signature through the existing adversarial helper;
+            # package verification must still reject the semantically incomplete graph.
+            lifecycle._resign_mutated_manifest(tampered["package"]["manifest"])
+            tampered["package"]["manifest_sha256"] = __import__("hashlib").sha256(
+                canonical(tampered["package"]["manifest"])
+            ).hexdigest()
+            tampered["package_sha256"] = __import__("hashlib").sha256(
+                canonical(tampered["package"])
+            ).hexdigest()
+            # Keep every envelope field internally consistent so the semantic
+            # required-artifact check is the first failing condition.
+            actual = tampered["package"]["manifest"]["payload"]["nodes"]
+            payload = tampered["package"]["manifest"]["payload"]
+            from core.evidence_manifest import graph_root
+            payload["root_digest"] = graph_root(payload)
+            tampered["package"]["graph_root_digest"] = payload["root_digest"]
+            tampered["package"]["node_inventory"] = [
+                {"type": n.get("type"), "id": n.get("id"), "sha256": n.get("sha256")}
+                for n in actual
+            ]
+            tampered["package"]["node_count"] = len(actual)
+            tampered["package"]["edge_count"] = len(payload["edges"])
+            tampered["package"]["artifact_inventory"] = {
+                kind: sum(n["type"] == kind for n in actual)
+                for kind in sorted({n["type"] for n in actual})
+            }
+            tampered["package"]["manifest_sha256"] = __import__("hashlib").sha256(
+                canonical(tampered["package"]["manifest"])
+            ).hexdigest()
+            tampered["package_sha256"] = __import__("hashlib").sha256(
+                canonical(tampered["package"])
+            ).hexdigest()
+            result = verify_proof_package(tampered)
+            self.assertFalse(result["valid"])
+            self.assertIn("authority lifecycle package is missing required artifacts", result["reason"])
+        finally:
+            lifecycle.tearDown()
 
     def test_manifest_metadata_tampering_fails_closed(self):
         package = build_proof_package(self._manifest())
