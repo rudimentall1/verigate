@@ -1,4 +1,5 @@
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -50,6 +51,82 @@ class AuthorizationServiceTest(unittest.TestCase):
             action, decision, "b" * 64, load_private_key(self.priv)
         )
         self.assertIsNone(artifacts["execution_authorization"])
+
+    def test_execution_authorization_ttl_has_hard_ceiling(self):
+        action = self._action()
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+        with self.assertRaisesRegex(PermissionError, "ttl exceeds maximum"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                Policy().digest,
+                load_private_key(self.priv),
+                ttl_seconds=301,
+            )
+
+    def test_execution_authorization_ttl_cannot_outlive_capability(self):
+        action = self._action()
+        capability = Capability(
+            capability_id="cap-expiring",
+            agent_id=action.agent_id,
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+            expires_at=time.time() + 30,
+        )
+        storage = Storage(Path(self.tmpdir.name) / "authority-expiry.db")
+        authority = DynamicAuthorityService(storage).snapshot(
+            action.agent_id,
+            capability.capability_id,
+        )
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+        with self.assertRaisesRegex(PermissionError, "ttl exceeds capability expiry"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                Policy().digest,
+                load_private_key(self.priv),
+                ttl_seconds=60,
+                capability=capability,
+                authority=authority,
+                policy=Policy(),
+            )
+        storage.close()
+
+    def test_execution_authorization_ttl_cannot_outlive_identity(self):
+        from core.models import AgentIdentity
+
+        action = self._action()
+        identity = AgentIdentity(
+            agent_id=action.agent_id,
+            key_id="identity-expiring",
+            expires_at=time.time() + 30,
+        )
+        capability = Capability(
+            capability_id="cap-identity-expiring",
+            agent_id=action.agent_id,
+            identity_id=identity.key_id,
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+        )
+        storage = Storage(Path(self.tmpdir.name) / "authority-identity-expiry.db")
+        authority = DynamicAuthorityService(storage).snapshot(
+            action.agent_id,
+            capability.capability_id,
+        )
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+        with self.assertRaisesRegex(PermissionError, "ttl exceeds identity expiry"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                Policy().digest,
+                load_private_key(self.priv),
+                ttl_seconds=60,
+                capability=capability,
+                identity=identity,
+                authority=authority,
+                policy=Policy(),
+            )
+        storage.close()
 
     def test_capability_scope_is_bound_to_execution_authorization(self):
         action = self._action()

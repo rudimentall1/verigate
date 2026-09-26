@@ -6,6 +6,7 @@ ALLOW, a one-time execution capability.
 """
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from .models import ActionIntent, AgentIdentity, Capability, Decision, GuardrailDecision
@@ -16,6 +17,9 @@ from .policy import Policy
 from .external_state import external_state_requirement_for_action
 from .authority_intent_graph import IntentAuthorityAssessment, PlanAuthorityStatus
 from attest.receipt import issue_execution_authorization, sign_receipt
+
+
+MAX_EXECUTION_AUTHORIZATION_TTL_SECONDS = 300
 
 
 class AuthorizationService:
@@ -69,6 +73,12 @@ class AuthorizationService:
             raise ValueError("action and decision identities do not match")
         if decision.context_digest and decision.context_digest != action.context_digest:
             raise ValueError("action context does not match the authorized decision")
+        if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int):
+            raise ValueError("ttl_seconds must be an integer")
+        if ttl_seconds <= 0:
+            raise ValueError("ttl_seconds must be positive")
+        if ttl_seconds > MAX_EXECUTION_AUTHORIZATION_TTL_SECONDS:
+            raise PermissionError("execution authorization ttl exceeds maximum")
 
         # The policy object is an input to effective-authority calculation, so
         # it must be the exact policy named by the decision receipt. Otherwise
@@ -115,6 +125,19 @@ class AuthorizationService:
                 raise PermissionError(reason)
         if identity is not None and identity.agent_id != action.agent_id:
             raise PermissionError("identity agent mismatch")
+        now = time.time()
+        if capability is not None and capability.expires_at is not None:
+            remaining = capability.expires_at - now
+            if remaining <= 0:
+                raise PermissionError("capability expires before execution authorization can be issued")
+            if ttl_seconds > remaining:
+                raise PermissionError("execution authorization ttl exceeds capability expiry")
+        if identity is not None and identity.expires_at is not None:
+            remaining = identity.expires_at - now
+            if remaining <= 0:
+                raise PermissionError("identity expires before execution authorization can be issued")
+            if ttl_seconds > remaining:
+                raise PermissionError("execution authorization ttl exceeds identity expiry")
         if capability is not None and capability.identity_id is not None:
             if identity is None or capability.identity_id != identity.key_id:
                 raise PermissionError("capability identity mismatch")
