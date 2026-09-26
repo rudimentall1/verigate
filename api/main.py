@@ -253,6 +253,17 @@ def _run_demo_script(script: str, timeout: int = 45) -> str:
     return result.stdout + ("\n" + result.stderr if result.stderr else "")
 
 
+@app.get("/v1/demo/genesis")
+def demo_genesis() -> dict:
+    _require_demo_endpoints()
+    try:
+        output = _run_demo_script("examples/genesis_demo.py", timeout=60)
+    except subprocess.TimeoutExpired as exc:
+        return {"passed": False, "error": "Genesis demo timed out", "output": str(exc)}
+    passed = "GENESIS 2.0 DEMO: PASS" in output and "RESULT: VALID" in output and "RESULT: INVALID" in output
+    return {"passed": passed, "output": output[-12000:]}
+
+
 @app.get("/v1/demo/tamper")
 def demo_tamper() -> dict:
     _require_demo_endpoints()

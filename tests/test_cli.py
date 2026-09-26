@@ -28,6 +28,21 @@ class PortableProofCliTests(unittest.TestCase):
         self.assertIn("RESULT: VALID", result.stdout)
         self.assertIn("RESULT: INVALID", result.stdout)
 
+    def test_tamper_enforcement_demo_completes(self):
+        script = ROOT / "demo_tamper_enforcement.py"
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("VERIGATE: BLOCK"), 2)
+        self.assertIn("Broadcasts: 0", result.stdout)
+        self.assertIn("VERIGATE: ALLOW", result.stdout)
+        self.assertIn("Broadcasts: 1", result.stdout)
+
     def test_authority_package_verifies_after_runtime_shutdown(self):
         lifecycle = VerigateReferenceLifecycleTest("test_reference_lifecycle_is_offline_verifiable")
         lifecycle.setUp()

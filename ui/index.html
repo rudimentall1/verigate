@@ -22,10 +22,10 @@ h1{font-size:clamp(32px,5vw,64px);line-height:.95;margin:0 0 14px;max-width:800p
 <div class="wrap">
   <div class="top"><div class="brand">VERIGATE</div><div class="live">● EXECUTION-SIDE ENFORCEMENT</div></div>
   <h1>AI can propose.<br>Verigate decides.</h1>
-  <div class="lead">A 15-second proof that an authorized action cannot be mutated into an attacker action — and that an untampered authorization can reach a real blockchain execution boundary.</div>
-  <div class="flow"><b>AGENT</b><span class="arrow">→</span><b>AUTHORIZATION</b><span class="arrow">→</span><b>VERIGATE</b><span class="arrow">→</span><b>EXECUTION</b></div>
+  <div class="lead">Give Verigate an agent action. Watch authority become an executable authorization, observe the outcome, verify portable proof outside the runtime, then mutate the evidence and get INVALID.</div>
+  <div class="flow"><b>AGENT</b><span class="arrow">→</span><b>INTENT</b><span class="arrow">→</span><b>AUTHORITY</b><span class="arrow">→</span><b>EXECUTION</b><span class="arrow">→</span><b>PROOF</b></div>
   <div class="controls">
-    <button id="run">▶ RUN 15-SECOND PROOF</button>
+    <button id="run">▶ RUN GENESIS 2.0</button>
     <button class="secondary" id="tamper">ATTACK: CHANGE DESTINATION</button>
     <button class="secondary" id="live">REAL DEVNET EXECUTION</button>
   </div>
@@ -41,7 +41,7 @@ h1{font-size:clamp(32px,5vw,64px);line-height:.95;margin:0 0 14px;max-width:800p
       <div id="liveProof" class="proof">No live transaction in this session.</div>
     </section>
   </div>
-  <div id="verdict" class="verdict"><strong>What the judge should see</strong><p>Mutate the approved action → BLOCK at the execution boundary → 0 broadcasts. Then execute the untouched authorization → real Devnet transaction → explorer proof.</p></div>
+  <div id="verdict" class="verdict"><strong>Genesis 2.0</strong><p>Authority → real enforcement → outcome → portable proof → independent VALID → adversarial mutation → INVALID.</p></div>
   <div class="footer">Demo only • Solana Devnet • No mainnet funds • Cryptographic authorization is verified before execution.</div>
 </div>
 <script>
@@ -49,6 +49,13 @@ const $=id=>document.getElementById(id);
 const setBusy=v=>[$('run'),$('tamper'),$('live')].forEach(b=>b.disabled=v);
 function state(el,kind,title){el.className='state '+kind;el.querySelector('.big').textContent=title}
 async function json(url){const r=await fetch(url);const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'request failed');return d}
+async function runGenesis(){
+  state($("tamperState"),"pending","RUNNING");$("tamperProof").textContent="Running the real Genesis 2.0 lifecycle…";
+  const d=await json("/v1/demo/genesis");
+  if(d.passed){state($("tamperState"),"allowed","PASS");$("broadcasts").textContent="see lifecycle";$("reason").textContent="proof + tamper verified";$("tamperProof").textContent=d.output; $("verdict").innerHTML="<strong>GENESIS 2.0: PASS</strong><p>Real lifecycle completed. Portable proof verified independently, then adversarial mutation was rejected.</p>";}
+  else{state($("tamperState"),"blocked","FAIL");$("tamperProof").textContent=d.output||d.error||"Genesis demo failed";$("verdict").innerHTML="<strong>Genesis demo failed.</strong><p>See the lifecycle output for the failing boundary.</p>";}
+  return d;
+}
 async function runTamper(){
   state($('tamperState'),'pending','CHECKING');$('tamperProof').textContent='ExecutionRouter verifying signed authorization…';
   const d=await json('/v1/demo/tamper');
@@ -65,7 +72,7 @@ async function runLive(){
   else{state($('liveState'),'pending','UNAVAILABLE');$('liveStatus').textContent='not confirmed';$('liveProof').textContent=d.output||d.error||'Devnet execution unavailable';}
   return d;
 }
-async function sequence(){setBusy(true);try{await runTamper();await runLive();}catch(e){$('verdict').innerHTML='<strong>Demo error.</strong><p>'+e.message+'</p>';}finally{setBusy(false)}}
+async function sequence(){setBusy(true);try{await runGenesis();}catch(e){$('verdict').innerHTML='<strong>Demo error.</strong><p>'+e.message+'</p>';}finally{setBusy(false)}}
 $('run').onclick=sequence;$('tamper').onclick=async()=>{setBusy(true);try{await runTamper()}catch(e){state($('tamperState'),'pending','ERROR');$('tamperProof').textContent=e.message}finally{setBusy(false)}};
 $('live').onclick=async()=>{setBusy(true);try{await runLive()}catch(e){state($('liveState'),'pending','ERROR');$('liveProof').textContent=e.message}finally{setBusy(false)}};
 </script>
