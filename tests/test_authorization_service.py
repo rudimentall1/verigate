@@ -193,6 +193,84 @@ class AuthorizationServiceTest(unittest.TestCase):
                 action, decision, "d" * 64, load_private_key(self.priv), capability=capability
             )
 
+    def test_authority_snapshot_cannot_bind_to_different_capability(self):
+        action = self._action()
+        storage = Storage(Path(self.tmpdir.name) / "authority-binding.db")
+        cap_a = Capability(
+            capability_id="cap-authority-a",
+            agent_id=action.agent_id,
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+            max_per_action={"USDC": 100.0},
+        )
+        cap_b = Capability(
+            capability_id="cap-authority-b",
+            agent_id=action.agent_id,
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+            max_per_action={"USDC": 100.0},
+        )
+        storage.register_capability(cap_a)
+        storage.register_capability(cap_b)
+        authority_b = DynamicAuthorityService(storage).snapshot(
+            action.agent_id, cap_b.capability_id
+        )
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+
+        with self.assertRaisesRegex(PermissionError, "authority capability mismatch"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                "a" * 64,
+                load_private_key(self.priv),
+                capability=cap_a,
+                authority=authority_b,
+                authority_policy=DynamicAuthorityService(storage).policy,
+                policy=Policy(),
+            )
+        storage.close()
+
+    def test_authority_snapshot_cannot_claim_wrong_multiplier(self):
+        action = self._action()
+        storage = Storage(Path(self.tmpdir.name) / "authority-state.db")
+        capability = Capability(
+            capability_id="cap-authority-state",
+            agent_id=action.agent_id,
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+        )
+        storage.register_capability(capability)
+        service = DynamicAuthorityService(storage)
+        snapshot = service.snapshot(action.agent_id, capability.capability_id)
+        forged = type(snapshot)(
+            agent_id=snapshot.agent_id,
+            capability_id=snapshot.capability_id,
+            state=snapshot.state,
+            successes=snapshot.successes,
+            adverse_events=snapshot.adverse_events,
+            critical_events=snapshot.critical_events,
+            multiplier=1.0,
+            evaluated_at=snapshot.evaluated_at,
+            reason=snapshot.reason,
+            ledger_head_hash=snapshot.ledger_head_hash,
+            authority_policy_sha256=snapshot.authority_policy_sha256,
+            history_start_at=snapshot.history_start_at,
+        )
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+
+        with self.assertRaisesRegex(PermissionError, "authority multiplier"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                "a" * 64,
+                load_private_key(self.priv),
+                capability=capability,
+                authority=forged,
+                authority_policy=service.policy,
+                policy=Policy(),
+            )
+        storage.close()
+
     def test_requested_capability_cannot_mismatch_supplied_capability(self):
         action = ActionIntent(
             agent_id="agent-rwa",

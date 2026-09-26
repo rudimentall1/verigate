@@ -103,6 +103,17 @@ class AuthorizationService:
         if capability is not None and capability.identity_id is not None:
             if identity is None or capability.identity_id != identity.key_id:
                 raise PermissionError("capability identity mismatch")
+        if capability is not None and authority is not None:
+            if authority.agent_id != action.agent_id:
+                raise PermissionError("authority agent mismatch")
+            if authority.capability_id != capability.capability_id:
+                raise PermissionError("authority capability mismatch")
+            if authority_policy is not None:
+                expected_multiplier = authority_policy.multiplier(authority.state)
+                if authority.multiplier != expected_multiplier:
+                    raise PermissionError("authority multiplier does not match authority state")
+            if authority.state.value == "SUSPENDED" or authority.multiplier <= 0:
+                raise PermissionError("suspended authority cannot mint execution authorization")
 
         receipt = sign_receipt(
             action,
