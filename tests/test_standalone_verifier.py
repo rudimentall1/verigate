@@ -31,3 +31,34 @@ def test_standalone_fails_closed_on_invalid_public_key():
         result=json.loads(r.stdout)
         assert result["valid"] is False
         assert "verification failed closed" in result["reason"]
+
+def _assert_invalid_mutation(mutator):
+    d=json.loads(PROOF.read_text())
+    mutator(d)
+    with tempfile.TemporaryDirectory() as td:
+        p=Path(td)/"mutated.json"; p.write_text(json.dumps(d))
+        r=run(p)
+        result=json.loads(r.stdout)
+        assert r.returncode!=0, r.stdout
+        assert result["valid"] is False, r.stdout
+
+def test_standalone_mutation_matrix_package_metadata():
+    _assert_invalid_mutation(lambda d: d["package"].__setitem__("protocol","tampered"))
+
+def test_standalone_mutation_matrix_manifest_payload():
+    _assert_invalid_mutation(lambda d: d["package"]["manifest"]["payload"].__setitem__("agent_id","tampered-agent"))
+
+def test_standalone_mutation_matrix_assertions():
+    _assert_invalid_mutation(lambda d: d["package"]["manifest"]["payload"]["authority_assertions"][0].__setitem__("predicate","tampered"))
+
+def test_standalone_mutation_matrix_graph_inventory():
+    _assert_invalid_mutation(lambda d: d["package"]["node_inventory"][0].__setitem__("sha256","0"*64))
+
+def test_standalone_mutation_matrix_trust_anchor():
+    d=json.loads(PROOF.read_text())
+    with tempfile.TemporaryDirectory() as td:
+        proof=Path(td)/"proof.json"; proof.write_text(json.dumps(d))
+        key=Path(td)/"bad.pub"; key.write_text(KEY.read_text().replace("A","B",1))
+        r=subprocess.run([sys.executable,str(SCRIPT),str(proof),"--public-key",str(key),"--format","json"],cwd=ROOT,text=True,capture_output=True)
+        assert r.returncode!=0
+        assert json.loads(r.stdout)["valid"] is False
