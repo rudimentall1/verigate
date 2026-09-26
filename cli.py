@@ -17,6 +17,7 @@ from core.models import PaymentIntent
 from core.policy import Policy
 from core.storage import Storage
 from core.offline_verifier import verify_proof
+from core.proof_package import parse_proof_package, verify_proof_package
 
 DEFAULT_POLICY = "policies/default.yaml"
 DEFAULT_DB = "data/verigate.db"
@@ -60,13 +61,22 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    document = json.loads(Path(args.attestation_file).read_text(encoding="utf-8"))
+    raw_document = Path(args.attestation_file).read_bytes()
+    try:
+        document = json.loads(raw_document.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        print(json.dumps({"valid": False, "reason": f"invalid JSON proof: {exc}"}, indent=2))
+        return 1
+    trusted = None
+    if args.public_key and Path(args.public_key).exists():
+        import base64
+        trusted = base64.b64encode(Path(args.public_key).read_bytes()).decode("ascii")
+
+    if isinstance(document, dict) and "package" in document and "package_sha256" in document:
+        result = verify_proof_package(raw_document, trusted_public_key_b64=trusted)
+        print(json.dumps(result, indent=2))
+        return 0 if result["valid"] else 1
     if isinstance(document, dict) and "payload" in document and "issuer_public_key_b64" in document:
-        trusted = None
-        if args.public_key and Path(args.public_key).exists():
-            raw = Path(args.public_key).read_bytes()
-            import base64
-            trusted = base64.b64encode(raw).decode("ascii")
         result = verify_proof(document, trusted_public_key_b64=trusted)
         print(json.dumps(result, indent=2))
         return 0 if result["valid"] else 1
@@ -107,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     ck.set_defaults(func=cmd_check)
 
     vf = sub.add_parser("verify", help="independently verify a signed attestation or portable evidence proof")
-    vf.add_argument("attestation_file", help="path to a signed attestation or portable evidence manifest JSON")
+    vf.add_argument("attestation_file", help="path to a signed attestation, evidence manifest, or self-contained proof package JSON")
     vf.add_argument("--public-key", default=DEFAULT_PUB_KEY)
     vf.set_defaults(func=cmd_verify)
 
