@@ -118,6 +118,30 @@ class ExecutionGraphEnforcementTest(unittest.TestCase):
         self.assertIn("execution graph drift: hook", reason)
         self.assertEqual(adapter.calls, 0)
 
+    def test_offline_proof_rejects_unprovable_transitive_scope(self):
+        from core.proof_validators.common import validate_execution_enforcement_scope
+
+        ok, reason = validate_execution_enforcement_scope(
+            {"execution_graph": {"enforcement_scope": "direct"}}
+        )
+        self.assertTrue(ok)
+        self.assertIn("direct", reason)
+
+        ok, reason = validate_execution_enforcement_scope(
+            {"execution_graph": {"enforcement_scope": "transitive"}}
+        )
+        self.assertFalse(ok)
+        self.assertIn("not independently provable", reason)
+
+    def test_offline_proof_rejects_unknown_execution_scope(self):
+        from core.proof_validators.common import validate_execution_enforcement_scope
+
+        ok, reason = validate_execution_enforcement_scope(
+            {"execution_graph": {"enforcement_scope": "sandboxed"}}
+        )
+        self.assertFalse(ok)
+        self.assertIn("unsupported execution enforcement scope", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

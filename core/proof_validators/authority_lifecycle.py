@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import Any
 from core.proof_engine import digest
 from core.authority_protocol import Authority, AuthorityState as GenesisAuthorityState
-from .common import validate_requirements, validate_context_binding
+from .common import (
+    validate_requirements,
+    validate_context_binding,
+    validate_execution_enforcement_scope,
+)
 
 def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> tuple[bool, str]:
     spec, node_types, edges, error = validate_requirements(payload, profile)
@@ -68,6 +72,9 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         return False, "execution authorization is not bound to manifest authorization_id"
     if execution_payload.get("intent_id") != intent["id"] or execution_payload.get("agent_id") != payload["agent_id"]:
         return False, "execution authorization identity binding is inconsistent"
+    scope_ok, scope_reason = validate_execution_enforcement_scope(execution_payload)
+    if not scope_ok:
+        return False, scope_reason
 
     if execution_payload.get("capability_id") != capability["id"]:
         return False, "execution authorization capability binding is inconsistent"
