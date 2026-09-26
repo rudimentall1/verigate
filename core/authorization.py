@@ -80,6 +80,11 @@ class AuthorizationService:
         # optional parameter during migration so existing integrations remain
         # compatible while new control-plane flows can require it.
         if capability is not None:
+            if (
+                action.requested_capability is not None
+                and action.requested_capability != capability.capability_id
+            ):
+                raise PermissionError("requested capability does not match supplied capability")
             permitted, reason = capability.permits(action)
             if not permitted:
                 raise PermissionError(reason)

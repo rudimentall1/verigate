@@ -193,6 +193,29 @@ class AuthorizationServiceTest(unittest.TestCase):
                 action, decision, "d" * 64, load_private_key(self.priv), capability=capability
             )
 
+    def test_requested_capability_cannot_mismatch_supplied_capability(self):
+        action = ActionIntent(
+            agent_id="agent-rwa",
+            action_type="evm.transaction",
+            target="0xasset",
+            requested_capability="cap-requested",
+        )
+        capability = Capability(
+            capability_id="cap-actual",
+            agent_id=action.agent_id,
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+        )
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+        with self.assertRaisesRegex(PermissionError, "requested capability does not match"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                "e" * 64,
+                load_private_key(self.priv),
+                capability=capability,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
