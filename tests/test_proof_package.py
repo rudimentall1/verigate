@@ -1,4 +1,4 @@
-﻿import copy
+import copy
 import unittest
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -147,6 +147,28 @@ class ProofPackageTests(unittest.TestCase):
             self.assertIn("authority lifecycle package is missing required artifacts", result["reason"])
         finally:
             lifecycle.tearDown()
+
+    def test_authority_lifecycle_package_survives_runtime_state_change(self):
+        from tests.test_reference_lifecycle import VerigateReferenceLifecycleTest
+        lifecycle = VerigateReferenceLifecycleTest("test_reference_lifecycle_is_offline_verifiable")
+        lifecycle.setUp()
+        try:
+            manifest = lifecycle._valid_manifest()
+            package = build_proof_package(manifest)
+            raw = serialize_proof_package(package)
+            # The package is now the only verification input. Close the live runtime
+            # and prove that no SQLite/authority state is consulted by verification.
+            lifecycle.storage.close()
+            result = verify_proof_package(raw)
+            self.assertTrue(result["valid"], result)
+            self.assertTrue(result["package_valid"])
+            self.assertEqual(result["package_sha256"], package["package_sha256"])
+        finally:
+            try:
+                lifecycle.storage.close()
+            except Exception:
+                pass
+            lifecycle.tmp.cleanup()
 
     def test_manifest_metadata_tampering_fails_closed(self):
         package = build_proof_package(self._manifest())
