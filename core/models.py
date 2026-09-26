@@ -88,6 +88,7 @@ class ActionIntent:
     network: str | None = None
     purpose: str = ""
     declared_context: dict[str, Any] = field(default_factory=dict)
+    input_provenance: dict[str, Any] = field(default_factory=dict)
     parent_intent_id: str | None = None
     requested_capability: str | None = None
     constraints: dict[str, Any] = field(default_factory=dict)
@@ -101,6 +102,7 @@ class ActionIntent:
         payload = {
             "purpose": self.purpose,
             "declared_context": self.declared_context,
+            "input_provenance": self.input_provenance,
             "parent_intent_id": self.parent_intent_id,
             "requested_capability": self.requested_capability,
             "constraints": self.constraints,
@@ -120,6 +122,7 @@ class ActionIntent:
             "network": self.network,
             "purpose": self.purpose,
             "declared_context": self.declared_context,
+            "input_provenance": self.input_provenance,
             "parent_intent_id": self.parent_intent_id,
             "requested_capability": self.requested_capability,
             "constraints": self.constraints,

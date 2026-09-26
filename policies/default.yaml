@@ -9,6 +9,12 @@ blocked_payees: []
 # allowed_payees:
 #   - "0xYourTrustedMerchant"
 
+# Input provenance controls for agent/tool actions. When configured, the
+# declared provenance is bound into the signed intent context and enforced
+# before executable authority is issued.
+# input_provenance_constraints:
+#   trust: trusted
+#
 # Execution egress controls for agent/tool actions. If configured, a
 # destination outside this scope is BLOCKed before executable authority is issued.
 # This is the deterministic boundary for untrusted-input -> tool -> egress abuse.

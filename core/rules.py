@@ -56,6 +56,28 @@ def check_context_constraints(intent: ActionIntent, policy: Policy) -> RuleMatch
     return None
 
 
+def check_input_provenance(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
+    """Require declared input provenance when a policy explicitly governs it."""
+    constraints = policy.input_provenance_constraints
+    if not constraints:
+        return None
+    provenance = intent.input_provenance or {}
+    for key, expected in constraints.items():
+        actual = provenance.get(key)
+        if isinstance(expected, list):
+            if actual not in expected:
+                return RuleMatch(
+                    "input_provenance_not_allowed", Severity.BLOCK,
+                    f"input provenance '{key}' value '{actual}' is not allowed by policy",
+                )
+        elif actual != expected:
+            return RuleMatch(
+                "input_provenance_not_allowed", Severity.BLOCK,
+                f"input provenance '{key}' does not match policy constraint",
+            )
+    return None
+
+
 def check_execution_graph(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
     """Enforce the declared execution path as a deterministic policy boundary.
 

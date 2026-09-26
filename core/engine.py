@@ -208,6 +208,7 @@ class GuardrailEngine:
                 R.check_action_type_allowed,
                 R.check_purpose_allowed,
                 R.check_context_constraints,
+                R.check_input_provenance,
                 R.check_execution_graph,
                 R.check_destination_allowed,
                 R.check_target_allowed,

@@ -224,7 +224,7 @@ starting point (blocklist, allowlist, per-network/asset restrictions,
 destination/egress scope, per-transaction cap, new-payee cap, daily cap,
 confirmation threshold, rate limit — all commented).
 
-For agent/tool integrations, `allowed_destinations` and
+For agent/tool integrations, `input_provenance_constraints` can require trusted input provenance before execution. `allowed_destinations` and
 `blocked_destinations` bind the signed ActionIntent to its execution egress.
 If a policy configures destination scope, a missing or out-of-scope destination
 is **BLOCKED before executable authority is issued**. This closes the

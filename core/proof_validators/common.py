@@ -37,6 +37,7 @@ def intent_context_digest(intent: dict[str, Any]) -> str:
     payload = {
         "purpose": intent.get("purpose", ""),
         "declared_context": intent.get("declared_context", {}),
+        "input_provenance": intent.get("input_provenance", {}),
         "parent_intent_id": intent.get("parent_intent_id"),
         "requested_capability": intent.get("requested_capability"),
         "constraints": intent.get("constraints", {}),

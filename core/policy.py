@@ -18,6 +18,7 @@ class Policy:
     allowed_action_types: list[str] | None = None
     allowed_purposes: list[str] | None = None
     context_constraints: dict[str, Any] = field(default_factory=dict)
+    input_provenance_constraints: dict[str, Any] = field(default_factory=dict)
     execution_graph: dict[str, Any] = field(default_factory=dict)
     allowed_destinations: list[str] | None = None
     blocked_destinations: list[str] = field(default_factory=list)
@@ -64,6 +65,7 @@ class Policy:
             allowed_action_types=raw.get("allowed_action_types"),
             allowed_purposes=raw.get("allowed_purposes"),
             context_constraints=raw.get("context_constraints", {}) or {},
+            input_provenance_constraints=raw.get("input_provenance_constraints", {}) or {},
             execution_graph=raw.get("execution_graph", {}) or {},
             allowed_destinations=raw.get("allowed_destinations"),
             blocked_destinations=raw.get("blocked_destinations", []) or [],

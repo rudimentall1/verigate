@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
+from attest.receipt import verify_receipt
 from core.engine import GuardrailEngine
 from core.models import ActionIntent, Decision, Capability
 from core.policy import Policy
@@ -23,7 +24,7 @@ class ZeroClickToolAbuseTest(unittest.TestCase):
         self.public = root / "issuer.pub"
         self.db = root / "audit.db"
         self.policy_path.write_text(
-            "allowed_action_types:\n  - mcp.tool.call\nallowed_targets:\n  - http.fetch\nallowed_destinations:\n  - https://api.internal.example\nblocked_destinations:\n  - https://attacker.example\n",
+            "allowed_action_types:\n  - mcp.tool.call\nallowed_targets:\n  - http.fetch\ninput_provenance_constraints:\n  trust: trusted\nallowed_destinations:\n  - https://api.internal.example\nblocked_destinations:\n  - https://attacker.example\n",
             encoding="utf-8",
         )
         generate_keypair(self.private, self.public)
@@ -37,13 +38,14 @@ class ZeroClickToolAbuseTest(unittest.TestCase):
         self.storage.close()
         self.tmpdir.cleanup()
 
-    def _action(self, destination):
+    def _action(self, destination, trust="trusted"):
         return ActionIntent(
             agent_id="agent-zero-click",
             action_type="mcp.tool.call",
             target="http.fetch",
             purpose="retrieve approved internal resource",
-            declared_context={"input_trust": "untrusted"},
+            declared_context={"input_trust": trust},
+            input_provenance={"trust": trust, "source": "external_content"},
             metadata={
                 "tool_invocation": {
                     "tool": "http.fetch",
@@ -54,7 +56,7 @@ class ZeroClickToolAbuseTest(unittest.TestCase):
         )
 
     def test_untrusted_input_cannot_redirect_tool_to_attacker(self):
-        action = self._action("https://attacker.example")
+        action = self._action("https://attacker.example", trust="untrusted")
         decision = self.engine.evaluate_action(action)
 
         self.assertEqual(decision.decision, Decision.BLOCK)
@@ -119,6 +121,31 @@ class ZeroClickToolAbuseTest(unittest.TestCase):
             calls[0]["metadata"]["tool_invocation"]["destination"],
             "https://api.internal.example",
         )
+
+    def test_provenance_tamper_invalidates_signed_decision(self):
+        action = self._action("https://api.internal.example", trust="trusted")
+        decision = self.engine.evaluate_action(action)
+        self.assertEqual(decision.decision, Decision.ALLOW)
+
+        receipt = AuthorizationService().issue_decision_receipt(
+            action,
+            decision,
+            self.policy.digest,
+            self.private_key,
+        )["decision_receipt"]
+        ok, reason = verify_receipt(receipt, self.public_key)
+        self.assertTrue(ok, reason)
+
+        tampered = dict(receipt)
+        tampered["payload"] = dict(receipt["payload"])
+        tampered["payload"]["intent"] = dict(receipt["payload"]["intent"])
+        tampered["payload"]["intent"]["input_provenance"] = {
+            "trust": "untrusted",
+            "source": "external_content",
+        }
+        ok, reason = verify_receipt(tampered, self.public_key)
+        self.assertFalse(ok)
+        self.assertIn("context fingerprint", reason)
 
 
 if __name__ == "__main__":

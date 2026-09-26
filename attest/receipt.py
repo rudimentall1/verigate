@@ -197,6 +197,7 @@ def verify_receipt(receipt: dict[str, Any], public_key: Ed25519PublicKey) -> tup
             network=intent.get("network"),
             purpose=intent.get("purpose", ""),
             declared_context=intent.get("declared_context", {}),
+            input_provenance=intent.get("input_provenance", {}),
             parent_intent_id=intent.get("parent_intent_id"),
             requested_capability=intent.get("requested_capability"),
             constraints=intent.get("constraints", {}),
