@@ -133,6 +133,8 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
     execution_receipt_payload = receipt["data"].get("payload", {})
     if execution_receipt_payload.get("authorization_id") != execution["id"] or execution_receipt_payload.get("intent_id") != intent["id"]:
         return False, "execution receipt is not bound to the execution authorization"
+    if execution_receipt_payload.get("authorization_sha256") != digest(execution_payload):
+        return False, "execution receipt is not bound to the exact execution authorization payload"
     if execution_receipt_payload.get("agent_id") != payload["agent_id"]:
         return False, "execution receipt is not bound to manifest agent_id"
     external_scope_ok, external_scope_reason = validate_external_state_execution_scope(

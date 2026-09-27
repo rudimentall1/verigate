@@ -111,6 +111,7 @@ def test_standalone_semantic_conformance_mutation_matrix():
             ("authority",lambda p: node(p,"authority_state")["data"].__setitem__("multiplier",0.01)),
             ("genesis",lambda p: node(p,"genesis_authority")["data"].__setitem__("authority_digest","00"*32)),
             ("receipt",lambda p: node(p,"execution_receipt")["data"]["payload"].__setitem__("authorization_id","forged-auth")),
+            ("authorization",lambda p: node(p,"execution_authorization")["data"]["payload"].__setitem__("execution_graph",{"enforcement_scope":"transitive"})),
             ("claim",lambda p: node(p,"outcome_claim")["data"].__setitem__("execution_receipt_sha256","00"*32)),
             ("learning",lambda p: node(p,"authority_event")["data"].__setitem__("evidence_ref","forged-claim")),
             ("post-learning",lambda p: node(p,"authority_state_after")["data"].__setitem__("source_event_id","forged-event")),

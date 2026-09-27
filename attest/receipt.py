@@ -451,6 +451,7 @@ def execution_receipt_payload(
     confirmation_ref: str | None = None,
     confirmation_data: dict[str, Any] | None = None,
     execution_external_state_scope: str | None = None,
+    authorization_sha256: str | None = None,
 ) -> dict[str, Any]:
     auth_payload = authorization["payload"]
     action = auth_payload["action"]
@@ -460,6 +461,7 @@ def execution_receipt_payload(
         "execution_receipt_version": 1,
         "receipt_id": receipt_id or str(uuid.uuid4()),
         "authorization_id": auth_payload["authorization_id"],
+        "authorization_sha256": authorization_sha256 or hashlib.sha256(_canonical(auth_payload)).hexdigest(),
         "decision_receipt_sha256": auth_payload["decision_receipt_sha256"],
         "policy_sha256": auth_payload.get("policy_sha256"),
         "signed_policy_version": auth_payload.get("signed_policy_version"),
@@ -506,6 +508,7 @@ def sign_execution_receipt(
     confirmation_ref: str | None = None,
     confirmation_data: dict[str, Any] | None = None,
     execution_external_state_scope: str | None = None,
+    authorization_sha256: str | None = None,
 ) -> ExecutionReceipt:
     payload = execution_receipt_payload(
         authorization,
@@ -518,6 +521,7 @@ def sign_execution_receipt(
         confirmation_ref=confirmation_ref,
         confirmation_data=confirmation_data,
         execution_external_state_scope=execution_external_state_scope,
+        authorization_sha256=authorization_sha256,
     )
     return ExecutionReceipt(payload, _sign(payload, private_key))
 
@@ -537,6 +541,9 @@ def verify_execution_receipt(
             return False, "invalid execution receipt status"
         if not payload["receipt_id"] or not payload["authorization_id"] or not payload["intent_id"]:
             return False, "invalid execution receipt identity"
+        authorization_sha256 = payload.get("authorization_sha256")
+        if not isinstance(authorization_sha256, str) or len(authorization_sha256) != 64:
+            return False, "invalid execution authorization fingerprint"
         if payload["status"] in {"SUBMITTED", "CONFIRMED"} and not payload["transaction_ref"]:
             return False, "execution receipt is missing transaction reference"
         action_sha256 = payload["action_sha256"]
@@ -545,6 +552,9 @@ def verify_execution_receipt(
         _verify(payload, receipt["signature"], public_key)
         if authorization is not None:
             auth = authorization["payload"]
+            expected_authorization_sha256 = hashlib.sha256(_canonical(auth)).hexdigest()
+            if payload["authorization_sha256"] != expected_authorization_sha256:
+                return False, "execution receipt authorization fingerprint mismatch"
             if payload["authorization_id"] != auth["authorization_id"]:
                 return False, "execution receipt authorization mismatch"
             if payload["intent_id"] != auth["intent_id"]:

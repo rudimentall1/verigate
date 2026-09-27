@@ -375,7 +375,7 @@ class ExecutionRouter:
             "genesis_authority_sha256": current.get("genesis_authority_sha256"),
             "action": {"network": current.get("network")},
         }}
-        updated = sign_execution_receipt(auth, status=state, transaction_ref=transaction_ref, executor=executor, private_key=self.private_key, error=confirmation.get("error"), receipt_id=current["receipt_id"], previous_receipt_sha256=self._receipt_digest(receipt), confirmation_ref=confirmation.get("block_ref") or confirmation.get("slot"), confirmation_data=confirmation, execution_external_state_scope=current.get("execution_external_state_scope"))
+        updated = sign_execution_receipt(auth, status=state, transaction_ref=transaction_ref, executor=executor, private_key=self.private_key, error=confirmation.get("error"), receipt_id=current["receipt_id"], previous_receipt_sha256=self._receipt_digest(receipt), confirmation_ref=confirmation.get("block_ref") or confirmation.get("slot"), confirmation_data=confirmation, execution_external_state_scope=current.get("execution_external_state_scope"), authorization_sha256=current.get("authorization_sha256"))
         payload = dict(updated.payload)
         payload["network"] = current.get("network")
         updated = ExecutionReceipt(payload=payload, signature=updated.signature, algorithm=updated.algorithm)

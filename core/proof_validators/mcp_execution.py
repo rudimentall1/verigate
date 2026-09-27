@@ -2,7 +2,12 @@
 from __future__ import annotations
 from typing import Any
 from core.proof_engine import digest
-from .common import validate_requirements, validate_context_binding
+from .common import (
+    validate_requirements,
+    validate_context_binding,
+    validate_execution_enforcement_scope,
+    validate_external_state_execution_scope,
+)
 
 def validate(payload: dict[str, Any], profile: str = "mcp_execution") -> tuple[bool, str]:
     spec, node_types, edges, error = validate_requirements(payload, profile)
@@ -50,14 +55,25 @@ def validate(payload: dict[str, Any], profile: str = "mcp_execution") -> tuple[b
         return False, "MCP execution authorization action fingerprint is invalid"
     if execution_payload.get("action_sha256") != digest(action):
         return False, "MCP execution authorization is not bound to the canonical MCP action"
+    scope_ok, scope_reason = validate_execution_enforcement_scope(execution_payload)
+    if not scope_ok:
+        return False, scope_reason
 
     receipt_payload = receipt["data"].get("payload", {})
     if receipt_payload.get("authorization_id") != execution["id"]:
         return False, "MCP execution receipt is not bound to the exact authorization"
+    if receipt_payload.get("authorization_sha256") != digest(execution_payload):
+        return False, "MCP execution receipt is not bound to the exact authorization payload"
     if receipt_payload.get("intent_id") != intent["id"] or receipt_payload.get("agent_id") != payload["agent_id"]:
         return False, "MCP execution receipt identity binding is inconsistent"
     if receipt_payload.get("action_sha256") != execution_payload.get("action_sha256"):
         return False, "MCP execution receipt action fingerprint is inconsistent"
+    external_scope_ok, external_scope_reason = validate_external_state_execution_scope(
+        execution_payload,
+        receipt_payload,
+    )
+    if not external_scope_ok:
+        return False, external_scope_reason
 
     claim_data = claim["data"]
     if claim_data.get("authorization_id") != execution["id"] or claim_data.get("intent_id") != intent["id"]:

@@ -39,6 +39,15 @@ def _mcp_graph():
         "payload": {
             "receipt_id": "receipt",
             "authorization_id": "auth",
+            "authorization_sha256": _digest({
+                "authorization_id": "auth",
+                "intent_id": "intent",
+                "agent_id": "agent",
+                "action": action,
+                "action_sha256": _digest(action),
+                "execution_graph": {"enforcement_scope": "direct"},
+                "execution_artifact": {},
+            }),
             "intent_id": "intent",
             "agent_id": "agent",
             "action_sha256": _digest(action),
@@ -72,6 +81,7 @@ def _mcp_graph():
         {"type": "execution_authorization", "id": "auth", "data": {"payload": {
             "authorization_id": "auth", "intent_id": "intent", "agent_id": "agent",
             "action": action, "action_sha256": _digest(action),
+            "execution_graph": {"enforcement_scope": "direct"}, "execution_artifact": {},
         }}},
         {"type": "execution_receipt", "id": "receipt", "data": receipt},
         {"type": "outcome_claim", "id": "claim", "data": claim},
@@ -152,6 +162,20 @@ class ProofProfileRegistryTests(unittest.TestCase):
     def test_mcp_profile_rejects_authorization_action_swap_even_after_resigning(self):
         manifest, key = _manifest()
         manifest["payload"]["nodes"][2]["data"]["payload"]["action"]["target"] = "orders.delete"
+        manifest["payload"]["nodes"][2]["sha256"] = _digest(manifest["payload"]["nodes"][2]["data"])
+        manifest = _resign(manifest, key)
+        self.assertFalse(verify_manifest(manifest)["valid"])
+
+    def test_mcp_profile_rejects_transitive_execution_scope_even_after_resigning(self):
+        manifest, key = _manifest()
+        manifest["payload"]["nodes"][2]["data"]["payload"]["execution_graph"]["enforcement_scope"] = "transitive"
+        manifest["payload"]["nodes"][2]["sha256"] = _digest(manifest["payload"]["nodes"][2]["data"])
+        manifest = _resign(manifest, key)
+        self.assertFalse(verify_manifest(manifest)["valid"])
+
+    def test_mcp_profile_rejects_execution_authorization_rewrite_even_after_resigning(self):
+        manifest, key = _manifest()
+        manifest["payload"]["nodes"][2]["data"]["payload"]["execution_artifact"] = {"tampered": True}
         manifest["payload"]["nodes"][2]["sha256"] = _digest(manifest["payload"]["nodes"][2]["data"])
         manifest = _resign(manifest, key)
         self.assertFalse(verify_manifest(manifest)["valid"])

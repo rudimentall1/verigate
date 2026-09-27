@@ -79,6 +79,19 @@ class ConfirmationRouterTest(unittest.TestCase):
             policy=policy,
         )["execution_authorization"]
 
+    def test_receipt_rejects_same_id_with_rewritten_authorization_payload(self):
+        auth = self._auth()
+        submitted = self.router.execute_with_receipt(auth, lambda tx: "0xabc")
+        rewritten = {"payload": dict(auth["payload"]), "signature": auth["signature"], "algorithm": auth["algorithm"]}
+        rewritten["payload"]["execution_graph"] = {"enforcement_scope": "direct", "tampered": True}
+        ok, reason = verify_execution_receipt(
+            submitted.as_dict(),
+            load_public_key(self.public),
+            rewritten,
+        )
+        self.assertFalse(ok)
+        self.assertIn("authorization fingerprint mismatch", reason)
+
     def test_pending_confirmation_keeps_submitted_receipt(self):
         auth = self._auth()
         submitted = self.router.execute_with_receipt(auth, lambda tx: "0xabc")
