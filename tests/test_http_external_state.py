@@ -39,5 +39,14 @@ class HTTPExternalStateTest(unittest.TestCase):
         ok,reason=HTTPExternalStateVerifier(transport)(binding,{})
         self.assertFalse(ok); self.assertIn("status changed",reason)
 
+    def test_state_resource_must_match_authorized_action_target(self):
+        body=b'{"version":7}'
+        binding=self.binding(body)
+        transport=lambda u,m,h:(200,{"etag":"\\\"v7\\\""},body)
+        action={"action_type":"api.request","target":"https://api.test/orders/2"}
+        ok,reason=HTTPExternalStateVerifier(transport)(binding,action)
+        self.assertFalse(ok)
+        self.assertIn("does not match authorized action target",reason)
+
 
 if __name__ == "__main__": unittest.main()

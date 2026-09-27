@@ -47,6 +47,9 @@ class HTTPExternalStateVerifier:
             method = binding.get("method", "GET")
             if not isinstance(url, str) or not url.strip():
                 return False, "HTTP state binding has no URL"
+            action_target = action.get("target") if isinstance(action, dict) else None
+            if isinstance(action_target, str) and action_target.strip() and action_target != url:
+                return False, "HTTP state URL does not match authorized action target"
             if method not in {"GET", "HEAD"}:
                 return False, "HTTP state preflight must be GET or HEAD"
             status, headers, body = self.transport(url, method, {"Accept": "application/json, */*"})
