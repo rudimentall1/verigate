@@ -376,6 +376,16 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             node["data"]["payload"]["identity_id"] = "forged-identity"
         mutate("wrong identity", wrong_identity)
 
+        def mismatched_execution_action(p):
+            node = next(n for n in p["nodes"] if n["type"] == "execution_authorization")
+            node["data"]["payload"]["action"]["target"] = "forged-target"
+        mutate("mismatched execution action payload", mismatched_execution_action)
+
+        def mismatched_receipt_intent(p):
+            node = next(n for n in p["nodes"] if n["type"] == "execution_receipt")
+            node["data"]["payload"]["intent_id"] = "forged-intent"
+        mutate("mismatched receipt intent", mismatched_receipt_intent)
+
         def wrong_authority_state(p):
             node = next(n for n in p["nodes"] if n["type"] == "authority_state")
             node["data"]["multiplier"] = 0.01

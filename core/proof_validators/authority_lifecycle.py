@@ -64,6 +64,8 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         return False, "decision receipt is not bound to the canonical intent"
     if receipt_decision.get("decision") != decision_data.get("decision"):
         return False, "decision receipt is not bound to the canonical decision"
+    if receipt_intent != intent["data"]:
+        return False, "decision receipt intent payload differs from the canonical intent"
     if receipt_payload.get("policy_sha256") != policy["id"]:
         return False, "policy version is not the policy used by the decision"
 
@@ -72,6 +74,8 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         return False, "execution authorization is not bound to manifest authorization_id"
     if execution_payload.get("intent_id") != intent["id"] or execution_payload.get("agent_id") != payload["agent_id"]:
         return False, "execution authorization identity binding is inconsistent"
+    if execution_payload.get("action") != intent["data"]:
+        return False, "execution authorization action payload differs from the canonical intent"
     scope_ok, scope_reason = validate_execution_enforcement_scope(execution_payload)
     if not scope_ok:
         return False, scope_reason
