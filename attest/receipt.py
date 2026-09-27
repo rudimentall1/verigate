@@ -23,6 +23,9 @@ from core.execution_artifact import canonical_execution_artifact, execution_arti
 from core.external_state import canonical_external_state, external_state_digest, verify_external_state_binding
 
 
+MAX_EXECUTION_AUTHORIZATION_TTL_SECONDS = 300
+
+
 def _canonical(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
@@ -126,6 +129,12 @@ def issue_execution_authorization(
     expected_nonce = receipt.payload["intent"]["intent_id"]
     if nonce != expected_nonce:
         raise PermissionError("execution authorization nonce must equal intent_id")
+    if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int):
+        raise ValueError("ttl_seconds must be an integer")
+    if ttl_seconds <= 0:
+        raise ValueError("ttl_seconds must be positive")
+    if ttl_seconds > MAX_EXECUTION_AUTHORIZATION_TTL_SECONDS:
+        raise PermissionError("execution authorization ttl exceeds maximum")
     now = int(time.time())
     payload = {
         "authorization_version": 1,

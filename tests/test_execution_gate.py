@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
@@ -175,7 +176,7 @@ class ExecutionGateTest(unittest.TestCase):
             })(),
             load_private_key(self.priv),
             nonce=receipt["payload"]["intent"]["intent_id"],
-            ttl_seconds=-1,
+            ttl_seconds=1,
             capability_id=valid["payload"]["capability_id"],
             capability_version=valid["payload"]["capability_version"],
             capability_sha256=valid["payload"]["capability_sha256"],
@@ -187,7 +188,8 @@ class ExecutionGateTest(unittest.TestCase):
         storage = Storage(self.db)
         try:
             gate = ExecutionGate(storage, load_public_key(self.pub))
-            ok, reason = gate.consume(expired)
+            with patch("attest.receipt.time.time", return_value=expired["payload"]["expires_at"] + 1):
+                ok, reason = gate.consume(expired)
             self.assertFalse(ok)
             self.assertEqual(reason, "execution authorization expired")
         finally:
