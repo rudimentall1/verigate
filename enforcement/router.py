@@ -239,6 +239,8 @@ class ExecutionRouter:
         state_required = bool(authorization["payload"].get("external_state_required"))
         external_state = self._verify_external_state(authorization)
         if state_required and external_state:
+            if getattr(adapter, "execution_external_state_scope", None) != "atomic":
+                raise ValueError("atomic external state enforcement is required: adapter does not provide atomic enforcement")
             bound = getattr(adapter, "execute_bound_after_consume", None)
             if not callable(bound):
                 raise ValueError(

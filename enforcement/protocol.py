@@ -10,7 +10,15 @@ class ExecutionAdapter(Protocol):
 
     Adapters must fail closed: the supplied side effect may run only after
     the adapter has accepted the one-time ExecutionAuthorization.
+
+    ``execution_external_state_scope`` is required to opt into policy-bound
+    external-state execution. ``atomic`` means the adapter contract claims the
+    state precondition and side effect are enforced as one backend-level
+    operation. Verigate cannot independently sandbox arbitrary code behind a
+    generic adapter, so the claim remains an explicit trusted-adapter boundary.
     """
+
+    execution_external_state_scope: str
 
     def validate(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         """Validate adapter-specific execution prerequisites without consuming."""

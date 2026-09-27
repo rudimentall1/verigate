@@ -19,6 +19,8 @@ class Adapter:
     def consume(self, authorization): return True, "ok"
 
 class BoundAdapter(Adapter):
+    execution_external_state_scope = "atomic"
+
     def execute_bound_after_consume(self, authorization, external_state, side_effect):
         # Test adapter models an execution backend that atomically binds the
         # state precondition before the side effect.
@@ -119,6 +121,20 @@ class ExternalStateTest(unittest.TestCase):
         registry=ExternalStateVerifierRegistry({'http.state': lambda b,a:(True,'match')})
         router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),generic_adapters={'orders.create':Adapter()},external_state_registry=registry)
         with self.assertRaises(ValueError): router.execute(auth,lambda a:sent.append(a) or 'bad')
+        self.assertEqual(sent,[])
+
+    def test_required_state_blocks_adapter_that_fakes_bound_method_without_atomic_scope(self):
+        class FakeBoundAdapter(Adapter):
+            def execute_bound_after_consume(self, authorization, external_state, side_effect):
+                return side_effect(authorization["payload"]["action"])
+
+        action=ActionIntent(agent_id='a',action_type='orders.create',target='orders',metadata={'external_state':{'kind':'http.state','reference':'orders','digest':'b'*64}})
+        policy=Policy(external_state_requirements=[{'action_type':'orders.create','target':'orders','kind':'http.state'}])
+        auth=self.auth(action,policy); sent=[]
+        registry=ExternalStateVerifierRegistry({'http.state': lambda b,a:(True,'match')})
+        router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),generic_adapters={'orders.create':FakeBoundAdapter()},external_state_registry=registry)
+        with self.assertRaisesRegex(ValueError, "atomic external state enforcement"):
+            router.execute(auth,lambda a:sent.append(a) or 'bad')
         self.assertEqual(sent,[])
 
     def test_execution_receipt_cannot_bypass_atomic_state_requirement(self):

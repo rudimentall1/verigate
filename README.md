@@ -111,6 +111,8 @@ A handler fingerprint prevents silent substitution of the registered executable 
 
 The router also owns one-time authorization consumption. Adapters expose a `validate()` contract for execution-specific checks, but a generic adapter cannot make an authorization appear consumed by returning `True`: the router persists the nonce consumption itself before calling `execute_after_consume()` (or the atomic-state variant). Direct adapter calls retain their own `consume()` path for standalone use.
 
+External-state requirements have a second, explicit boundary. A live preflight verifier proves that the authorized state still matches immediately before execution, but that alone is not an atomic side-effect guarantee. When an authorization requires external state, the adapter must explicitly declare `execution_external_state_scope = "atomic"` and implement `execute_bound_after_consume()`. Adapters without that contract are rejected before the side effect. The EVM adapter satisfies this with the on-chain `VerigateAtomicStateGuard`; Verigate does not claim to independently prove arbitrary generic adapter atomicity.
+
 Therefore execution graphs carry an `enforcement_scope`:
 
 - `direct` — the adapter/handler and signed action are bound and checked before the side effect.

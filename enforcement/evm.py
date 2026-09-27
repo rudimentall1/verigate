@@ -18,6 +18,8 @@ class EVMExecutionAdapter(ExecutionAdapter):
     is deliberately insufficient.
     """
 
+    execution_external_state_scope = "atomic"
+
     def __init__(self, storage: Storage, public_key: Ed25519PublicKey):
         self.gate = ExecutionGate(storage, public_key)
 
