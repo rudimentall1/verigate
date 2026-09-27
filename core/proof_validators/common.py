@@ -116,6 +116,264 @@ def validate_observed_effect_binding(
     return True, "observed effect is canonically bound to the outcome claim"
 
 
+def validate_historical_authority_binding(
+    snapshot: dict[str, Any],
+    ledger_entries: list[dict[str, Any]],
+    authority_policy: dict[str, Any],
+    expected_head: str,
+) -> tuple[bool, str]:
+    """Recompute historical authority counters/state from the committed ledger prefix."""
+    try:
+        evaluated_at = float(snapshot["evaluated_at"])
+        history_start_at = float(snapshot["history_start_at"])
+        window_seconds = float(authority_policy["window_seconds"])
+        probation_successes = int(authority_policy["probation_successes"])
+        standard_successes = int(authority_policy["standard_successes"])
+        limited_adverse_events = int(authority_policy["limited_adverse_events"])
+        suspension_critical_events = int(authority_policy["suspension_critical_events"])
+        multipliers = {
+            "PROBATION": float(authority_policy["probation_multiplier"]),
+            "LIMITED": float(authority_policy["limited_multiplier"]),
+            "STANDARD": float(authority_policy["standard_multiplier"]),
+            "ELEVATED": float(authority_policy["elevated_multiplier"]),
+            "SUSPENDED": 0.0,
+        }
+    except (KeyError, TypeError, ValueError):
+        return False, "historical authority policy or snapshot is malformed"
+    if history_start_at != evaluated_at - window_seconds:
+        return False, "historical authority history boundary is not policy-derived"
+    policy_digest = hashlib.sha256(
+        json.dumps(authority_policy, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    if snapshot.get("authority_policy_sha256") != policy_digest:
+        return False, "historical authority policy binding mismatch"
+    committed = []
+    if expected_head != "0" * 64:
+        for row in ledger_entries:
+            committed.append(row)
+            if row.get("event_hash") == expected_head:
+                break
+        if not committed or committed[-1].get("event_hash") != expected_head:
+            return False, "historical authority ledger head is not present"
+    for row in ledger_entries[len(committed):]:
+        event = row.get("event") if isinstance(row, dict) else None
+        if not isinstance(event, dict):
+            return False, "historical authority ledger contains malformed future event"
+        occurred_at = event.get("occurred_at")
+        if not isinstance(occurred_at, (int, float)) or isinstance(occurred_at, bool):
+            return False, "historical authority future event timestamp is invalid"
+        if float(occurred_at) <= evaluated_at:
+            return False, "historical authority head is inconsistent with the evaluation time"
+
+    successes = adverse = critical = 0
+    adverse_types = {"EXECUTION_FAILED", "AUTHORIZATION_REJECTED", "POLICY_VIOLATION", "TAMPER_DETECTED"}
+    critical_types = {"TAMPER_DETECTED", "POLICY_VIOLATION"}
+    for row in committed:
+        event = row.get("event") if isinstance(row, dict) else None
+        if not isinstance(event, dict):
+            return False, "historical authority ledger contains malformed event"
+        occurred_at = event.get("occurred_at")
+        if not isinstance(occurred_at, (int, float)) or isinstance(occurred_at, bool):
+            return False, "historical authority event timestamp is invalid"
+        if history_start_at <= float(occurred_at) <= evaluated_at:
+            if event.get("event_type") == "EXECUTION_CONFIRMED":
+                successes += 1
+            if event.get("event_type") in adverse_types:
+                adverse += 1
+            if event.get("event_type") in critical_types:
+                critical += 1
+    if (snapshot.get("successes"), snapshot.get("adverse_events"), snapshot.get("critical_events")) != (successes, adverse, critical):
+        return False, "historical authority counters do not match the committed ledger window"
+    if critical >= suspension_critical_events:
+        expected_state = "SUSPENDED"
+        expected_reason = "critical authority event observed"
+    elif adverse >= limited_adverse_events:
+        expected_state = "LIMITED"
+        expected_reason = "adverse outcome threshold reached"
+    elif successes >= standard_successes and adverse <= 1:
+        expected_state = "ELEVATED"
+        expected_reason = "verified success threshold reached with bounded adverse history"
+    elif successes >= probation_successes and adverse <= 1:
+        expected_state = "STANDARD"
+        expected_reason = "probation success threshold reached"
+    else:
+        expected_state = "PROBATION"
+        expected_reason = "insufficient verified history for broader authority"
+    if snapshot.get("state") != expected_state:
+        return False, "historical authority state is not deterministically justified by the ledger and policy"
+    if snapshot.get("multiplier") != multipliers[expected_state]:
+        return False, "historical authority multiplier is inconsistent with the authority policy"
+    if snapshot.get("reason") != expected_reason:
+        return False, "historical authority reason is inconsistent with the authority policy"
+    return True, "historical authority snapshot is deterministically bound"
+
+
+def validate_authority_learning_binding(
+    claim_data: dict[str, Any],
+    attestation_payload: dict[str, Any],
+    event_data: dict[str, Any],
+    before_snapshot: dict[str, Any],
+    after_snapshot: dict[str, Any],
+    ledger_entries: list[dict[str, Any]],
+    authority_policy: dict[str, Any],
+    expected_before_head: str,
+) -> tuple[bool, str]:
+    """Prove that learning and post-learning authority are deterministic from evidence.
+
+    The event and post-learning snapshot are not trusted merely because their
+    hashes/signature are intact. Their semantic content must follow the signed
+    outcome, the historical ledger, and the authority policy.
+    """
+    if claim_data.get("status") == "SUCCEEDED":
+        expected_event_type = "EXECUTION_CONFIRMED"
+    elif claim_data.get("status") == "FAILED":
+        expected_event_type = "EXECUTION_FAILED"
+    else:
+        return False, "authority lifecycle learning requires a terminal independent outcome"
+
+    agent_id = claim_data.get("agent_id")
+    capability_id = before_snapshot.get("capability_id")
+    identity_id = before_snapshot.get("identity_id")
+    claim_id = claim_data.get("claim_id")
+    if event_data.get("agent_id") != agent_id or event_data.get("capability_id") != capability_id:
+        return False, "authority event identity binding is inconsistent"
+    if identity_id is not None and event_data.get("identity_id") != identity_id:
+        return False, "authority event identity_id is inconsistent with historical authority"
+    if event_data.get("event_type") != expected_event_type:
+        return False, "authority event type is inconsistent with the canonical outcome"
+    if event_data.get("evidence_ref") != claim_id:
+        return False, "authority event is not bound to the canonical outcome claim"
+    expected_event_id = hashlib.sha256(
+        f"{agent_id}:{capability_id}:{expected_event_type}:{claim_id}".encode("utf-8")
+    ).hexdigest()
+    if event_data.get("event_id") != expected_event_id:
+        return False, "authority event id is not deterministic from the canonical learning event"
+
+    metadata = event_data.get("metadata") if isinstance(event_data.get("metadata"), dict) else {}
+    if "outcome_attestation_id" in metadata:
+        if metadata.get("outcome_attestation_id") != attestation_payload.get("attestation_id"):
+            return False, "authority event is not bound to the outcome attestation"
+    if "attestation_type" in metadata:
+        if metadata.get("attestation_type") != attestation_payload.get("attestor_type"):
+            return False, "authority event attestation type is inconsistent"
+
+    try:
+        evaluated_at = float(after_snapshot["evaluated_at"])
+        history_start_at = float(after_snapshot["history_start_at"])
+        window_seconds = float(authority_policy["window_seconds"])
+        probation_successes = int(authority_policy["probation_successes"])
+        standard_successes = int(authority_policy["standard_successes"])
+        limited_adverse_events = int(authority_policy["limited_adverse_events"])
+        suspension_critical_events = int(authority_policy["suspension_critical_events"])
+        multipliers = {
+            "PROBATION": float(authority_policy["probation_multiplier"]),
+            "LIMITED": float(authority_policy["limited_multiplier"]),
+            "STANDARD": float(authority_policy["standard_multiplier"]),
+            "ELEVATED": float(authority_policy["elevated_multiplier"]),
+            "SUSPENDED": 0.0,
+        }
+    except (KeyError, TypeError, ValueError):
+        return False, "authority policy or post-learning timestamp is malformed"
+    if history_start_at != evaluated_at - window_seconds:
+        return False, "post-learning authority history boundary is not derivable from the authority policy"
+    if after_snapshot.get("authority_policy_sha256") != hashlib.sha256(
+        json.dumps(authority_policy, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest():
+        return False, "post-learning authority policy binding mismatch"
+    if after_snapshot.get("agent_id") != agent_id or after_snapshot.get("capability_id") != capability_id:
+        return False, "post-learning authority snapshot identity mismatch"
+
+    canonical_event_hash = hashlib.sha256(
+        json.dumps(event_data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    matching = [
+        row for row in ledger_entries
+        if isinstance(row, dict) and row.get("event_id") == event_data.get("event_id")
+    ]
+    if len(matching) != 1:
+        return False, "authority transition event is absent or duplicated in the authority ledger"
+    if matching[0].get("event_hash") != canonical_event_hash or matching[0].get("event") != event_data:
+        return False, "authority ledger event is not an exact copy of the canonical authority event"
+    if after_snapshot.get("ledger_head_hash") != canonical_event_hash:
+        return False, "post-learning authority snapshot is not bound to the learning event hash"
+    try:
+        event_occurred_at = float(event_data["occurred_at"])
+        before_evaluated_at = float(before_snapshot["evaluated_at"])
+    except (KeyError, TypeError, ValueError):
+        return False, "authority learning timestamps are malformed"
+    if event_occurred_at > evaluated_at or event_occurred_at < history_start_at:
+        return False, "learning event is outside the post-learning authority evaluation window"
+    if before_evaluated_at > evaluated_at:
+        return False, "post-learning authority is evaluated before the historical authority snapshot"
+    if before_snapshot.get("ledger_head_hash") != expected_before_head:
+        return False, "historical authority snapshot is not bound to the authorization ledger head"
+    for row in ledger_entries:
+        if row.get("event_hash") == expected_before_head:
+            prior_sequence = row.get("sequence")
+            break
+    else:
+        prior_sequence = 0
+    if expected_before_head != "0" * 64 and prior_sequence == 0:
+        return False, "authorization ledger head is not present in the authority ledger"
+    event_sequence = matching[0].get("sequence")
+    if not isinstance(event_sequence, int) or event_sequence <= prior_sequence:
+        return False, "learning event does not extend the historical authorization ledger head"
+    for row in ledger_entries:
+        if isinstance(row, dict) and isinstance(row.get("sequence"), int) and row["sequence"] > event_sequence:
+            future_event = row.get("event")
+            if isinstance(future_event, dict) and float(future_event.get("occurred_at", evaluated_at + 1)) <= evaluated_at:
+                return False, "post-learning snapshot is not bound to the ledger head at its evaluation time"
+
+    successes = adverse = critical = 0
+    adverse_types = {"EXECUTION_FAILED", "AUTHORIZATION_REJECTED", "POLICY_VIOLATION", "TAMPER_DETECTED"}
+    critical_types = {"TAMPER_DETECTED", "POLICY_VIOLATION"}
+    for row in ledger_entries:
+        event = row.get("event") if isinstance(row, dict) else None
+        if not isinstance(event, dict):
+            return False, "authority ledger contains malformed learning evidence"
+        occurred_at = event.get("occurred_at")
+        if not isinstance(occurred_at, (int, float)) or isinstance(occurred_at, bool):
+            return False, "authority event has an invalid occurrence timestamp"
+        if history_start_at <= float(occurred_at) <= evaluated_at:
+            if event.get("event_type") == "EXECUTION_CONFIRMED":
+                successes += 1
+            if event.get("event_type") in adverse_types:
+                adverse += 1
+            if event.get("event_type") in critical_types:
+                critical += 1
+
+    if (after_snapshot.get("successes"), after_snapshot.get("adverse_events"), after_snapshot.get("critical_events")) != (successes, adverse, critical):
+        return False, "post-learning authority counters do not match the historical ledger window"
+
+    previous_state = before_snapshot.get("state")
+    if previous_state == "SUSPENDED":
+        expected_state = "SUSPENDED"
+        expected_reason = "suspended until an explicit authority reset"
+    elif critical >= suspension_critical_events:
+        expected_state = "SUSPENDED"
+        expected_reason = "critical authority event observed"
+    elif adverse >= limited_adverse_events:
+        expected_state = "LIMITED"
+        expected_reason = "adverse outcome threshold reached"
+    elif successes >= standard_successes and adverse <= 1:
+        expected_state = "ELEVATED"
+        expected_reason = "verified success threshold reached with bounded adverse history"
+    elif successes >= probation_successes and adverse <= 1:
+        expected_state = "STANDARD"
+        expected_reason = "probation success threshold reached"
+    else:
+        expected_state = "PROBATION"
+        expected_reason = "insufficient verified history for broader authority"
+
+    if after_snapshot.get("state") != expected_state:
+        return False, "post-learning authority state is not deterministically justified by the ledger and policy"
+    if after_snapshot.get("multiplier") != multipliers[expected_state]:
+        return False, "post-learning authority multiplier is inconsistent with the authority policy"
+    if after_snapshot.get("reason") != expected_reason:
+        return False, "post-learning authority reason is inconsistent with the authority policy"
+    return True, "learning event and post-learning authority are deterministically bound"
+
+
 def validate_external_state_execution_scope(
     execution_payload: dict[str, Any],
     execution_receipt_payload: dict[str, Any],

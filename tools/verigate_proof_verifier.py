@@ -43,6 +43,98 @@ def load_trusted_key(path):
  if not isinstance(public_key,Ed25519PublicKey): raise ValueError('issuer public key must be Ed25519')
  return base64.b64encode(public_key.public_bytes(serialization.Encoding.Raw,serialization.PublicFormat.Raw)).decode()
 
+def verify_historical(snapshot,entries,policy,expected_head):
+ try:
+  eval_at=float(snapshot['evaluated_at']); hist=float(snapshot['history_start_at']); win=float(policy['window_seconds']); p=int(policy['probation_successes']); s=int(policy['standard_successes']); l=int(policy['limited_adverse_events']); c=int(policy['suspension_critical_events']); mult={'PROBATION':float(policy['probation_multiplier']),'LIMITED':float(policy['limited_multiplier']),'STANDARD':float(policy['standard_multiplier']),'ELEVATED':float(policy['elevated_multiplier']),'SUSPENDED':0.0}
+ except Exception:return False,'historical authority policy or snapshot is malformed'
+ if hist!=eval_at-win:return False,'historical authority history boundary is not policy-derived'
+ if snapshot.get('authority_policy_sha256')!=sha(policy):return False,'historical authority policy binding mismatch'
+ committed=[]
+ if expected_head!='0'*64:
+  for x in entries:
+   committed.append(x)
+   if x.get('event_hash')==expected_head:break
+  if not committed or committed[-1].get('event_hash')!=expected_head:return False,'historical authority ledger head is not present'
+ for x in entries[len(committed):]:
+  e=x.get('event') if isinstance(x,dict) else None
+  if not isinstance(e,dict):return False,'historical authority future event is malformed'
+  t=e.get('occurred_at')
+  if not isinstance(t,(int,float)) or isinstance(t,bool):return False,'historical authority future event timestamp is invalid'
+  if float(t)<=eval_at:return False,'historical authority head is inconsistent with evaluation time'
+ succ=adv=crit=0; advset={'EXECUTION_FAILED','AUTHORIZATION_REJECTED','POLICY_VIOLATION','TAMPER_DETECTED'}; critset={'TAMPER_DETECTED','POLICY_VIOLATION'}
+ for row in committed:
+  e=row.get('event') if isinstance(row,dict) else None
+  if not isinstance(e,dict):return False,'historical authority ledger contains malformed event'
+  t=e.get('occurred_at')
+  if not isinstance(t,(int,float)) or isinstance(t,bool):return False,'historical authority event timestamp is invalid'
+  if hist<=float(t)<=eval_at:
+   succ+=1 if e.get('event_type')=='EXECUTION_CONFIRMED' else 0; adv+=1 if e.get('event_type') in advset else 0; crit+=1 if e.get('event_type') in critset else 0
+ if (snapshot.get('successes'),snapshot.get('adverse_events'),snapshot.get('critical_events'))!=(succ,adv,crit):return False,'historical authority counters do not match ledger history'
+ if crit>=c:state='SUSPENDED';reason='critical authority event observed'
+ elif adv>=l:state='LIMITED';reason='adverse outcome threshold reached'
+ elif succ>=s and adv<=1:state='ELEVATED';reason='verified success threshold reached with bounded adverse history'
+ elif succ>=p and adv<=1:state='STANDARD';reason='probation success threshold reached'
+ else:state='PROBATION';reason='insufficient verified history for broader authority'
+ if snapshot.get('state')!=state:return False,'historical authority state is not deterministically justified'
+ if snapshot.get('multiplier')!=mult[state]:return False,'historical authority multiplier is inconsistent'
+ if snapshot.get('reason')!=reason:return False,'historical authority reason is inconsistent'
+ return True,'valid historical authority'
+
+def verify_learning(claim,att,ev,before,after,entries,policy,expected_head):
+ if claim.get('status')=='SUCCEEDED': et='EXECUTION_CONFIRMED'
+ elif claim.get('status')=='FAILED': et='EXECUTION_FAILED'
+ else: return False,'authority lifecycle learning requires a terminal independent outcome'
+ agent=claim.get('agent_id'); cap=before.get('capability_id'); cid=claim.get('claim_id')
+ if ev.get('agent_id')!=agent or ev.get('capability_id')!=cap or ev.get('event_type')!=et or ev.get('evidence_ref')!=cid:return False,'authority event does not match canonical outcome'
+ if ev.get('event_id')!=hashlib.sha256(f"{agent}:{cap}:{et}:{cid}".encode()).hexdigest():return False,'authority event id is not deterministic'
+ meta=ev.get('metadata') if isinstance(ev.get('metadata'),dict) else {}
+ if 'outcome_attestation_id' in meta and meta.get('outcome_attestation_id')!=att.get('attestation_id'):return False,'authority event is not bound to outcome attestation'
+ if 'attestation_type' in meta and meta.get('attestation_type')!=att.get('attestor_type'):return False,'authority event attestation type is inconsistent'
+ try:
+  eval_at=float(after['evaluated_at']); hist=float(after['history_start_at']); win=float(policy['window_seconds'])
+  thresholds=(int(policy['probation_successes']),int(policy['standard_successes']),int(policy['limited_adverse_events']),int(policy['suspension_critical_events']))
+  mult={'PROBATION':float(policy['probation_multiplier']),'LIMITED':float(policy['limited_multiplier']),'STANDARD':float(policy['standard_multiplier']),'ELEVATED':float(policy['elevated_multiplier']),'SUSPENDED':0.0}
+ except Exception:return False,'authority policy or post-learning snapshot is malformed'
+ if hist!=eval_at-win:return False,'post-learning authority history boundary is not policy-derived'
+ if after.get('authority_policy_sha256')!=sha(policy):return False,'post-learning authority policy binding mismatch'
+ if after.get('agent_id')!=agent or after.get('capability_id')!=cap:return False,'post-learning authority snapshot identity mismatch'
+ eh=sha(ev); matches=[x for x in entries if isinstance(x,dict) and x.get('event_id')==ev.get('event_id')]
+ if len(matches)!=1 or matches[0].get('event_hash')!=eh or matches[0].get('event')!=ev:return False,'authority ledger event is not exact canonical learning evidence'
+ if after.get('ledger_head_hash')!=eh:return False,'post-learning authority is not bound to the learning event hash'
+ try: event_at=float(ev['occurred_at']); before_at=float(before['evaluated_at'])
+ except Exception:return False,'authority learning timestamps are malformed'
+ if event_at>eval_at or event_at<hist:return False,'learning event is outside the post-learning authority evaluation window'
+ if before_at>eval_at:return False,'post-learning authority is evaluated before the historical snapshot'
+ if before.get('ledger_head_hash')!=expected_head:return False,'historical authority snapshot is not bound to authorization head'
+ prior=next((x.get('sequence') for x in entries if x.get('event_hash')==expected_head),0)
+ seq=matches[0].get('sequence')
+ if expected_head!='0'*64 and prior==0:return False,'authorization ledger head is not present in authority ledger'
+ if not isinstance(seq,int) or seq<=prior:return False,'learning event does not extend authorization ledger head'
+ for x in entries:
+  if isinstance(x,dict) and isinstance(x.get('sequence'),int) and x['sequence']>seq:
+   fe=x.get('event')
+   if isinstance(fe,dict) and float(fe.get('occurred_at',eval_at+1))<=eval_at:return False,'post-learning snapshot is not bound to ledger head at evaluation time'
+ successes=adverse=critical=0; adv={'EXECUTION_FAILED','AUTHORIZATION_REJECTED','POLICY_VIOLATION','TAMPER_DETECTED'}; crit={'TAMPER_DETECTED','POLICY_VIOLATION'}
+ for row in entries:
+  e=row.get('event') if isinstance(row,dict) else None
+  if not isinstance(e,dict):return False,'authority ledger contains malformed event'
+  t=e.get('occurred_at')
+  if not isinstance(t,(int,float)) or isinstance(t,bool):return False,'authority event timestamp is invalid'
+  if hist<=float(t)<=eval_at:
+   successes+=1 if e.get('event_type')=='EXECUTION_CONFIRMED' else 0; adverse+=1 if e.get('event_type') in adv else 0; critical+=1 if e.get('event_type') in crit else 0
+ if (after.get('successes'),after.get('adverse_events'),after.get('critical_events'))!=(successes,adverse,critical):return False,'post-learning authority counters do not match ledger history'
+ p,s,l,c=thresholds; prev=before.get('state')
+ if prev=='SUSPENDED': state='SUSPENDED'; reason='suspended until an explicit authority reset'
+ elif critical>=c: state='SUSPENDED'; reason='critical authority event observed'
+ elif adverse>=l: state='LIMITED'; reason='adverse outcome threshold reached'
+ elif successes>=s and adverse<=1: state='ELEVATED'; reason='verified success threshold reached with bounded adverse history'
+ elif successes>=p and adverse<=1: state='STANDARD'; reason='probation success threshold reached'
+ else: state='PROBATION'; reason='insufficient verified history for broader authority'
+ if after.get('state')!=state:return False,'post-learning authority state is not deterministically justified'
+ if after.get('multiplier')!=mult[state]:return False,'post-learning authority multiplier is inconsistent'
+ if after.get('reason')!=reason:return False,'post-learning authority reason is inconsistent'
+ return True,'valid deterministic learning transition'
+
 def verify(proof,key):
  c={}; d=json.loads(Path(proof).read_text(encoding='utf-8')); trusted=load_trusted_key(key); pkg=d.get('package'); ph=d.get('package_sha256')
  c['package_integrity']={'valid':isinstance(pkg,dict) and sha(pkg)==ph}
@@ -132,7 +224,9 @@ def verify(proof,key):
   prev=x.get('event_hash')
  head=ap.get('authority_ledger_head_hash'); c['historical_authority']={'valid':lok and (head=='0'*64 or any(x.get('event_hash')==head for x in l)),'ledger_sequence':next((i for i,x in enumerate(l,1) if x.get('event_hash')==head),0),'live_ledger_sequence':len(l)}
  if not c['historical_authority']['valid']:return bad('historical authority binding failed',c)
- cl=node(p,'outcome_claim'); oe=node(p,'observed_effect'); at=node(p,'outcome_attestation'); ev=node(p,'authority_event'); af=node(p,'authority_state_after'); claim_data=cl['data']; observed_data=oe['data']; att_payload=at['data'].get('payload',{}); out=edge(p,ref(r),'OBSERVED_BY',ref(cl)) and edge(p,ref(cl),'SUPPORTED_BY',ref(oe)) and claim_data.get('execution_receipt_sha256')==sha(r['data']) and claim_data.get('observed_effect_sha256')==sha(observed_data) and oe['id']==claim_data.get('observed_effect_sha256') and observed_data.get('authorization_id')==ap.get('authorization_id') and observed_data.get('action_sha256')==claim_data.get('action_sha256') and observed_data.get('evidence_ref')==claim_data.get('evidence_ref') and observed_data.get('result_sha256')==claim_data.get('result_sha256') and observed_data.get('observation_sha256')==sha({'verifier_type':observed_data.get('verifier_type'),'evidence_kind':observed_data.get('evidence_kind'),'effect_status':observed_data.get('effect_status'),'authorization_id':observed_data.get('authorization_id'),'action_sha256':observed_data.get('action_sha256'),'observed_at':observed_data.get('observed_at'),'evidence_ref':observed_data.get('evidence_ref'),'result_sha256':observed_data.get('result_sha256'),'observation':observed_data.get('observation')}) and edge(p,ref(at),'ATTESTS',ref(cl)) and att_payload.get('claim_sha256')==sha(claim_data) and att_payload.get('claim',{}).get('claim_id')==claim_data.get('claim_id'); learn=ev['data'].get('evidence_ref')==claim_data.get('claim_id') and af['data'].get('source_event_id')==ev['data'].get('event_id') and af['data'].get('agent_id')==ev['data'].get('agent_id') and af['data'].get('capability_id')==ev['data'].get('capability_id'); c['outcome']={'valid':out}; c['learning']={'valid':learn}
+ h_ok,h_reason=verify_historical(authority_data,l,ap.get('authority_policy') or {},head); c['historical_authority_semantics']={'valid':h_ok,'reason':h_reason}
+ if not h_ok:return bad('historical authority semantics failed',c)
+ cl=node(p,'outcome_claim'); oe=node(p,'observed_effect'); at=node(p,'outcome_attestation'); ev=node(p,'authority_event'); af=node(p,'authority_state_after'); claim_data=cl['data']; observed_data=oe['data']; att_payload=at['data'].get('payload',{}); out=edge(p,ref(r),'OBSERVED_BY',ref(cl)) and edge(p,ref(cl),'SUPPORTED_BY',ref(oe)) and claim_data.get('execution_receipt_sha256')==sha(r['data']) and claim_data.get('observed_effect_sha256')==sha(observed_data) and oe['id']==claim_data.get('observed_effect_sha256') and observed_data.get('authorization_id')==ap.get('authorization_id') and observed_data.get('action_sha256')==claim_data.get('action_sha256') and observed_data.get('evidence_ref')==claim_data.get('evidence_ref') and observed_data.get('result_sha256')==claim_data.get('result_sha256') and observed_data.get('observation_sha256')==sha({'verifier_type':observed_data.get('verifier_type'),'evidence_kind':observed_data.get('evidence_kind'),'effect_status':observed_data.get('effect_status'),'authorization_id':observed_data.get('authorization_id'),'action_sha256':observed_data.get('action_sha256'),'observed_at':observed_data.get('observed_at'),'evidence_ref':observed_data.get('evidence_ref'),'result_sha256':observed_data.get('result_sha256'),'observation':observed_data.get('observation')}) and edge(p,ref(at),'ATTESTS',ref(cl)) and att_payload.get('claim_sha256')==sha(claim_data) and att_payload.get('claim',{}).get('claim_id')==claim_data.get('claim_id'); c['outcome']={'valid':out}; learn_ok,learn_reason=verify_learning(claim_data,att_payload,ev['data'],authority_node['data'],af['data'],l,ap.get('authority_policy') or {},ap.get('authority_ledger_head_hash','')); learn=learn_ok; c['learning']={'valid':learn,'reason':learn_reason}
  if not out or not learn:return bad('outcome or learning binding failed',c)
  eh=next((x.get('event_hash') for x in l if x.get('event_id')==ev['data'].get('event_id')),None); c['post_learning_authority']={'valid':eh is not None and af['data'].get('ledger_head_hash')==eh}
  if not c['post_learning_authority']['valid']:return bad('post-learning authority is not ledger-bound',c)

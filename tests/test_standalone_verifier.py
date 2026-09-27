@@ -114,7 +114,9 @@ def test_standalone_semantic_conformance_mutation_matrix():
             ("authorization",lambda p: node(p,"execution_authorization")["data"]["payload"].__setitem__("execution_graph",{"enforcement_scope":"transitive"})),
             ("claim",lambda p: node(p,"outcome_claim")["data"].__setitem__("execution_receipt_sha256","00"*32)),
             ("learning",lambda p: node(p,"authority_event")["data"].__setitem__("evidence_ref","forged-claim")),
+            ("learning-type",lambda p: node(p,"authority_event")["data"].__setitem__("event_type","EXECUTION_FAILED")),
             ("post-learning",lambda p: node(p,"authority_state_after")["data"].__setitem__("source_event_id","forged-event")),
+            ("post-learning-counters",lambda p: node(p,"authority_state_after")["data"].__setitem__("successes",999)),
             ("edge",lambda p: next(e for e in p["edges"] if e["relation"]=="AUTHORIZES").__setitem__("to","action_intent:forged-intent")),
         ]
         for label,mutation in mutations:

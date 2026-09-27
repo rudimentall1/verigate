@@ -9,6 +9,8 @@ from .common import (
     validate_execution_enforcement_scope,
     validate_external_state_execution_scope,
     validate_observed_effect_binding,
+    validate_authority_learning_binding,
+    validate_historical_authority_binding,
 )
 
 def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> tuple[bool, str]:
@@ -98,6 +100,18 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
     if execution_payload.get("authority_state") != state_data:
         return False, "execution authorization authority state payload differs from the canonical snapshot"
 
+    ledger_node_for_history = one("authority_ledger")
+    if ledger_node_for_history is None:
+        return False, "authority ledger evidence is missing"
+    historical_ok, historical_reason = validate_historical_authority_binding(
+        state_data,
+        ledger_node_for_history["data"].get("entries", []),
+        execution_payload.get("authority_policy") or {},
+        execution_payload.get("authority_ledger_head_hash", ""),
+    )
+    if not historical_ok:
+        return False, historical_reason
+
     genesis_data = genesis["data"]
     if execution_payload.get("genesis_authority") != genesis_data:
         return False, "execution authorization Genesis authority provenance differs from the canonical evidence"
@@ -176,6 +190,24 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         return False, "identity binding is inconsistent with execution authorization"
     if capability["id"] != execution_payload.get("capability_id") or capability["data"].get("agent_id") != payload["agent_id"]:
         return False, "capability binding is inconsistent with execution authorization"
+    authority_state_after_ledger = []
+    for node in payload.get("nodes", []):
+        if node.get("type") == "authority_ledger":
+            authority_state_after_ledger = node.get("data", {}).get("entries", [])
+            break
+    learning_ok, learning_reason = validate_authority_learning_binding(
+        claim_data,
+        attestation_payload,
+        authority_event["data"],
+        state_data,
+        required["authority_state_after"]["data"],
+        authority_state_after_ledger,
+        execution_payload.get("authority_policy") or {},
+        execution_payload.get("authority_ledger_head_hash", ""),
+    )
+    if not learning_ok:
+        return False, learning_reason
+
     if authority_event["data"].get("evidence_ref") != claim["id"]:
         return False, "authority event is not informed by the canonical outcome claim"
     if authority_event["data"].get("agent_id") != payload["agent_id"] or authority_event["data"].get("capability_id") != capability["id"]:

@@ -7,6 +7,7 @@ from core.evidence_manifest import verify_manifest
 from core.proof_engine import canonical, digest
 from core.authority_protocol import Authority, AuthorityState as GenesisAuthorityState
 from core.proof_protocol import verify_authority_assertions
+from core.proof_validators.common import validate_authority_learning_binding, validate_historical_authority_binding
 
 def _nodes(payload: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
     return {(n["type"], n["id"]): n for n in payload.get("nodes", [])}
@@ -55,7 +56,18 @@ def _check_authority_binding(payload: dict[str, Any]) -> tuple[bool, str, dict[s
                 break
         if not historical_entries or historical_entries[-1].get("event_hash") != committed:
             return False, "historical authority ledger head mismatch", {"expected_head": committed, "actual_head": head}
-    if historical.get("valid") is not True: return False, "historical authority proof is not valid", {"historical_reason": historical.get("reason")}
+    authority_node = _node(payload, "authority_state")
+    if authority_node is not None and isinstance(auth_payload.get("authority_policy"), dict):
+        historical_ok, historical_reason = validate_historical_authority_binding(
+            authority_node["data"],
+            entries,
+            auth_payload.get("authority_policy") or {},
+            committed,
+        )
+        if not historical_ok:
+            return False, historical_reason, {}
+    if historical.get("valid") is not True:
+        return False, "historical authority proof is not valid", {"historical_reason": historical.get("reason")}
     details = historical.get("details")
     if isinstance(details, dict):
         if details.get("ledger_head_hash") not in (None, committed): return False, "historical authority detail head mismatch", {}
@@ -94,6 +106,27 @@ def _check_authority_transition(payload: dict[str, Any]) -> tuple[bool, str, dic
         return False, "authority transition event is absent from the ledger", {}
     if snapshot.get("ledger_head_hash") != matching[0].get("event_hash"):
         return False, "post-learning authority snapshot is not bound to ledger head", {}
+
+    auth_node = _node(payload, "execution_authorization")
+    authority_node = _node(payload, "authority_state")
+    attestation_node = _node(payload, "outcome_attestation")
+    if auth_node is None or authority_node is None or attestation_node is None:
+        return False, "authority transition is missing historical authority or attestation evidence", {}
+    auth_payload = auth_node["data"].get("payload", {})
+    policy = auth_payload.get("authority_policy")
+    attestation_payload = attestation_node["data"].get("payload", {})
+    learning_ok, learning_reason = validate_authority_learning_binding(
+        claim,
+        attestation_payload,
+        event,
+        authority_node["data"],
+        snapshot,
+        entries,
+        policy if isinstance(policy, dict) else {},
+        auth_payload.get("authority_ledger_head_hash", ""),
+    )
+    if not learning_ok:
+        return False, learning_reason, {}
     return True, "post-learning authority transition verified", {
         "event_id": event.get("event_id"),
         "claim_id": claim.get("claim_id"),

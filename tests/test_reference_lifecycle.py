@@ -404,6 +404,21 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             node["data"]["evidence_ref"] = "forged-claim"
         mutate("wrong authority event", wrong_authority_event)
 
+        def wrong_authority_event_type(p):
+            node = next(n for n in p["nodes"] if n["type"] == "authority_event")
+            node["data"]["event_type"] = "EXECUTION_FAILED"
+        mutate("wrong authority event type", wrong_authority_event_type)
+
+        def wrong_authority_event_claim_digest(p):
+            node = next(n for n in p["nodes"] if n["type"] == "authority_event")
+            node["data"]["metadata"]["outcome_claim_sha256"] = "00" * 32
+        mutate("wrong authority event claim digest", wrong_authority_event_claim_digest)
+
+        def forged_post_learning_counters(p):
+            node = next(n for n in p["nodes"] if n["type"] == "authority_state_after")
+            node["data"]["successes"] = 999
+        mutate("forged post-learning counters", forged_post_learning_counters)
+
         def wrong_authority_state_after(p):
             node = next(n for n in p["nodes"] if n["type"] == "authority_state_after")
             node["data"]["source_event_id"] = "forged-event"

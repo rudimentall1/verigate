@@ -24,8 +24,11 @@ A verifier MUST fail closed and perform these checks:
 8. **Historical authority** — the authorization's committed ledger head resolves to a valid historical ledger prefix; later ledger events MUST NOT invalidate the historical proof.
 9. **Execution** — the execution receipt is cryptographically bound to the authorization.
 10. **Outcome** — the outcome claim is bound to an independently generated `observed_effect` artifact, its exact observation digest/evidence reference/result digest, the execution receipt, and an independent attestation. The `observed_effect` artifact MUST be carried as a first-class proof node.
-11. **Learning** — the authority event is bound to the independently attested outcome claim.
-12. **Post-learning authority** — the resulting authority state is bound to the learning event and to the corresponding ledger event hash.
+11. **Learning** — the authority event MUST be deterministic from the terminal outcome: `SUCCEEDED → EXECUTION_CONFIRMED` and `FAILED → EXECUTION_FAILED`; its identity, claim reference, event id, attestation metadata, and exact ledger entry MUST agree.
+12. **Historical authority** — the pre-execution authority snapshot MUST be reproducible from the signed authority policy and the committed historical ledger prefix; counters, state, multiplier, reason, and policy window MUST recompute exactly.
+13. **Post-learning authority** — the resulting authority state MUST be reproducible from the complete ledger at its evaluation time and the same signed authority policy, including counters, state, multiplier, reason, timestamps, and learning-event ledger head.
+
+For `verigate-authority-proof-v1`, an authority-reset boundary that changes `history_start_at` must not be silently inferred from runtime state. Without a portable reset artifact and independently verifiable reset governance, the proof MUST fail closed rather than treating the reset boundary as trusted input.
 
 ## Historical semantics
 
@@ -38,7 +41,7 @@ This preserves the distinction between:
 
 ## Required authority assertions
 
-An authority-lifecycle proof contains nine assertions:
+An authority-lifecycle proof contains nine assertions plus deterministic semantic conformance checks for historical authority and learning transition:
 
 - A1 identity possesses capability
 - A2 intent proposed by agent
