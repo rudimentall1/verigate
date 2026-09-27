@@ -80,6 +80,8 @@ def verify(proof,key):
   return bad('authorization identity/capability/intent binding failed',c)
  if ap.get('action') != intent_node['data']:
   return bad('execution authorization action payload differs from canonical intent',c)
+ if rp.get('authorization_sha256') != sha(ap):
+  return bad('execution receipt is not bound to the exact execution authorization payload',c)
  external_state_required=bool(ap.get('external_state_required'))
  external_state_scope=rp.get('execution_external_state_scope')
  external_state=ap.get('external_state')
