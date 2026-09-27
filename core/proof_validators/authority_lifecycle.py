@@ -7,6 +7,7 @@ from .common import (
     validate_requirements,
     validate_context_binding,
     validate_execution_enforcement_scope,
+    validate_external_state_execution_scope,
 )
 
 def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> tuple[bool, str]:
@@ -134,6 +135,12 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         return False, "execution receipt is not bound to the execution authorization"
     if execution_receipt_payload.get("agent_id") != payload["agent_id"]:
         return False, "execution receipt is not bound to manifest agent_id"
+    external_scope_ok, external_scope_reason = validate_external_state_execution_scope(
+        execution_payload,
+        execution_receipt_payload,
+    )
+    if not external_scope_ok:
+        return False, external_scope_reason
 
     claim_data = claim["data"]
     if claim_data.get("authorization_id") != execution["id"] or claim_data.get("intent_id") != intent["id"]:

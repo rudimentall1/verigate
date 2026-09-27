@@ -73,3 +73,56 @@ def validate_execution_enforcement_scope(
     if scope == "transitive":
         return False, "transitive execution enforcement is not independently provable by authority-proof-v1"
     return False, f"unsupported execution enforcement scope: {scope}"
+
+
+def validate_external_state_execution_scope(
+    execution_payload: dict[str, Any],
+    execution_receipt_payload: dict[str, Any],
+) -> tuple[bool, str]:
+    """Validate the execution contract recorded for policy-required external state.
+
+    The proof verifies the signed adapter contract and exact state binding. It
+    does not claim to sandbox arbitrary generic adapter internals; "atomic"
+    remains an explicit trusted-adapter boundary. EVM adapters additionally
+    enforce the committed guard on-chain.
+    """
+    required = bool(execution_payload.get("external_state_required"))
+    scope = execution_receipt_payload.get("execution_external_state_scope")
+    external_state = execution_payload.get("external_state")
+    requirement = execution_payload.get("external_state_requirement")
+
+    if not required:
+        if scope not in (None, "atomic"):
+            return False, f"unsupported execution external-state scope: {scope}"
+        return True, "external state execution is not required"
+
+    if scope != "atomic":
+        return False, "required external state execution is not atomically enforced"
+    if not isinstance(external_state, dict) or not external_state:
+        return False, "required external state binding is missing"
+    if not isinstance(requirement, dict):
+        return False, "required external state policy requirement is missing"
+
+    state_json = json.dumps(
+        external_state, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    requirement_json = json.dumps(
+        requirement, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    if execution_payload.get("external_state_sha256") != hashlib.sha256(state_json).hexdigest():
+        return False, "external state fingerprint mismatch"
+    if execution_payload.get("external_state_requirement_sha256") != hashlib.sha256(requirement_json).hexdigest():
+        return False, "external state requirement fingerprint mismatch"
+    if external_state.get("kind") != requirement.get("kind"):
+        return False, "external state kind does not satisfy policy requirement"
+    reference = external_state.get("reference")
+    if not isinstance(reference, str) or not reference.strip():
+        return False, "external state binding is missing reference"
+    digest_value = external_state.get("digest")
+    if not isinstance(digest_value, str) or len(digest_value) != 64:
+        return False, "external state binding has invalid digest"
+    try:
+        int(digest_value, 16)
+    except ValueError:
+        return False, "external state binding digest is not hexadecimal"
+    return True, "required external state execution is atomically bound"

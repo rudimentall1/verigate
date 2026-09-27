@@ -78,6 +78,39 @@ def verify(proof,key):
  if any(x is None for x in (identity_node,capability_node,intent_node,authority_node,genesis_node)): return bad('authority binding evidence incomplete',c)
  if ap.get('agent_id') != p.get('agent_id') or ap.get('agent_id') != identity_node['data'].get('agent_id') or ap.get('identity_id') != identity_node['id'] or ap.get('capability_id') != capability_node['id'] or ap.get('intent_id') != intent_node['id']:
   return bad('authorization identity/capability/intent binding failed',c)
+ if ap.get('action') != intent_node['data']:
+  return bad('execution authorization action payload differs from canonical intent',c)
+ external_state_required=bool(ap.get('external_state_required'))
+ external_state_scope=rp.get('execution_external_state_scope')
+ external_state=ap.get('external_state')
+ requirement=ap.get('external_state_requirement')
+ if not external_state_required:
+  if external_state_scope not in (None,'atomic'):
+   return bad('unsupported execution external-state scope',c)
+ else:
+  if external_state_scope != 'atomic':
+   return bad('required external state execution is not atomically enforced',c)
+  if not isinstance(external_state,dict) or not external_state:
+   return bad('required external state binding is missing',c)
+  if not isinstance(requirement,dict):
+   return bad('required external state policy requirement is missing',c)
+  metadata=intent_node['data'].get('metadata')
+  canonical_state=metadata.get('external_state') if isinstance(metadata,dict) else None
+  if not isinstance(canonical_state,dict) or external_state != canonical_state:
+   return bad('external state binding differs from canonical intent',c)
+  if ap.get('external_state_sha256') != sha(external_state):
+   return bad('external state fingerprint mismatch',c)
+  if ap.get('external_state_requirement_sha256') != sha(requirement):
+   return bad('external state requirement fingerprint mismatch',c)
+  if external_state.get('kind') != requirement.get('kind'):
+   return bad('external state kind does not satisfy policy requirement',c)
+  if not isinstance(external_state.get('reference'),str) or not external_state['reference'].strip():
+   return bad('external state binding is missing reference',c)
+  dv=external_state.get('digest')
+  if not isinstance(dv,str) or len(dv)!=64:
+   return bad('external state binding has invalid digest',c)
+  try: int(dv,16)
+  except Exception: return bad('external state binding digest is not hexadecimal',c)
  authority_data=authority_node['data']; authority_sha=sha(authority_data)
  if ap.get('authority_state_sha256') != authority_sha: return bad('historical authority snapshot digest mismatch',c)
  capability_data=capability_node['data']

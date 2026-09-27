@@ -296,9 +296,12 @@ class ExecutionRouter:
                 algorithm=existing.get("algorithm", "Ed25519"),
             )
 
+        execution_external_state_scope = None
         try:
             # Use the same execution boundary as direct execution so required
             # atomic state enforcement cannot be bypassed by receipt generation.
+            adapter = self._adapter(authorization)
+            execution_external_state_scope = getattr(adapter, "execution_external_state_scope", None)
             result = self.execute(authorization, broadcaster)
             transaction_ref = self._transaction_ref(result)
             if not transaction_ref:
@@ -309,6 +312,7 @@ class ExecutionRouter:
                 transaction_ref=transaction_ref,
                 executor=executor,
                 private_key=self.private_key,
+                execution_external_state_scope=execution_external_state_scope,
             )
         except Exception as exc:
             receipt = sign_execution_receipt(
@@ -318,6 +322,7 @@ class ExecutionRouter:
                 executor=executor,
                 private_key=self.private_key,
                 error=str(exc),
+                execution_external_state_scope=execution_external_state_scope,
             )
 
         self.storage.record_execution_receipt(receipt.as_dict())
@@ -370,7 +375,7 @@ class ExecutionRouter:
             "genesis_authority_sha256": current.get("genesis_authority_sha256"),
             "action": {"network": current.get("network")},
         }}
-        updated = sign_execution_receipt(auth, status=state, transaction_ref=transaction_ref, executor=executor, private_key=self.private_key, error=confirmation.get("error"), receipt_id=current["receipt_id"], previous_receipt_sha256=self._receipt_digest(receipt), confirmation_ref=confirmation.get("block_ref") or confirmation.get("slot"), confirmation_data=confirmation)
+        updated = sign_execution_receipt(auth, status=state, transaction_ref=transaction_ref, executor=executor, private_key=self.private_key, error=confirmation.get("error"), receipt_id=current["receipt_id"], previous_receipt_sha256=self._receipt_digest(receipt), confirmation_ref=confirmation.get("block_ref") or confirmation.get("slot"), confirmation_data=confirmation, execution_external_state_scope=current.get("execution_external_state_scope"))
         payload = dict(updated.payload)
         payload["network"] = current.get("network")
         updated = ExecutionReceipt(payload=payload, signature=updated.signature, algorithm=updated.algorithm)

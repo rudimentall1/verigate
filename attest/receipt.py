@@ -450,6 +450,7 @@ def execution_receipt_payload(
     previous_receipt_sha256: str | None = None,
     confirmation_ref: str | None = None,
     confirmation_data: dict[str, Any] | None = None,
+    execution_external_state_scope: str | None = None,
 ) -> dict[str, Any]:
     auth_payload = authorization["payload"]
     action = auth_payload["action"]
@@ -487,6 +488,7 @@ def execution_receipt_payload(
         "previous_receipt_sha256": previous_receipt_sha256,
         "confirmation_ref": confirmation_ref,
         "confirmation_data": confirmation_data,
+        "execution_external_state_scope": execution_external_state_scope,
         "executed_at": int(time.time()),
     }
 
@@ -503,6 +505,7 @@ def sign_execution_receipt(
     previous_receipt_sha256: str | None = None,
     confirmation_ref: str | None = None,
     confirmation_data: dict[str, Any] | None = None,
+    execution_external_state_scope: str | None = None,
 ) -> ExecutionReceipt:
     payload = execution_receipt_payload(
         authorization,
@@ -514,6 +517,7 @@ def sign_execution_receipt(
         previous_receipt_sha256=previous_receipt_sha256,
         confirmation_ref=confirmation_ref,
         confirmation_data=confirmation_data,
+        execution_external_state_scope=execution_external_state_scope,
     )
     return ExecutionReceipt(payload, _sign(payload, private_key))
 

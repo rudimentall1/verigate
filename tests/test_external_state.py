@@ -9,6 +9,7 @@ from core.external_state import ExternalStateVerifierRegistry
 from core.storage import Storage
 from enforcement.router import ExecutionRouter
 from enforcement.networks import NetworkRegistry
+from core.proof_validators.common import validate_external_state_execution_scope
 
 class Adapter:
     def validate(self, authorization): return True, "validated"
@@ -165,5 +166,49 @@ class ExternalStateTest(unittest.TestCase):
         auth=self.auth(action,policy)
         router=ExecutionRouter(NetworkRegistry(),self.storage,load_public_key(self.public),generic_adapters={'orders.create':Adapter()},external_state_registry=ExternalStateVerifierRegistry())
         with self.assertRaises(ValueError): router.execute(auth,lambda a:'side-effect')
+
+    def test_proof_external_state_accepts_atomic_contract(self):
+        state={'kind':'http.state','reference':'orders','digest':'b'*64}
+        requirement={'action_type':'orders.create','target':'orders','kind':'http.state'}
+        import hashlib, json
+        payload={
+            'external_state_required':True,
+            'external_state':state,
+            'external_state_requirement':requirement,
+            'external_state_sha256':hashlib.sha256(json.dumps(state,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest(),
+            'external_state_requirement_sha256':hashlib.sha256(json.dumps(requirement,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest(),
+        }
+        ok, reason=validate_external_state_execution_scope(payload, {'execution_external_state_scope':'atomic'})
+        self.assertTrue(ok, reason)
+
+    def test_proof_external_state_rejects_missing_atomic_contract(self):
+        state={'kind':'http.state','reference':'orders','digest':'b'*64}
+        requirement={'action_type':'orders.create','target':'orders','kind':'http.state'}
+        import hashlib, json
+        payload={
+            'external_state_required':True,
+            'external_state':state,
+            'external_state_requirement':requirement,
+            'external_state_sha256':hashlib.sha256(json.dumps(state,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest(),
+            'external_state_requirement_sha256':hashlib.sha256(json.dumps(requirement,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest(),
+        }
+        ok, reason=validate_external_state_execution_scope(payload, {})
+        self.assertFalse(ok)
+        self.assertIn('atomically enforced', reason)
+
+    def test_proof_external_state_rejects_kind_mismatch(self):
+        state={'kind':'mcp.state','reference':'orders','digest':'b'*64}
+        requirement={'action_type':'orders.create','target':'orders','kind':'http.state'}
+        import hashlib, json
+        payload={
+            'external_state_required':True,
+            'external_state':state,
+            'external_state_requirement':requirement,
+            'external_state_sha256':hashlib.sha256(json.dumps(state,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest(),
+            'external_state_requirement_sha256':hashlib.sha256(json.dumps(requirement,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest(),
+        }
+        ok, reason=validate_external_state_execution_scope(payload, {'execution_external_state_scope':'atomic'})
+        self.assertFalse(ok)
+        self.assertIn('kind does not satisfy', reason)
 
 if __name__=='__main__': unittest.main()
