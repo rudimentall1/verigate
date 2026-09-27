@@ -160,6 +160,48 @@ class GovernanceResetTest(unittest.TestCase):
         self.assertTrue(ok, reason)
 
 
+    def test_api_legacy_reset_is_disabled_when_multi_party_governance_is_configured(self):
+        from fastapi.testclient import TestClient
+        from api import main
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        root = Path(self.tmp.name)
+        policy_path = root / "policy.yaml"
+        policy_path.write_text(
+            "allowed_networks: [base]\nallowed_assets: [USDC]\n",
+            encoding="utf-8",
+        )
+        main.POLICY_PATH = str(policy_path)
+        main.DB_PATH = str(root / "api-multi.db")
+        main.PRIVATE_KEY_PATH = str(root / "issuer.key")
+        main.PUBLIC_KEY_PATH = str(root / "issuer.pub")
+        main.GOVERNANCE_PRIVATE_KEY_PATH = str(self.governance_private)
+        main.GOVERNANCE_PUBLIC_KEY_PATH = str(self.governance_public)
+        with TestClient(main.app) as client:
+            main._governance_policy = GovernancePolicy(
+                policy_id="api-prod-governance",
+                version=1,
+                threshold=2,
+                members=(
+                    GovernanceMember.from_public_key(
+                        load_public_key(self.governance_public), "security"
+                    ),
+                    GovernanceMember.from_public_key(
+                        Ed25519PrivateKey.generate().public_key(), "operations"
+                    ),
+                ),
+            )
+            response = client.post(
+                "/v1/authority/reset",
+                json={"reset": self.signed_reset()},
+            )
+            self.assertEqual(response.status_code, 503)
+            self.assertIn("multi-party governance", response.json()["detail"])
+
+        main._storage.close()
+        main._storage = main._engine = main._policy = None
+        main._governance_policy = None
+
     def test_api_reset_requires_signed_governance_action(self):
         from fastapi.testclient import TestClient
         from api import main

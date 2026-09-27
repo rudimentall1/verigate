@@ -580,6 +580,11 @@ def governance_policy() -> dict:
 )
 def authority_reset(req: AuthorityResetRequest) -> dict:
     assert _storage is not None
+    if _governance_policy is not None and _governance_policy.threshold >= 2:
+        raise HTTPException(
+            status_code=503,
+            detail="legacy single-governor recovery is disabled when multi-party governance is configured",
+        )
     try:
         return AuthorityGovernanceService(_storage).reset(
             req.reset,
