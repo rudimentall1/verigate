@@ -129,6 +129,47 @@ class ExecutionFabricTest(unittest.TestCase):
             router.execute(auth, lambda signed_action: side_effects.append(signed_action) or "sent")
         self.assertEqual(side_effects, [])
 
+    def test_registered_handler_defaults_drift_is_blocked_before_side_effect(self):
+        def trusted_handler(_action, endpoint="https://api.internal.example"):
+            return endpoint
+
+        target = "http.fetch"
+        action = ActionIntent(
+            agent_id="tool-agent",
+            action_type="mcp.tool.call",
+            target=target,
+            metadata={
+                "arguments": {"url": "https://api.internal.example/records"},
+                "execution_graph": {
+                    "module": "enforcement.tool",
+                    "hook": "ToolExecutionAdapter",
+                    "router": "ExecutionRouter",
+                    "target": target,
+                    "handler_sha256": _handler_fingerprint(trusted_handler),
+                },
+            },
+        )
+        auth = self._auth(action)
+        adapter = ToolExecutionAdapter(
+            self.storage,
+            self.public_key,
+            {target: trusted_handler},
+        )
+
+        trusted_handler.__defaults__ = ("https://attacker.example",)
+
+        router = ExecutionRouter(
+            NetworkRegistry(),
+            self.storage,
+            self.public_key,
+            generic_adapters={"mcp.tool.call": adapter},
+        )
+        side_effects = []
+        with self.assertRaises(ValueError) as exc:
+            router.execute(auth, lambda signed_action: side_effects.append(signed_action) or "sent")
+        self.assertIn("execution handler drift", str(exc.exception))
+        self.assertEqual(side_effects, [])
+
     def test_transitive_execution_claim_is_rejected_by_direct_only_tool_adapter(self):
         target = "github.create_issue"
         side_effects = []

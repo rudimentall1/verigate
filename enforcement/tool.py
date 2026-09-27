@@ -5,13 +5,26 @@ from typing import Any, Callable
 import hashlib
 
 def _handler_fingerprint(handler: Callable[..., Any]) -> str:
-    """Stable identity for the registered executable handler."""
+    """Stable identity for the registered executable handler.
+
+    Bind the code object plus callable configuration that can change behavior
+    without replacing the function object itself. This deliberately does not
+    claim to sandbox arbitrary globals or child side effects inside a trusted
+    handler.
+    """
     code = getattr(handler, "__code__", None)
+    defaults = getattr(handler, "__defaults__", None)
+    kwdefaults = getattr(handler, "__kwdefaults__", None)
     payload = {
         "module": getattr(handler, "__module__", ""),
         "qualname": getattr(handler, "__qualname__", ""),
         "code": getattr(code, "co_code", b"").hex(),
         "consts": repr(getattr(code, "co_consts", ())),
+        "names": tuple(getattr(code, "co_names", ())),
+        "varnames": tuple(getattr(code, "co_varnames", ())),
+        "freevars": tuple(getattr(code, "co_freevars", ())),
+        "defaults": repr(defaults),
+        "kwdefaults": repr(kwdefaults),
     }
     raw = repr(sorted(payload.items())).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
