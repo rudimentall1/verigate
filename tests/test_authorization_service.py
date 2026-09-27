@@ -500,6 +500,39 @@ class AuthorizationServiceTest(unittest.TestCase):
             )
         storage.close()
 
+    def test_revoked_capability_cannot_mint_new_authorization_from_stale_object(self):
+        from core.capabilities import CapabilityRegistry
+
+        action = self._action()
+        storage = Storage(Path(self.tmpdir.name) / "direct-revocation.db")
+        registry = CapabilityRegistry(storage)
+        capability = Capability(
+            capability_id="cap-direct-revocation",
+            agent_id=action.agent_id,
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+        )
+        registry.register(capability)
+        authority = DynamicAuthorityService(storage).snapshot(
+            action.agent_id, capability.capability_id
+        )
+        registry.revoke(capability.capability_id)
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+
+        with self.assertRaisesRegex(PermissionError, "capability is not active"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                Policy().digest,
+                load_private_key(self.priv),
+                capability=capability,
+                capability_registry=registry,
+                authority=authority,
+                authority_policy=DynamicAuthorityService(storage).policy,
+                policy=Policy(),
+            )
+        storage.close()
+
     def test_parent_revocation_blocks_new_delegated_authorization(self):
         from core.capabilities import CapabilityRegistry
 

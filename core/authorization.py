@@ -112,14 +112,18 @@ class AuthorizationService:
                 and action.requested_capability != capability.capability_id
             ):
                 raise PermissionError("requested capability does not match supplied capability")
-            if capability.delegated_from is not None:
-                if capability_registry is None:
-                    raise PermissionError(
-                        "delegated capability requires registry-backed authority-chain verification"
-                    )
+            if capability_registry is not None:
+                # When the registry is supplied, it is the current authority
+                # source. Re-resolve every capability, not only delegated ones,
+                # so revocation cannot be bypassed by a stale in-memory object.
                 resolved = capability_registry.resolve(capability.capability_id)
                 if resolved.digest != capability.digest:
                     raise PermissionError("supplied capability does not match registered capability")
+                capability = resolved
+            elif capability.delegated_from is not None:
+                raise PermissionError(
+                    "delegated capability requires registry-backed authority-chain verification"
+                )
             permitted, reason = capability.permits(action)
             if not permitted:
                 raise PermissionError(reason)
