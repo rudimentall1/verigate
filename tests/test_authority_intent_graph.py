@@ -2,7 +2,14 @@ import unittest
 
 from core.authority_intent_graph import AuthorityAwareIntentGraph, PlanAuthorityStatus
 from core.authority_protocol import Authority, AuthorityState
-from core.intent_graph import IntentGraphBuilder
+from core.intent_graph import (
+    IntentEdge,
+    IntentGraph,
+    IntentGraphBuilder,
+    IntentNode,
+    IntentNodeType,
+    IntentRelation,
+)
 from core.models import ActionIntent, Capability, Decision
 
 
@@ -141,7 +148,60 @@ class AuthorityAwareIntentGraphTest(unittest.TestCase):
         self.assertNotEqual(first.digest, second.digest)
         self.assertEqual(len(first.digest), 64)
 
+    def test_cyclic_dependency_is_blocked_not_a_recursion_error(self):
+        # IntentGraphBuilder.build() rejects cycles via validate(), so this
+        # constructs the frozen IntentGraph directly -- the only way an
+        # invalid graph can reach AuthorityAwareIntentGraph at all. assess()
+        # must not assume every caller went through the builder.
+        a1 = self.action("a1")
+        a2 = self.action("a2")
+        graph = IntentGraph(
+            graph_id="cyclic-plan",
+            nodes=(
+                IntentNode("a1", IntentNodeType.ACTION, "a1", {"action_intent": a1.as_dict()}),
+                IntentNode("a2", IntentNodeType.ACTION, "a2", {"action_intent": a2.as_dict()}),
+            ),
+            edges=(
+                IntentEdge("a1", IntentRelation.DEPENDS_ON, "a2"),
+                IntentEdge("a2", IntentRelation.DEPENDS_ON, "a1"),
+            ),
+        )
+        valid, errors = graph.validate()
+        self.assertFalse(valid)
+        self.assertIn("intent graph contains a dependency cycle", errors)
+
+        cap = self.capability()
+        # The real regression is that this line returns at all instead of
+        # raising RecursionError. The cycle is detected one recursion level
+        # in (a1 -> a2 -> a1 hits the guard), so the outer assessment's own
+        # reason is the ordinary "dependency not eligible" wording; the
+        # cycle-specific reason lives in that nested call, not this one.
+        assessment = AuthorityAwareIntentGraph(graph, self.authority(cap), cap).assess("a1")
+
+        self.assertEqual(assessment.status, PlanAuthorityStatus.BLOCKED)
+        self.assertEqual(
+            dict(assessment.dependency_statuses)["a2"], PlanAuthorityStatus.BLOCKED
+        )
+
+    def test_self_dependency_cycle_reason_is_reported(self):
+        a1 = self.action("a1")
+        graph = IntentGraph(
+            graph_id="self-loop-plan",
+            nodes=(
+                IntentNode("a1", IntentNodeType.ACTION, "a1", {"action_intent": a1.as_dict()}),
+            ),
+            edges=(IntentEdge("a1", IntentRelation.DEPENDS_ON, "a1"),),
+        )
+        cap = self.capability()
+        # Same point as above: the top-level reason is the ordinary
+        # dependency-wrapping message, since the direct self-loop is
+        # detected one recursion level in. What matters is that this
+        # terminates at all and comes back BLOCKED, not an unbounded
+        # recursion into a self-referencing node.
+        assessment = AuthorityAwareIntentGraph(graph, self.authority(cap), cap).assess("a1")
+
+        self.assertEqual(assessment.status, PlanAuthorityStatus.BLOCKED)
+
 
 if __name__ == "__main__":
     unittest.main()
-

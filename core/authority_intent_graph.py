@@ -82,14 +82,31 @@ class AuthorityAwareIntentGraph:
             raise ValueError("capability digest does not match authority")
 
     def assess(self, node_id: str) -> IntentAuthorityAssessment:
+        return self._assess(node_id, frozenset())
+
+    def _assess(
+        self, node_id: str, visiting: frozenset[str]
+    ) -> IntentAuthorityAssessment:
         node = self.graph.node(node_id)
         if node.node_type != IntentNodeType.ACTION:
             raise ValueError("authority assessment requires an ACTION node")
 
         action = self._action(node_id)
+
+        # Defense in depth: IntentGraph.validate() rejects cyclic graphs, but
+        # assess() must not assume every caller ran validate() first. Without
+        # this guard a cyclic DEPENDS_ON chain causes unbounded recursion
+        # (RecursionError) instead of a deterministic BLOCKED assessment.
+        if node_id in visiting:
+            return self._assessment(
+                node_id, action, PlanAuthorityStatus.BLOCKED,
+                "intent graph contains a dependency cycle", (),
+            )
+        visiting = visiting | {node_id}
+
         dependency_statuses: list[tuple[str, PlanAuthorityStatus]] = []
         for dependency_id in self.graph.dependencies_of(node_id):
-            dependency = self.assess(dependency_id)
+            dependency = self._assess(dependency_id, visiting)
             dependency_statuses.append((dependency_id, dependency.status))
             if dependency.status != PlanAuthorityStatus.ELIGIBLE:
                 return self._assessment(
