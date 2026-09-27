@@ -11,13 +11,14 @@ PROOF_PROFILES: dict[str, dict[str, Any]] = {
     "mcp_execution": {
         "required_nodes": {
             "action_intent", "decision", "execution_authorization", "execution_receipt",
-            "outcome_claim", "outcome_attestation", "attestor_authority",
+            "outcome_claim", "observed_effect", "outcome_attestation", "attestor_authority",
         },
         "required_edges": {
             ("action_intent", "EVALUATED_AS", "decision"),
             ("decision", "MINTS", "execution_authorization"),
             ("execution_authorization", "PRODUCES", "execution_receipt"),
             ("execution_receipt", "OBSERVED_BY", "outcome_claim"),
+            ("outcome_claim", "SUPPORTED_BY", "observed_effect"),
             ("outcome_attestation", "ATTESTS", "outcome_claim"),
             ("attestor_authority", "AUTHORIZES", "outcome_attestation"),
         },
@@ -30,7 +31,7 @@ PROOF_PROFILES: dict[str, dict[str, Any]] = {
     "authority_lifecycle": {
         "required_nodes": {
             "identity", "capability", "action_intent", "decision", "decision_receipt",
-            "policy_version", "authority_state", "authority_state_after", "genesis_authority", "execution_authorization", "execution_receipt", "outcome_claim",
+            "policy_version", "authority_state", "authority_state_after", "genesis_authority", "execution_authorization", "execution_receipt", "outcome_claim", "observed_effect",
             "outcome_attestation", "attestor_authority", "governance_action", "governance_approval",
             "authority_event",
         },
@@ -40,6 +41,7 @@ PROOF_PROFILES: dict[str, dict[str, Any]] = {
             ("decision", "MINTS", "execution_authorization"),
             ("execution_authorization", "PRODUCES", "execution_receipt"),
             ("execution_receipt", "OBSERVED_BY", "outcome_claim"),
+            ("outcome_claim", "SUPPORTED_BY", "observed_effect"),
             ("outcome_attestation", "ATTESTS", "outcome_claim"),
             ("attestor_authority", "AUTHORIZES", "outcome_attestation"),
             ("attestor_authority", "DERIVED_FROM", "governance_action"),

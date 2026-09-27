@@ -458,6 +458,15 @@ class EvidenceGraph:
                     claim_id = claim["claim_id"]
                     claim_sha256 = outcome_digest(claim)
                     nodes.append(_node("outcome_claim", claim_id, claim))
+                    observed_effect = claim.get("observed_effect")
+                    if isinstance(observed_effect, dict):
+                        observed_effect_id = claim.get("observed_effect_sha256") or _digest(observed_effect)
+                        nodes.append(_node("observed_effect", observed_effect_id, observed_effect))
+                        edges.append({
+                            "from": f"outcome_claim:{claim_id}",
+                            "relation": "SUPPORTED_BY",
+                            "to": f"observed_effect:{observed_effect_id}",
+                        })
                     edges.append({
                         "from": f"execution_receipt:{receipt_id}",
                         "relation": "OBSERVED_BY",

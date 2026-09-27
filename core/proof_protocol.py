@@ -41,11 +41,12 @@ def build_authority_assertions(manifest: dict[str, Any]) -> list[dict[str, Any]]
     authorization = _node(nodes, "execution_authorization")
     receipt = _node(nodes, "execution_receipt")
     claim = _node(nodes, "outcome_claim")
+    observed_effect = _node(nodes, "observed_effect")
     attestation = _node(nodes, "outcome_attestation")
     event = _node(nodes, "authority_event")
     after = _node(nodes, "authority_state_after")
     ledger = _node(nodes, "authority_ledger")
-    required = {"identity": identity, "capability": capability, "action_intent": intent, "authority_state": authority, "genesis_authority": genesis, "decision": decision, "execution_authorization": authorization, "execution_receipt": receipt, "outcome_claim": claim, "outcome_attestation": attestation, "authority_event": event, "authority_state_after": after, "authority_ledger": ledger}
+    required = {"identity": identity, "capability": capability, "action_intent": intent, "authority_state": authority, "genesis_authority": genesis, "decision": decision, "execution_authorization": authorization, "execution_receipt": receipt, "outcome_claim": claim, "observed_effect": observed_effect, "outcome_attestation": attestation, "authority_event": event, "authority_state_after": after, "authority_ledger": ledger}
     if any(v is None for v in required.values()):
         raise ValueError("authority proof protocol requires complete lifecycle evidence")
     refs = {k: f"{v['type']}:{v['id']}" for k, v in required.items()}
@@ -62,7 +63,7 @@ def build_authority_assertions(manifest: dict[str, Any]) -> list[dict[str, Any]]
         _assertion("A3", "authority", refs["authority_state"], "permitted", refs["action_intent"], [refs["authority_state"], refs["action_intent"], refs["capability"]]),
         _assertion("A4", "authorization", refs["execution_authorization"], "derived_from", refs["authority_state"], [refs["decision"], refs["execution_authorization"], refs["authority_state"], refs["genesis_authority"]]),
         _assertion("A5", "execution", refs["execution_receipt"], "consumed_authorization", refs["execution_authorization"], [refs["execution_authorization"], refs["execution_receipt"]]),
-        _assertion("A6", "observation", refs["outcome_claim"], "observes", refs["execution_receipt"], [refs["execution_receipt"], refs["outcome_claim"], refs["outcome_attestation"]]),
+        _assertion("A6", "observation", refs["outcome_claim"], "observes", refs["execution_receipt"], [refs["execution_receipt"], refs["outcome_claim"], refs["observed_effect"], refs["outcome_attestation"]]),
         _assertion("A7", "learning", refs["authority_event"], "justified_by", refs["outcome_claim"], [refs["outcome_claim"], refs["authority_event"]]),
         _assertion("A8", "learning", refs["authority_state_after"], "produced_by", refs["authority_event"], [refs["authority_event"], refs["authority_state_after"]]),
         _assertion("A9", "integrity", refs["authority_state_after"], "ledger_bound", refs["authority_ledger"], [refs["authority_state_after"], refs["authority_ledger"]]),
@@ -76,6 +77,12 @@ def build_authority_assertions(manifest: dict[str, Any]) -> list[dict[str, Any]]
         _has_edge(payload, refs["execution_authorization"], "PRODUCES", refs["execution_receipt"]),
         rp.get("authorization_id") == ap.get("authorization_id"),
         _has_edge(payload, refs["execution_receipt"], "OBSERVED_BY", refs["outcome_claim"]),
+        _has_edge(payload, refs["outcome_claim"], "SUPPORTED_BY", refs["observed_effect"]),
+        observed_effect["id"] == cp.get("observed_effect_sha256") and digest(observed_effect["data"]) == cp.get("observed_effect_sha256"),
+        observed_effect["data"].get("authorization_id") == ap.get("authorization_id"),
+        observed_effect["data"].get("action_sha256") == cp.get("action_sha256"),
+        observed_effect["data"].get("evidence_ref") == cp.get("evidence_ref"),
+        observed_effect["data"].get("result_sha256") == cp.get("result_sha256"),
         _has_edge(payload, refs["outcome_attestation"], "ATTESTS", refs["outcome_claim"]),
         _has_edge(payload, refs["outcome_claim"], "INFORMS", refs["authority_event"]),
         _has_edge(payload, refs["authority_event"], "TRANSITIONS_TO", refs["authority_state_after"]),

@@ -22,6 +22,7 @@ AUTHORITY_LIFECYCLE_REQUIRED_TYPES = (
     "execution_authorization",
     "execution_receipt",
     "outcome_claim",
+    "observed_effect",
     "outcome_attestation",
     "authority_event",
     "authority_state",

@@ -23,7 +23,7 @@ A verifier MUST fail closed and perform these checks:
 7. **Authorization** — the execution authorization signature, identity, capability, action, authority snapshot, policy bindings, timing, and execution graph bindings are valid.
 8. **Historical authority** — the authorization's committed ledger head resolves to a valid historical ledger prefix; later ledger events MUST NOT invalidate the historical proof.
 9. **Execution** — the execution receipt is cryptographically bound to the authorization.
-10. **Outcome** — the outcome claim and independent attestation are bound to the execution receipt.
+10. **Outcome** — the outcome claim is bound to an independently generated `observed_effect` artifact, its exact observation digest/evidence reference/result digest, the execution receipt, and an independent attestation. The `observed_effect` artifact MUST be carried as a first-class proof node.
 11. **Learning** — the authority event is bound to the independently attested outcome claim.
 12. **Post-learning authority** — the resulting authority state is bound to the learning event and to the corresponding ledger event hash.
 
@@ -45,7 +45,7 @@ An authority-lifecycle proof contains nine assertions:
 - A3 authority permits intent
 - A4 authorization derived from authority
 - A5 execution consumed authorization
-- A6 outcome observes execution
+- A6 outcome observes execution and is supported by the canonical observed-effect artifact
 - A7 learning event justified by outcome claim
 - A8 post-learning authority state produced by learning event
 - A9 post-learning state ledger-bound

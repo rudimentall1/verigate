@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives import serialization
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.engine import GuardrailEngine
 from core.evidence import EvidenceGraph
+from core.effect_verification import MCPToolVerifier
 from core.attestor import AttestorAuthorityService
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
 from core.genesis_lifecycle import GenesisLifecycle
@@ -182,13 +183,20 @@ class GenesisLifecycleTest(unittest.TestCase):
             "state": "CONFIRMED",
             "transaction_ref": "mcp-effect-1",
         })
+        observed = MCPToolVerifier().verify_result(
+            lifecycle.authorization["execution_authorization"],
+            tool_name="orders.create",
+            result={"order_id": "order-1"},
+            evidence_ref="mcp://orders.create/order-1",
+        )
         claim = build_outcome_claim(
             lifecycle.execution_receipt,
             status="SUCCEEDED",
             executor_id="executor-1",
-            evidence_kind="EXECUTOR_RESULT",
-            evidence_ref="executor-report-1",
-            result_sha256=hashlib.sha256(b"order-1").hexdigest(),
+            evidence_kind=observed.evidence_kind,
+            evidence_ref=observed.evidence_ref,
+            result_sha256=observed.result_sha256,
+            observed_effect=observed.as_dict(),
         )
         attestation = build_outcome_attestation(
             claim,

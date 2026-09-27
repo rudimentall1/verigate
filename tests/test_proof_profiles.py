@@ -53,6 +53,26 @@ def _mcp_graph():
             "action_sha256": _digest(action),
         }
     }
+    observed_effect = {
+        "observation_version": 1,
+        "verifier_type": "MCP_VERIFIER",
+        "evidence_kind": "MCP_RESULT",
+        "effect_status": "SUCCEEDED",
+        "authorization_id": "auth",
+        "action_sha256": _digest(action),
+        "observed_at": 2.0,
+        "evidence_ref": "mcp:orders.create:1",
+        "result_sha256": "b" * 64,
+        "observation": {
+            "tool_name": "orders.create",
+            "target_identity": "orders-service",
+            "result_sha256": "b" * 64,
+        },
+    }
+    observed_effect["observation_sha256"] = _digest({k: observed_effect[k] for k in (
+        "verifier_type", "evidence_kind", "effect_status", "authorization_id", "action_sha256",
+        "observed_at", "evidence_ref", "result_sha256", "observation"
+    )})
     claim = {
         "outcome_claim_version": 1,
         "claim_id": "claim",
@@ -66,6 +86,8 @@ def _mcp_graph():
         "evidence_kind": "MCP_RESULT",
         "evidence_ref": "mcp:orders.create:1",
         "result_sha256": "b" * 64,
+        "observed_effect": observed_effect,
+        "observed_effect_sha256": _digest(observed_effect),
     }
     attestation_payload = {
         "outcome_attestation_version": 1,
@@ -85,6 +107,7 @@ def _mcp_graph():
         }}},
         {"type": "execution_receipt", "id": "receipt", "data": receipt},
         {"type": "outcome_claim", "id": "claim", "data": claim},
+        {"type": "observed_effect", "id": _digest(observed_effect), "data": observed_effect},
         {"type": "outcome_attestation", "id": "att", "data": {"payload": attestation_payload}},
         {"type": "attestor_authority", "id": "attestor", "data": {
             "attestor_id": "attestor", "attestor_type": "EXTERNAL_VERIFIER", "status": "ACTIVE",
@@ -103,6 +126,7 @@ def _mcp_graph():
             {"from": "decision:intent", "relation": "MINTS", "to": "execution_authorization:auth"},
             {"from": "execution_authorization:auth", "relation": "PRODUCES", "to": "execution_receipt:receipt"},
             {"from": "execution_receipt:receipt", "relation": "OBSERVED_BY", "to": "outcome_claim:claim"},
+            {"from": "outcome_claim:claim", "relation": "SUPPORTED_BY", "to": f"observed_effect:{_digest(observed_effect)}"},
             {"from": "outcome_attestation:att", "relation": "ATTESTS", "to": "outcome_claim:claim"},
             {"from": "attestor_authority:attestor", "relation": "AUTHORIZES", "to": "outcome_attestation:att"},
         ],
@@ -145,10 +169,10 @@ class ProofProfileRegistryTests(unittest.TestCase):
 
     def test_mcp_profile_rejects_self_report_attestation(self):
         manifest, key = _manifest()
-        manifest["payload"]["nodes"][5]["data"]["payload"]["attestor_type"] = "EXECUTOR_SELF_REPORT"
-        manifest["payload"]["nodes"][6]["data"]["attestor_type"] = "EXECUTOR"
-        manifest["payload"]["nodes"][5]["sha256"] = _digest(manifest["payload"]["nodes"][5]["data"])
+        next(node for node in manifest["payload"]["nodes"] if node["type"] == "outcome_attestation")["data"]["payload"]["attestor_type"] = "EXECUTOR_SELF_REPORT"
+        manifest["payload"]["nodes"][7]["data"]["attestor_type"] = "EXECUTOR"
         manifest["payload"]["nodes"][6]["sha256"] = _digest(manifest["payload"]["nodes"][6]["data"])
+        manifest["payload"]["nodes"][7]["sha256"] = _digest(manifest["payload"]["nodes"][7]["data"])
         manifest = _resign(manifest, key)
         self.assertFalse(verify_manifest(manifest)["valid"])
 

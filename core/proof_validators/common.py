@@ -75,6 +75,47 @@ def validate_execution_enforcement_scope(
     return False, f"unsupported execution enforcement scope: {scope}"
 
 
+def validate_observed_effect_binding(
+    claim_data: dict[str, Any],
+    observed_effect: dict[str, Any],
+    *,
+    require_observation: bool = True,
+) -> tuple[bool, str]:
+    if not isinstance(observed_effect, dict) or not observed_effect:
+        if require_observation:
+            return False, "outcome claim requires a canonical observed-effect artifact"
+        return True, "observed effect is optional for this claim"
+    canonical_fields = {
+        key: observed_effect.get(key)
+        for key in (
+            "verifier_type", "evidence_kind", "effect_status", "authorization_id",
+            "action_sha256", "observed_at", "evidence_ref", "result_sha256", "observation",
+        )
+    }
+    expected_observation_sha256 = hashlib.sha256(
+        json.dumps(canonical_fields, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    if observed_effect.get("observation_sha256") != expected_observation_sha256:
+        return False, "observed effect fingerprint mismatch"
+    if claim_data.get("authorization_id") != observed_effect.get("authorization_id"):
+        return False, "observed effect is not bound to the outcome authorization"
+    if claim_data.get("action_sha256") != observed_effect.get("action_sha256"):
+        return False, "observed effect action fingerprint mismatch"
+    if claim_data.get("evidence_kind") != observed_effect.get("evidence_kind"):
+        return False, "observed effect evidence kind mismatch"
+    if claim_data.get("evidence_ref") != observed_effect.get("evidence_ref"):
+        return False, "observed effect evidence reference mismatch"
+    if claim_data.get("result_sha256") != observed_effect.get("result_sha256"):
+        return False, "observed effect result fingerprint mismatch"
+    if claim_data.get("observed_effect") != observed_effect:
+        return False, "outcome claim observed effect differs from canonical evidence"
+    if claim_data.get("observed_effect_sha256") != hashlib.sha256(
+        json.dumps(observed_effect, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest():
+        return False, "outcome claim observed-effect fingerprint mismatch"
+    return True, "observed effect is canonically bound to the outcome claim"
+
+
 def validate_external_state_execution_scope(
     execution_payload: dict[str, Any],
     execution_receipt_payload: dict[str, Any],

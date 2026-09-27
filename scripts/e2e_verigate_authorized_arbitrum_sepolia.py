@@ -96,7 +96,7 @@ external_state_requirements:
             svc=OutcomeAttestationService(st,pub)
             svc.register_attestor(attestor_id="live-arbitrum-chain-verifier",public_key_b64=atb64,attestor_type="CHAIN_VERIFIER")
             claim=build_outcome_claim(confirmed.as_dict(),status="SUCCEEDED",executor_id="verigate-evm-signer",
-                evidence_kind=observed.evidence_kind,evidence_ref=observed.evidence_ref,result_sha256=observed.result_sha256,
+                evidence_kind=observed.evidence_kind,evidence_ref=observed.evidence_ref,result_sha256=observed.result_sha256,observed_effect=observed.as_dict(),
                 observed_at=observed.observed_at,metadata={"chain_observation":observed.as_dict()})
             att=build_outcome_attestation(claim,attestor_id="live-arbitrum-chain-verifier",
                 attestor_type="CHAIN_VERIFIER",private_key=atpriv,attested_at=observed.observed_at)

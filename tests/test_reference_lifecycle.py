@@ -187,6 +187,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             evidence_kind=observed.evidence_kind,
             evidence_ref=observed.evidence_ref,
             result_sha256=observed.result_sha256,
+            observed_effect=observed.as_dict(),
         )
         attestation = build_outcome_attestation(
             claim,
@@ -234,7 +235,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             evidence_ref="mcp://orders.create/order-1",
         )
         attestor_key = self._attestor()
-        claim = build_outcome_claim(receipt.as_dict(), status="SUCCEEDED", executor_id="executor-reference", evidence_kind=observed.evidence_kind, evidence_ref=observed.evidence_ref, result_sha256=observed.result_sha256)
+        claim = build_outcome_claim(receipt.as_dict(), status="SUCCEEDED", executor_id="executor-reference", evidence_kind=observed.evidence_kind, evidence_ref=observed.evidence_ref, result_sha256=observed.result_sha256, observed_effect=observed.as_dict())
         attestation = build_outcome_attestation(claim, attestor_id="external-reference", attestor_type="EXTERNAL_VERIFIER", private_key=attestor_key)
         OutcomeAttestationService(self.storage, self.public_key).verify_and_record(attestation)
         snapshot = DynamicAuthorityService(self.storage).snapshot("reference-agent", "reference-capability").as_dict()
@@ -263,6 +264,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             evidence_kind=observed.evidence_kind,
             evidence_ref=observed.evidence_ref,
             result_sha256=observed.result_sha256,
+            observed_effect=observed.as_dict(),
         )
         attestation = build_outcome_attestation(
             claim,
@@ -294,6 +296,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             evidence_kind=observed.evidence_kind,
             evidence_ref=observed.evidence_ref,
             result_sha256=observed.result_sha256,
+            observed_effect=observed.as_dict(),
         )
         attestation = build_outcome_attestation(
             claim,

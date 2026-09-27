@@ -82,6 +82,7 @@ def build_outcome_claim(
     observed_at: float | None = None,
     metadata: dict[str, Any] | None = None,
     claim_id: str | None = None,
+    observed_effect: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if status not in OUTCOME_STATUSES:
         raise ValueError("invalid outcome status")
@@ -91,6 +92,21 @@ def build_outcome_claim(
         raise ValueError("executor_id and evidence_ref are required")
     if len(result_sha256) != 64:
         raise ValueError("result_sha256 must be a SHA-256 hex digest")
+    if observed_effect is not None:
+        if not isinstance(observed_effect, dict):
+            raise ValueError("observed_effect must be a serialized ObservedEffect")
+        if observed_effect.get("authorization_id") != execution_receipt["payload"]["authorization_id"]:
+            raise ValueError("observed effect authorization mismatch")
+        if observed_effect.get("action_sha256") != execution_receipt["payload"]["action_sha256"]:
+            raise ValueError("observed effect action fingerprint mismatch")
+        if observed_effect.get("evidence_kind") != evidence_kind:
+            raise ValueError("observed effect evidence kind mismatch")
+        if observed_effect.get("evidence_ref") != evidence_ref:
+            raise ValueError("observed effect evidence reference mismatch")
+        if observed_effect.get("result_sha256") != result_sha256:
+            raise ValueError("observed effect result fingerprint mismatch")
+        if len(str(observed_effect.get("observation_sha256", ""))) != 64:
+            raise ValueError("observed effect fingerprint is required")
     return {
         "outcome_claim_version": 1,
         "claim_id": claim_id or str(uuid.uuid4()),
@@ -104,6 +120,8 @@ def build_outcome_claim(
         "evidence_kind": evidence_kind,
         "evidence_ref": evidence_ref,
         "result_sha256": result_sha256,
+        "observed_effect": observed_effect,
+        "observed_effect_sha256": digest(observed_effect) if observed_effect is not None else None,
         "observed_at": time.time() if observed_at is None else observed_at,
         "metadata": metadata or {},
     }
@@ -333,6 +351,28 @@ class OutcomeAttestationService:
         attestation_type = "EXECUTOR_SELF_REPORT" if (
             registered_attestor["attestor_type"] == "EXECUTOR"
         ) else registered_attestor["attestor_type"]
+        observed_effect = claim.get("observed_effect")
+        if observed_effect is not None:
+            canonical_fields = {
+                key: observed_effect.get(key)
+                for key in (
+                    "verifier_type", "evidence_kind", "effect_status", "authorization_id",
+                    "action_sha256", "observed_at", "evidence_ref", "result_sha256", "observation",
+                )
+            }
+            expected_observation_sha256 = digest(canonical_fields)
+            if observed_effect.get("observation_sha256") != expected_observation_sha256:
+                raise ValueError("observed effect fingerprint mismatch")
+            if claim.get("observed_effect_sha256") != digest(observed_effect):
+                raise ValueError("outcome claim observed-effect fingerprint mismatch")
+            if observed_effect.get("authorization_id") != claim["authorization_id"]:
+                raise ValueError("observed effect authorization mismatch")
+            if observed_effect.get("action_sha256") != claim["action_sha256"]:
+                raise ValueError("observed effect action mismatch")
+            if observed_effect.get("evidence_kind") != claim["evidence_kind"] or observed_effect.get("evidence_ref") != claim["evidence_ref"]:
+                raise ValueError("observed effect evidence binding mismatch")
+            if observed_effect.get("result_sha256") != claim["result_sha256"]:
+                raise ValueError("observed effect result binding mismatch")
         if attestation_type == "EXECUTOR_SELF_REPORT":
             if claim["executor_id"] != registered_attestor["attestor_id"]:
                 raise ValueError("executor self-report identity mismatch")

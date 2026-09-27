@@ -7,6 +7,7 @@ from .common import (
     validate_context_binding,
     validate_execution_enforcement_scope,
     validate_external_state_execution_scope,
+    validate_observed_effect_binding,
 )
 
 def validate(payload: dict[str, Any], profile: str = "mcp_execution") -> tuple[bool, str]:
@@ -22,6 +23,7 @@ def validate(payload: dict[str, Any], profile: str = "mcp_execution") -> tuple[b
     execution = required["execution_authorization"]
     receipt = required["execution_receipt"]
     claim = required["outcome_claim"]
+    observed_effect = required["observed_effect"]
     attestation = required["outcome_attestation"]
     attestor = required["attestor_authority"]
 
@@ -88,6 +90,15 @@ def validate(payload: dict[str, Any], profile: str = "mcp_execution") -> tuple[b
         return False, "MCP execution proof requires MCP_RESULT evidence"
     if not claim_data.get("evidence_ref") or not claim_data.get("result_sha256"):
         return False, "MCP execution proof requires MCP evidence reference and result digest"
+    observed_ok, observed_reason = validate_observed_effect_binding(
+        claim_data,
+        observed_effect["data"],
+        require_observation=True,
+    )
+    if not observed_ok:
+        return False, observed_reason
+    if observed_effect["id"] != claim_data.get("observed_effect_sha256"):
+        return False, "MCP observed-effect node is not bound to the claim fingerprint"
 
     attestation_payload = attestation["data"].get("payload", {})
     if attestation_payload.get("attestor_id") != attestor["id"]:

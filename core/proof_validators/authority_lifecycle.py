@@ -8,6 +8,7 @@ from .common import (
     validate_context_binding,
     validate_execution_enforcement_scope,
     validate_external_state_execution_scope,
+    validate_observed_effect_binding,
 )
 
 def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> tuple[bool, str]:
@@ -43,6 +44,7 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
     execution = required["execution_authorization"]
     receipt = required["execution_receipt"]
     claim = required["outcome_claim"]
+    observed_effect = required["observed_effect"]
     attestation = required["outcome_attestation"]
     identity = required["identity"]
     capability = required["capability"]
@@ -151,6 +153,15 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         return False, "outcome claim is not bound to manifest agent_id"
     if claim_data.get("execution_receipt_sha256") != digest(receipt["data"]):
         return False, "outcome claim is not bound to the execution receipt"
+    observed_ok, observed_reason = validate_observed_effect_binding(
+        claim_data,
+        observed_effect["data"],
+        require_observation=True,
+    )
+    if not observed_ok:
+        return False, observed_reason
+    if observed_effect["id"] != claim_data.get("observed_effect_sha256"):
+        return False, "observed-effect node is not bound to the claim fingerprint"
 
     attestation_payload = attestation["data"].get("payload", {})
     attested_claim = attestation_payload.get("claim", {})
@@ -185,6 +196,7 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         ("genesis_authority", genesis["id"], "JUSTIFIES", "execution_authorization", execution["id"]),
         ("execution_authorization", execution["id"], "PRODUCES", "execution_receipt", receipt["id"]),
         ("execution_receipt", receipt["id"], "OBSERVED_BY", "outcome_claim", claim["id"]),
+        ("outcome_claim", claim["id"], "SUPPORTED_BY", "observed_effect", observed_effect["id"]),
         ("outcome_attestation", attestation["id"], "ATTESTS", "outcome_claim", claim["id"]),
         ("attestor_authority", attestor["id"], "AUTHORIZES", "outcome_attestation", attestation["id"]),
         ("outcome_claim", claim["id"], "INFORMS", "authority_event", authority_event["id"]),
