@@ -11,15 +11,23 @@ from enforcement.router import ExecutionRouter
 from enforcement.networks import NetworkRegistry
 
 class Adapter:
-    def execute(self, authorization, side_effect): return side_effect(authorization["payload"]["action"])
+    def validate(self, authorization): return True, "validated"
+    def execute_after_consume(self, authorization, side_effect): return side_effect(authorization["payload"]["action"])
+    def execute(self, authorization, side_effect):
+        self.consume(authorization)
+        return self.execute_after_consume(authorization, side_effect)
     def consume(self, authorization): return True, "ok"
 
 class BoundAdapter(Adapter):
-    def execute_bound(self, authorization, external_state, side_effect):
-        # Test adapter models an execution backend that atomically consumes the
-        # state precondition together with the side effect.
+    def execute_bound_after_consume(self, authorization, external_state, side_effect):
+        # Test adapter models an execution backend that atomically binds the
+        # state precondition before the side effect.
         assert external_state == authorization["payload"]["external_state"]
         return side_effect(authorization["payload"]["action"])
+
+    def execute_bound(self, authorization, external_state, side_effect):
+        self.consume(authorization)
+        return self.execute_bound_after_consume(authorization, external_state, side_effect)
 
 class ExternalStateTest(unittest.TestCase):
     def setUp(self):

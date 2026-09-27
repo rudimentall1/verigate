@@ -22,6 +22,19 @@ class ExecutionGate(ExecutionAdapter):
         self.storage = storage
         self.public_key = public_key
 
+    def validate(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+        """Verify prerequisites without consuming the authorization."""
+        ok, reason = verify_execution_authorization(
+            authorization,
+            self.public_key,
+        )
+        if not ok:
+            return False, reason
+        payload = authorization["payload"]
+        if int(payload["issued_at"]) > int(time.time()):
+            return False, "execution authorization is not active yet"
+        return True, "execution authorization validated"
+
     def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         """Verify and consume an authorization exactly once.
 
@@ -29,18 +42,11 @@ class ExecutionGate(ExecutionAdapter):
         execute after it returns (True, ...). Nonce consumption is persistent
         and protected by a UNIQUE database constraint.
         """
-        ok, reason = verify_execution_authorization(
-            authorization,
-            self.public_key,
-        )
+        ok, reason = self.validate(authorization)
         if not ok:
             return False, reason
 
         payload = authorization["payload"]
-        action = payload["action"]
-        if int(payload["issued_at"]) > int(time.time()):
-            return False, "execution authorization is not active yet"
-
         consumed = self.storage.consume_execution_nonce(
             nonce=payload["nonce"],
             authorization_id=payload["authorization_id"],
@@ -51,6 +57,14 @@ class ExecutionGate(ExecutionAdapter):
             return False, "execution authorization already consumed"
 
         return True, "execution authorization consumed"
+
+    def execute_after_consume(
+        self,
+        authorization: dict[str, Any],
+        side_effect: Callable[[dict[str, Any]], Any],
+    ) -> Any:
+        """Invoke exactly one side effect after router-side consumption."""
+        return side_effect(authorization["payload"]["action"])
 
     def execute(
         self,
@@ -65,4 +79,24 @@ class ExecutionGate(ExecutionAdapter):
         ok, reason = self.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return side_effect(authorization["payload"]["action"])
+        return self.execute_after_consume(authorization, side_effect)
+
+    def execute_bound_after_consume(
+        self,
+        authorization: dict[str, Any],
+        external_state: dict[str, Any],
+        side_effect: Callable[[dict[str, Any]], Any],
+    ) -> Any:
+        """Default atomic contract: subclasses may require stronger binding."""
+        return self.execute_after_consume(authorization, side_effect)
+
+    def execute_bound(
+        self,
+        authorization: dict[str, Any],
+        external_state: dict[str, Any],
+        side_effect: Callable[[dict[str, Any]], Any],
+    ) -> Any:
+        ok, reason = self.consume(authorization)
+        if not ok:
+            raise PermissionError(reason)
+        return self.execute_bound_after_consume(authorization, external_state, side_effect)

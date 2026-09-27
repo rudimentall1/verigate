@@ -197,33 +197,67 @@ class ExecutionRouter:
         if not ok:
             raise ValueError(reason)
 
+    def _validate_adapter(self, adapter: ExecutionAdapter, authorization: dict[str, Any]) -> None:
+        validate = getattr(adapter, "validate", None)
+        if not callable(validate):
+            raise ValueError("execution adapter lacks the validation contract")
+        ok, reason = validate(authorization)
+        if not ok:
+            raise ValueError(reason)
+
+    def _consume_authorization_once(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+        payload = authorization["payload"]
+        consumed = self.storage.consume_execution_nonce(
+            nonce=payload["nonce"],
+            authorization_id=payload["authorization_id"],
+            intent_id=payload["intent_id"],
+            agent_id=payload["agent_id"],
+        )
+        if not consumed:
+            return False, "execution authorization already consumed"
+        return True, "execution authorization consumed"
+
     def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         try:
-            # The router is itself an execution boundary. Do not trust a
-            # protocol adapter (including custom generic adapters) to perform
-            # cryptographic verification on our behalf.
+            # The router owns the one-time execution capability. Adapters may
+            # validate their own execution prerequisites but cannot forge nonce
+            # consumption by returning a synthetic success value.
             self._verify_authorization(authorization)
             adapter = self._adapter(authorization)
+            self._validate_adapter(adapter, authorization)
             self._verify_execution_path(authorization, adapter)
             self._verify_external_state(authorization)
-            return adapter.consume(authorization)
+            return self._consume_authorization_once(authorization)
         except (KeyError, TypeError, ValueError, UnsupportedNetworkError) as exc:
             return False, str(exc)
 
     def execute(self, authorization: dict[str, Any], broadcaster: Callable[[dict[str, Any]], Any]) -> Any:
         self._verify_authorization(authorization)
         adapter = self._adapter(authorization)
+        self._validate_adapter(adapter, authorization)
         self._verify_execution_path(authorization, adapter)
         state_required = bool(authorization["payload"].get("external_state_required"))
         external_state = self._verify_external_state(authorization)
         if state_required and external_state:
-            bound = getattr(adapter, "execute_bound", None)
+            bound = getattr(adapter, "execute_bound_after_consume", None)
             if not callable(bound):
                 raise ValueError(
                     "atomic external state enforcement is required for this authorization"
                 )
+        else:
+            bound = None
+            execute_after_consume = getattr(adapter, "execute_after_consume", None)
+            if not callable(execute_after_consume):
+                raise ValueError(
+                    "execution adapter lacks the router-side consumption contract"
+                )
+
+        ok, reason = self._consume_authorization_once(authorization)
+        if not ok:
+            raise PermissionError(reason)
+        if bound is not None:
             return bound(authorization, external_state, broadcaster)
-        return adapter.execute(authorization, broadcaster)
+        return execute_after_consume(authorization, broadcaster)
 
 
     @staticmethod

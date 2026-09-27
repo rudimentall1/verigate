@@ -109,6 +109,8 @@ Verigate deliberately distinguishes **execution-path binding** from **executor c
 
 A handler fingerprint prevents silent substitution of the registered executable component. It does **not** make arbitrary code inside that component safe: a trusted handler can still spawn a subprocess, invoke a Git hook, call another tool, or create a secondary side effect.
 
+The router also owns one-time authorization consumption. Adapters expose a `validate()` contract for execution-specific checks, but a generic adapter cannot make an authorization appear consumed by returning `True`: the router persists the nonce consumption itself before calling `execute_after_consume()` (or the atomic-state variant). Direct adapter calls retain their own `consume()` path for standalone use.
+
 Therefore execution graphs carry an `enforcement_scope`:
 
 - `direct` — the adapter/handler and signed action are bound and checked before the side effect.

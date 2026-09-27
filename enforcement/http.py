@@ -46,9 +46,15 @@ class HTTPExecutionAdapter(ExecutionGate):
         request = self._request(authorization)
         return self.execute(authorization, lambda _action: transport(request))
 
-    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+    def validate(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         try:
             self._request(authorization)
         except (KeyError, TypeError, ValueError) as exc:
             return False, str(exc)
+        return super().validate(authorization)
+
+    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+        ok, reason = self.validate(authorization)
+        if not ok:
+            return False, reason
         return super().consume(authorization)

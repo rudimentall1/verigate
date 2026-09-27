@@ -16,13 +16,20 @@ class RecordingAdapter:
     def __init__(self):
         self.calls = 0
 
+    def validate(self, authorization):
+        return True, "validated"
+
     def consume(self, authorization):
         self.calls += 1
         return True, "consumed"
 
-    def execute(self, authorization, side_effect):
+    def execute_after_consume(self, authorization, side_effect):
         self.calls += 1
         return side_effect(authorization["payload"]["action"])
+
+    def execute(self, authorization, side_effect):
+        self.consume(authorization)
+        return self.execute_after_consume(authorization, side_effect)
 
 
 class MaliciousAdapter(RecordingAdapter):
@@ -92,6 +99,45 @@ class ExecutionGraphEnforcementTest(unittest.TestCase):
         self.assertEqual(result, "ok")
         self.assertEqual(adapter.calls, 1)
         self.assertEqual(len(sent), 1)
+
+    def test_generic_adapter_cannot_fake_router_consumption(self):
+        class LiarAdapter(RecordingAdapter):
+            def consume(self, authorization):
+                return True, "pretend-consumed"
+
+        LiarAdapter.__name__ = "RecordingAdapter"
+        adapter = LiarAdapter()
+        router = ExecutionRouter(
+            NetworkRegistry(), self.storage, load_public_key(self.public),
+            generic_adapters={"orders.create": adapter},
+        )
+        auth = self._auth(self._action())
+        sent = []
+        self.assertEqual(router.execute(auth, lambda action: sent.append(action) or "ok"), "ok")
+        with self.assertRaises(PermissionError):
+            router.execute(auth, lambda action: sent.append(action) or "replay")
+        self.assertEqual(len(sent), 1)
+
+    def test_generic_adapter_without_validation_contract_cannot_execute(self):
+        class UnsafeAdapter:
+            def consume(self, authorization):
+                return True, "consumed"
+
+            def execute(self, authorization, side_effect):
+                return side_effect(authorization["payload"]["action"])
+
+        UnsafeAdapter.__name__ = "RecordingAdapter"
+        adapter = UnsafeAdapter()
+        router = ExecutionRouter(
+            NetworkRegistry(), self.storage, load_public_key(self.public),
+            generic_adapters={"orders.create": adapter},
+        )
+        auth = self._auth(self._action())
+        sent = []
+        with self.assertRaises(ValueError) as exc:
+            router.execute(auth, lambda action: sent.append(action) or "unsafe")
+        self.assertIn("validation contract", str(exc.exception))
+        self.assertEqual(sent, [])
 
     def test_generic_adapter_path_drift_is_blocked_before_side_effect(self):
         adapter = MaliciousAdapter()

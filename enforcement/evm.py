@@ -58,12 +58,18 @@ class EVMExecutionAdapter(ExecutionAdapter):
             result["signed_raw_transaction"] = signed_raw_transaction
         return result
 
-    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+    def validate(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         action = authorization["payload"]["action"]
         try:
             self._transaction(action)
         except (KeyError, TypeError, ValueError) as exc:
             return False, str(exc)
+        return self.gate.validate(authorization)
+
+    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+        ok, reason = self.validate(authorization)
+        if not ok:
+            return False, reason
         return self.gate.consume(authorization)
 
     @staticmethod
@@ -97,7 +103,7 @@ class EVMExecutionAdapter(ExecutionAdapter):
             raise ValueError("EVM transaction calldata does not match atomic guard commitment")
         return binding
 
-    def execute_bound(
+    def execute_bound_after_consume(
         self,
         authorization: dict[str, Any],
         external_state: dict[str, Any],
@@ -108,9 +114,25 @@ class EVMExecutionAdapter(ExecutionAdapter):
             raise ValueError("atomic EVM enforcement requires evm.state")
         self._atomic_guard_binding(authorization, external_state)
         tx = self._transaction(authorization["payload"]["action"])
+        return broadcaster(tx)
+
+    def execute_bound(
+        self,
+        authorization: dict[str, Any],
+        external_state: dict[str, Any],
+        broadcaster: Callable[[dict[str, Any]], Any],
+    ) -> Any:
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
+        return self.execute_bound_after_consume(authorization, external_state, broadcaster)
+
+    def execute_after_consume(
+        self,
+        authorization: dict[str, Any],
+        broadcaster: Callable[[dict[str, Any]], Any],
+    ) -> Any:
+        tx = self._transaction(authorization["payload"]["action"])
         return broadcaster(tx)
 
     def execute(
@@ -118,9 +140,7 @@ class EVMExecutionAdapter(ExecutionAdapter):
         authorization: dict[str, Any],
         broadcaster: Callable[[dict[str, Any]], Any],
     ) -> Any:
-        action = authorization["payload"]["action"]
-        tx = self._transaction(action)
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return broadcaster(tx)
+        return self.execute_after_consume(authorization, broadcaster)

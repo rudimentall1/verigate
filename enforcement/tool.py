@@ -50,7 +50,7 @@ class ToolExecutionAdapter(ExecutionGate):
             raise ValueError("tool action has no target")
         return target
 
-    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+    def validate(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         try:
             tool = self._tool_name(authorization)
         except (KeyError, TypeError, ValueError) as exc:
@@ -65,6 +65,12 @@ class ToolExecutionAdapter(ExecutionGate):
             actual = _handler_fingerprint(handler)
             if graph["handler_sha256"] != actual:
                 return False, "execution handler drift"
+        return super().validate(authorization)
+
+    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+        ok, reason = self.validate(authorization)
+        if not ok:
+            return False, reason
         return super().consume(authorization)
 
     def execute_registered(self, authorization: dict[str, Any]) -> Any:
