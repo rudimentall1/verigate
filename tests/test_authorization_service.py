@@ -1,12 +1,18 @@
 import tempfile
+import base64
+import hashlib
 import time
 import unittest
 from pathlib import Path
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
+
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import verify_execution_authorization, verify_receipt
 from core.authorization import AuthorizationService
-from core.models import ActionIntent, Capability, Decision, GuardrailDecision
+from core.models import ActionIntent, AgentIdentity, Capability, Decision, GuardrailDecision
+from core.identity import IdentityRegistry
 from core.authority_state import DynamicAuthorityService
 from core.authority_intent_graph import AuthorityAwareIntentGraph, PlanAuthorityStatus
 from core.authority_protocol import Authority, AuthorityState
@@ -441,6 +447,68 @@ class AuthorizationServiceTest(unittest.TestCase):
                 capability=capability,
             )
 
+
+    def test_revoked_identity_cannot_mint_new_authorization_from_stale_object(self):
+        from core.capabilities import CapabilityRegistry
+
+        action = self._action()
+        identity_private = Ed25519PrivateKey.generate()
+        raw = identity_private.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        identity = AgentIdentity(
+            agent_id=action.agent_id,
+            public_key_b64=base64.b64encode(raw).decode("ascii"),
+            key_id=hashlib.sha256(raw).hexdigest(),
+        )
+        capability = Capability(
+            capability_id="cap-identity-revocation",
+            agent_id=action.agent_id,
+            identity_id=identity.key_id,
+            allowed_actions=("evm.transaction",),
+            allowed_targets=(action.target,),
+        )
+        storage = Storage(Path(self.tmpdir.name) / "identity-revocation.db")
+        identity_registry = IdentityRegistry(storage)
+        capability_registry = CapabilityRegistry(storage)
+        identity_registry.register(identity)
+        capability_registry.register(capability)
+        authority = DynamicAuthorityService(storage).snapshot(
+            action.agent_id, capability.capability_id
+        )
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+
+        artifacts = AuthorizationService().issue(
+            action,
+            decision,
+            Policy().digest,
+            load_private_key(self.priv),
+            capability=capability,
+            capability_registry=capability_registry,
+            identity=identity,
+            identity_registry=identity_registry,
+            authority=authority,
+            authority_policy=DynamicAuthorityService(storage).policy,
+            policy=Policy(),
+        )
+        self.assertIsNotNone(artifacts["execution_authorization"])
+
+        self.assertTrue(identity_registry.revoke(identity.key_id))
+        with self.assertRaisesRegex(PermissionError, "identity is not active"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                Policy().digest,
+                load_private_key(self.priv),
+                capability=capability,
+                identity=identity,
+                identity_registry=identity_registry,
+                authority=authority,
+                authority_policy=DynamicAuthorityService(storage).policy,
+                policy=Policy(),
+            )
+        storage.close()
 
     def test_direct_registry_registration_cannot_bypass_delegation_validation(self):
         from core.capabilities import CapabilityRegistry

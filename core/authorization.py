@@ -11,6 +11,7 @@ from typing import Any
 
 from .models import ActionIntent, AgentIdentity, Capability, Decision, GuardrailDecision
 from .capabilities import CapabilityRegistry
+from .identity import IdentityRegistry
 from .authority_state import AuthoritySnapshot
 from .effective_authority import effective_authority
 from .policy import Policy
@@ -63,6 +64,7 @@ class AuthorizationService:
         capability: Capability | None = None,
         capability_registry: CapabilityRegistry | None = None,
         identity: AgentIdentity | None = None,
+        identity_registry: IdentityRegistry | None = None,
         authority: AuthoritySnapshot | None = None,
         authority_policy: Any | None = None,
         policy: Policy | None = None,
@@ -142,6 +144,13 @@ class AuthorizationService:
                 raise PermissionError("identity expires before execution authorization can be issued")
             if ttl_seconds > remaining:
                 raise PermissionError("execution authorization ttl exceeds identity expiry")
+        if decision.decision == Decision.ALLOW and identity is not None:
+            if identity_registry is None:
+                raise PermissionError("executable identity binding requires registry-backed verification")
+            resolved_identity = identity_registry.resolve(identity.key_id)
+            if resolved_identity.digest != identity.digest:
+                raise PermissionError("supplied identity does not match registered identity")
+            identity = resolved_identity
         if capability is not None and capability.identity_id is not None:
             if identity is None or capability.identity_id != identity.key_id:
                 raise PermissionError("capability identity mismatch")

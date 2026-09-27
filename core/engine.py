@@ -340,6 +340,7 @@ class GuardrailEngine:
             capability=capability,
             capability_registry=CapabilityRegistry(self.storage),
             identity=identity,
+            identity_registry=IdentityRegistry(self.storage),
             authority=authority,
             authority_policy=self.authority_service.policy if authority is not None else None,
             policy=self.policy if capability is not None else None,
