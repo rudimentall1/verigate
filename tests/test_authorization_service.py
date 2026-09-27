@@ -58,6 +58,18 @@ class AuthorizationServiceTest(unittest.TestCase):
         )
         self.assertIsNone(artifacts["execution_authorization"])
 
+    def test_execution_authorization_nonce_is_bound_to_intent(self):
+        action = self._action()
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+        with self.assertRaisesRegex(PermissionError, "nonce must equal intent_id"):
+            AuthorizationService().issue(
+                action,
+                decision,
+                Policy().digest,
+                load_private_key(self.priv),
+                nonce="different-intent-nonce",
+            )
+
     def test_execution_authorization_ttl_has_hard_ceiling(self):
         action = self._action()
         decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
@@ -653,7 +665,19 @@ class TestConstraintBinding(unittest.TestCase):
         action = ActionIntent(agent_id="agent", action_type="api.request", target="orders", constraints={"max_amount": 10})
         decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
         receipt = sign_receipt(action, decision, "a" * 64, key)
-        auth = issue_execution_authorization(receipt, key, nonce="n")
+        auth = issue_execution_authorization(receipt, key, nonce=action.intent_id)
         self.assertIn("constraints_sha256", auth.payload)
         tampered = dict(auth.payload); tampered["action"] = dict(tampered["action"]); tampered["action"]["constraints"] = {"max_amount": 100}
         self.assertFalse(verify_execution_authorization({"payload": tampered, "signature": auth.signature, "algorithm": auth.algorithm}, key.public_key())[0])
+
+    def test_raw_execution_authorization_nonce_is_bound_to_intent(self):
+        from attest.receipt import issue_execution_authorization, sign_receipt
+        from core.models import ActionIntent, Decision, GuardrailDecision
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        key = Ed25519PrivateKey.generate()
+        action = ActionIntent(agent_id="agent", action_type="api.request", target="orders")
+        decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, ())
+        receipt = sign_receipt(action, decision, "a" * 64, key)
+        with self.assertRaisesRegex(PermissionError, "nonce must equal intent_id"):
+            issue_execution_authorization(receipt, key, nonce="different-nonce")

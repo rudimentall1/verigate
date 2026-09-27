@@ -40,7 +40,7 @@ class OfflineVerifierTests(unittest.TestCase):
         head=hashlib.sha256(canonical(event)).hexdigest()
         state={"state":"STANDARD","ledger_head_hash":head}
         state_hash=hashlib.sha256(canonical(state)).hexdigest()
-        auth=issue_execution_authorization(receipt,key,nonce="n1",capability_id="cap-1",capability_sha256="c"*64,
+        auth=issue_execution_authorization(receipt,key,nonce=intent.intent_id,capability_id="cap-1",capability_sha256="c"*64,
             authority_state=state,authority_state_sha256=state_hash,authority_multiplier=1.0,
             effective_authority={"action_type":["data.write"],"target":["db:item"]}, execution_graph={"module":"test","hook":"test","router":"test","target":"db:item"},
             authority_ledger_head_hash=head).as_dict()

@@ -82,6 +82,10 @@ class AuthorizationService:
         if ttl_seconds > MAX_EXECUTION_AUTHORIZATION_TTL_SECONDS:
             raise PermissionError("execution authorization ttl exceeds maximum")
 
+        execution_nonce = action.intent_id if nonce is None else nonce
+        if execution_nonce != action.intent_id:
+            raise PermissionError("execution authorization nonce must equal intent_id")
+
         # The policy object is an input to effective-authority calculation, so
         # it must be the exact policy named by the decision receipt. Otherwise
         # a low-level caller could claim digest X while using policy Y to mint
@@ -195,7 +199,7 @@ class AuthorizationService:
             execution = issue_execution_authorization(
                 receipt,
                 private_key,
-                nonce=nonce or action.intent_id,
+                nonce=execution_nonce,
                 ttl_seconds=ttl_seconds,
                 capability_id=capability.capability_id if capability else None,
                 capability_version=capability.version if capability else None,

@@ -123,6 +123,9 @@ def issue_execution_authorization(
 ) -> ExecutionAuthorization:
     if receipt.payload["decision"]["decision"] != Decision.ALLOW.value:
         raise PermissionError("execution authorization requires ALLOW")
+    expected_nonce = receipt.payload["intent"]["intent_id"]
+    if nonce != expected_nonce:
+        raise PermissionError("execution authorization nonce must equal intent_id")
     now = int(time.time())
     payload = {
         "authorization_version": 1,
