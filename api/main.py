@@ -39,6 +39,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from api.auth import ApiKeyMiddleware
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
 from attest.verify import verify_attestation
@@ -130,6 +131,8 @@ app = FastAPI(
     description="Agent Authority Control Plane for autonomous agents: identity, capability, governance, authorization, execution and evidence.",
     version="0.1.0",
 )
+
+app.add_middleware(ApiKeyMiddleware)
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 app.mount("/demo", StaticFiles(directory=UI_DIR, html=True), name="demo-ui")
