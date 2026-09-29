@@ -17,6 +17,7 @@ import hashlib
 import json
 import sqlite3
 import threading
+from decimal import Decimal
 import time
 import uuid
 from contextlib import contextmanager
@@ -494,17 +495,21 @@ class Storage:
         since = time.time() - 24 * 3600
 
         with self._lock:
-            row = self._conn.execute(
-                "SELECT COALESCE(SUM(amount), 0) "
+            rows = self._conn.execute(
+                "SELECT amount "
                 "FROM audit_log "
                 "WHERE agent_id = ? "
                 "AND asset = ? "
                 "AND created_at >= ? "
                 "AND decision != 'BLOCK'",
                 (agent_id, asset, since),
-            ).fetchone()
+            ).fetchall()
 
-            return float(row[0] or 0.0)
+        # Sum in Decimal, not SQL SUM(REAL): float accumulation drifts by
+        # fractions of a cent and the drift decides cap outcomes.
+        from .money import to_decimal
+
+        return float(sum((to_decimal(r[0]) for r in rows if r[0] is not None), Decimal(0)))
 
     def calls_last_minute(self, agent_id: str) -> int:
         """Return all recorded payment attempts in the last 60 seconds."""

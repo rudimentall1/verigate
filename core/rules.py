@@ -1,10 +1,11 @@
 """Deterministic rule evaluators. Every check here is something you can
-verify by reading the policy file — no statistical scores, no "reputation"
+verify by reading the policy file -- no statistical scores, no "reputation"
 numbers pulled from an unverifiable data source.
 """
 from __future__ import annotations
 
 from .models import ActionIntent, PaymentIntent, RuleMatch, Severity
+from .money import exceeds, is_valid_amount, total
 from .policy import Policy
 
 
@@ -192,8 +193,14 @@ def check_generic_asset_allowed(intent: ActionIntent, policy: Policy) -> RuleMat
 def check_generic_amount_cap(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
     if intent.amount is None or intent.asset is None:
         return None
+    if not is_valid_amount(intent.amount):
+        return RuleMatch(
+            "invalid_amount",
+            Severity.BLOCK,
+            f"amount {intent.amount!r} is not a finite non-negative number",
+        )
     cap = policy.per_tx_cap.get(intent.asset.upper())
-    if cap is not None and intent.amount > cap:
+    if cap is not None and exceeds(intent.amount, cap):
         return RuleMatch(
             "per_tx_cap_exceeded",
             Severity.BLOCK,
@@ -245,8 +252,14 @@ def check_asset_allowed(intent: PaymentIntent, policy: Policy) -> RuleMatch | No
 
 
 def check_per_tx_cap(intent: PaymentIntent, policy: Policy) -> RuleMatch | None:
+    if not is_valid_amount(intent.amount):
+        return RuleMatch(
+            "invalid_amount",
+            Severity.BLOCK,
+            f"amount {intent.amount!r} is not a finite non-negative number",
+        )
     cap = policy.per_tx_cap.get(intent.asset.upper())
-    if cap is not None and intent.amount > cap:
+    if cap is not None and exceeds(intent.amount, cap):
         return RuleMatch(
             "per_tx_cap_exceeded",
             Severity.BLOCK,
@@ -261,7 +274,7 @@ def check_new_payee_cap(
     if payee_seen_before:
         return None
     cap = policy.new_payee_cap.get(intent.asset.upper())
-    if cap is not None and intent.amount > cap:
+    if cap is not None and exceeds(intent.amount, cap):
         return RuleMatch(
             "new_payee_cap_exceeded",
             Severity.WARN,
@@ -275,11 +288,15 @@ def check_daily_cap(
     intent: PaymentIntent, policy: Policy, spent_today: float
 ) -> RuleMatch | None:
     cap = policy.daily_cap.get(intent.asset.upper())
-    if cap is not None and (spent_today + intent.amount) > cap:
+    if cap is not None and (
+        not is_valid_amount(intent.amount)
+        or not is_valid_amount(spent_today)
+        or total(spent_today, intent.amount) > total(cap)
+    ):
         return RuleMatch(
             "daily_cap_exceeded",
             Severity.WARN,
-            f"would bring today's total to {spent_today + intent.amount:.2f} {intent.asset}, "
+            f"would bring today's total to {total(spent_today, intent.amount):.2f} {intent.asset}, "
             f"exceeding daily cap {cap}",
         )
     return None
@@ -287,7 +304,7 @@ def check_daily_cap(
 
 def check_confirmation_threshold(intent: PaymentIntent, policy: Policy) -> RuleMatch | None:
     threshold = policy.confirmation_required_over.get(intent.asset.upper())
-    if threshold is not None and intent.amount > threshold:
+    if threshold is not None and exceeds(intent.amount, threshold):
         return RuleMatch(
             "confirmation_required",
             Severity.WARN,
