@@ -40,6 +40,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.auth import ApiKeyMiddleware
+from api.tenancy import TenantMiddleware, issuer_private_key, issuer_public_key
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
 from attest.verify import verify_attestation
@@ -133,6 +134,7 @@ app = FastAPI(
 )
 
 app.add_middleware(ApiKeyMiddleware)
+app.add_middleware(TenantMiddleware)
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 app.mount("/demo", StaticFiles(directory=UI_DIR, html=True), name="demo-ui")
@@ -182,7 +184,7 @@ def _load_outcome_attestors() -> None:
         raise ValueError("VERIGATE_OUTCOME_ATTESTORS must be a JSON array")
     service = OutcomeAttestationService(
         _storage,
-        load_public_key(PUBLIC_KEY_PATH),
+        issuer_public_key(PUBLIC_KEY_PATH),
     )
     for item in data:
         if not isinstance(item, dict):
@@ -295,7 +297,15 @@ def demo_live() -> dict:
 
 @app.get("/v1/public-key", response_class=PlainTextResponse)
 def public_key() -> str:
-    return Path(PUBLIC_KEY_PATH).read_text()
+    # Not Path(PUBLIC_KEY_PATH).read_text(): that would always return the
+    # default tenant's key, ignoring X-Verigate-Tenant, even though signing
+    # already resolves per tenant via issuer_private_key().
+    from cryptography.hazmat.primitives import serialization
+    pem = issuer_public_key(PUBLIC_KEY_PATH).public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return pem.decode("ascii")
 
 
 @app.get("/v1/governance/public-key", response_class=PlainTextResponse)
@@ -307,7 +317,7 @@ def _decide_and_maybe_sign(intent: PaymentIntent, sign: bool) -> dict:
     assert _engine is not None and _storage is not None
     decision = _engine.evaluate(intent)
     if sign:
-        priv = load_private_key(PRIVATE_KEY_PATH)
+        priv = issuer_private_key(PRIVATE_KEY_PATH)
         attestation = sign_decision(decision, priv)
         _storage.update_signature(intent.intent_id, attestation.signature_b64)
         return attestation.as_dict()
@@ -340,7 +350,7 @@ def authorize(req: PaymentIntentRequest) -> dict:
         agent_id=req.agent_id, payee=req.payee, asset=req.asset, network=req.network,
         amount=req.amount, resource=req.resource,
     )
-    return _engine.authorize(intent, load_private_key(PRIVATE_KEY_PATH))
+    return _engine.authorize(intent, issuer_private_key(PRIVATE_KEY_PATH))
 
 
 @app.post("/v1/authorize/capability", response_model=AuthorizationResponse)
@@ -354,7 +364,7 @@ def authorize_with_capability(req: CapabilityAuthorizationRequest) -> dict:
         return _engine.authorize_with_capability(
             intent,
             req.capability_id,
-            load_private_key(PRIVATE_KEY_PATH),
+            issuer_private_key(PRIVATE_KEY_PATH),
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -382,7 +392,7 @@ def authorize_with_identity(req: IdentityAuthorizationRequest) -> dict:
             req.capability_id,
             req.identity_id,
             req.agent_signature,
-            load_private_key(PRIVATE_KEY_PATH),
+            issuer_private_key(PRIVATE_KEY_PATH),
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -417,7 +427,7 @@ def authorize_action(req: ActionAuthorizationRequest) -> dict:
             req.capability_id,
             req.identity_id,
             req.agent_signature,
-            load_private_key(PRIVATE_KEY_PATH),
+            issuer_private_key(PRIVATE_KEY_PATH),
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -435,7 +445,7 @@ def authorize_x402(req: X402HeaderRequest) -> dict:
         intent = offer_to_intent(offers[0], agent_id=req.agent_id)
     except X402ParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _engine.authorize(intent, load_private_key(PRIVATE_KEY_PATH))
+    return _engine.authorize(intent, issuer_private_key(PRIVATE_KEY_PATH))
 
 
 @app.post("/v1/execution/consume", response_model=ExecutionConsumeResponse)
@@ -445,7 +455,7 @@ def consume_execution(req: ExecutionConsumeRequest) -> dict:
     router = ExecutionRouter(
         NetworkRegistry(),
         _storage,
-        load_public_key(PUBLIC_KEY_PATH),
+        issuer_public_key(PUBLIC_KEY_PATH),
     )
     ok, reason = router.consume(req.authorization.model_dump())
     return {"execute": ok, "reason": reason}
@@ -496,7 +506,7 @@ def attest_outcome(req: OutcomeAttestationRequest) -> dict:
     try:
         return OutcomeAttestationService(
             _storage,
-            load_public_key(PUBLIC_KEY_PATH),
+            issuer_public_key(PUBLIC_KEY_PATH),
         ).verify_and_record(req.attestation)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -637,7 +647,7 @@ def execution_receipt(authorization_id: str) -> dict:
 
 @app.post("/v1/verify", response_model=VerifyResponse)
 def verify(req: VerifyRequest) -> dict:
-    pub = load_public_key(PUBLIC_KEY_PATH)
+    pub = issuer_public_key(PUBLIC_KEY_PATH)
     ok, reason = verify_attestation(req.model_dump(), pub)
     return {"valid": ok, "reason": reason}
 
@@ -664,7 +674,7 @@ def publish_governed_policy(req: GovernedPolicyPublishRequest) -> dict:
             req.governance_action,
             req.approvals,
             _governance_policy,
-            load_public_key(PUBLIC_KEY_PATH),
+            issuer_public_key(PUBLIC_KEY_PATH),
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -763,7 +773,7 @@ def policy_version(policy_sha256: str) -> dict:
 
 @app.post("/v1/verify/adversarial", response_model=AdversarialVerificationResponse)
 def verify_adversarial(req: AdversarialVerificationRequest) -> dict:
-    public_key = load_public_key(PUBLIC_KEY_PATH)
+    public_key = issuer_public_key(PUBLIC_KEY_PATH)
     authorization = req.authorization.model_dump()
     baseline_valid, baseline_reason = verify_execution_authorization(
         authorization,
@@ -797,10 +807,10 @@ def evidence_manifest(authorization_id: str) -> dict:
     try:
         graph = EvidenceGraph(
             _storage,
-            load_public_key(PUBLIC_KEY_PATH),
+            issuer_public_key(PUBLIC_KEY_PATH),
             load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
         ).build(authorization_id)
-        return build_manifest(graph, load_private_key(PRIVATE_KEY_PATH))
+        return build_manifest(graph, issuer_private_key(PRIVATE_KEY_PATH))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -818,7 +828,7 @@ def snapshot_evidence_graph(authorization_id: str) -> dict:
     try:
         graph = EvidenceGraph(
             _storage,
-            load_public_key(PUBLIC_KEY_PATH),
+            issuer_public_key(PUBLIC_KEY_PATH),
             load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
         )
         return EvidenceGraphService(_storage, graph).snapshot(authorization_id)
@@ -851,7 +861,7 @@ def evidence_authorization(authorization_id: str) -> dict:
     try:
         return EvidenceGraph(
             _storage,
-            load_public_key(PUBLIC_KEY_PATH),
+            issuer_public_key(PUBLIC_KEY_PATH),
             load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
         ).build(authorization_id)
     except LookupError as exc:
@@ -864,7 +874,7 @@ def evidence_intent(intent_id: str) -> dict:
     try:
         return EvidenceGraph(
             _storage,
-            load_public_key(PUBLIC_KEY_PATH),
+            issuer_public_key(PUBLIC_KEY_PATH),
             load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
         ).build_by_intent(intent_id)
     except LookupError as exc:

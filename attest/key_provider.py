@@ -35,7 +35,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-from attest.keys import generate_keypair, load_private_key
+from attest.keys import generate_keypair, load_private_key, load_public_key
 
 _PBKDF2_ITERATIONS = 200_000
 _TENANT_SALT_PREFIX = b"verigate-tenant-key-v1:"
@@ -111,6 +111,13 @@ class TenantKeyDirectoryProvider:
         )
         self._cache[tenant_id] = key
         return key
+
+    def get_public_key(self, tenant_id: str):
+        """Return the tenant's Ed25519 public key, generating the keypair
+        on first use just like get_private_key does."""
+        self.get_private_key(tenant_id)
+        _, pub_path = self._paths(tenant_id)
+        return load_public_key(pub_path)
 
     def _encrypt_in_place(self, priv_path: Path, tenant_id: str) -> None:
         fernet = _derive_fernet(self.encryption_passphrase, tenant_id)

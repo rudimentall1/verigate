@@ -71,6 +71,11 @@ class DecisionResponse(BaseModel):
     intent_id: str
     agent_id: str
     decision: str
+    # Must match every key GuardrailDecision.as_dict() signs, or a client
+    # who only has this HTTP response can never reconstruct the exact
+    # bytes that were signed -- silently breaking "verify independently,
+    # without trusting our server" for every /v1/check response.
+    context_sha256: str = ""
     matched_rules: list[RuleMatchResponse]
     evaluated_at: float
 
