@@ -10,6 +10,7 @@ import hashlib
 import json
 import time
 import uuid
+from decimal import Decimal
 from dataclasses import dataclass
 from typing import Any
 
@@ -205,7 +206,7 @@ def verify_receipt(receipt: dict[str, Any], public_key: Ed25519PublicKey) -> tup
             target=intent["target"],
             resource=intent.get("resource", ""),
             amount=(
-                __import__("decimal").Decimal(intent["amount_exact"])
+                Decimal(intent["amount_exact"])
                 if intent.get("amount_exact") is not None
                 else intent.get("amount")
             ),
