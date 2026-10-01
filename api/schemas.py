@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class PaymentIntentRequest(BaseModel):
@@ -36,6 +38,7 @@ class ActionAuthorizationRequest(BaseModel):
     target: str = Field(..., min_length=1, examples=["github.create_issue"])
     resource: str = ""
     amount: float | None = Field(None, gt=0)
+    amount_exact: str | None = None
     asset: str | None = None
     network: str | None = None
     purpose: str = ""
@@ -44,6 +47,19 @@ class ActionAuthorizationRequest(BaseModel):
     requested_capability: str | None = None
     constraints: dict = Field(default_factory=dict)
     metadata: dict = Field(default_factory=dict)
+
+    @field_validator("amount_exact")
+    @classmethod
+    def validate_amount_exact(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            amount = Decimal(value)
+        except Exception as exc:
+            raise ValueError("amount_exact must be a valid decimal") from exc
+        if not amount.is_finite() or amount <= 0:
+            raise ValueError("amount_exact must be finite and positive")
+        return format(amount, "f")
 
 
 class IdentityAuthorizationRequest(BaseModel):
