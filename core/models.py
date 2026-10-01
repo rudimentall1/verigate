@@ -52,23 +52,6 @@ class PaymentIntent:
 
 
     @property
-    def exact_amount(self) -> Decimal | None:
-        """Return the authoritative exact amount when supplied."""
-        if self.amount_exact is not None:
-            try:
-                value = Decimal(self.amount_exact)
-            except Exception as exc:
-                raise ValueError("amount_exact must be a valid decimal") from exc
-            if not value.is_finite() or value < 0:
-                raise ValueError("amount_exact must be finite and non-negative")
-            return value
-        if self.amount is None:
-            return None
-        if isinstance(self.amount, Decimal):
-            return self.amount
-        return Decimal(str(self.amount))
-
-    @property
     def context_digest(self) -> str:
         return self.as_action_intent().context_digest
 
@@ -114,6 +97,23 @@ class ActionIntent:
     metadata: dict[str, Any] = field(default_factory=dict)
     intent_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: float = field(default_factory=time.time)
+
+    @property
+    def exact_amount(self) -> Decimal | None:
+        """Return the authoritative exact amount when supplied."""
+        if self.amount_exact is not None:
+            try:
+                value = Decimal(self.amount_exact)
+            except Exception as exc:
+                raise ValueError("amount_exact must be a valid decimal") from exc
+            if not value.is_finite() or value < 0:
+                raise ValueError("amount_exact must be finite and non-negative")
+            return value
+        if self.amount is None:
+            return None
+        if isinstance(self.amount, Decimal):
+            return self.amount
+        return Decimal(str(self.amount))
 
     @property
     def context_digest(self) -> str:
