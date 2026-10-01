@@ -191,16 +191,17 @@ def check_generic_asset_allowed(intent: ActionIntent, policy: Policy) -> RuleMat
 
 
 def check_generic_amount_cap(intent: ActionIntent, policy: Policy) -> RuleMatch | None:
-    if intent.amount is None or intent.asset is None:
+    if intent.exact_amount is None or intent.asset is None:
         return None
-    if not is_valid_amount(intent.amount):
+    amount = intent.exact_amount
+    if not is_valid_amount(amount):
         return RuleMatch(
             "invalid_amount",
             Severity.BLOCK,
-            f"amount {intent.amount!r} is not a finite non-negative number",
+            f"amount {amount!r} is not a finite non-negative number",
         )
     cap = policy.per_tx_cap.get(intent.asset.upper())
-    if cap is not None and exceeds(intent.amount, cap):
+    if cap is not None and exceeds(amount, cap):
         return RuleMatch(
             "per_tx_cap_exceeded",
             Severity.BLOCK,
