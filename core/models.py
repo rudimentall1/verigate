@@ -12,6 +12,8 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from decimal import Decimal
+
+from .money import exceeds
 from enum import Enum
 from typing import Any
 
@@ -262,7 +264,9 @@ class Capability:
         if self.allowed_assets and (action.asset not in self.allowed_assets):
             return False, "asset outside capability"
         limit = self.max_per_action.get(action.asset or "")
-        if limit is not None and (action.amount is None or action.amount > limit):
+        if limit is not None and (
+            action.exact_amount is None or exceeds(action.exact_amount, limit)
+        ):
             return False, "action exceeds capability limit"
         return True, "capability permits action"
 
