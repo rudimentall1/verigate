@@ -1,0 +1,6 @@
+# Local dev/build state for the Anna integration -- never ship secrets or
+# machine-specific registration state in the verigate repo.
+.data/
+.venv/
+*.egg-info/
+.anna/

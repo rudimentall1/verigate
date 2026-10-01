@@ -1,2 +1,0 @@
-[console_scripts]
-tool-dev-verigate-authority = verigate_authority_plugin:main

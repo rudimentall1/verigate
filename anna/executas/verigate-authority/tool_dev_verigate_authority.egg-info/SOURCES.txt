@@ -1,8 +1,0 @@
-pyproject.toml
-verigate_authority_plugin.py
-tool_dev_verigate_authority.egg-info/PKG-INFO
-tool_dev_verigate_authority.egg-info/SOURCES.txt
-tool_dev_verigate_authority.egg-info/dependency_links.txt
-tool_dev_verigate_authority.egg-info/entry_points.txt
-tool_dev_verigate_authority.egg-info/requires.txt
-tool_dev_verigate_authority.egg-info/top_level.txt
