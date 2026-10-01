@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tool-dev-verigate-authority"
+version = "0.1.0"
+description = "Executa for the verigate-authority Anna App"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "cryptography>=41.0",
+]
+
+[project.scripts]
+"tool-dev-verigate-authority" = "verigate_authority_plugin:main"
+
+[tool.setuptools]
+py-modules = ["verigate_authority_plugin"]
