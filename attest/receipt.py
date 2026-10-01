@@ -204,7 +204,12 @@ def verify_receipt(receipt: dict[str, Any], public_key: Ed25519PublicKey) -> tup
             action_type=intent["action_type"],
             target=intent["target"],
             resource=intent.get("resource", ""),
-            amount=intent.get("amount"),
+            amount=(
+                __import__("decimal").Decimal(intent["amount_exact"])
+                if intent.get("amount_exact") is not None
+                else intent.get("amount")
+            ),
+            amount_exact=intent.get("amount_exact"),
             asset=intent.get("asset"),
             network=intent.get("network"),
             purpose=intent.get("purpose", ""),
