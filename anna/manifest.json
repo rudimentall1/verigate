@@ -2,7 +2,7 @@
   "schema": 2,
   "required_executas": [
     {
-      "tool_id": "tool-dev-verigate-authority"
+      "tool_id": "tool-rinat-verigate-authority-2um8gwhw"
     }
   ],
   "tags": ["verigate-authority"],
@@ -22,7 +22,7 @@
       }
     ],
     "host_api": {
-      "tools": ["tool-dev-verigate-authority"],
+      "tools": ["tool-rinat-verigate-authority-2um8gwhw"],
       "storage": ["get", "set"],
       "window": ["set_title", "ready"]
     },

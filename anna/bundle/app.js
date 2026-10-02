@@ -2,7 +2,7 @@
 // GuardrailEngine through the bundled Executa (verigate_authority_plugin.py).
 import { AnnaAppRuntime } from "/static/anna-apps/_sdk/latest/index.js";
 
-const TOOL_ID = "tool-dev-verigate-authority";
+const TOOL_ID = "tool-rinat-verigate-authority-2um8gwhw";
 
 async function main() {
   const status = document.getElementById("status");
