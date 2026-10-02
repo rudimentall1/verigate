@@ -33,6 +33,7 @@ import os
 import re
 import subprocess
 import sys
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -409,7 +410,8 @@ def authorize_action(req: ActionAuthorizationRequest) -> dict:
         action_type=req.action_type,
         target=req.target,
         resource=req.resource,
-        amount=req.amount,
+        amount=(Decimal(req.amount_exact) if req.amount_exact is not None else req.amount),
+        amount_exact=req.amount_exact,
         asset=req.asset,
         network=req.network,
         purpose=req.purpose,

@@ -11,6 +11,9 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
+from decimal import Decimal
+
+from .money import exceeds
 from enum import Enum
 from typing import Any
 
@@ -83,7 +86,8 @@ class ActionIntent:
     action_type: str
     target: str
     resource: str = ""
-    amount: float | None = None
+    amount: float | Decimal | None = None
+    amount_exact: str | None = None
     asset: str | None = None
     network: str | None = None
     purpose: str = ""
@@ -95,6 +99,23 @@ class ActionIntent:
     metadata: dict[str, Any] = field(default_factory=dict)
     intent_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: float = field(default_factory=time.time)
+
+    @property
+    def exact_amount(self) -> Decimal | None:
+        """Return the authoritative exact amount when supplied."""
+        if self.amount_exact is not None:
+            try:
+                value = Decimal(self.amount_exact)
+            except Exception as exc:
+                raise ValueError("amount_exact must be a valid decimal") from exc
+            if not value.is_finite() or value < 0:
+                raise ValueError("amount_exact must be finite and non-negative")
+            return value
+        if self.amount is None:
+            return None
+        if isinstance(self.amount, Decimal):
+            return self.amount
+        return Decimal(str(self.amount))
 
     @property
     def context_digest(self) -> str:
@@ -117,7 +138,8 @@ class ActionIntent:
             "action_type": self.action_type,
             "target": self.target,
             "resource": self.resource,
-            "amount": self.amount,
+            "amount": (format(self.amount, "f") if isinstance(self.amount, Decimal) else self.amount),
+            "amount_exact": self.amount_exact,
             "asset": self.asset,
             "network": self.network,
             "purpose": self.purpose,
@@ -242,7 +264,9 @@ class Capability:
         if self.allowed_assets and (action.asset not in self.allowed_assets):
             return False, "asset outside capability"
         limit = self.max_per_action.get(action.asset or "")
-        if limit is not None and (action.amount is None or action.amount > limit):
+        if limit is not None and (
+            action.exact_amount is None or exceeds(action.exact_amount, limit)
+        ):
             return False, "action exceeds capability limit"
         return True, "capability permits action"
 
