@@ -41,7 +41,13 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.auth import ApiKeyMiddleware
-from api.tenancy import TenantMiddleware, issuer_private_key, issuer_public_key
+from api.tenancy import (
+    TenantMiddleware,
+    TenantScopedStorage,
+    issuer_private_key,
+    issuer_public_key,
+    tenant_key_mode,
+)
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
 from attest.verify import verify_attestation
@@ -141,7 +147,7 @@ UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 app.mount("/demo", StaticFiles(directory=UI_DIR, html=True), name="demo-ui")
 
 _policy: Policy | None = None
-_storage: Storage | None = None
+_storage: Storage | TenantScopedStorage | None = None
 _engine: GuardrailEngine | None = None
 _governance_policy: GovernancePolicy | None = None
 
@@ -220,7 +226,7 @@ def _startup() -> None:
             GOVERNANCE_PUBLIC_KEY_PATH,
         )
     _policy = Policy.load(POLICY_PATH)
-    _storage = Storage(DB_PATH)
+    _storage = TenantScopedStorage(DB_PATH) if tenant_key_mode() else Storage(DB_PATH)
     _load_outcome_attestors()
     _engine = GuardrailEngine(
         _policy,

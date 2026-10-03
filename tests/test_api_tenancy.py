@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
@@ -13,7 +14,11 @@ from api import main
 from api.main import app
 from api.tenancy import TENANT_HEADER
 
-ENV = ("VERIGATE_TENANT_KEY_DIR", "VERIGATE_KEY_PASSPHRASE")
+ENV = (
+    "VERIGATE_TENANT_KEY_DIR",
+    "VERIGATE_KEY_PASSPHRASE",
+    "VERIGATE_TENANT_API_KEYS",
+)
 PAYMENT = {
     "agent_id": "agent-1",
     "payee": "0xMerchant123",
@@ -54,10 +59,17 @@ class ApiTenancyTest(unittest.TestCase):
         # module can inherit a POLICY_PATH pointing at an already-deleted
         # directory. Pin it back before starting the app here.
         self._old_policy_path = main.POLICY_PATH
+        self._old_db_path = main.DB_PATH
+        self._tmp = tempfile.TemporaryDirectory()
         main.POLICY_PATH = "policies/default.yaml"
+        main.DB_PATH = str(Path(self._tmp.name) / "verigate.db")
 
     def tearDown(self):
+        if main._storage is not None:
+            main._storage.close()
         main.POLICY_PATH = self._old_policy_path
+        main.DB_PATH = self._old_db_path
+        self._tmp.cleanup()
         for k, v in self._saved.items():
             os.environ.pop(k, None)
             if v is not None:
@@ -75,21 +87,23 @@ class ApiTenancyTest(unittest.TestCase):
     def test_each_tenant_gets_its_own_key_pair(self):
         with tempfile.TemporaryDirectory() as tmp:
             os.environ["VERIGATE_TENANT_KEY_DIR"] = tmp
+            os.environ["VERIGATE_TENANT_API_KEYS"] = json.dumps({"tenant-a": "key-a", "tenant-b": "key-b"})
             with TestClient(app) as client:
                 key_a = client.get(
-                    "/v1/public-key", headers={TENANT_HEADER: "tenant-a"}
+                    "/v1/public-key", headers={TENANT_HEADER: "tenant-a", "X-API-Key": "key-a"}
                 ).text
                 key_b = client.get(
-                    "/v1/public-key", headers={TENANT_HEADER: "tenant-b"}
+                    "/v1/public-key", headers={TENANT_HEADER: "tenant-b", "X-API-Key": "key-b"}
                 ).text
             self.assertNotEqual(key_a, key_b)
 
     def test_attestation_signature_verifies_only_against_its_own_tenant(self):
         with tempfile.TemporaryDirectory() as tmp:
             os.environ["VERIGATE_TENANT_KEY_DIR"] = tmp
+            os.environ["VERIGATE_TENANT_API_KEYS"] = json.dumps({"tenant-a": "key-a", "tenant-b": "key-b"})
             with TestClient(app) as client:
                 resp_a = client.post(
-                    "/v1/check", json=PAYMENT, headers={TENANT_HEADER: "tenant-a"}
+                    "/v1/check", json=PAYMENT, headers={TENANT_HEADER: "tenant-a", "X-API-Key": "key-a"}
                 )
                 self.assertEqual(resp_a.status_code, 200)
                 attestation = resp_a.json()
@@ -98,12 +112,12 @@ class ApiTenancyTest(unittest.TestCase):
 
                 pub_a = _load_pubkey(
                     client.get(
-                        "/v1/public-key", headers={TENANT_HEADER: "tenant-a"}
+                        "/v1/public-key", headers={TENANT_HEADER: "tenant-a", "X-API-Key": "key-a"}
                     ).text
                 )
                 pub_b = _load_pubkey(
                     client.get(
-                        "/v1/public-key", headers={TENANT_HEADER: "tenant-b"}
+                        "/v1/public-key", headers={TENANT_HEADER: "tenant-b", "X-API-Key": "key-b"}
                     ).text
                 )
 
@@ -116,6 +130,7 @@ class ApiTenancyTest(unittest.TestCase):
         # Governance is a shared authority across all tenants by design.
         with tempfile.TemporaryDirectory() as tmp:
             os.environ["VERIGATE_TENANT_KEY_DIR"] = tmp
+            os.environ["VERIGATE_TENANT_API_KEYS"] = json.dumps({"tenant-a": "key-a", "tenant-b": "key-b"})
             with TestClient(app) as client:
                 gov_a = client.get(
                     "/v1/governance/public-key", headers={TENANT_HEADER: "tenant-a"}
@@ -124,6 +139,27 @@ class ApiTenancyTest(unittest.TestCase):
                     "/v1/governance/public-key", headers={TENANT_HEADER: "tenant-b"}
                 ).text
             self.assertEqual(gov_a, gov_b)
+
+    def test_tenant_credential_cannot_cross_tenant_boundary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["VERIGATE_TENANT_KEY_DIR"] = tmp
+            os.environ["VERIGATE_TENANT_API_KEYS"] = json.dumps({"tenant-a": "key-a", "tenant-b": "key-b"})
+            headers_a = {TENANT_HEADER: "tenant-a", "X-API-Key": "key-a"}
+            headers_b = {TENANT_HEADER: "tenant-b", "X-API-Key": "key-b"}
+            headers_a_as_b = {TENANT_HEADER: "tenant-b", "X-API-Key": "key-a"}
+            with TestClient(app) as client:
+                self.assertEqual(client.post("/v1/check", json=PAYMENT, headers=headers_a).status_code, 200)
+                self.assertEqual(client.post("/v1/check", json=PAYMENT, headers=headers_b).status_code, 200)
+                history_a = client.get("/v1/agents/agent-1/history", headers=headers_a)
+                history_b = client.get("/v1/agents/agent-1/history", headers=headers_b)
+                self.assertEqual(history_a.status_code, 200)
+                self.assertEqual(history_b.status_code, 200)
+                self.assertEqual(len(history_a.json()), 1)
+                self.assertEqual(len(history_b.json()), 1)
+                self.assertEqual(client.post("/v1/check", json=PAYMENT, headers=headers_a_as_b).status_code, 403)
+                self.assertEqual(client.get("/v1/agents/agent-1/history", headers=headers_a_as_b).status_code, 403)
+                self.assertEqual(client.get("/v1/evidence/authorization/unknown", headers=headers_a_as_b).status_code, 403)
+                self.assertEqual(client.get("/v1/public-key", headers=headers_a_as_b).status_code, 403)
 
 
 if __name__ == "__main__":

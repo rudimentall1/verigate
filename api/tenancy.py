@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import os
 from contextvars import ContextVar
+from pathlib import Path
+from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -24,12 +26,22 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from attest.key_provider import TenantKeyDirectoryProvider
 from attest.keys import load_private_key, load_public_key
+from core.storage import Storage
 
 TENANT_HEADER = "x-verigate-tenant"
 DEFAULT_TENANT = "default"
 
 _current_tenant: ContextVar[str] = ContextVar("verigate_tenant", default=DEFAULT_TENANT)
 _provider_cache: tuple[str, TenantKeyDirectoryProvider] | None = None
+
+
+def validate_tenant_id(tenant_id: str) -> None:
+    if not tenant_id or "/" in tenant_id or "\\" in tenant_id or ".." in tenant_id:
+        raise ValueError(f"invalid tenant_id: {tenant_id!r}")
+
+
+def tenant_key_mode() -> bool:
+    return bool(os.environ.get("VERIGATE_TENANT_KEY_DIR"))
 
 
 def _passphrase() -> bytes | None:
@@ -62,6 +74,11 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         tenant_id = request.headers.get(TENANT_HEADER, DEFAULT_TENANT).strip() or DEFAULT_TENANT
+        try:
+            validate_tenant_id(tenant_id)
+        except ValueError:
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"detail": "invalid tenant"}, status_code=401)
         token = _current_tenant.set(tenant_id)
         try:
             return await call_next(request)
@@ -90,3 +107,32 @@ def issuer_public_key(
     if provider is None:
         return load_public_key(public_key_path)
     return provider.get_public_key(tenant_id or current_tenant_id())
+
+
+class TenantScopedStorage:
+    """Route storage calls to the current tenant's isolated SQLite database."""
+
+    def __init__(self, database_path: str):
+        self.database_path = database_path
+        self._stores: dict[str, Storage] = {}
+
+    def _tenant_path(self, tenant_id: str) -> str:
+        validate_tenant_id(tenant_id)
+        if self.database_path == ":memory:":
+            return ":memory:"
+        base = Path(self.database_path)
+        return str(base.parent / f"{base.stem}.tenants" / tenant_id / base.name)
+
+    def storage_for(self, tenant_id: str | None = None) -> Storage:
+        selected = tenant_id or current_tenant_id()
+        validate_tenant_id(selected)
+        if selected not in self._stores:
+            self._stores[selected] = Storage(self._tenant_path(selected))
+        return self._stores[selected]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.storage_for(), name)
+
+    def close(self) -> None:
+        for store in self._stores.values():
+            store.close()

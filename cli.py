@@ -120,13 +120,28 @@ def cmd_verify(args: argparse.Namespace) -> int:
         ).decode("ascii")
 
     if isinstance(document, dict) and "package" in document and "package_sha256" in document:
+        if trusted is None:
+            print(json.dumps({
+                "valid": False,
+                "reason": "trusted issuer public key is required for portable proof verification",
+            }, indent=2))
+            return 1
         result = verify_proof_package(raw_document, trusted_public_key_b64=trusted)
         print(render_proof_report(result) if args.format == "text" else json.dumps(result, indent=2))
         return 0 if result["valid"] else 1
     if isinstance(document, dict) and "payload" in document and "issuer_public_key_b64" in document:
+        if trusted is None:
+            print(json.dumps({
+                "valid": False,
+                "reason": "trusted issuer public key is required for portable proof verification",
+            }, indent=2))
+            return 1
         result = verify_proof(document, trusted_public_key_b64=trusted)
         print(render_proof_report(result) if args.format == "text" else json.dumps(result, indent=2))
         return 0 if result["valid"] else 1
+    if not args.public_key or not Path(args.public_key).exists():
+        print(json.dumps({"valid": False, "reason": "trusted public key is required"}, indent=2))
+        return 1
     pub = load_public_key(args.public_key)
     ok, reason = verify_attestation(document, pub)
     print(json.dumps({"valid": ok, "reason": reason}, indent=2))
@@ -165,7 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     vf = sub.add_parser("verify", help="independently verify a signed attestation or portable evidence proof")
     vf.add_argument("attestation_file", help="path to a signed attestation, evidence manifest, or self-contained proof package JSON")
-    vf.add_argument("--public-key", default=DEFAULT_PUB_KEY)
+    vf.add_argument("--public-key")
     vf.add_argument("--format", choices=("json", "text"), default="json", help="verification report format")
     vf.set_defaults(func=cmd_verify)
 

@@ -14,6 +14,30 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PortableProofCliTests(unittest.TestCase):
+    def test_portable_proof_requires_explicit_trust_anchor(self):
+        proof = ROOT / "examples" / "authority-proof" / "authority-proof.json"
+        correct_key = ROOT / "examples" / "authority-proof" / "issuer.pub"
+        wrong_key = ROOT / "keys" / "issuer.pub"
+        with tempfile.TemporaryDirectory() as tmp:
+            without = subprocess.run(
+                [sys.executable, str(ROOT / "cli.py"), "verify", str(proof), "--format", "text"],
+                cwd=tmp, capture_output=True, text=True, check=False,
+            )
+            wrong = subprocess.run(
+                [sys.executable, str(ROOT / "cli.py"), "verify", str(proof), "--public-key", str(wrong_key), "--format", "text"],
+                cwd=tmp, capture_output=True, text=True, check=False,
+            )
+            correct = subprocess.run(
+                [sys.executable, str(ROOT / "cli.py"), "verify", str(proof), "--public-key", str(correct_key), "--format", "text"],
+                cwd=tmp, capture_output=True, text=True, check=False,
+            )
+        self.assertNotEqual(without.returncode, 0)
+        self.assertIn("trusted issuer public key is required", without.stdout)
+        self.assertNotEqual(wrong.returncode, 0)
+        self.assertIn("RESULT: INVALID", wrong.stdout)
+        self.assertEqual(correct.returncode, 0, correct.stdout + correct.stderr)
+        self.assertIn("RESULT: VALID", correct.stdout)
+
     def test_genesis_demo_script_completes_end_to_end(self):
         script = ROOT / "examples" / "genesis_demo.py"
         result = subprocess.run(
