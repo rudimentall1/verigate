@@ -4,3 +4,6 @@
 .venv/
 *.egg-info/
 .anna/
+.pyinstaller/
+.pyinstaller-spec/
+__pycache__/

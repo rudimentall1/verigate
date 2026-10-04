@@ -1,49 +1,50 @@
 # Verigate Authority (Anna App)
 
 Give Verigate an agent action. Verigate decides whether the agent has the
-authority to execute it. Execution produces evidence. Anyone can later
-verify that evidence without trusting Verigate.
+authority to execute it. Execution produces evidence. Anyone can later verify
+that evidence without trusting Verigate.
 
-This Anna App is a thin wrapper, not a fork: the bundled Executa
-(`executas/verigate-authority/verigate_authority_plugin.py`) imports
-`core.engine.GuardrailEngine` from the real `verigate` package at the
-repository root and calls it directly. Nothing in `core/`, `api/`, or
-`attest/` is modified or duplicated for Anna.
+## Anna packaging
 
-## What it does
+The App uses Anna's Bundled Executa model. The stable handle is
+`verigate-authority`; Anna resolves it to the platform-assigned production
+`tool_id` when publishing. Local development keeps `tool-dev-verigate-authority`.
 
-The App exposes one tool, `verigate_check`, which takes a payment-shaped
-agent action (`agent_id`, `payee`, `asset`, `network`, `amount`, optional
-`resource`) and returns Verigate's signed decision: a full `decision_receipt`
-(the evaluated policy, the matched rules, and an Ed25519 signature over all
-of it) plus an `execution_authorization` when the action is allowed. Any
-third party holding that receipt can verify it independently -- they do not
-need to trust this Anna App, Anna, or Verigate's own server.
+The Executa is distributed as four platform binaries:
+
+- `darwin-arm64`
+- `darwin-x86_64`
+- `linux-x86_64` — required for Anna Cloud Agent
+- `windows-x86_64`
+
+GitHub Actions builds and smoke-tests all four binaries and publishes them as
+GitHub Release assets. Download the four archives into
+`anna/executas/verigate-authority/dist/` before `anna-app apps publish`.
 
 ## Local development
 
 ```bash
-anna-app validate           # static checks
-anna-app dev                # local harness: http://127.0.0.1:5180/
+cd anna
+anna-app validate --strict
+anna-app dev
 ```
 
-To call the tool directly without the browser UI:
+## Production release
+
+Run the GitHub Actions workflow **Build Anna Executa binaries** manually.
+Then download all four release archives into:
+
+```text
+anna/executas/verigate-authority/dist/
+```
+
+Run:
 
 ```bash
-cd executas/verigate-authority
-anna-app executa dev --invoke verigate_check \
-  --args '{"agent_id":"demo-agent","payee":"0xMerchant","asset":"USDC","network":"base","amount":10.5}' \
-  --json
+cd anna
+anna-app validate --strict
+anna-app apps publish
 ```
 
-The Executa generates its own throwaway Ed25519 issuer key on first run,
-under `executas/verigate-authority/.data/` (gitignored -- never commit it).
-It uses its own SQLite database too, entirely separate from whatever
-database a real `verigate` deployment (`api/main.py`, `cli.py`) uses.
-
-## Publishing
-
-```bash
-anna-app executa publish     # from executas/verigate-authority/
-anna-app apps publish        # from the anna/ app root
-```
+Install the resulting version and test it on an Anna Cloud Agent before
+submitting it for review.

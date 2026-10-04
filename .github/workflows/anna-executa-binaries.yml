@@ -1,0 +1,83 @@
+name: Build Anna Executa binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Executa version to build"
+        required: true
+        default: "0.1.1"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-latest
+          - target: windows-x86_64
+            runner: windows-latest
+          - target: darwin-arm64
+            runner: macos-26
+          - target: darwin-x86_64
+            runner: macos-26-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build frozen Executa
+        run: python anna/build_binary.py
+
+      - name: Smoke-test binary
+        shell: bash
+        run: |
+          if [ "${{ matrix.target }}" = "windows-x86_64" ]; then
+            python anna/smoke_binary.py anna/executas/verigate-authority/dist/verigate-authority.exe
+          else
+            python anna/smoke_binary.py anna/executas/verigate-authority/dist/verigate-authority
+          fi
+
+      - name: Package binary
+        run: python anna/package_binary.py "${{ matrix.target }}" "${{ inputs.version }}"
+
+      - name: Upload release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: verigate-authority-${{ matrix.target }}
+          path: |
+            anna/executas/verigate-authority/dist/verigate-authority-${{ inputs.version }}-${{ matrix.target }}.*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: verigate-authority-*
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh release create "anna-verigate-authority-v${VERSION}" release-assets/* \
+            --title "Verigate Authority Executa v${VERSION}" \
+            --generate-notes

@@ -1,10 +1,13 @@
 {
-  "schema": 2,
+  "schema": 3,
   "required_executas": [
     {
-      "tool_id": "tool-rinat-verigate-authority-2um8gwhw"
+      "tool_id": "bundled:verigate-authority",
+      "min_version": "0.1.1",
+      "version": "latest"
     }
   ],
+  "optional_executas": [],
   "tags": ["verigate-authority"],
   "ui": {
     "bundle": {
@@ -15,18 +18,24 @@
     "views": [
       {
         "name": "main",
-        "title": "verigate-authority",
+        "title": "Verigate Authority",
         "default": true,
-        "default_size": { "w": 480, "h": 360 },
-        "min_size": { "w": 320, "h": 240 }
+        "entry": "index.html",
+        "min_size": { "w": 420, "h": 360 },
+        "default_size": { "w": 620, "h": 520 },
+        "resizable": true,
+        "movable": true,
+        "single_instance": true
       }
     ],
     "host_api": {
-      "tools": ["tool-rinat-verigate-authority-2um8gwhw"],
+      "tools": ["required:bundled:verigate-authority"],
       "storage": ["get", "set"],
       "window": ["set_title", "ready"]
     },
-    "csp_overrides": {},
+    "csp_overrides": {
+      "script-src": ["'self'"]
+    },
     "state_merge": "last_writer_wins"
   },
   "dev": {
