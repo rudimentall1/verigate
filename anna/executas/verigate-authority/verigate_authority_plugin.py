@@ -2,15 +2,13 @@ import json
 import sys
 from pathlib import Path
 
-_SOURCE_REPO_ROOT = Path(__file__).resolve().parents[3]
-
 if getattr(sys, "frozen", False):
     _BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
-    _REPO_ROOT = _BUNDLE_ROOT
+    _SOURCE_REPO_ROOT = _BUNDLE_ROOT
     _DATA_DIR = Path(sys.executable).resolve().parent / ".data"
 else:
+    _SOURCE_REPO_ROOT = Path(__file__).resolve().parents[3]
     _BUNDLE_ROOT = _SOURCE_REPO_ROOT
-    _REPO_ROOT = _SOURCE_REPO_ROOT
     _DATA_DIR = Path(__file__).resolve().parent / ".data"
 
 sys.path.insert(0, str(_SOURCE_REPO_ROOT))
