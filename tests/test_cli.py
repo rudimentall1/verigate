@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from attest.keys import generate_keypair
 from core.proof_engine import canonical
 from core.proof_package import build_proof_package, serialize_proof_package
 from tests.test_reference_lifecycle import VerigateReferenceLifecycleTest
@@ -17,8 +18,14 @@ class PortableProofCliTests(unittest.TestCase):
     def test_portable_proof_requires_explicit_trust_anchor(self):
         proof = ROOT / "examples" / "authority-proof" / "authority-proof.json"
         correct_key = ROOT / "examples" / "authority-proof" / "issuer.pub"
-        wrong_key = ROOT / "keys" / "issuer.pub"
         with tempfile.TemporaryDirectory() as tmp:
+            # A definitely-wrong-but-valid key, generated fresh here rather
+            # than relying on keys/issuer.pub: that path is gitignored and
+            # only exists locally after someone has already run keygen or
+            # started the API, so a clean checkout (CI) never has it and
+            # this test was silently depending on leftover local state.
+            wrong_key = Path(tmp) / "wrong-issuer.pub"
+            generate_keypair(Path(tmp) / "wrong-issuer.key", wrong_key)
             without = subprocess.run(
                 [sys.executable, str(ROOT / "cli.py"), "verify", str(proof), "--format", "text"],
                 cwd=tmp, capture_output=True, text=True, check=False,
