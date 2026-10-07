@@ -134,6 +134,20 @@ ALLOW_UNGOVERNED_ATTESTOR_BOOTSTRAP = os.environ.get(
     "VERIGATE_ALLOW_UNGOVERNED_ATTESTOR_BOOTSTRAP", ""
 ).lower() in {"1", "true", "yes"}
 
+
+def _require_signed_intent() -> bool:
+    """When set, executable authority is issued only for agent-signed intents.
+
+    Read at request time so operators can flip it without code changes and
+    tests can toggle it deterministically.
+    """
+    return os.environ.get("VERIGATE_REQUIRE_SIGNED_INTENT", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
 app = FastAPI(
     title="Verigate",
     description="Agent Authority Control Plane for autonomous agents: identity, capability, governance, authorization, execution and evidence.",
@@ -362,6 +376,15 @@ def authorize(req: PaymentIntentRequest) -> dict:
 
 @app.post("/v1/authorize/capability", response_model=AuthorizationResponse)
 def authorize_with_capability(req: CapabilityAuthorizationRequest) -> dict:
+    if _require_signed_intent():
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "unsigned capability authorization is disabled "
+                "(VERIGATE_REQUIRE_SIGNED_INTENT); use /v1/authorize/identity "
+                "or /v1/actions/authorize with an agent-signed intent"
+            ),
+        )
     assert _engine is not None
     intent = PaymentIntent(
         agent_id=req.agent_id, payee=req.payee, asset=req.asset, network=req.network,
