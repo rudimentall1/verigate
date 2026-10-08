@@ -245,6 +245,22 @@ curl http://localhost:8000/v1/public-key
 
 ---
 
+﻿## Production configuration
+
+Verigate runs open by default so the demo needs zero setup. Before exposing it,
+set API authentication, an encrypted issuer key and signed-intent enforcement:
+
+```bash
+export VERIGATE_API_KEYS="sha256:<hex-of-your-key>"
+export VERIGATE_REQUIRE_AUTH=1
+export VERIGATE_KEY_PASSPHRASE="<long random passphrase>"
+export VERIGATE_REQUIRE_ENCRYPTED_KEY=1
+export VERIGATE_REQUIRE_SIGNED_INTENT=1
+```
+
+The full flag reference and a table of which endpoints issue executable
+authority are in [docs/security-configuration.md](docs/security-configuration.md).
+
 ## Writing a policy
 
 Policies are plain YAML — see `policies/default.yaml` for a real, working
