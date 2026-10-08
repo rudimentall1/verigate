@@ -34,7 +34,7 @@ _private_key = load_private_key(_PRIVATE_KEY_PATH)
 
 MANIFEST = {
     "name": "tool-dev-verigate-authority",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "tools": [
         {
             "name": "verigate_check",
