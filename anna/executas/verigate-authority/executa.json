@@ -1,7 +1,7 @@
 {
   "slug": "verigate-authority",
   "name": "verigate-authority",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "executa_type": "tool",
   "description": "Wraps Verigate's GuardrailEngine.authorize() as a single verigate_check tool: give it an agent action, get back a signed ALLOW/WARN/BLOCK authority decision, independently verifiable without trusting this Executa or Verigate's own server.",
   "tool_id": "tool-dev-verigate-authority",

@@ -6,7 +6,7 @@ on:
       version:
         description: "Executa version to build"
         required: true
-        default: "0.1.2"
+        default: "0.1.3"
         type: string
 
 permissions:
@@ -19,7 +19,7 @@ jobs:
       matrix:
         include:
           - target: linux-x86_64
-            runner: ubuntu-latest
+            runner: ubuntu-22.04
           - target: windows-x86_64
             runner: windows-latest
           - target: darwin-arm64

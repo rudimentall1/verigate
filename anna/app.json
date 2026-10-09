@@ -1,7 +1,7 @@
 {
   "slug": "verigate-authority",
   "name": "Verigate Authority",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "tagline": "Give your AI agent an action. Verigate decides if it has the authority.",
   "description": "Verigate is an Agent Authority Control Plane: before an AI agent's action (a payment, a tool call, an on-chain transaction) executes, Verigate evaluates it against a deterministic, signed policy and returns a cryptographically signed ALLOW/WARN/BLOCK decision. This App wraps Verigate's existing GuardrailEngine so any Anna agent can call verigate_check on an action and get back a signed, independently verifiable authority decision -- without trusting Anna's or Verigate's own server to tell the truth about what was decided.",
   "category": "productivity",

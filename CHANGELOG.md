@@ -1,4 +1,11 @@
-﻿# Changelog
+# Changelog
+
+## Anna app 0.1.3 (Executa fixes for review feedback)
+
+- Fixed: Anna could not install the Executa (`describe handshake failed`). `describe` returned `parameters` as a JSON Schema object and had no `description`; it now follows Executa protocol 1.1 (parameters list, description, author, license).
+- The plugin answers `describe` without touching the filesystem or loading the engine (cold start 0.6 s, limit 5 s) and falls back to a writable data directory when the install directory is read-only.
+- Protocol-correct errors: -32700 parse error, -32601 unknown tool, -32602 missing arguments; bad input no longer kills the process; clean SIGTERM exit.
+- The binary smoke test now checks `describe` against the protocol, cold-start time and error handling, so this class of bug fails CI.
 
 ## v0.1.0
 
