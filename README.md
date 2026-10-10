@@ -78,7 +78,7 @@ This repository contains a runnable Genesis 2.0 authority lifecycle and its veri
 | Ed25519 signing + independent verification | **Real.** Standard `cryptography` library primitives, not a custom crypto scheme. Tampering is detected, not just claimed. |
 | x402 header parsing | **Real**, for the `exact` scheme with `extra.name` asset identification. Refuses to guess decimals for an unrecognized asset/network pair rather than silently misjudging an amount — extend `x402/parser.py:_KNOWN_DECIMALS` as you verify more pairs. |
 | Audit log / rate limiting / daily-spend tracking | **Real**, SQLite-backed, single-process. For multiple replicas, point every process at shared storage or swap in a real database — the `Storage` interface is small. |
-| FastAPI HTTP layer | **Written**, not yet load-tested or deployed. Runs with `uvicorn api.main:app`. |
+| FastAPI HTTP layer | **Real, with access control**: API-key auth (default-deny once `VERIGATE_API_KEYS` is set), tenant-scoped credentials (`VERIGATE_TENANT_API_KEYS`) and optional mandatory signed intents (`VERIGATE_REQUIRE_SIGNED_INTENT`). **Not yet load-tested or deployed as a hosted service.** Runs with `uvicorn api.main:app`; see `docs/security-configuration.md`. |
 | AP2 / other payment-rail adapters | **Not built.** The architecture reserves the seam (`core.models.PaymentIntent` is rail-agnostic) but only x402 has a working parser today. |
 | Agent Identity Registry | **Real.** Ed25519 identities are registered by public-key fingerprint, can be revoked, and can sign exact `ActionIntent` envelopes before authorization. |
 | Capability Registry | **Real.** Capabilities are persistent, scoped, versioned and revocable; authority artifacts bind capability ID/version/digest. |
@@ -91,7 +91,7 @@ This repository contains a runnable Genesis 2.0 authority lifecycle and its veri
 | Authorization service | **Real.** Generic `ActionIntent` decisions can mint the same portable receipt and one-time authority used by payment and other execution flows. |
 | Execution enforcement boundary | **Real.** One-time signed capabilities are consumed fail-closed; the router binds the exact adapter, target, and execution artifact. Tool handlers are also identity-bound by fingerprint. |
 | Transitive executor confinement | **Explicit boundary.** The default tool scope is **direct**: Verigate proves which registered handler it invoked, but does not claim to sandbox arbitrary subprocesses, Git hooks, child tools, or other effects created inside that trusted handler. A `transitive` execution claim is rejected unless the adapter explicitly implements that stronger enforcement scope. |
-| Multi-tenant / hosted key management | **Not built.** Today, one issuer keypair per deployment, loaded from a local file. |
+| Multi-tenant / key management | **Partially built.** Opt-in per-tenant issuer keys (`VERIGATE_TENANT_KEY_DIR`, `X-Verigate-Tenant` header) and issuer key encryption at rest (`VERIGATE_KEY_PASSPHRASE`). **Not built:** hosted KMS/HSM-backed key custody and key-rotation tooling; keys still live on the deployment's local disk. |
 
 ### Execution boundary and transitive effects
 
