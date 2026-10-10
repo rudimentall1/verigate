@@ -9,5 +9,13 @@
     "verigate-authority": {
       "path": "./executas/verigate-authority"
     }
-  }
+  },
+  "cover_url": "https://raw.githubusercontent.com/rudimentall1/verigate/main/anna/assets/listing/00-cover.jpg",
+  "screenshots": [
+    "https://raw.githubusercontent.com/rudimentall1/verigate/main/anna/assets/listing/02-authority-proof-valid.jpg",
+    "https://raw.githubusercontent.com/rudimentall1/verigate/main/anna/assets/listing/04-authority-block.jpg",
+    "https://raw.githubusercontent.com/rudimentall1/verigate/main/anna/assets/listing/03-authority-proof-tampered.jpg",
+    "https://raw.githubusercontent.com/rudimentall1/verigate/main/anna/assets/listing/01-tamper-enforcement.jpg"
+  ],
+  "homepage_url": "https://github.com/rudimentall1/verigate"
 }
