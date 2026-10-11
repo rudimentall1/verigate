@@ -12,6 +12,7 @@ AI agents can propose consequential actions. Verigate decides whether the agent 
 - **What Verigate gives you.** A per-action authority decision, enforced where the action executes (one-time, tamper-evident authorizations), and a portable proof that a third party can verify offline with only a public key.
 - **Built for.** Teams building agent payments and tool-using agents (x402, EVM, Solana, MCP, HTTP) that need spend limits, an audit trail, and evidence they can show a counterparty, auditor or customer.
 - **Try it in 60 seconds.** `python examples/genesis_demo.py` runs the full lifecycle, verifies the proof, then tampers with it and shows INVALID.
+- **Watch it.** [78-second narrated demo](docs/media/verigate-demo.mp4): the full lifecycle, then one word of the proof is changed and verification rejects it.
 - **Status.** Working open-source protocol implementation (MIT), 450+ automated tests, green CI. Not a hosted service yet: see [Current state](#current-state), [docs/security-configuration.md](docs/security-configuration.md) and [docs/threat-model.md](docs/threat-model.md). Pilot conversations are welcome: open an issue.
 
 
