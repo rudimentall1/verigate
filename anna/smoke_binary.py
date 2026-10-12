@@ -35,9 +35,10 @@ def check_manifest(manifest: dict) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: python anna/smoke_binary.py <executable>")
+    if len(sys.argv) not in {2, 3}:
+        raise SystemExit("usage: python anna/smoke_binary.py <executable> [expected-version]")
     executable = Path(sys.argv[1]).resolve()
+    expected_version = sys.argv[2] if len(sys.argv) == 3 else None
     if not executable.exists():
         raise SystemExit(f"binary not found: {executable}")
 
@@ -65,6 +66,11 @@ def main() -> None:
         if "result" not in described:
             raise SystemExit(f"describe failed: {described}")
         check_manifest(described["result"])
+        if expected_version and described["result"].get("version") != expected_version:
+            raise SystemExit(
+                f"binary version mismatch: expected {expected_version}, "
+                f"described {described['result'].get('version')!r}"
+            )
         if elapsed > 5.0:
             raise SystemExit(f"describe took {elapsed:.1f}s, Anna's limit is 5s")
         if elapsed > 3.0:
