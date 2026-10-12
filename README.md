@@ -8,16 +8,27 @@ AI agents can propose consequential actions. Verigate decides whether the agent 
 
 ## At a glance
 
-- **Problem.** Teams now let agents spend money and call privileged tools. When something goes wrong, nobody can prove what the agent was *allowed* to do, and logs can be rewritten afterwards.
-- **What Verigate gives you.** A per-action authority decision, enforced where the action executes (one-time, tamper-evident authorizations), and a portable proof that a third party can verify offline with only a public key.
-- **Built for.** Teams building agent payments and tool-using agents (x402, EVM, Solana, MCP, HTTP) that need spend limits, an audit trail, and evidence they can show a counterparty, auditor or customer.
+**In plain words.** AI agents are starting to pay bills, book services and call business systems on our behalf. Today the only safeguard is hoping the AI behaves. Verigate is a guard that sits *outside* the AI: you set the rules once (how much, to whom, for what), the AI can only *propose* an action, and Verigate decides.
+
+**What you get**
+
+- **Limits that actually hold.** An agent cannot go beyond its rules, even if it is tricked or makes a mistake.
+- **One-time permissions.** Every approved action gets a signed permission that works once and stops working if any detail, such as the destination, is changed.
+- **A receipt nobody can quietly edit.** An auditor, customer, insurer or partner can check it on their own, offline, with only a public key.
+
+**Who it is for.** Companies and teams that build or run AI agents handling money or privileged actions (payments, x402, EVM, Solana, business APIs, MCP tools): spend control, an audit trail, and proof when someone asks "who allowed this?". Ordinary people benefit indirectly, through the products they use: an assistant that holds your card can be held to a hard limit, and there is evidence if something is disputed. Verigate is infrastructure for developers, not an end-user app.
+
+**Watch the 70-second explainer:** [docs/media/verigate-explainer.mp4](docs/media/verigate-explainer.mp4)
+
+### For developers
+
 - **Try it in 60 seconds.** `python examples/genesis_demo.py` runs the full lifecycle, verifies the proof, then tampers with it and shows INVALID.
 - **Verify a proof without Verigate.** `pip install verigate-verify`, then `verigate-verify proof.json --public-key issuer.pub` ([PyPI](https://pypi.org/project/verigate-verify/), source in `packaging/verigate-verify`).
-- **Watch the 78-second demo.** The video below shows the full authority lifecycle, execution, portable proof, and rejection of a tampered proof.
+- **Technical demo (78 s, terminal).** The full authority lifecycle, execution, a portable proof, and rejection of a tampered proof:
 
 https://github.com/user-attachments/assets/b64a0a58-b628-4b04-bddc-f9634741292b
-- **Status.** Working open-source protocol implementation (MIT), 450+ automated tests, green CI. Not a hosted service yet: see [Current state](#current-state), [docs/security-configuration.md](docs/security-configuration.md) and [docs/threat-model.md](docs/threat-model.md). Pilot conversations are welcome: open an issue.
 
+- **Status.** Working open-source protocol implementation (MIT), 450+ automated tests, green CI. Not a hosted service yet: see [Current state](#current-state), [docs/security-configuration.md](docs/security-configuration.md) and [docs/threat-model.md](docs/threat-model.md). Pilot conversations are welcome: open an issue.
 
 The product boundary is not a wallet, risk score, policy dashboard, blockchain guard, or agent framework. Payments, EVM, Solana, HTTP and MCP are execution adapters around one protocol-agnostic authority model.
 
