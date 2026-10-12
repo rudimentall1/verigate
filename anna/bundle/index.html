@@ -4,13 +4,120 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Verigate Authority</title>
+    <style>
+      :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172033; background: #f5f7fb; }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 20px; background: #f5f7fb; }
+      main { max-width: 760px; margin: 0 auto; }
+      .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+      .mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: white; background: #182d53; font-weight: 800; letter-spacing: -.04em; }
+      h1 { margin: 0; font-size: 22px; letter-spacing: -.03em; }
+      .subtitle { margin: 4px 0 0; color: #647089; font-size: 13px; line-height: 1.45; }
+      .card { background: #fff; border: 1px solid #dfe5ef; border-radius: 16px; padding: 18px; margin: 14px 0; box-shadow: 0 4px 16px rgba(27, 46, 77, .04); }
+      h2 { margin: 0 0 8px; font-size: 16px; }
+      .helper { color: #68758b; font-size: 12px; line-height: 1.5; margin: 0 0 14px; }
+      label { display: block; font-size: 12px; font-weight: 700; margin: 13px 0 6px; color: #39465d; }
+      input, textarea { width: 100%; border: 1px solid #ccd5e3; border-radius: 9px; background: #fff; color: #172033; padding: 10px 11px; font: inherit; font-size: 13px; outline: none; }
+      input:focus, textarea:focus { border-color: #4568ae; box-shadow: 0 0 0 3px rgba(69, 104, 174, .12); }
+      textarea { min-height: 82px; resize: vertical; line-height: 1.5; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 16px; }
+      button { border: 0; border-radius: 9px; padding: 11px 14px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 750; }
+      button:disabled { opacity: .55; cursor: wait; }
+      .primary { background: #1d3767; color: #fff; }
+      .secondary { background: #e9eef8; color: #1d3767; }
+      .note { background: #f0f4fc; border-left: 3px solid #6b88c2; padding: 10px 12px; border-radius: 7px; font-size: 12px; color: #40516e; line-height: 1.5; margin-top: 14px; }
+      #status { font-size: 12px; color: #6b7587; line-height: 1.5; min-height: 18px; margin: 12px 0 0; overflow-wrap: anywhere; }
+      #error { display: none; white-space: pre-wrap; color: #8b2732; background: #fff0f1; border: 1px solid #ffd1d5; border-radius: 9px; padding: 10px 12px; margin-top: 12px; font-size: 12px; line-height: 1.5; }
+      #interpretation { font-size: 13px; line-height: 1.55; margin-top: 12px; color: #3f4e67; }
+      #result { display: none; }
+      .result-top { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+      .decision { display: inline-flex; align-items: center; justify-content: center; min-width: 88px; border-radius: 9px; padding: 9px 12px; font-size: 13px; font-weight: 850; letter-spacing: .04em; }
+      .allow { background: #e2f6e9; color: #17683a; }
+      .warn { background: #fff2d8; color: #81520a; }
+      .block { background: #ffe4e5; color: #9b2530; }
+      .result-meta { font-size: 12px; color: #6c778b; line-height: 1.5; }
+      .result-summary { margin: 10px 0 14px; font-size: 14px; line-height: 1.6; }
+      .rules { margin: 8px 0 0; padding-left: 18px; color: #4d5a70; font-size: 12px; line-height: 1.55; }
+      .proof { border-top: 1px solid #e7ebf2; padding-top: 12px; margin-top: 14px; font-size: 12px; color: #59667c; }
+      details { margin-top: 12px; }
+      summary { cursor: pointer; color: #4d5f7c; font-size: 12px; font-weight: 700; }
+      pre { background: #f6f8fc; border: 1px solid #e2e7f0; padding: 12px; border-radius: 9px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; line-height: 1.5; }
+      .fineprint { color: #8490a3; font-size: 11px; text-align: center; line-height: 1.5; padding: 8px; }
+      @media (max-width: 520px) { body { padding: 12px; } .card { padding: 14px; } .grid { grid-template-columns: 1fr; } h1 { font-size: 20px; } }
+    </style>
   </head>
   <body>
-    <h1>Verigate Authority</h1>
-    <p>Ask Verigate whether an AI agent has authority for a consequential action.</p>
-    <button id="primary-btn">Check authority</button>
-    <pre id="status">Ready.</pre>
+    <main>
+      <header class="brand">
+        <div class="mark" aria-hidden="true">V</div>
+        <div>
+          <h1>Verigate Authority</h1>
+          <p class="subtitle">Describe a payment or transfer. Anna AI structures the request and explains the result; Verigate's policy engine makes the authority decision.</p>
+        </div>
+      </header>
+
+      <section class="card">
+        <h2>1. Describe the action</h2>
+        <p class="helper">Use plain language, for example: “Pay 25 USDC on Base to 0xMerchantABC for invoice 1042.” The AI only extracts details; it cannot approve a payment.</p>
+        <label for="action-description">What do you want the agent to do?</label>
+        <textarea id="action-description" placeholder="Describe the payment, recipient, network, asset and amount…" required></textarea>
+        <div class="grid">
+          <div>
+            <label for="agent-id">Agent identifier</label>
+            <input id="agent-id" value="my-agent" autocomplete="off" />
+          </div>
+          <div>
+            <label for="target">Recipient / payee</label>
+            <input id="target" placeholder="0xMerchantABC" autocomplete="off" />
+          </div>
+          <div>
+            <label for="asset">Asset</label>
+            <input id="asset" placeholder="USDC" autocomplete="off" />
+          </div>
+          <div>
+            <label for="network">Network</label>
+            <input id="network" placeholder="base" autocomplete="off" />
+          </div>
+          <div>
+            <label for="amount">Amount</label>
+            <input id="amount" type="number" min="0.000001" step="any" placeholder="25" inputmode="decimal" />
+          </div>
+          <div>
+            <label for="resource">Purpose / invoice (optional)</label>
+            <input id="resource" placeholder="Invoice 1042" autocomplete="off" />
+          </div>
+        </div>
+        <div class="actions">
+          <button id="interpret-btn" class="secondary" type="button">Interpret with Anna AI</button>
+          <button id="check-btn" class="primary" type="button">Check authority</button>
+        </div>
+        <div class="note">Review the extracted fields before checking. The final ALLOW, WARN or BLOCK always comes from Verigate's deterministic policy evaluation, not from the AI.</div>
+        <div id="interpretation" aria-live="polite"></div>
+        <p id="status" role="status">Connecting to Anna…</p>
+        <div id="error" role="alert"></div>
+      </section>
+
+      <section id="result" class="card" aria-live="polite">
+        <div class="result-top">
+          <span id="decision" class="decision">RESULT</span>
+          <div>
+            <h2 id="result-title">Authority decision</h2>
+            <div id="result-meta" class="result-meta"></div>
+          </div>
+        </div>
+        <p id="result-summary" class="result-summary"></p>
+        <h2 id="rules-heading">Policy checks</h2>
+        <ul id="rules" class="rules"></ul>
+        <div class="proof" id="proof"></div>
+        <details>
+          <summary>View signed receipt JSON</summary>
+          <pre id="receipt-json"></pre>
+        </details>
+      </section>
+      <p class="fineprint">Verigate checks policy authority only. An ALLOW result is not an executed transaction and does not guarantee that a payment is safe or will succeed.</p>
+    </main>
     <script src="anna-tool-ids.js"></script>
-    <script src="app.js" type="module"></script>
+    <script type="module" src="app.js"></script>
   </body>
 </html>
