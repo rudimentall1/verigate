@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import argparse,base64,hashlib,json
+from pathlib import Path
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+PROTOCOL='verigate-authority-proof-v1'; PKG='verigate-proof-package-v1'; MEDIA='application/vnd.verigate.proof-package+json'; ZERO='0'*64
+REQUIRED_AUTHORITY_TYPES=('action_intent','execution_authorization','execution_receipt','outcome_claim','observed_effect','outcome_attestation','authority_event','authority_state','authority_state_after','authority_ledger','genesis_authority','capability')
+def canon(x): return json.dumps(x,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
+def sha(x): return hashlib.sha256(canon(x)).hexdigest()
+def b64(x): return base64.b64decode(x,validate=True)
+def ref(n): return f"{n['type']}:{n['id']}"
+def node(p,k):
+ x=[n for n in p.get('nodes',[]) if n.get('type')==k]; return x[0] if len(x)==1 else None
+def edge(p,a,r,b): return any(e.get('from')==a and e.get('relation')==r and e.get('to')==b for e in p.get('edges',[]))
+def merkle(xs):
+ if not xs:return hashlib.sha256(b'VERIGATE-EVIDENCE-MERKLE:v1:empty').hexdigest()
+ xs=sorted(xs)
+ while len(xs)>1:
+  if len(xs)%2:xs.append(xs[-1])
+  xs=[hashlib.sha256(('pair:'+xs[i]+':'+xs[i+1]).encode()).hexdigest() for i in range(0,len(xs),2)]
+ return xs[0]
+def root(p):
+ xs=[hashlib.sha256(('node:'+sha(n['data'])).encode()).hexdigest() for n in p.get('nodes',[])]
+ xs += [hashlib.sha256(('edge:'+sha(e)).encode()).hexdigest() for e in p.get('edges',[])]
+ return merkle(xs)
+def bad(r,c): return {'valid':False,'protocol':PROTOCOL,'reason':r,'checks':c}
+def assertions(m):
+ p=m['payload']; kinds=['identity','capability','action_intent','authority_state','genesis_authority','decision','execution_authorization','execution_receipt','outcome_claim','observed_effect','outcome_attestation','authority_event','authority_state_after','authority_ledger']; n={k:node(p,k) for k in kinds}
+ if any(v is None for v in n.values()): return False,'authority protocol evidence incomplete'
+ R={k:ref(v) for k,v in n.items()}; ap=n['execution_authorization']['data']['payload']; rp=n['execution_receipt']['data']['payload']; cp=n['outcome_claim']['data']; oe=n['observed_effect']['data']; ep=n['authority_event']['data']; sp=n['authority_state_after']['data']; ent=n['authority_ledger']['data'].get('entries',[])
+ def A(i,k,s,pr,o,e):
+  x={'id':i,'kind':k,'subject':s,'predicate':pr,'object':o,'evidence':e}; x['sha256']=hashlib.sha256(canon(x)).hexdigest(); return x
+ exp=[A('A1','identity',R['identity'],'possessed_capability',R['capability'],[R['identity'],R['capability']]),A('A2','intent',R['action_intent'],'proposed_by',n['identity']['data'].get('agent_id',p.get('agent_id')),[R['action_intent'],R['identity']]),A('A3','authority',R['authority_state'],'permitted',R['action_intent'],[R['authority_state'],R['action_intent'],R['capability']]),A('A4','authorization',R['execution_authorization'],'derived_from',R['authority_state'],[R['decision'],R['execution_authorization'],R['authority_state'],R['genesis_authority']]),A('A5','execution',R['execution_receipt'],'consumed_authorization',R['execution_authorization'],[R['execution_authorization'],R['execution_receipt']]),A('A6','observation',R['outcome_claim'],'observes',R['execution_receipt'],[R['execution_receipt'],R['outcome_claim'],R['observed_effect'],R['outcome_attestation']]),A('A7','learning',R['authority_event'],'justified_by',R['outcome_claim'],[R['outcome_claim'],R['authority_event']]),A('A8','learning',R['authority_state_after'],'produced_by',R['authority_event'],[R['authority_event'],R['authority_state_after']]),A('A9','integrity',R['authority_state_after'],'ledger_bound',R['authority_ledger'],[R['authority_state_after'],R['authority_ledger']])]
+ astate=n['authority_state']['data']; capdata=n['capability']['data']; gd=n['genesis_authority']['data']
+ authority_digest=sha({'authority_id':f"{ap.get('agent_id')}:{n['capability']['id']}:{astate.get('ledger_head_hash') or sha(astate)}",'agent_id':ap.get('agent_id'),'identity_id':ap.get('identity_id',''),'capability_id':n['capability']['id'],'capability_version':capdata.get('version',1),'capability_sha256':ap.get('capability_sha256',''),'state':astate.get('state'),'multiplier':float(astate.get('multiplier')),'epoch':astate.get('epoch',0),'ledger_head_hash':astate.get('ledger_head_hash',''),'effective_from':float(astate.get('evaluated_at',0.0)),'expires_at':None,'parent_authority_id':None,'evidence_refs':(),'metadata':{'source':'core.authority_state.AuthoritySnapshot','successes':astate.get('successes',0),'adverse_events':astate.get('adverse_events',0),'critical_events':astate.get('critical_events',0),'reason':astate.get('reason','')}})
+ checks=[edge(p,R['identity'],'AUTHENTICATES',R['action_intent']),edge(p,R['capability'],'AUTHORIZES',R['action_intent']),ap.get('authority_state_sha256')==sha(n['authority_state']['data']),gd.get('authority_digest')==authority_digest,edge(p,R['decision'],'MINTS',R['execution_authorization']),edge(p,R['execution_authorization'],'PRODUCES',R['execution_receipt']),rp.get('authorization_id')==ap.get('authorization_id'),edge(p,R['execution_receipt'],'OBSERVED_BY',R['outcome_claim']),edge(p,R['outcome_claim'],'SUPPORTED_BY',R['observed_effect']),oe.get('authorization_id')==ap.get('authorization_id'),oe.get('action_sha256')==cp.get('action_sha256'),oe.get('evidence_ref')==cp.get('evidence_ref'),oe.get('result_sha256')==cp.get('result_sha256'),cp.get('observed_effect_sha256')==sha(oe),oe.get('observation_sha256')==sha({'verifier_type':oe.get('verifier_type'),'evidence_kind':oe.get('evidence_kind'),'effect_status':oe.get('effect_status'),'authorization_id':oe.get('authorization_id'),'action_sha256':oe.get('action_sha256'),'observed_at':oe.get('observed_at'),'evidence_ref':oe.get('evidence_ref'),'result_sha256':oe.get('result_sha256'),'observation':oe.get('observation')}),edge(p,R['outcome_attestation'],'ATTESTS',R['outcome_claim']),edge(p,R['outcome_claim'],'INFORMS',R['authority_event']),edge(p,R['authority_event'],'TRANSITIONS_TO',R['authority_state_after']),ep.get('evidence_ref')==cp.get('claim_id'),sp.get('source_event_id')==ep.get('event_id'),len([x for x in ent if x.get('event_id')==ep.get('event_id')])==1 and sp.get('ledger_head_hash')==next((x.get('event_hash') for x in ent if x.get('event_id')==ep.get('event_id')),None)]
+ return (exp==p.get('authority_assertions') and all(checks) and sha(exp)==p.get('authority_assertions_sha256'),'signed authority assertions do not match evidence' if exp!=p.get('authority_assertions') else 'authority protocol preconditions failed')
+def load_trusted_key(path):
+ raw=Path(path).read_bytes()
+ public_key=serialization.load_pem_public_key(raw)
+ if not isinstance(public_key,Ed25519PublicKey): raise ValueError('issuer public key must be Ed25519')
+ return base64.b64encode(public_key.public_bytes(serialization.Encoding.Raw,serialization.PublicFormat.Raw)).decode()
+
+def verify_historical(snapshot,entries,policy,expected_head):
+ try:
+  eval_at=float(snapshot['evaluated_at']); hist=float(snapshot['history_start_at']); win=float(policy['window_seconds']); p=int(policy['probation_successes']); s=int(policy['standard_successes']); l=int(policy['limited_adverse_events']); c=int(policy['suspension_critical_events']); mult={'PROBATION':float(policy['probation_multiplier']),'LIMITED':float(policy['limited_multiplier']),'STANDARD':float(policy['standard_multiplier']),'ELEVATED':float(policy['elevated_multiplier']),'SUSPENDED':0.0}
+ except Exception:return False,'historical authority policy or snapshot is malformed'
+ if hist!=eval_at-win:return False,'historical authority history boundary is not policy-derived'
+ if snapshot.get('authority_policy_sha256')!=sha(policy):return False,'historical authority policy binding mismatch'
+ committed=[]
+ if expected_head!='0'*64:
+  for x in entries:
+   committed.append(x)
+   if x.get('event_hash')==expected_head:break
+  if not committed or committed[-1].get('event_hash')!=expected_head:return False,'historical authority ledger head is not present'
+ for x in entries[len(committed):]:
+  e=x.get('event') if isinstance(x,dict) else None
+  if not isinstance(e,dict):return False,'historical authority future event is malformed'
+  t=e.get('occurred_at')
+  if not isinstance(t,(int,float)) or isinstance(t,bool):return False,'historical authority future event timestamp is invalid'
+  if float(t)<=eval_at:return False,'historical authority head is inconsistent with evaluation time'
+ succ=adv=crit=0; advset={'EXECUTION_FAILED','AUTHORIZATION_REJECTED','POLICY_VIOLATION','TAMPER_DETECTED'}; critset={'TAMPER_DETECTED','POLICY_VIOLATION'}
+ for row in committed:
+  e=row.get('event') if isinstance(row,dict) else None
+  if not isinstance(e,dict):return False,'historical authority ledger contains malformed event'
+  t=e.get('occurred_at')
+  if not isinstance(t,(int,float)) or isinstance(t,bool):return False,'historical authority event timestamp is invalid'
+  if hist<=float(t)<=eval_at:
+   succ+=1 if e.get('event_type')=='EXECUTION_CONFIRMED' else 0; adv+=1 if e.get('event_type') in advset else 0; crit+=1 if e.get('event_type') in critset else 0
+ if (snapshot.get('successes'),snapshot.get('adverse_events'),snapshot.get('critical_events'))!=(succ,adv,crit):return False,'historical authority counters do not match ledger history'
+ if crit>=c:state='SUSPENDED';reason='critical authority event observed'
+ elif adv>=l:state='LIMITED';reason='adverse outcome threshold reached'
+ elif succ>=s and adv<=1:state='ELEVATED';reason='verified success threshold reached with bounded adverse history'
+ elif succ>=p and adv<=1:state='STANDARD';reason='probation success threshold reached'
+ else:state='PROBATION';reason='insufficient verified history for broader authority'
+ if snapshot.get('state')!=state:return False,'historical authority state is not deterministically justified'
+ if snapshot.get('multiplier')!=mult[state]:return False,'historical authority multiplier is inconsistent'
+ if snapshot.get('reason')!=reason:return False,'historical authority reason is inconsistent'
+ return True,'valid historical authority'
+
+def verify_learning(claim,att,ev,before,after,entries,policy,expected_head):
+ if claim.get('status')=='SUCCEEDED': et='EXECUTION_CONFIRMED'
+ elif claim.get('status')=='FAILED': et='EXECUTION_FAILED'
+ else: return False,'authority lifecycle learning requires a terminal independent outcome'
+ agent=claim.get('agent_id'); cap=before.get('capability_id'); cid=claim.get('claim_id')
+ if ev.get('agent_id')!=agent or ev.get('capability_id')!=cap or ev.get('event_type')!=et or ev.get('evidence_ref')!=cid:return False,'authority event does not match canonical outcome'
+ if ev.get('event_id')!=hashlib.sha256(f"{agent}:{cap}:{et}:{cid}".encode()).hexdigest():return False,'authority event id is not deterministic'
+ meta=ev.get('metadata') if isinstance(ev.get('metadata'),dict) else {}
+ if 'outcome_attestation_id' in meta and meta.get('outcome_attestation_id')!=att.get('attestation_id'):return False,'authority event is not bound to outcome attestation'
+ if 'attestation_type' in meta and meta.get('attestation_type')!=att.get('attestor_type'):return False,'authority event attestation type is inconsistent'
+ try:
+  eval_at=float(after['evaluated_at']); hist=float(after['history_start_at']); win=float(policy['window_seconds'])
+  thresholds=(int(policy['probation_successes']),int(policy['standard_successes']),int(policy['limited_adverse_events']),int(policy['suspension_critical_events']))
+  mult={'PROBATION':float(policy['probation_multiplier']),'LIMITED':float(policy['limited_multiplier']),'STANDARD':float(policy['standard_multiplier']),'ELEVATED':float(policy['elevated_multiplier']),'SUSPENDED':0.0}
+ except Exception:return False,'authority policy or post-learning snapshot is malformed'
+ if hist!=eval_at-win:return False,'post-learning authority history boundary is not policy-derived'
+ if after.get('authority_policy_sha256')!=sha(policy):return False,'post-learning authority policy binding mismatch'
+ if after.get('agent_id')!=agent or after.get('capability_id')!=cap:return False,'post-learning authority snapshot identity mismatch'
+ eh=sha(ev); matches=[x for x in entries if isinstance(x,dict) and x.get('event_id')==ev.get('event_id')]
+ if len(matches)!=1 or matches[0].get('event_hash')!=eh or matches[0].get('event')!=ev:return False,'authority ledger event is not exact canonical learning evidence'
+ if after.get('ledger_head_hash')!=eh:return False,'post-learning authority is not bound to the learning event hash'
+ try: event_at=float(ev['occurred_at']); before_at=float(before['evaluated_at'])
+ except Exception:return False,'authority learning timestamps are malformed'
+ if event_at>eval_at or event_at<hist:return False,'learning event is outside the post-learning authority evaluation window'
+ if before_at>eval_at:return False,'post-learning authority is evaluated before the historical snapshot'
+ if before.get('ledger_head_hash')!=expected_head:return False,'historical authority snapshot is not bound to authorization head'
+ prior=next((x.get('sequence') for x in entries if x.get('event_hash')==expected_head),0)
+ seq=matches[0].get('sequence')
+ if expected_head!='0'*64 and prior==0:return False,'authorization ledger head is not present in authority ledger'
+ if not isinstance(seq,int) or seq<=prior:return False,'learning event does not extend authorization ledger head'
+ for x in entries:
+  if isinstance(x,dict) and isinstance(x.get('sequence'),int) and x['sequence']>seq:
+   fe=x.get('event')
+   if isinstance(fe,dict) and float(fe.get('occurred_at',eval_at+1))<=eval_at:return False,'post-learning snapshot is not bound to ledger head at evaluation time'
+ successes=adverse=critical=0; adv={'EXECUTION_FAILED','AUTHORIZATION_REJECTED','POLICY_VIOLATION','TAMPER_DETECTED'}; crit={'TAMPER_DETECTED','POLICY_VIOLATION'}
+ for row in entries:
+  e=row.get('event') if isinstance(row,dict) else None
+  if not isinstance(e,dict):return False,'authority ledger contains malformed event'
+  t=e.get('occurred_at')
+  if not isinstance(t,(int,float)) or isinstance(t,bool):return False,'authority event timestamp is invalid'
+  if hist<=float(t)<=eval_at:
+   successes+=1 if e.get('event_type')=='EXECUTION_CONFIRMED' else 0; adverse+=1 if e.get('event_type') in adv else 0; critical+=1 if e.get('event_type') in crit else 0
+ if (after.get('successes'),after.get('adverse_events'),after.get('critical_events'))!=(successes,adverse,critical):return False,'post-learning authority counters do not match ledger history'
+ p,s,l,c=thresholds; prev=before.get('state')
+ if prev=='SUSPENDED': state='SUSPENDED'; reason='suspended until an explicit authority reset'
+ elif critical>=c: state='SUSPENDED'; reason='critical authority event observed'
+ elif adverse>=l: state='LIMITED'; reason='adverse outcome threshold reached'
+ elif successes>=s and adverse<=1: state='ELEVATED'; reason='verified success threshold reached with bounded adverse history'
+ elif successes>=p and adverse<=1: state='STANDARD'; reason='probation success threshold reached'
+ else: state='PROBATION'; reason='insufficient verified history for broader authority'
+ if after.get('state')!=state:return False,'post-learning authority state is not deterministically justified'
+ if after.get('multiplier')!=mult[state]:return False,'post-learning authority multiplier is inconsistent'
+ if after.get('reason')!=reason:return False,'post-learning authority reason is inconsistent'
+ return True,'valid deterministic learning transition'
+
+def verify(proof,key):
+ c={}; d=json.loads(Path(proof).read_text(encoding='utf-8')); trusted=load_trusted_key(key); pkg=d.get('package'); ph=d.get('package_sha256')
+ c['package_integrity']={'valid':isinstance(pkg,dict) and sha(pkg)==ph}
+ if not c['package_integrity']['valid']:return bad('package digest mismatch',c)
+ m=pkg.get('manifest'); p=m.get('payload') if isinstance(m,dict) else None
+ c['manifest_integrity']={'valid':isinstance(m,dict) and pkg.get('manifest_sha256')==sha(m)}
+ if not c['manifest_integrity']['valid']:return bad('manifest digest mismatch',c)
+ if pkg.get('protocol')!=PKG or pkg.get('media_type')!=MEDIA or not isinstance(p,dict) or p.get('proof_profile')!='authority_lifecycle':return bad('unsupported proof package',c)
+ if pkg.get('proof_protocol')!=PROTOCOL or pkg.get('protocol')!=PKG: return bad('package protocol metadata mismatch',c)
+ if not pkg.get('self_contained') or pkg.get('node_count')!=len(p.get('nodes',[])) or pkg.get('edge_count')!=len(p.get('edges',[])): return bad('package graph metadata mismatch',c)
+ inventory=[{'type':n.get('type'),'id':n.get('id'),'sha256':n.get('sha256')} for n in p.get('nodes',[])]
+ if pkg.get('node_inventory')!=inventory or pkg.get('graph_root_digest')!=p.get('root_digest'): return bad('package graph inventory mismatch',c)
+ if pkg.get('assertion_set_sha256')!=sha(pkg.get('assertions',[])): return bad('package assertion-set digest mismatch',c)
+ if p.get('proof_profile')=='authority_lifecycle' and pkg.get('required_artifact_types')!=list(REQUIRED_AUTHORITY_TYPES): return bad('authority lifecycle required artifact metadata mismatch',c)
+ if p.get('proof_profile')=='authority_lifecycle' and (pkg.get('assertions')!=p.get('authority_assertions') or pkg.get('assertion_set_sha256')!=p.get('authority_assertions_sha256')): return bad('package assertions are not bound to signed manifest',c)
+ c['trust_anchor']={'valid':m.get('issuer_public_key_b64')==trusted}
+ if not c['trust_anchor']['valid']:return bad('issuer public key is not trusted',c)
+ try: pub=Ed25519PublicKey.from_public_bytes(b64(trusted)); pub.verify(b64(m['signature']),canon(p)); sig=True
+ except Exception:sig=False
+ c['issuer_signature']={'valid':sig}
+ if not sig:return bad('invalid manifest signature',c)
+ refs=set(); good=True
+ for n in p.get('nodes',[]):
+  if not isinstance(n,dict) or not all(k in n for k in ('type','id','sha256','data')) or sha(n['data'])!=n['sha256'] or ref(n) in refs:good=False;break
+  refs.add(ref(n))
+ good=good and all(isinstance(e,dict) and all(k in e for k in ('from','relation','to')) and e['from'] in refs and e['to'] in refs for e in p.get('edges',[])) and root(p)==p.get('root_digest')
+ c['graph_integrity']={'valid':good}
+ if not good:return bad('graph integrity mismatch',c)
+ ok,why=assertions(m); c['authority_protocol']={'valid':ok}
+ if not ok:return bad(why,c)
+ a=node(p,'execution_authorization'); r=node(p,'execution_receipt'); ap=a['data']['payload']; rp=r['data']['payload']; t=rp.get('executed_at')
+ identity_node=node(p,'identity'); capability_node=node(p,'capability'); intent_node=node(p,'action_intent'); authority_node=node(p,'authority_state'); genesis_node=node(p,'genesis_authority')
+ if any(x is None for x in (identity_node,capability_node,intent_node,authority_node,genesis_node)): return bad('authority binding evidence incomplete',c)
+ if ap.get('agent_id') != p.get('agent_id') or ap.get('agent_id') != identity_node['data'].get('agent_id') or ap.get('identity_id') != identity_node['id'] or ap.get('capability_id') != capability_node['id'] or ap.get('intent_id') != intent_node['id']:
+  return bad('authorization identity/capability/intent binding failed',c)
+ if ap.get('action') != intent_node['data']:
+  return bad('execution authorization action payload differs from canonical intent',c)
+ if rp.get('authorization_sha256') != sha(ap):
+  return bad('execution receipt is not bound to the exact execution authorization payload',c)
+ external_state_required=bool(ap.get('external_state_required'))
+ external_state_scope=rp.get('execution_external_state_scope')
+ external_state=ap.get('external_state')
+ requirement=ap.get('external_state_requirement')
+ if not external_state_required:
+  if external_state_scope not in (None,'atomic'):
+   return bad('unsupported execution external-state scope',c)
+ else:
+  if external_state_scope != 'atomic':
+   return bad('required external state execution is not atomically enforced',c)
+  if not isinstance(external_state,dict) or not external_state:
+   return bad('required external state binding is missing',c)
+  if not isinstance(requirement,dict):
+   return bad('required external state policy requirement is missing',c)
+  metadata=intent_node['data'].get('metadata')
+  canonical_state=metadata.get('external_state') if isinstance(metadata,dict) else None
+  if not isinstance(canonical_state,dict) or external_state != canonical_state:
+   return bad('external state binding differs from canonical intent',c)
+  if ap.get('external_state_sha256') != sha(external_state):
+   return bad('external state fingerprint mismatch',c)
+  if ap.get('external_state_requirement_sha256') != sha(requirement):
+   return bad('external state requirement fingerprint mismatch',c)
+  if external_state.get('kind') != requirement.get('kind'):
+   return bad('external state kind does not satisfy policy requirement',c)
+  if not isinstance(external_state.get('reference'),str) or not external_state['reference'].strip():
+   return bad('external state binding is missing reference',c)
+  dv=external_state.get('digest')
+  if not isinstance(dv,str) or len(dv)!=64:
+   return bad('external state binding has invalid digest',c)
+  try: int(dv,16)
+  except Exception: return bad('external state binding digest is not hexadecimal',c)
+ authority_data=authority_node['data']; authority_sha=sha(authority_data)
+ if ap.get('authority_state_sha256') != authority_sha: return bad('historical authority snapshot digest mismatch',c)
+ capability_data=capability_node['data']
+ authority_obj={'authority_id':f"{ap['agent_id']}:{capability_node['id']}:{authority_data.get('ledger_head_hash') or sha(authority_data)}",'agent_id':ap['agent_id'],'identity_id':ap.get('identity_id',''),'capability_id':capability_node['id'],'capability_version':capability_data.get('version',1),'capability_sha256':ap.get('capability_sha256',''),'state':authority_data['state'],'multiplier':float(authority_data['multiplier']),'epoch':0,'ledger_head_hash':authority_data.get('ledger_head_hash',''),'effective_from':float(authority_data.get('evaluated_at',0.0)),'expires_at':None,'parent_authority_id':None,'evidence_refs':[],'metadata':{'source':'core.authority_state.AuthoritySnapshot','successes':authority_data.get('successes',0),'adverse_events':authority_data.get('adverse_events',0),'critical_events':authority_data.get('critical_events',0),'reason':authority_data.get('reason','')}}
+ if genesis_node['data'].get('authority_digest') != sha(authority_obj): return bad('Genesis authority does not bind historical authority',c)
+ try:pub.verify(b64(a['data']['signature']),canon(ap)); asig=True
+ except Exception:asig=False
+ c['authorization']={'valid':asig and ap.get('expires_at',-1)>=t>=ap.get('issued_at',10**30),'historical_verification_time':t}
+ if not c['authorization']['valid']:return bad('execution authorization verification failed',c)
+ try:pub.verify(b64(r['data']['signature']),canon(rp)); rsig=True
+ except Exception:rsig=False
+ c['execution']={'valid':rsig and rp.get('authorization_id')==ap.get('authorization_id') and rp.get('intent_id')==ap.get('intent_id')}
+ if not c['execution']['valid']:return bad('execution receipt verification failed',c)
+ l=node(p,'authority_ledger')['data'].get('entries',[]); prev=ZERO; lok=True
+ for i,x in enumerate(l,1):
+  if x.get('sequence')!=i or x.get('prev_event_hash')!=prev or hashlib.sha256(canon(x.get('event'))).hexdigest()!=x.get('event_hash'):lok=False;break
+  prev=x.get('event_hash')
+ head=ap.get('authority_ledger_head_hash'); c['historical_authority']={'valid':lok and (head=='0'*64 or any(x.get('event_hash')==head for x in l)),'ledger_sequence':next((i for i,x in enumerate(l,1) if x.get('event_hash')==head),0),'live_ledger_sequence':len(l)}
+ if not c['historical_authority']['valid']:return bad('historical authority binding failed',c)
+ h_ok,h_reason=verify_historical(authority_data,l,ap.get('authority_policy') or {},head); c['historical_authority_semantics']={'valid':h_ok,'reason':h_reason}
+ if not h_ok:return bad('historical authority semantics failed',c)
+ cl=node(p,'outcome_claim'); oe=node(p,'observed_effect'); at=node(p,'outcome_attestation'); ev=node(p,'authority_event'); af=node(p,'authority_state_after'); claim_data=cl['data']; observed_data=oe['data']; att_payload=at['data'].get('payload',{}); out=edge(p,ref(r),'OBSERVED_BY',ref(cl)) and edge(p,ref(cl),'SUPPORTED_BY',ref(oe)) and claim_data.get('execution_receipt_sha256')==sha(r['data']) and claim_data.get('observed_effect_sha256')==sha(observed_data) and oe['id']==claim_data.get('observed_effect_sha256') and observed_data.get('authorization_id')==ap.get('authorization_id') and observed_data.get('action_sha256')==claim_data.get('action_sha256') and observed_data.get('evidence_ref')==claim_data.get('evidence_ref') and observed_data.get('result_sha256')==claim_data.get('result_sha256') and observed_data.get('observation_sha256')==sha({'verifier_type':observed_data.get('verifier_type'),'evidence_kind':observed_data.get('evidence_kind'),'effect_status':observed_data.get('effect_status'),'authorization_id':observed_data.get('authorization_id'),'action_sha256':observed_data.get('action_sha256'),'observed_at':observed_data.get('observed_at'),'evidence_ref':observed_data.get('evidence_ref'),'result_sha256':observed_data.get('result_sha256'),'observation':observed_data.get('observation')}) and edge(p,ref(at),'ATTESTS',ref(cl)) and att_payload.get('claim_sha256')==sha(claim_data) and att_payload.get('claim',{}).get('claim_id')==claim_data.get('claim_id'); c['outcome']={'valid':out}; learn_ok,learn_reason=verify_learning(claim_data,att_payload,ev['data'],authority_node['data'],af['data'],l,ap.get('authority_policy') or {},ap.get('authority_ledger_head_hash','')); learn=learn_ok; c['learning']={'valid':learn,'reason':learn_reason}
+ if not out or not learn:return bad('outcome or learning binding failed',c)
+ eh=next((x.get('event_hash') for x in l if x.get('event_id')==ev['data'].get('event_id')),None); c['post_learning_authority']={'valid':eh is not None and af['data'].get('ledger_head_hash')==eh}
+ if not c['post_learning_authority']['valid']:return bad('post-learning authority is not ledger-bound',c)
+ return {'valid':True,'protocol':PROTOCOL,'root_digest':p['root_digest'],'package_sha256':ph,'assertion_set_sha256':pkg.get('assertion_set_sha256'),'checks':c}
+def main():
+ x=argparse.ArgumentParser();x.add_argument('proof');x.add_argument('--public-key',required=True);x.add_argument('--format',choices=['text','json'],default='text');a=x.parse_args()
+ try:
+  r=verify(a.proof,a.public_key)
+ except Exception as exc:
+  r=bad('verification failed closed: '+str(exc),{})
+ if a.format=='json':print(json.dumps(r,indent=2,sort_keys=True))
+ else:
+  print('VERIGATE AUTHORITY PROOF - STANDALONE');print('Protocol:',r.get('protocol',PROTOCOL));[print(f"{k.upper():28} {'PASS' if v.get('valid') else 'FAIL'}") for k,v in r.get('checks',{}).items()];print('RESULT:', 'VALID' if r.get('valid') else 'INVALID'); print('Reason:',r['reason']) if not r.get('valid') else None
+ return 0 if r.get('valid') else 1
+if __name__=='__main__':raise SystemExit(main())
+

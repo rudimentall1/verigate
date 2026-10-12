@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verigate-verify"
+version = "0.1.0"
+description = "Offline verifier for Verigate authority proofs: check a portable proof with only the issuer's public key."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "rudimentall1" }]
+keywords = ["ai-agents", "authorization", "verification", "ed25519", "audit", "x402"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security :: Cryptography",
+]
+dependencies = ["cryptography>=48.0.1,<51"]
+
+[project.urls]
+Homepage = "https://github.com/rudimentall1/verigate"
+Source = "https://github.com/rudimentall1/verigate/tree/main/packaging/verigate-verify"
+Issues = "https://github.com/rudimentall1/verigate/issues"
+"Proof format" = "https://github.com/rudimentall1/verigate/blob/main/docs/verigate-authority-proof-v1.md"
+"Threat model" = "https://github.com/rudimentall1/verigate/blob/main/docs/threat-model.md"
+
+[project.scripts]
+verigate-verify = "verigate_verify._verifier:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
