@@ -7,11 +7,14 @@ const TOOL_ID =
   DEV_FALLBACK_TOOL_ID;
 
 const $ = (id) => document.getElementById(id);
-const state = { anna: null, lastReceipt: null };
+const state = { anna: null, lastReceipt: null, busy: false, lastInterpretedDescription: "", requestId: 0 };
 const buttons = [$("interpret-btn"), $("check-btn")];
+const inputs = ["action-description", "agent-id", "target", "asset", "network", "amount", "resource"].map($);
 
 function setBusy(busy, message) {
+  state.busy = busy;
   buttons.forEach((button) => { button.disabled = busy; });
+  inputs.forEach((input) => { input.disabled = busy; });
   $("status").textContent = message || (busy ? "Working…" : "Ready.");
 }
 
@@ -24,6 +27,19 @@ function showError(message) {
 function clearError() {
   $("error").textContent = "";
   $("error").style.display = "none";
+}
+
+function clearResult() {
+  state.lastReceipt = null;
+  $("result").style.display = "none";
+  $("decision").textContent = "";
+  $("decision").className = "decision";
+  $("result-title").textContent = "";
+  $("result-meta").textContent = "";
+  $("result-summary").textContent = "";
+  $("rules").replaceChildren();
+  $("proof").textContent = "";
+  $("receipt-json").textContent = "";
 }
 
 function getTextFromCompletion(reply) {
@@ -117,7 +133,9 @@ function prettyRule(rule) {
   return message || id || JSON.stringify(rule);
 }
 
-async function interpretAction() {
+async function interpretAction(options = {}) {
+  const keepBusy = options.keepBusy === true;
+  if (state.busy && !keepBusy) return;
   clearError();
   $("interpretation").textContent = "";
   const description = fieldValue("action-description");
@@ -126,7 +144,10 @@ async function interpretAction() {
     return;
   }
 
-  setBusy(true, "Anna AI is extracting the payment details…");
+  if (description !== state.lastInterpretedDescription && state.lastInterpretedDescription) {
+    ["target", "asset", "network", "amount", "resource"].forEach((id) => { $(id).value = ""; });
+  }
+  if (!keepBusy) setBusy(true, "Anna AI is extracting the payment details…");
   try {
     const known = {
       agent_id: fieldValue("agent-id"),
@@ -150,10 +171,11 @@ async function interpretAction() {
     const summary = typeof parsed.summary === "string" ? parsed.summary : "The AI extracted fields from your description.";
     $("interpretation").textContent = "Anna AI interpretation: " + summary +
       (missing.length ? " Still needed: " + missing.map((id) => ({target:"recipient", asset:"asset", network:"network", amount:"amount"})[id]).join(", ") + "." : " Review the fields above, then check authority.");
-    setBusy(false, "Interpretation complete. Review the fields before checking.");
+    state.lastInterpretedDescription = description;
+    if (!keepBusy) setBusy(false, "Interpretation complete. Review the fields before checking.");
   } catch (error) {
     showError(error?.message || String(error));
-    setBusy(false, "Interpretation failed.");
+    if (!keepBusy) setBusy(false, "Interpretation failed.");
   }
 }
 
@@ -227,17 +249,26 @@ async function explainDecision(envelope, values) {
 }
 
 async function checkAuthority() {
+  if (state.busy) return;
+  const requestId = ++state.requestId;
+  setBusy(true, "Preparing authority check…");
   clearError();
-  $("result").style.display = "none";
+  clearResult();
 
   // The primary action also handles a plain-language-only request. Do not
   // make users discover a separate AI button before they can check authority.
   const requiredFields = ["target", "asset", "network", "amount"];
-  const needsInterpretation = fieldValue("action-description") &&
-    requiredFields.some((id) => !fieldValue(id));
+  const actionDescription = fieldValue("action-description");
+  const descriptionChanged = actionDescription && actionDescription !== state.lastInterpretedDescription;
+  const needsInterpretation = actionDescription &&
+    (descriptionChanged || requiredFields.some((id) => !fieldValue(id)));
   if (needsInterpretation) {
-    await interpretAction();
-    if ($("error").style.display !== "none") return;
+    await interpretAction({ keepBusy: true });
+    if (requestId !== state.requestId) return;
+    if ($("error").style.display !== "none") {
+      setBusy(false, "Check failed. Correct the request and retry.");
+      return;
+    }
   }
 
   let values;
@@ -245,10 +276,12 @@ async function checkAuthority() {
     values = collectInputs();
   } catch (error) {
     showError(error.message);
+    setBusy(false, "Check failed. Correct the request and retry.");
     return;
   }
   if (!state.anna) {
     showError("Verigate is not connected to Anna's app runtime. Open it from Anna and retry.");
+    setBusy(false, "Check failed. Open the app from Anna and retry.");
     return;
   }
 
@@ -267,6 +300,7 @@ async function checkAuthority() {
         resource: values.resource
       }
     });
+    if (requestId !== state.requestId) return;
     const envelope = extractDecisionEnvelope(toolResponse);
     state.lastReceipt = envelope.receipt;
 
@@ -289,9 +323,12 @@ async function checkAuthority() {
     $("result").style.display = "block";
 
     const explanation = await explainDecision(envelope, values);
+    if (requestId !== state.requestId) return;
     $("result-summary").textContent = explanation || baseExplanation(envelope.decision, envelope.matchedRules);
     setBusy(false, "Check complete. No transaction was executed.");
   } catch (error) {
+    if (requestId !== state.requestId) return;
+    clearResult();
     showError(error?.message || String(error));
     setBusy(false, "Check failed.");
   }
@@ -309,6 +346,15 @@ async function main() {
   }
   $("interpret-btn").addEventListener("click", interpretAction);
   $("check-btn").addEventListener("click", checkAuthority);
+  const invalidateResult = () => {
+    state.requestId += 1;
+    clearResult();
+    clearError();
+  };
+  inputs.forEach((input) => {
+    input.addEventListener("input", invalidateResult);
+    input.addEventListener("change", invalidateResult);
+  });
 }
 
 main();
