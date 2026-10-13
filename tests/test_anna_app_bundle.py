@@ -39,6 +39,8 @@ class AnnaAppBundleTest(unittest.TestCase):
         self.assertIn("AnnaAppRuntime.connect()", self.js)
         self.assertIn("state.anna.llm.complete", self.js)
         self.assertIn('method: "verigate_check"', self.js)
+        self.assertIn('const needsInterpretation = fieldValue("action-description")', self.js)
+        self.assertIn('await interpretAction();', self.js)
 
     def test_decision_is_taken_from_verigate_receipt(self):
         self.assertIn("decision_receipt", self.js)

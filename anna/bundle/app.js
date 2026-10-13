@@ -229,6 +229,17 @@ async function explainDecision(envelope, values) {
 async function checkAuthority() {
   clearError();
   $("result").style.display = "none";
+
+  // The primary action also handles a plain-language-only request. Do not
+  // make users discover a separate AI button before they can check authority.
+  const requiredFields = ["target", "asset", "network", "amount"];
+  const needsInterpretation = fieldValue("action-description") &&
+    requiredFields.some((id) => !fieldValue(id));
+  if (needsInterpretation) {
+    await interpretAction();
+    if ($("error").style.display !== "none") return;
+  }
+
   let values;
   try {
     values = collectInputs();

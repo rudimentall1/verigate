@@ -1,7 +1,7 @@
 {
   "slug": "verigate-authority",
   "name": "Verigate Authority",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "tagline": "Give your AI agent an action. Verigate decides if it has the authority.",
   "description": "Describe a payment or transfer in plain language. Anna AI extracts the request fields and explains the result, while Verigate's deterministic policy engine returns the signed ALLOW/WARN/BLOCK decision. The AI cannot authorize or execute a transaction. The signed decision receipt can be inspected and verified independently.",
   "category": "productivity",
