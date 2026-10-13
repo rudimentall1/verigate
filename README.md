@@ -18,7 +18,9 @@ AI agents can propose consequential actions. Verigate decides whether the agent 
 
 **Who it is for.** Companies and teams that build or run AI agents handling money or privileged actions (payments, x402, EVM, Solana, business APIs, MCP tools): spend control, an audit trail, and proof when someone asks "who allowed this?". Ordinary people benefit indirectly, through the products they use: an assistant that holds your card can be held to a hard limit, and there is evidence if something is disputed. Verigate is infrastructure for developers, not an end-user app.
 
-**Watch the 70-second explainer:** [docs/media/verigate-explainer.mp4](docs/media/verigate-explainer.mp4)
+[![Verigate explainer: AI proposes, Verigate decides](docs/media/verigate-explainer.gif)](docs/media/verigate-explainer.mp4)
+
+*Silent preview. Click it for the full 70-second video with voice.*
 
 ### For developers
 
