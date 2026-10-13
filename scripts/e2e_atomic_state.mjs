@@ -61,7 +61,7 @@ const oldState = ethers.keccak256(ethers.toUtf8Bytes("state:v1"));
 const newState = ethers.keccak256(ethers.toUtf8Bytes("state:v2"));
 const oracle = await deploy(Oracle, oldState);
 const target = await deploy(Target);
-const guard = await deploy(Guard);
+const guard = await deploy(Guard, await signer.getAddress());
 const reference = ethers.keccak256(ethers.toUtf8Bytes("resource:counter"));
 const targetData = target.interface.encodeFunctionData("increment");
 

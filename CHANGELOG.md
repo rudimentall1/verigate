@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Fixed: `VerigateAtomicStateGuard.execute()` was a permissionless call relay. Anyone could choose the target, the calldata and a self-supplied oracle and have the guard make the call, bypassing Verigate's off-chain authorization wherever a target trusted the guard's address. The guard now takes an immutable `executor` in its constructor, only that account may call `execute()`, and `value` must equal `msg.value`.
+- Tests: `npm run test:guard` covers a non-executor with a lying oracle and with an honest oracle, stale state, fresh state, value mismatch, value forwarding and a zero-address executor against a target that trusts only the guard. `test:atomic` now deploys with the executor argument. A new CI job runs both.
+- Upgrade note: the constructor signature changed. Earlier deployments (including the Arbitrum Sepolia test deployment) have no access control and should be treated as public relays; redeploy with the executor address.
+- Not yet done: on-chain verification of a signed per-action authorization (EIP-712) bound to chain id, guard, target, value, calldata hash, oracle, state reference, expected state, nonce and deadline. See `docs/threat-model.md`.
+
 ## Anna app 0.1.3 (Executa fixes for review feedback)
 
 - Fixed: Anna could not install the Executa (`describe handshake failed`). `describe` returned `parameters` as a JSON Schema object and had no `description`; it now follows Executa protocol 1.1 (parameters list, description, author, license).

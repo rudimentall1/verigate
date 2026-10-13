@@ -40,6 +40,7 @@ authorization, execution-side enforcement, evidence, and independent verificatio
 
 ## Known gaps and non-goals
 
+- **On-chain guard authorization.** `VerigateAtomicStateGuard.execute` is restricted to one immutable `executor` (the account that signs the transactions the off-chain router has authorized). It does not yet verify a per-action signed authorization on-chain, so what the executor sends is only as trustworthy as Verigate's router and the executor key. Earlier versions had no access control and were permissionless call relays: do not reuse an earlier deployment, and do not grant the guard privileges you would not grant to the executor.
 - **Transitive executor confinement.** A trusted handler can still create child effects that
   Verigate does not see. The default scope is `direct`; see README.
 - **Key custody.** Issuer keys live on local disk (optionally encrypted at rest). There is no

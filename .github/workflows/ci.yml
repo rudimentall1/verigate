@@ -24,3 +24,21 @@ jobs:
 
       - name: Smoke-check the API app
         run: PYTHONPATH=. python3 -c "from api.main import app; print('API app OK:', app.title)"
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install contract tooling
+        run: npm ci
+
+      - name: Atomic-state end-to-end test
+        run: npm run test:atomic
+
+      - name: Guard access-control test
+        run: npm run test:guard

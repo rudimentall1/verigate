@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "test:atomic": "node scripts/e2e_atomic_state.mjs",
-    "test:atomic:arb": "node scripts/e2e_atomic_state_arbitrum_sepolia.mjs"
+    "test:atomic:arb": "node scripts/e2e_atomic_state_arbitrum_sepolia.mjs",
+    "test:guard": "node scripts/test_guard_access_control.mjs"
   },
   "devDependencies": {
     "ethers": "^6.17.0",
