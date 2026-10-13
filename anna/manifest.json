@@ -8,7 +8,8 @@
     }
   ],
   "optional_executas": [],
-  "tags": ["verigate-authority"],
+  "system_prompt_addendum": "Verigate Authority checks a user-described payment or transfer against deterministic policy rules. Use Anna AI to extract user-provided fields and explain the final decision in plain language. The AI must never choose or override ALLOW/WARN/BLOCK; that decision comes from the Verigate tool. A signed decision receipt attests to the policy decision, not to a blockchain transaction. verigate_check only evaluates the request; it does not submit, broadcast, or execute a transaction. Never describe ALLOW as ready for execution or imply funds are moving. Never claim a transaction was executed.",
+  "tags": ["security", "agent-authority", "payments", "policy", "proof"],
   "ui": {
     "bundle": {
       "format": "static-spa",
@@ -21,14 +22,15 @@
         "title": "Verigate Authority",
         "default": true,
         "entry": "index.html",
-        "min_size": { "w": 420, "h": 360 },
-        "default_size": { "w": 620, "h": 520 },
+        "min_size": { "w": 460, "h": 660 },
+        "default_size": { "w": 640, "h": 820 },
         "resizable": true,
         "movable": true,
         "single_instance": true
       }
     ],
     "host_api": {
+      "llm": ["complete"],
       "tools": ["required:bundled:verigate-authority"],
       "storage": ["get", "set"],
       "window": ["set_title", "ready"]

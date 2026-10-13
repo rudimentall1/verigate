@@ -16,7 +16,7 @@ else:
 
 sys.path.insert(0, str(_SOURCE_REPO_ROOT))
 
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 _POLICY_PATH = _BUNDLE_ROOT / "policies" / "default.yaml"
 
 # Anna Executa protocol 1.1: `describe` must answer from a bare process start,
@@ -27,9 +27,9 @@ MANIFEST = {
     "display_name": "Verigate Authority",
     "version": VERSION,
     "description": (
-        "Wraps Verigate's Agent Authority Control Plane as a single verigate_check tool: "
-        "give it an agent action, get back a signed ALLOW/WARN/BLOCK authority decision "
-        "that can be verified independently without trusting this Executa."
+        "Evaluates agent actions against Verigate's deterministic policy and returns a signed "
+        "ALLOW/WARN/BLOCK authority decision that can be verified independently. It does not "
+        "sign, submit, broadcast, or execute a blockchain transaction."
     ),
     "author": "rudimentall1",
     "homepage": "https://github.com/rudimentall1/verigate",
@@ -40,9 +40,9 @@ MANIFEST = {
         {
             "name": "verigate_check",
             "description": (
-                "Ask Verigate's Agent Authority Control Plane whether an agent has authority "
-                "for a payment-shaped action. Returns the signed ALLOW/WARN/BLOCK decision; "
-                "the signature can be verified independently later."
+                "Evaluate a payment-shaped action against Verigate policy and return the signed "
+                "ALLOW/WARN/BLOCK decision. This checks authority only; it does not submit, "
+                "broadcast, or execute a payment."
             ),
             "timeout": 30,
             "parameters": [
