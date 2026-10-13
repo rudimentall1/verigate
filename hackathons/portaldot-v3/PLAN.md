@@ -1,10 +1,16 @@
-# PortaldotV3 Hacker House 2026
+# Portaldot V3 Hacker House 2026
 
-Status: planning and infrastructure discovery. This document does not claim that a Portaldot adapter or contract has been implemented or deployed.
+Status: preparation only. As of October 13, 2026, no PortalDot adapter or contract has been implemented or deployed by this project.
+
+## Preparation documents
+
+- [Verigate reuse audit](REUSE_AUDIT.md): source map, what to reuse, security boundaries and integration recommendation.
+- [First build day checklist](START_TOMORROW.md): new-repository setup, contract scope, tests, checkpoints and submission checklist.
+- Parent [hackathon index](../README.md).
 
 ## Network details
 
-Details below were supplied in the PortaldotV3 official developer announcement and guide. Re-check them against the guide and organizer announcements before deployment.
+Checked against the [official Portaldot V3 testnet guide](https://github.com/ItsCogumellum/portaldot-v3-testnet-guide) on October 13, 2026. Test connectivity and chain ID again before every deployment.
 
 | Setting | Value |
 |---|---|
@@ -14,86 +20,108 @@ Details below were supplied in the PortaldotV3 official developer announcement a
 | Node explorer | https://node-console.feso-apps.xyz/ |
 | Native test token | tPOTv3 |
 | Native token decimals | 14 |
+| Suggested initial Solidity version | 0.8.24 |
 | Official developer guide and samples | https://github.com/ItsCogumellum/portaldot-v3-testnet-guide |
 
-The guide covers Substrate queries and signing, native fungible assets, Uniques/NFTs, and Solidity development through MetaMask, Hardhat, Remix, and Portaldot tooling.
+The guide covers Substrate queries and signing, native fungible assets, Uniques/NFTs, and Solidity development through MetaMask, Hardhat, Remix and Portaldot tooling.
 
 ### Critical address-mapping warning
 
-The H160 address derived from an EVM key is not necessarily the Substrate account address used to fund the same account. Before funding a deployer, follow the guide's Developer → Runtime calls → reviveApi → accountId procedure and verify the mapping. Do not send funds based only on the Ethereum-style address.
+The EVM H160 address and the mapped Substrate SS58/AccountId32 address must not be assumed identical. Before funding a deployer, follow the guide's **Developer → Runtime calls → reviveApi → accountId** procedure and verify the mapped SS58 address. Do not send test POT based only on an Ethereum-style address.
 
-Never commit a private key, seed phrase, .env file, RPC credential, or funded-wallet material.
+Never commit a private key, seed phrase, `.env`, RPC credential or funded-wallet material.
 
 ## Product goal
 
-Demonstrate Verigate's existing authority model in a real PortaldotV3 EVM transaction flow:
+Demonstrate a verifiable authority check for one consequential agent action on PortalDot V3:
 
-> An agent can propose an operation, but execution only proceeds when the exact operation has valid authority. The resulting evidence must be independently inspectable.
+> An agent can propose an action, but execution only proceeds when the exact operation has valid authority. The result can be checked against actual PortalDot transaction evidence.
 
-The Portaldot integration must be a small, clearly scoped adapter and demo. It must not redefine Verigate or imply that the entire Verigate protocol runs on-chain.
+The integration must remain small and understandable. It must not redefine Verigate or imply the whole control plane runs on-chain.
 
-## Isolation boundary
+## Repository boundary
 
-Keep all Portaldot-specific work under this directory. Expected implementation layout:
+The contest implementation belongs in a **new public repository**, tentatively `rudimentall1/verigate-portaldot`. This Verigate folder remains the plan/audit index. Do not copy the Verigate core, router, database, API or signing implementation into a competing fork. Do not change core behavior solely for this event.
 
-- contracts/: a minimal demo target and, if justified by the design, a narrowly scoped authorization guard.
-- scripts/: network checks, deployment, address verification, and demo scenarios.
-- test/: allow, deny, replay, expiry, and tampering tests.
-- src/ or adapter/: Portaldot-specific EVM submission/receipt adapter.
-- evidence/: verified deployment metadata, transaction hashes, screenshots, and demo notes. Never put secrets here.
-- PLAN.md: this plan and progress record.
+Expected new-repository layout:
 
-Do not copy Verigate core, router, or signing implementation into a competing fork. Reuse the existing project through a documented integration boundary. Do not change core behavior solely to satisfy the hackathon.
+- `contracts/`: one narrowly scoped demo treasury/action contract.
+- `scripts/`: RPC preflight, deployment, demo and evidence collection.
+- `src/`: Verigate authorization bridge and PortalDot RPC client.
+- `test/`: contract tests and bridge/end-to-end security tests.
+- `docs/`: architecture and threat model.
+- `evidence/`: verified deployment data, transaction hashes and demo notes. Never put secrets here.
 
 ## Security design requirements
 
-Before choosing the final contract boundary, inspect Verigate's current authorization format and threat model.
+- Bind action authorization to chain ID, verifying contract, exact operation/recipient/amount or calldata hash, nonce and deadline.
+- Use a signature scheme supported by Solidity. Verigate's existing authorization is Ed25519 and cannot be assumed directly verifiable by an ordinary Solidity contract.
+- If the bridge validates Verigate's signed authorization off-chain and issues an EIP-712 signature, document the bridge signer as an explicit trust boundary. The bridge must verify the original signature, ALLOW outcome, expiry, nonce and all action fields before signing.
+- Reject replayed, expired, altered, wrong-chain/domain and wrong-target authorizations.
+- Prefer one fixed demo-token transfer operation over a generic caller-selected `target.call` relay.
+- A BLOCK/WARN response must not produce a bridge signature or broadcast.
+- Do not claim that an off-chain decision is enforced on-chain unless the contract or a named trusted boundary really enforces it.
+- A successful testnet deployment is not a security audit.
 
-- Bind authorization to the chain ID, verifying contract, exact target, value, calldata or a collision-resistant calldata hash, nonce, and deadline.
-- Use a signature scheme the on-chain verifier actually supports. Verigate's existing Ed25519 decisions cannot be assumed to be directly verifiable by an ordinary Solidity contract. If the demo uses an EIP-712 authorization bridge, document the signer trust boundary and how the bridge is authorized.
-- Reject replayed, expired, altered, wrong-chain, and wrong-target authorizations.
-- Avoid an unrestricted target.call interface controlled by caller-supplied expected values or caller-selected oracles.
-- Do not claim that an off-chain decision is enforced on-chain unless the contract or a clearly identified trusted execution boundary really enforces it.
-- Do not treat a successful deployment as a security audit.
+## Existing Verigate components to reference
+
+The [reuse audit](REUSE_AUDIT.md) maps the existing sources. Key seams are:
+
+- `POST /v1/actions/authorize` in `api/main.py`: protocol-agnostic authority issuance for an agent-signed `ActionIntent`.
+- `core/models.py`, `core/identity.py`, `core/capabilities.py`, `core/policy.py`: action shape, identity, capability and deterministic policy.
+- `attest/receipt.py`: signed decision receipt and separate execution authorization.
+- `enforcement/evm_rpc.py`, `enforcement/chain_verification.py`: EVM RPC and independent receipt observation patterns.
+- `docs/threat-model.md`: current trust boundaries and known gaps.
+
+Verigate's root repository has no root `pyproject.toml` publishing the entire runtime as an installable package. Do not document `pip install verigate` as a working integration unless that is separately created and tested. A local Verigate process/API or a documented checkout-based bridge is the more direct starting point.
 
 ## Implementation sequence
 
-1. **Verify network connectivity.** Query eth_chainId and compare it with 420420777; read the latest block; record the date and command output.
-2. **Validate wallet mapping and funding.** Follow the official reviveApi.accountId instructions. Confirm the mapped address before requesting or sending test tokens.
-3. **Prove the toolchain.** Compile, test, and deploy a minimal isolated Solidity contract with Hardhat. Verify the deployed address and transaction in the explorer.
-4. **Implement one meaningful guarded action.** Keep the example small enough to explain in a three-minute demo. Prefer a specific state change over an unrestricted generic call executor.
-5. **Test adversarial cases.** Include valid authorization, denied action, altered calldata, replay, expiry, wrong chain/domain, and wrong target. Add fuzzing/property tests if supported by the chosen stack.
-6. **Verify evidence.** Store contract addresses, deployment transaction, test output, source commit, and reproducible commands. Mark every item as pending until it has actually been checked.
-7. **Prepare the submission.** Provide architecture, setup/deployment instructions, limitations, attribution, and a demo no longer than the event's stated limit.
+1. Query PortalDot `eth_chainId` and `eth_blockNumber`; stop if the chain ID is not `420420777`.
+2. Confirm the H160-to-SS58 mapping using the official guide and fund the correct mapped account with test POT.
+3. Create the new public repo and start its in-period development history on October 14.
+4. Compile a minimal contract with Solidity `0.8.24`; add local contract tests.
+5. Implement the Verigate-to-EIP-712 bridge and verify the exact signed action fields.
+6. Test ALLOW, BLOCK with zero broadcasts, signature mutation, action mutation, replay, expiry, wrong chain/domain and wrong target.
+7. Deploy to PortalDot V3, check contract address and transaction receipt, then independently verify on-chain state.
+8. Record source commit, deployed contract address, transaction hashes and exact reproduction commands only after verification.
+9. Prepare architecture, limitations, runnable demo, video and pitch deck.
 
-## Event milestones to confirm
+## Official event milestones
 
-The working timeline collected from the event listing is:
+From the [PortalDot Hacker House 2026 event page](https://dorahacks.io/hackathon/portaldot-hacker-house-2026/detail), checked October 13, 2026:
 
-- Build period: October 14 to November 6, 2026.
-- Check-in / registration milestone: October 24, 2026; verify the exact prototype and registration requirements on the official event page.
-- Code freeze: November 6, 2026.
-- Demo day: November 7–8, 2026.
-- Community voting: November 8–9, 2026.
-- Awards: November 10, 2026.
+- **Kick-off and workshop:** October 14, 12:00–14:00 UTC.
+- **Check-in submission deadline:** October 24, 12:00 UTC.
+- **Feedback results:** October 26, 16:00 UTC.
+- **Office-hours application deadline:** October 27, 12:00 UTC.
+- **Office hours:** October 28–29 UTC.
+- **Final submission / code freeze:** November 6, 04:00 UTC.
+- **Live demo day:** November 8–9 UTC.
+- **Community Choice voting:** November 9, 16:00 to November 10, 16:00 UTC.
+- **Winners announced:** November 11 UTC.
+- **Reward distribution:** November 14, 12:00 UTC.
 
-The event materials indicate that the repository should be public, the work should include at least three substantive commits during the hackathon, and a public testnet deployment and concise demo are expected. Confirm the exact current rules with organizers. Existing open-source components may be reusable with attribution, but do not present pre-existing Verigate functionality as newly built hackathon work.
+Requirements include a public repository, at least three substantive commits during the event period, source code primarily produced during October 14–November 6, a running demo, deployment evidence where applicable, and a final demo video no longer than three minutes. The check-in should already show a prototype/core flow, not only an idea. See the event page for full submission and scoring requirements.
 
 ## Definition of done
 
-- [ ] PortaldotV3 RPC returns chain ID 420420777.
-- [ ] Deployer H160-to-account mapping has been checked using the official guide.
-- [ ] Isolated contract compiles and tests pass.
-- [ ] Contract is deployed to PortaldotV3 testnet and verified in the explorer.
-- [ ] Allow and deny scenarios are demonstrated with transaction evidence.
-- [ ] Replay and tampering tests demonstrate rejection.
+- [ ] RPC returns chain ID 420420777 and a current block number.
+- [ ] H160-to-SS58 mapping is checked and the correct account funded.
+- [ ] Contract compiles and local tests pass.
+- [ ] Bridge verifies the real Verigate Ed25519 authorization before issuing EIP-712.
+- [ ] ALLOW performs the intended operation; BLOCK and all tampering/replay/expiry cases are rejected.
+- [ ] PortalDot testnet deployment and receipt are independently verified.
+- [ ] README has exact reproducible install/test/deploy/demo commands.
+- [ ] Architecture and threat model explain the bridge trust boundary.
+- [ ] Deployment address, transaction hashes and screenshots reflect real verified results.
+- [ ] At least three meaningful in-period commits are present.
+- [ ] Check-in/final submission artifacts meet the current official rules.
 - [ ] No secrets are committed.
-- [ ] README includes exact reproducible commands, architecture, threat boundary, limitations, and attribution.
-- [ ] Demo and submission satisfy the current official rules.
 
-## Known limitations until implemented and tested
+## Known limitations before implementation
 
-- No Portaldot deployment address or transaction hash is recorded here yet.
-- No claim is made that the adapter, authorization guard, or demo has been built.
+- No PortalDot deployment address or transaction hash is recorded yet.
+- The live RPC endpoint has not been verified from this audit environment.
+- No adapter, bridge or contract for this submission has been implemented.
 - Testnet behavior is not evidence of mainnet readiness or an independent security audit.
-- The design must clearly distinguish off-chain Verigate authorization from any on-chain enforcement.
