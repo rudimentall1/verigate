@@ -15,6 +15,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from enum import Enum
 from typing import Any
 
@@ -165,8 +166,6 @@ def _authority_decimal(value: object):
     boundary, but fail closed for booleans, malformed values and non-finite
     numbers.
     """
-    from decimal import Decimal, InvalidOperation
-
     if isinstance(value, bool) or not isinstance(value, (int, float, Decimal, str)):
         return None
     try:
@@ -177,9 +176,9 @@ def _authority_decimal(value: object):
 
 
 def authority_ceiling_allows(
-    static_limit: int | float | str,
-    multiplier: int | float | str,
-    requested_amount: int | float | str,
+    static_limit: int | float | Decimal | str,
+    multiplier: int | float | Decimal | str,
+    requested_amount: int | float | Decimal | str,
 ) -> bool:
     """Enforce that dynamic authority never widens the static capability.
 
