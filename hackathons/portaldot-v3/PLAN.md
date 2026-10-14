@@ -1,11 +1,11 @@
 # Portaldot V3 Hacker House 2026
 
-Status: preparation only. As of October 13, 2026, no PortalDot adapter or contract has been implemented or deployed by this project.
+Status: implementation scaffold committed on October 14, 2026. Public repo: [rudimentall1/verigate-portaldot](https://github.com/rudimentall1/verigate-portaldot). The contract, bridge-signing CLI and tests are in place; GitHub Actions passed 15 tests and Solidity compilation. Live RPC connectivity, Verigate end-to-end signing and PortalDot deployment are still unverified.
 
 ## Preparation documents
 
 - [Verigate reuse audit](REUSE_AUDIT.md): source map, what to reuse, security boundaries and integration recommendation.
-- [First build day checklist](START_TOMORROW.md): new-repository setup, contract scope, tests, checkpoints and submission checklist.
+- [Build checklist and current state](START_TOMORROW.md): actual repo status, commands to run locally, and remaining network/integration gates.
 - Parent [hackathon index](../README.md).
 
 ## Network details
@@ -41,16 +41,17 @@ The integration must remain small and understandable. It must not redefine Verig
 
 ## Repository boundary
 
-The contest implementation belongs in a **new public repository**, tentatively `rudimentall1/verigate-portaldot`. This Verigate folder remains the plan/audit index. Do not copy the Verigate core, router, database, API or signing implementation into a competing fork. Do not change core behavior solely for this event.
+The contest implementation now lives in the public repository [rudimentall1/verigate-portaldot](https://github.com/rudimentall1/verigate-portaldot). This Verigate folder remains the plan/audit index. Do not copy the Verigate core, router, database, API or signing implementation into a competing fork. Do not change core behavior solely for this event.
 
-Expected new-repository layout:
-
-- `contracts/`: one narrowly scoped demo treasury/action contract.
-- `scripts/`: RPC preflight, deployment, demo and evidence collection.
-- `src/`: Verigate authorization bridge and PortalDot RPC client.
-- `test/`: contract tests and bridge/end-to-end security tests.
-- `docs/`: architecture and threat model.
-- `evidence/`: verified deployment data, transaction hashes and demo notes. Never put secrets here.
+Current repository layout:
+ 
+- `contracts/PortalDotAgentGuard.sol`: signed native-token transfer guard.
+- `adapter/verigate-bridge.js`: initial Verigate response validation and EIP-712 signing CLI.
+- `scripts/preflight.js`: PortalDot EVM RPC check for chain ID and latest block.
+- `scripts/deploy.js`: network-guarded deployment command.
+- `test/`: contract tests and bridge-binding tests.
+- `docs/`: security boundary and bridge mapping.
+- `evidence/`: deployment evidence placeholder; no live evidence recorded.
 
 ## Security design requirements
 
@@ -79,13 +80,13 @@ Verigate's root repository has no root `pyproject.toml` publishing the entire ru
 
 1. Query PortalDot `eth_chainId` and `eth_blockNumber`; stop if the chain ID is not `420420777`.
 2. Confirm the H160-to-SS58 mapping using the official guide and fund the correct mapped account with test POT.
-3. Create the new public repo and start its in-period development history on October 14.
-4. Compile a minimal contract with Solidity `0.8.24`; add local contract tests.
-5. Implement the Verigate-to-EIP-712 bridge and verify the exact signed action fields.
-6. Test ALLOW, BLOCK with zero broadcasts, signature mutation, action mutation, replay, expiry, wrong chain/domain and wrong target.
-7. Deploy to PortalDot V3, check contract address and transaction receipt, then independently verify on-chain state.
-8. Record source commit, deployed contract address, transaction hashes and exact reproduction commands only after verification.
-9. Prepare architecture, limitations, runnable demo, video and pitch deck.
+3. [x] Create the public repo and start its in-period history. Initial implementation commits are in `rudimentall1/verigate-portaldot`.
+4. [x] Add the Solidity 0.8.24 native-payment guard and local tests. GitHub Actions passed the compile and test steps; 15 tests passed.
+5. [~] Add the first Verigate-to-EIP-712 bridge CLI. It validates the ALLOW response shape, asks the configured Verigate verification endpoint to validate both Ed25519 artifacts, then signs the bounded EIP-712 transfer. It still needs a real-response end-to-end run.
+6. [~] Add local checks for action binding, BLOCK/WARN refusal, replay, expiry, wrong chain, signature and recipient/amount mutation. End-to-end transaction/broadcast evidence remains outstanding.
+7. [ ] Re-check PortalDot V3 RPC, chain ID and current block; the event team previously reported the RPC unavailable.
+8. [ ] Confirm H160-to-SS58 mapping, fund the correct test account, deploy, and independently verify the transaction receipt and contract state.
+9. [ ] Record only verified deployment evidence, then prepare the runnable demo, video and pitch deck.
 
 ## Official event milestones
 
@@ -106,22 +107,24 @@ Requirements include a public repository, at least three substantive commits dur
 
 ## Definition of done
 
+- [x] Public implementation repository created and linked.
+- [x] Contract, bridge-binding and negative-path tests committed.
+- [x] GitHub Actions: 15 tests passed and Solidity compilation succeeded on commit `6c59a74f75fa2f01e72d45b1a193d71f60e22dfa`.
+- [ ] Run tests from the developer's local checkout and inspect the results.
 - [ ] RPC returns chain ID 420420777 and a current block number.
 - [ ] H160-to-SS58 mapping is checked and the correct account funded.
-- [ ] Contract compiles and local tests pass.
-- [ ] Bridge verifies the real Verigate Ed25519 authorization before issuing EIP-712.
-- [ ] ALLOW performs the intended operation; BLOCK and all tampering/replay/expiry cases are rejected.
+- [ ] Run the bridge against a real response from the configured Verigate instance.
+- [ ] Verify ALLOW performs the intended operation; BLOCK, tampering, replay, expiry and wrong-domain cases remain rejected end-to-end.
 - [ ] PortalDot testnet deployment and receipt are independently verified.
 - [ ] README has exact reproducible install/test/deploy/demo commands.
-- [ ] Architecture and threat model explain the bridge trust boundary.
-- [ ] Deployment address, transaction hashes and screenshots reflect real verified results.
 - [ ] At least three meaningful in-period commits are present.
 - [ ] Check-in/final submission artifacts meet the current official rules.
 - [ ] No secrets are committed.
 
-## Known limitations before implementation
+## Known limitations
 
-- No PortalDot deployment address or transaction hash is recorded yet.
-- The live RPC endpoint has not been verified from this audit environment.
-- No adapter, bridge or contract for this submission has been implemented.
+- No PortalDot deployment address or transaction hash is recorded.
+- Live PortalDot RPC connectivity has not been confirmed from this environment.
+- Bridge binding tests use fixtures. The CLI has not yet been run against a real Verigate API response.
+- The contract trusts a dedicated EVM bridge signer; it does not verify Verigate's Ed25519 signature on-chain.
 - Testnet behavior is not evidence of mainnet readiness or an independent security audit.
