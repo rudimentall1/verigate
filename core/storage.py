@@ -407,7 +407,7 @@ class Storage:
                     intent.target,
                     intent.asset or "",
                     intent.network or "",
-                    intent.amount if intent.amount is not None else 0.0,
+                    float(intent.amount) if intent.amount is not None else 0.0,
                     decision.decision.value,
                     json.dumps([
                         {"rule_id": m.rule_id, "severity": m.severity.value, "message": m.message}
