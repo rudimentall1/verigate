@@ -110,8 +110,8 @@ Requirements include a public repository, at least three substantive commits dur
 - [x] Public implementation repository created and linked.
 - [x] Contract, bridge-binding and negative-path tests committed.
 - [x] GitHub Actions: 15 tests passed and Solidity compilation succeeded on commit `6c59a74f75fa2f01e72d45b1a193d71f60e22dfa`.
-- [ ] Run tests from the developer's local checkout and inspect the results.
-- [ ] RPC returns chain ID 420420777 and a current block number.
+- [x] Local Windows checkout verified by the developer: `npm test` reported 15 passing; `npm run compile` reported nothing to compile.
+- [ ] RPC returns chain ID 420420777 and a current block number. The developer's `npm run preflight` currently fails with `fetch failed`; no live network access is confirmed.
 - [ ] H160-to-SS58 mapping is checked and the correct account funded.
 - [ ] Run the bridge against a real response from the configured Verigate instance.
 - [ ] Verify ALLOW performs the intended operation; BLOCK, tampering, replay, expiry and wrong-domain cases remain rejected end-to-end.
@@ -124,7 +124,7 @@ Requirements include a public repository, at least three substantive commits dur
 ## Known limitations
 
 - No PortalDot deployment address or transaction hash is recorded.
-- Live PortalDot RPC connectivity has not been confirmed from this environment.
+- Live PortalDot RPC connectivity has not been confirmed. The developer also ran `npm run preflight`, which returned `fetch failed`.
 - Bridge binding tests use fixtures. The CLI has not yet been run against a real Verigate API response.
 - The contract trusts a dedicated EVM bridge signer; it does not verify Verigate's Ed25519 signature on-chain.
 - Testnet behavior is not evidence of mainnet readiness or an independent security audit.
