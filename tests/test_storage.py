@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 
-from core.models import Decision, GuardrailDecision, PaymentIntent
+from core.models import ActionIntent, Decision, GuardrailDecision, PaymentIntent
 from core.storage import Storage
 
 
@@ -49,6 +51,33 @@ class StorageTest(unittest.TestCase):
             decision=decision,
             matched_rules=(),
         )
+
+    def test_record_action_accepts_decimal_and_preserves_exact_amount(self) -> None:
+        intent = ActionIntent(
+            agent_id="agent-exact",
+            action_type="payment",
+            target="merchant",
+            amount=Decimal("1000000"),
+            amount_exact="1000000",
+            asset="USDC",
+            network="base",
+            intent_id="exact-decimal-action",
+        )
+        decision = GuardrailDecision(
+            intent_id=intent.intent_id,
+            agent_id=intent.agent_id,
+            decision=Decision.ALLOW,
+            matched_rules=(),
+        )
+
+        self.storage.record_action(intent, decision)
+
+        row = self.storage._conn.execute(
+            "SELECT amount, intent_json FROM audit_log WHERE intent_id = ?",
+            (intent.intent_id,),
+        ).fetchone()
+        self.assertEqual(row[0], 1000000.0)
+        self.assertEqual(json.loads(row[1])["amount_exact"], "1000000")
 
     def test_update_signature_attaches_to_existing_row(self) -> None:
         intent = self._intent()
