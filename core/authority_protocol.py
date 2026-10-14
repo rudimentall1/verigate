@@ -157,12 +157,40 @@ def canonical_digest(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
+def _authority_decimal(value: object):
+    """Parse a numeric authority value without binary-float arithmetic.
+
+    ActionIntent.as_dict() serializes Decimal amounts as strings so graph
+    digests remain JSON-compatible. Accept finite numeric strings at this
+    boundary, but fail closed for booleans, malformed values and non-finite
+    numbers.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal, str)):
+        return None
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    return parsed if parsed.is_finite() else None
+
+
 def authority_ceiling_allows(
-    static_limit: float,
-    multiplier: float,
-    requested_amount: float,
+    static_limit: int | float | str,
+    multiplier: int | float | str,
+    requested_amount: int | float | str,
 ) -> bool:
-    """Enforce the Genesis invariant: dynamic authority never widens scope."""
-    if static_limit < 0 or multiplier < 0 or multiplier > 1.0 or requested_amount < 0:
+    """Enforce that dynamic authority never widens the static capability.
+
+    Values are compared as Decimals because graph serialization can turn an
+    ActionIntent Decimal into a string. Invalid inputs fail closed.
+    """
+    limit = _authority_decimal(static_limit)
+    factor = _authority_decimal(multiplier)
+    requested = _authority_decimal(requested_amount)
+    if limit is None or factor is None or requested is None:
         return False
-    return requested_amount <= static_limit * multiplier
+    if limit < 0 or factor < 0 or factor > 1 or requested < 0:
+        return False
+    return requested <= limit * factor
