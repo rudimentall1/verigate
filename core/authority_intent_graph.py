@@ -142,10 +142,11 @@ class AuthorityAwareIntentGraph:
                 reason, tuple(dependency_statuses),
             )
 
-        if action.amount is not None:
+        requested_amount = action.exact_amount
+        if requested_amount is not None:
             static_limit = self.capability.max_per_action.get(action.asset or "")
             if static_limit is not None and not authority_ceiling_allows(
-                static_limit, self.authority.multiplier, action.amount
+                static_limit, self.authority.multiplier, requested_amount
             ):
                 return self._assessment(
                     node_id, action, PlanAuthorityStatus.BLOCKED,
