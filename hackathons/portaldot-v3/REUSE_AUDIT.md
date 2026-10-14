@@ -112,3 +112,12 @@ If the bridge cannot be implemented safely in the available time, reduce scope a
 - [ ] New integration implemented, tested or deployed.
 
 The unchecked items must stay unchecked until directly verified.
+
+
+## Implementation kickoff update (2026-10-14)
+
+The separate public repository has now been created: [rudimentall1/verigate-portaldot](https://github.com/rudimentall1/verigate-portaldot).
+
+The initial contract and project scaffold were committed in commit 090c8ee. The Verigate bridge-signing CLI and binding tests were added in commit 6c59a74. GitHub Actions completed successfully on the latter commit: 15 tests passed and Solidity 0.8.24 compilation succeeded.
+
+This confirms the code was pushed and that hosted CI passed. It does not confirm a developer-local run, a live PortalDot RPC response, a real authorization response through the bridge, a wallet mapping, or an on-chain deployment. No deployment evidence has been recorded.
