@@ -8,7 +8,7 @@ This directory holds competition-specific planning, adapters, demos, and evidenc
 - [Verigate source reuse audit and security boundaries](portaldot-v3/REUSE_AUDIT.md)
 - [First build day checklist](portaldot-v3/START_TOMORROW.md)
 
-The PortalDot files in this repository are preparation documents. They do not claim an implementation or a testnet deployment exists. The contest implementation should be developed in a separate public repository during the official build period.
+PortalDot implementation work now lives in the separate public repository [rudimentall1/verigate-portaldot](https://github.com/rudimentall1/verigate-portaldot). The initial contract, bridge-signing CLI, test suite, RPC preflight and docs are committed there. GitHub Actions reports 15 passing tests and a successful Solidity compile. No live PortalDot RPC check or deployment is claimed yet.
 
 Rules for this directory:
 - Do not rewrite Verigate's core authority lifecycle, signing protocol, router, or execution model solely for a hackathon.
