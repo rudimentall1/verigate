@@ -6,7 +6,7 @@ This directory holds competition-specific planning, adapters, demos, and evidenc
 
 - [Integration plan and official event milestones](portaldot-v3/PLAN.md)
 - [Verigate source reuse audit and security boundaries](portaldot-v3/REUSE_AUDIT.md)
-- [First build day checklist](portaldot-v3/START_TOMORROW.md)
+- [Build checklist and current state](portaldot-v3/START_TOMORROW.md)
 
 PortalDot implementation work now lives in the separate public repository [rudimentall1/verigate-portaldot](https://github.com/rudimentall1/verigate-portaldot). The initial contract, bridge-signing CLI, test suite, RPC preflight and docs are committed there. GitHub Actions reports 15 passing tests and a successful Solidity compile. No live PortalDot RPC check or deployment is claimed yet.
 
