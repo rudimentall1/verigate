@@ -38,6 +38,21 @@ class AuthorityProtocolTest(unittest.TestCase):
         self.assertEqual(request.as_dict()["lifecycle_stage"], "PROPOSE")
         self.assertNotEqual(request.digest, "")
 
+    def test_dynamic_authority_uses_exact_decimal_comparison(self):
+        from decimal import Decimal
+
+        self.assertTrue(
+            authority_ceiling_allows(Decimal("100"), Decimal("0.5"), Decimal("50"))
+        )
+        self.assertFalse(
+            authority_ceiling_allows(
+                Decimal("100"),
+                Decimal("0.5"),
+                Decimal("50.0000000000000000001"),
+            )
+        )
+        self.assertFalse(authority_ceiling_allows("NaN", "0.5", "1"))
+
     def test_dynamic_authority_cannot_exceed_static_ceiling(self):
         self.assertTrue(authority_ceiling_allows(100, 0.5, 50))
         self.assertFalse(authority_ceiling_allows(100, 0.5, 51))
