@@ -76,3 +76,19 @@ It asks the configured Verigate POST /v1/verify endpoint to validate the Ed25519
 - Keep the funded contract balance small.
 - The bridge signer is a trust boundary. Solidity verifies EIP-712 secp256k1 signatures, not Verigate's Ed25519 signature.
 - No deployment address, transaction hash or explorer screenshot is valid evidence unless confirmed on the live expected chain.
+
+
+## Check the real Verigate-to-bridge path
+
+The developer has confirmed the local API at `http://127.0.0.1:8000` returns `status=ok` and its OpenAPI includes `/v1/actions/authorize`, `/v1/verify` and `/v1/verify/adversarial`.
+
+Run the isolated harness from the PortalDot repository using the Python interpreter in the local Verigate checkout:
+
+```powershell
+$verigateRoot = "$env:USERPROFILE\\Desktop\\Work\\verigate\\verigate"
+& "$verigateRoot\\.venv\\Scripts\\python.exe" ".\\scripts\\verigate_local_demo.py" --verigate-root "$verigateRoot"
+```
+
+It starts a temporary verifier on port 8001 with separate test keys and database, then checks ALLOW, BLOCK, signed artifact verification, and the bridge CLI against a dummy contract domain. It cleans the temporary private keys/database afterwards. This is a local integration check only; it makes no PortalDot transaction.
+
+Do not proceed to live signing or deployment unless the harness prints PASS. If it fails, keep the full traceback/output and fix the failing boundary before continuing.
