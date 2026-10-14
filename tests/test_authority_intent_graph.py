@@ -1,7 +1,9 @@
 import unittest
 
 from core.authority_intent_graph import AuthorityAwareIntentGraph, PlanAuthorityStatus
-from core.authority_protocol import Authority, AuthorityState
+from decimal import Decimal
+
+from core.authority_protocol import Authority, AuthorityState, authority_ceiling_allows
 from core.intent_graph import (
     IntentEdge,
     IntentGraph,
@@ -116,6 +118,39 @@ class AuthorityAwareIntentGraphTest(unittest.TestCase):
 
         self.assertEqual(assessment.status, PlanAuthorityStatus.BLOCKED)
         self.assertIn("action type outside capability", assessment.reason)
+
+    def test_authority_ceiling_accepts_decimal_strings_from_graph_serialization(self):
+        # ActionIntent.as_dict() serializes Decimal amounts as strings. A
+        # capability loaded from a JSON-backed source may likewise contain a
+        # numeric string. Both must be compared exactly, not crash with TypeError.
+        self.assertTrue(authority_ceiling_allows("10", 1.0, "2"))
+        self.assertTrue(authority_ceiling_allows(Decimal("0.3"), "0.5", Decimal("0.15")))
+        self.assertFalse(authority_ceiling_allows("10", "0.5", "5.01"))
+
+    def test_authority_ceiling_fails_closed_on_invalid_values(self):
+        self.assertFalse(authority_ceiling_allows("not-a-number", 1.0, "2"))
+        self.assertFalse(authority_ceiling_allows("10", 1.0, "NaN"))
+        self.assertFalse(authority_ceiling_allows(True, 1.0, 1.0))
+        self.assertFalse(authority_ceiling_allows(10, 1.01, 2))
+
+    def test_graph_assessment_handles_decimal_amount_round_trip(self):
+        action = ActionIntent(
+            agent_id="agent-1",
+            action_type="payment",
+            target="merchant",
+            amount=Decimal("2"),
+            amount_exact="2",
+            asset="USDC",
+            intent_id="decimal-action",
+            timestamp=1000.0,
+        )
+        graph = IntentGraphBuilder("decimal-plan").add_action(action).build()
+        cap = self.capability(max_amount="10")
+        assessment = AuthorityAwareIntentGraph(
+            graph, self.authority(cap), cap
+        ).assess("decimal-action")
+
+        self.assertEqual(assessment.status, PlanAuthorityStatus.ELIGIBLE)
 
     def test_dynamic_authority_reduces_numeric_scope(self):
         action = self.action("a1", amount=8.0)
