@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from decimal import Decimal, InvalidOperation
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -158,11 +159,19 @@ def canonical_digest(payload: dict[str, Any]) -> str:
 
 
 def authority_ceiling_allows(
-    static_limit: float,
-    multiplier: float,
-    requested_amount: float,
+    static_limit: float | Decimal | str,
+    multiplier: float | Decimal | str,
+    requested_amount: float | Decimal | str,
 ) -> bool:
-    """Enforce the Genesis invariant: dynamic authority never widens scope."""
-    if static_limit < 0 or multiplier < 0 or multiplier > 1.0 or requested_amount < 0:
+    """Enforce the Genesis invariant without rounding exact monetary inputs."""
+    try:
+        limit = Decimal(str(static_limit))
+        factor = Decimal(str(multiplier))
+        requested = Decimal(str(requested_amount))
+    except (InvalidOperation, ValueError, TypeError):
         return False
-    return requested_amount <= static_limit * multiplier
+    if not all(value.is_finite() for value in (limit, factor, requested)):
+        return False
+    if limit < 0 or factor < 0 or factor > 1 or requested < 0:
+        return False
+    return requested <= limit * factor
