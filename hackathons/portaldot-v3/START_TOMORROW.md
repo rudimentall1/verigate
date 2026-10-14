@@ -8,10 +8,10 @@
 
 The repository is public. It contains a Solidity native-payment guard, Hardhat tests, an RPC preflight, a deployment script, a Verigate bridge-signing CLI, and security notes.
 
-GitHub Actions compiled the contract and passed 15 tests on the bridge commit. This is confirmed CI evidence, not a claim that the same commands were run on the developer's machine.
+GitHub Actions compiled the contract and passed 15 tests on the bridge commit. The developer has since run the same checks locally on Windows: `npm test` reported 15 passing and `npm run compile` returned `Nothing to compile`.
 
 Still unverified:
-- public PortalDot V3 RPC and current block;
+- public PortalDot V3 RPC and current block (the latest local preflight returned `fetch failed`);
 - wallet H160-to-SS58 mapping and faucet funding;
 - CLI run against a real response from the Verigate API;
 - any deployment or transaction on PortalDot V3.
@@ -62,8 +62,8 @@ It asks the configured Verigate POST /v1/verify endpoint to validate the Ed25519
 
 ## Next steps
 
-1. Run the install, test and compile commands on the local checkout.
-2. Probe the public RPC with npm run preflight. If it fails, keep building and don't deploy.
+1. [x] Run install, test and compile on the local checkout. `npm test`: 15 passing; `npm run compile`: `Nothing to compile`.
+2. [ ] Re-check the public RPC with `npm run preflight` later. The current result is `fetch failed`; keep building but do not deploy.
 3. Capture a real ALLOW and BLOCK response from the running Verigate instance; run the bridge against both and confirm BLOCK never produces a signature.
 4. Add/review tests for amount, target, action ID, expiry, nonce and wrong-chain behavior.
 5. Once RPC is back, map the EVM deployer to SS58, request test tPOT, deploy and record the actual transaction receipt.
