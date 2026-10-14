@@ -128,3 +128,12 @@ Requirements include a public repository, at least three substantive commits dur
 - Bridge binding tests use fixtures. The CLI has not yet been run against a real Verigate API response.
 - The contract trusts a dedicated EVM bridge signer; it does not verify Verigate's Ed25519 signature on-chain.
 - Testnet behavior is not evidence of mainnet readiness or an independent security audit.
+
+
+## Local Verigate API check (2026-10-14)
+
+The developer started the local Verigate API from the `Work\\verigate\\verigate` checkout. `GET /health` returned `status=ok`, and the OpenAPI document listed `POST /v1/actions/authorize`, `POST /v1/verify`, `POST /v1/verify/adversarial`, and `GET /v1/public-key`.
+
+The PortalDot repo now includes `scripts/verigate_local_demo.py`. It is designed to exercise a second loopback-only Verigate process on port 8001 with its own temporary policy, SQLite DB and throwaway issuer keys. It submits signed ALLOW/BLOCK actions, verifies the signatures, runs the bridge CLI with a disposable EVM signer and dummy contract domain, and asserts that BLOCK is refused. It does not use the normal Verigate DB or send transactions.
+
+**Still outstanding:** the developer has not run this helper yet. A successful `/health` response from port 8000 confirms the API process is up, but does not by itself prove the PortalDot adapter end-to-end flow.
