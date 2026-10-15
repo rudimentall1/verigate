@@ -5,6 +5,7 @@ from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import sign_receipt, verify_receipt, verify_execution_authorization
+from attest.verify import verify_attestation
 from core.models import ActionIntent, Decision, GuardrailDecision, PaymentIntent
 from core.engine import GuardrailEngine
 from core.policy import Policy
@@ -144,3 +145,22 @@ def test_decision_receipt_rejects_context_fingerprint_drift():
     ok, reason = verify_receipt(receipt, key.public_key())
     assert not ok
     assert "context fingerprint" in reason
+
+def test_independent_attestation_verifier_accepts_unicode_payload():
+    import base64
+    import json
+
+    key = Ed25519PrivateKey.generate()
+    payload = {"action": "перевод", "metadata": {"label": "café", "symbol": "β"}}
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    attestation = {
+        "payload": payload,
+        "signature": base64.b64encode(key.sign(canonical)).decode("ascii"),
+        "algorithm": "Ed25519",
+    }
+
+    ok, reason = verify_attestation(attestation, key.public_key())
+    assert ok, reason
+
