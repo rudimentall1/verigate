@@ -20,7 +20,7 @@ def verify_attestation(attestation: dict, public_key: Ed25519PublicKey) -> tuple
     except KeyError as exc:
         return False, f"malformed attestation, missing field: {exc}"
 
-    payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
     try:
         signature = base64.b64decode(signature_b64)
