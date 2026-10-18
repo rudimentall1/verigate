@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import signal
 import sys
@@ -16,8 +17,8 @@ else:
 
 sys.path.insert(0, str(_SOURCE_REPO_ROOT))
 
-VERSION = "0.1.4"
-_POLICY_PATH = _BUNDLE_ROOT / "policies" / "default.yaml"
+VERSION = "0.1.8"
+_POLICY_PATH = _BUNDLE_ROOT / "policies" / "anna.yaml"
 
 # Anna Executa protocol 1.1: `describe` must answer from a bare process start,
 # so everything that touches the filesystem or heavy imports is lazy (see
@@ -40,9 +41,9 @@ MANIFEST = {
         {
             "name": "verigate_check",
             "description": (
-                "Evaluate a payment-shaped action against Verigate policy and return the signed "
+                "Simulate a payment-shaped action against Verigate policy and return the signed "
                 "ALLOW/WARN/BLOCK decision. This checks authority only; it does not submit, "
-                "broadcast, or execute a payment."
+                "broadcast, or execute a payment, and it does not record anything."
             ),
             "timeout": 30,
             "parameters": [
@@ -52,8 +53,15 @@ MANIFEST = {
                 {"name": "network", "type": "string", "description": "Network the action runs on, e.g. base.", "required": True},
                 {"name": "amount", "type": "number", "description": "Amount of the asset.", "required": True},
                 {"name": "resource", "type": "string", "description": "Optional resource the action pays for.", "required": False, "default": ""},
+                {"name": "ai_flags_json", "type": "string", "description": "Optional JSON array of AI risk flags [{code, message}]. Advisory only: flags can raise ALLOW to WARN but never lower a decision.", "required": False, "default": ""},
             ],
-        }
+        },
+        {
+            "name": "verigate_policy_summary",
+            "description": "Return the active policy limits (networks, assets, caps, confirmation threshold) so a request can be compared with them. Read-only.",
+            "timeout": 15,
+            "parameters": [],
+        },
     ],
 }
 
@@ -113,6 +121,34 @@ def _get_state():
     return _state
 
 
+def _clean(text: object, limit: int) -> str:
+    return " ".join(str(text).split())[:limit]
+
+
+def _parse_ai_flags(raw: object) -> list:
+    """Turn the optional AI flags into advisory WARN matches (at most 5)."""
+    from core.models import RuleMatch, Severity
+
+    if raw in (None, ""):
+        return []
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError as exc:
+        raise ValueError("ai_flags_json must be valid JSON") from exc
+    if not isinstance(data, list):
+        raise ValueError("ai_flags_json must be a JSON array")
+    flags = []
+    for item in data[:5]:
+        if isinstance(item, dict):
+            code, message = _clean(item.get("code", "other"), 32), _clean(item.get("message", ""), 200)
+        elif isinstance(item, str):
+            code, message = "other", _clean(item, 200)
+        else:
+            continue
+        flags.append(RuleMatch("ai_risk_flag", Severity.WARN, f"AI review ({code or 'other'}): {message}".strip()))
+    return flags
+
+
 def _verigate_check(args: dict) -> dict:
     for name in _REQUIRED_ARGS:
         if name not in args:
@@ -120,27 +156,55 @@ def _verigate_check(args: dict) -> dict:
     try:
         from core.models import PaymentIntent
 
+        for name in ("agent_id", "payee", "asset", "network"):
+            if not isinstance(args[name], str):
+                raise TypeError(f"{name} must be a string")
+        amount = float(args["amount"])
+        if not math.isfinite(amount):
+            raise ValueError("amount must be a finite number")
         intent = PaymentIntent(
-            agent_id=args["agent_id"],
-            payee=args["payee"],
-            asset=args["asset"],
-            network=args["network"],
-            amount=float(args["amount"]),
-            resource=args.get("resource", ""),
+            agent_id=args["agent_id"].strip(),
+            payee=args["payee"].strip(),
+            asset=args["asset"].strip(),
+            network=args["network"].strip(),
+            amount=amount,
+            resource=_clean(args.get("resource", ""), 200),
         )
+        advisory = _parse_ai_flags(args.get("ai_flags_json"))
         engine, private_key = _get_state()
-        attestation = engine.authorize(intent, private_key)
+        # A check is a simulation: nothing is recorded, so the same request always
+        # gets the same answer and repeated tests do not consume any budget.
+        attestation = engine.authorize(intent, private_key, advisory=advisory, persist=False)
     except (ValueError, TypeError) as exc:
         return {"success": False, "error": f"invalid arguments: {exc}"}
     return {"success": True, "data": attestation}
 
 
+def _verigate_policy_summary(args: dict) -> dict:
+    engine, _ = _get_state()
+    p = engine.policy
+    return {
+        "success": True,
+        "data": {
+            "allowed_networks": p.allowed_networks,
+            "allowed_assets": p.allowed_assets,
+            "per_tx_cap": p.per_tx_cap,
+            "daily_cap": p.daily_cap,
+            "new_payee_cap": p.new_payee_cap,
+            "confirmation_required_over": p.confirmation_required_over,
+            "payee_validation": p.payee_validation,
+            "require_positive_amount": p.require_positive_amount,
+            "simulation": True,
+        },
+    }
+
+
 def invoke(tool: str, args: dict) -> dict:
-    if tool != "verigate_check":
+    if tool not in ("verigate_check", "verigate_policy_summary"):
         raise RpcError(-32601, f"Unknown tool: {tool}")
     if not isinstance(args, dict):
         raise RpcError(-32602, "arguments must be an object")
-    return _verigate_check(args)
+    return _verigate_check(args) if tool == "verigate_check" else _verigate_policy_summary(args)
 
 
 def handle(request: dict):

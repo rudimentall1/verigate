@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from .models import ActionIntent, PaymentIntent, RuleMatch, Severity
 from .money import exceeds, is_valid_amount, total
+from .payee import validate_payee
 from .policy import Policy
 
 
@@ -323,3 +324,23 @@ def check_rate_limit(policy: Policy, calls_last_minute: int) -> RuleMatch | None
             f"{policy.rate_limit_per_minute}",
         )
     return None
+
+
+def check_payee_format(intent: PaymentIntent, policy: Policy) -> RuleMatch | None:
+    """BLOCK recipients that are not well-formed for the network (opt-in via policy)."""
+    if not policy.payee_validation:
+        return None
+    problem = validate_payee(intent.payee, intent.network)
+    if problem is None:
+        return None
+    shown = str(intent.payee).strip()[:42] or "(empty)"
+    return RuleMatch("invalid_payee", Severity.BLOCK, f"recipient '{shown}' is rejected: {problem}")
+
+
+def check_positive_amount(intent: PaymentIntent, policy: Policy) -> RuleMatch | None:
+    """BLOCK zero, negative and non-finite amounts (opt-in via policy)."""
+    if not policy.require_positive_amount:
+        return None
+    if is_valid_amount(intent.amount) and intent.amount > 0:
+        return None
+    return RuleMatch("amount_not_positive", Severity.BLOCK, "the amount must be a finite number greater than zero")

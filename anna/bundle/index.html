@@ -31,6 +31,16 @@
       #error { display: none; white-space: pre-wrap; color: #8b2732; background: #fff0f1; border: 1px solid #ffd1d5; border-radius: 9px; padding: 10px 12px; margin-top: 12px; font-size: 12px; line-height: 1.5; }
       #interpretation { font-size: 13px; line-height: 1.55; margin-top: 12px; color: #3f4e67; }
       #result { display: none; }
+      #clarify { display: none; background: #fff8e8; border: 1px solid #f0dcaa; border-radius: 9px; padding: 12px 14px; margin-top: 14px; }
+      #clarify h2 { font-size: 14px; margin-bottom: 6px; }
+      .confirm { display: none; margin: 10px 0 0; font-weight: 700; }
+      .confirm input { width: auto; margin-right: 6px; }
+      #ai-review, #limits { display: none; margin: 12px 0; }
+      #ai-review h2, #limits h2 { font-size: 14px; }
+      #limits-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      #limits-table td { padding: 6px 8px; border-bottom: 1px solid #e7ebf2; vertical-align: top; }
+      .st-ok { color: #17683a; font-weight: 750; } .st-review { color: #81520a; font-weight: 750; } .st-blocked { color: #9b2530; font-weight: 750; }
+      .suggestion { margin: 0 0 12px; font-size: 13px; color: #40516e; }
       .result-top { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
       .decision { display: inline-flex; align-items: center; justify-content: center; min-width: 88px; border-radius: 9px; padding: 9px 12px; font-size: 13px; font-weight: 850; letter-spacing: .04em; }
       .allow { background: #e2f6e9; color: #17683a; }
@@ -53,15 +63,16 @@
         <div class="mark" aria-hidden="true">V</div>
         <div>
           <h1>Verigate Authority</h1>
-          <p class="subtitle">Describe a payment or transfer. Anna AI structures the request and explains the result; Verigate's policy engine makes the authority decision.</p>
+          <p class="subtitle">Describe a payment in plain language. Anna AI reads it, asks about anything unclear, flags risks and explains the result. Verigate's policy engine makes the ALLOW / WARN / BLOCK decision.</p>
         </div>
       </header>
 
       <section class="card">
-        <h2>1. Describe the action</h2>
-        <p class="helper">Use plain language, for example: “Pay 25 USDC on Base to 0xMerchantABC for invoice 1042.” The AI only extracts details; it cannot approve a payment.</p>
+        <h2>1. Describe the payment</h2>
+        <p class="helper">For example: “Pay 25 USDC on Base to 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed for invoice 1042.” Anna AI reads your text, asks for anything missing or unclear, and flags risks. It can only add scrutiny: it can never approve a payment or lower a decision.</p>
         <label for="action-description">What do you want the agent to do?</label>
-        <textarea id="action-description" placeholder="Describe the payment, recipient, network, asset and amount…" required></textarea>
+        <textarea id="action-description" placeholder="Describe the payment: recipient address, network, asset and amount…" required></textarea>
+        <p class="helper" style="margin:14px 0 0">Details Anna AI extracted. Check them and edit if needed.</p>
         <div class="grid">
           <div>
             <label for="agent-id">Agent identifier</label>
@@ -69,7 +80,7 @@
           </div>
           <div>
             <label for="target">Recipient / payee</label>
-            <input id="target" placeholder="0xMerchantABC" autocomplete="off" />
+            <input id="target" placeholder="0x… (filled in by Anna AI)" autocomplete="off" />
           </div>
           <div>
             <label for="asset">Asset</label>
@@ -89,10 +100,14 @@
           </div>
         </div>
         <div class="actions">
-          <button id="interpret-btn" class="secondary" type="button">Interpret with Anna AI</button>
-          <button id="check-btn" class="primary" type="button">Check authority</button>
+          <button id="check-btn" class="primary" type="button">Check with Anna AI</button>
         </div>
-        <div class="note">Review the extracted fields before checking. The final ALLOW, WARN or BLOCK always comes from Verigate's deterministic policy evaluation, not from the AI.</div>
+        <div id="clarify" aria-live="polite">
+          <h2>Anna AI needs a few details</h2>
+          <ul id="clarify-list" class="rules"></ul>
+          <label id="confirm-wrap" class="confirm"><input id="confirm-details" type="checkbox" /> I confirm the details above are what I mean</label>
+        </div>
+        <div class="note">Anna AI reads and reviews your request. The final ALLOW, WARN or BLOCK always comes from Verigate's deterministic policy, and AI input can only make a result stricter, never more permissive. A check is a simulation: nothing is recorded or executed.</div>
         <div id="interpretation" aria-live="polite"></div>
         <p id="status" role="status">Connecting to Anna…</p>
         <div id="error" role="alert"></div>
@@ -107,6 +122,15 @@
           </div>
         </div>
         <p id="result-summary" class="result-summary"></p>
+        <p id="suggestion" class="suggestion"></p>
+        <div id="ai-review">
+          <h2>Anna AI review (advisory)</h2>
+          <ul id="ai-flags" class="rules"></ul>
+        </div>
+        <div id="limits">
+          <h2>How this request compares with the limits</h2>
+          <table id="limits-table"></table>
+        </div>
         <h2 id="rules-heading">Policy checks</h2>
         <ul id="rules" class="rules"></ul>
         <div class="proof" id="proof"></div>
@@ -115,7 +139,7 @@
           <pre id="receipt-json"></pre>
         </details>
       </section>
-      <p class="fineprint">Verigate checks policy authority only. An ALLOW result is not an executed transaction and does not guarantee that a payment is safe or will succeed.</p>
+      <p class="fineprint">Verigate checks policy authority only, as a simulation. An ALLOW result is not an executed transaction, is not recorded, and does not guarantee that the recipient is safe or that a payment will succeed.</p>
     </main>
     <script src="anna-tool-ids.js"></script>
     <script type="module" src="app.js"></script>

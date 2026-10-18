@@ -1,0 +1,65 @@
+# Verigate policy used by the Anna app (Verigate Authority).
+# Same limits as policies/default.yaml, plus two hardening options that the
+# default policy keeps off for backwards compatibility:
+#   payee_validation:        BLOCK recipients that are not well-formed addresses for the network
+#   require_positive_amount: BLOCK zero, negative and non-finite amounts
+# A well-formed address does not prove the recipient is safe.
+payee_validation: true
+require_positive_amount: true
+
+# Verigate default policy — a reasonable starting point, not a complete
+# threat model. Edit the numbers below to match your own risk tolerance.
+
+# Payees that are never allowed, regardless of amount.
+blocked_payees: []
+
+# If set, ONLY these payees are allowed (allowlist mode). Leave commented
+# out to allow any payee not explicitly blocked.
+# allowed_payees:
+#   - "0xYourTrustedMerchant"
+
+# Input provenance controls for agent/tool actions. When configured, the
+# declared provenance is bound into the signed intent context and enforced
+# before executable authority is issued.
+# input_provenance_constraints:
+#   trust: trusted
+#
+# Execution egress controls for agent/tool actions. If configured, a
+# destination outside this scope is BLOCKed before executable authority is issued.
+# This is the deterministic boundary for untrusted-input -> tool -> egress abuse.
+# allowed_destinations:
+#   - "https://api.your-company.example"
+# blocked_destinations:
+#   - "https://attacker.example"
+
+# Networks / assets this agent is permitted to pay on/with.
+allowed_networks:
+  - base
+  - ethereum
+  - solana
+allowed_assets:
+  - USDC
+
+# Hard cap per single transaction, per asset. Exceeding this is a BLOCK.
+per_tx_cap:
+  USDC: 500
+
+# Tighter cap for the *first* payment to a payee the agent hasn't paid
+# before. Exceeding this is a WARN (human confirmation), not an outright
+# block — it earns full trust once the payee has a track record.
+new_payee_cap:
+  USDC: 50
+
+# Rolling 24h spend cap per asset, across all payees. Exceeding this is a
+# WARN.
+daily_cap:
+  USDC: 2000
+
+# Any single payment above this amount always requires human confirmation,
+# even to a known payee.
+confirmation_required_over:
+  USDC: 250
+
+# Payments per minute before further calls are BLOCKed outright (basic
+# anti-runaway-loop protection).
+rate_limit_per_minute: 30

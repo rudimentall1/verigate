@@ -34,17 +34,18 @@ class AnnaAppBundleTest(unittest.TestCase):
                 self.assertIn(f'id="{element_id}"', self.html)
 
     def test_ui_exposes_ai_interpretation_and_authority_check(self):
-        self.assertIn('id="interpret-btn"', self.html)
+        self.assertIn('id="confirm-details"', self.html)
+        self.assertIn('id="clarify-list"', self.html)
         self.assertIn('id="check-btn"', self.html)
         self.assertIn("AnnaAppRuntime.connect()", self.js)
         self.assertIn("state.anna.llm.complete", self.js)
         self.assertIn('method: "verigate_check"', self.js)
-        self.assertIn('const descriptionChanged = actionDescription && actionDescription !== state.lastInterpretedDescription', self.js)
-        self.assertIn('await interpretAction({ keepBusy: true });', self.js)
+        self.assertIn('method: "verigate_policy_summary"', self.js)
+        self.assertIn('review = await interpretRequest(description);', self.js)
         self.assertIn('if (state.busy) return;', self.js)
         self.assertIn('state.lastInterpretedDescription = description;', self.js)
         self.assertIn("function clearResult()", self.js)
-        self.assertIn('input.addEventListener("input", invalidateResult)', self.js)
+        self.assertIn('input.addEventListener("input", () =>', self.js)
         self.assertIn('inputs.forEach((input) => { input.disabled = busy; })', self.js)
         self.assertIn("const requestId = ++state.requestId", self.js)
         self.assertIn("if (requestId !== state.requestId) return;", self.js)
@@ -53,7 +54,7 @@ class AnnaAppBundleTest(unittest.TestCase):
         self.assertIn("decision_receipt", self.js)
         self.assertIn('["ALLOW", "WARN", "BLOCK"]', self.js)
         self.assertIn("matched_rules", self.js)
-        self.assertIn("Never change ALLOW, WARN, or BLOCK", self.js)
+        self.assertIn("never change ALLOW, WARN or BLOCK", self.js)
 
     def test_runtime_tool_id_sidecar_is_loaded(self):
         self.assertIn('src="anna-tool-ids.js"', self.html)

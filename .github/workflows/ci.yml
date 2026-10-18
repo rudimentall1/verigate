@@ -24,3 +24,22 @@ jobs:
 
       - name: Smoke-check the API app
         run: PYTHONPATH=. python3 -c "from api.main import app; print('API app OK:', app.title)"
+
+  anna-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          npm install --no-save --no-audit --no-fund jsdom
+
+      - name: Anna app end-to-end UI test (real app and plugin, scripted LLM)
+        run: node scripts/test_anna_ui.mjs
