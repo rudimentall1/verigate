@@ -3,12 +3,12 @@
   "required_executas": [
     {
       "tool_id": "bundled:verigate-authority",
-      "min_version": "0.1.3",
+      "min_version": "0.1.8",
       "version": "latest"
     }
   ],
   "optional_executas": [],
-  "system_prompt_addendum": "Verigate Authority checks a user-described payment or transfer against deterministic policy rules. Use Anna AI to extract user-provided fields and explain the final decision in plain language. The AI must never choose or override ALLOW/WARN/BLOCK; that decision comes from the Verigate tool. A signed decision receipt attests to the policy decision, not to a blockchain transaction. verigate_check only evaluates the request; it does not submit, broadcast, or execute a transaction. Never describe ALLOW as ready for execution or imply funds are moving. Never claim a transaction was executed.",
+  "system_prompt_addendum": "Verigate Authority checks a user-described payment against deterministic policy rules. Use Anna AI to interpret the request, ask for missing or unclear details, flag risks in the text (advisory only) and explain the final decision in plain language. AI input can only make a result stricter: it must never choose, override or lower ALLOW/WARN/BLOCK; that decision comes from the Verigate tool. A signed decision receipt attests to the policy decision, not to a blockchain transaction. verigate_check only simulates the request; it does not submit, broadcast, record or execute a transaction. Never describe ALLOW as ready for execution or imply funds are moving. Never claim a transaction was executed.",
   "tags": ["security", "agent-authority", "payments", "policy", "proof"],
   "ui": {
     "bundle": {
