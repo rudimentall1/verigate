@@ -1,48 +1,38 @@
-[Reading 44 lines from start (total: 44 lines, 0 remaining)]
-
 # Privacy Policy
 
-Last updated: October 4, 2026
+Last updated: 2026-10-20
 
-## 1. Introduction
+This policy covers the **Verigate Authority** app for Anna and the open-source **Verigate** software in this repository (https://github.com/rudimentall1/verigate).
 
-Verigate ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we handle information when you use the Verigate application and related services (the "Service").
+## What the Anna app does with your data
 
-## 2. Information We Do Not Collect
+Verigate Authority checks a payment you describe against a policy and returns ALLOW, WARN or BLOCK with a signed Decision Receipt. It does not send, sign or execute any transaction.
 
-We **do not collect, store, or process any personal data** that can directly or indirectly identify an individual. This includes, but is not limited to:
-- Names, email addresses, phone numbers, or physical addresses
-- Account credentials or authentication data
-- Financial information, payment details, or transaction identifiers associated with individuals
-- Location data, browsing history, or usage patterns tied to specific users
-- Any other information that could be used to identify a natural person
+- **What you enter:** the plain-language description and the form fields (agent identifier, recipient, asset, network, amount, purpose or invoice).
+- **Anna's language model:** to read your request, ask about missing details, flag risks and explain the result, the app sends your description and the form values to the language model provided by Anna through its app runtime. That processing is governed by Anna's own privacy policy and terms. The developer of Verigate does not receive, store or see these prompts.
+- **The policy check:** it runs locally inside the Verigate tool on the Anna agent where you installed the app. It does not call any external service.
+- **What is stored:** a check is a simulation and is not recorded. The tool keeps only a signing key (used to sign Decision Receipts) and a small local policy database in its app data folder on your agent. They stay on your agent; the developer does not receive them.
+- **Receipts:** the signed Decision Receipt is shown in the app window. If you copy or share it, it contains the details of the request.
 
-## 3. Technical Data Processing
+## What we do not do
 
-To operate the Service and ensure its proper functionality, the application may process **technical, non-personal data** that is automatically generated during interaction with the agent. This data is used exclusively for:
-- Executing verification tasks and smart-contract operations
-- Maintaining the stability, security, and performance of the agent
-- Debugging and improving technical functionality
+- No analytics, tracking, advertising or profiling.
+- No sale or sharing of data with third parties.
+- No access to your wallets, private keys or funds. Please never type private keys or seed phrases into the app.
+- No hosted service: the developer operates no server that receives your data.
 
-This technical data is temporary, processed locally or in-memory where possible, and is not associated with any individual user. It may include:
-- Technical parameters of requests sent to the agent
-- Execution logs and operational metrics
-- Temporary state data required for task completion
+## Verigate as open-source software
 
-## 4. Data Sharing and Disclosure
+If you run Verigate yourself, the data you process stays under your control. The software contains no telemetry.
 
-Since we do not collect personal data, we do not sell, trade, or otherwise transfer any personal information to third parties. Technical data, where applicable, is only processed to the extent necessary to deliver the Service and is not shared with external parties for marketing or profiling purposes.
+## Children
 
-## 5. Security
+The app is not directed at children.
 
-We take reasonable technical measures to protect any technical data processed by the Service against unauthorized access, alteration, disclosure, or destruction. However, no method of electronic transmission or storage is 100% secure, and we cannot guarantee absolute security.
+## Security
 
-## 6. Changes to This Privacy Policy
+Report vulnerabilities privately as described in SECURITY.md.
 
-We may update this Privacy Policy from time to time. Any changes will be posted in this file with a revised "Last updated" date. Your continued use of the Service after changes are posted constitutes acceptance of the updated policy.
+## Changes and contact
 
-## 7. Contact Us
-
-If you have any questions about this Privacy Policy, please contact us through the project's GitHub repository: https://github.com/rudimentall1/verigate
-
-[executed on device: WIN-RUIG7JUH12D (3a2d96e7-9c3a-4d1e-ac99-8b8aaad990b9)]
+We may update this policy; the date above changes when we do. Questions: https://github.com/rudimentall1/verigate/issues
