@@ -1,5 +1,13 @@
 # Changelog
 
+## Anna app 0.1.9 (real Cloud Agent test feedback)
+
+- Fixed: on the real Anna model the answer to the intake step was occasionally not valid JSON, which showed "Anna AI could not read this request" on a perfectly good request. The app now allows more room for the answer, tolerates trailing commas, and retries once with a stricter reminder before giving up; the message says that Anna's answer, not the user's request, could not be read.
+- Fixed: the previous "Anna AI: ..." summary stayed visible after a new check failed; it is now cleared at the start of every check.
+- Fixed: the list of missing details could repeat itself (for example a recipient question twice). It now has one deterministic question per missing detail.
+- Changed: removed the unused `storage` host permission, so the permission dialog only asks for what the app needs (`llm.complete` and the Verigate tool). The Executa is unchanged (0.1.8).
+- Tests: UI flow tests for retry, repeated failure, cleared stale text and non-repeating questions.
+
 ## Anna app 0.1.8 (review feedback: AI role and recipient validation)
 
 - Fixed: a malformed recipient such as `0xabc`, an empty recipient or a zero amount was ALLOWed and received a signed receipt. The policy engine now validates the recipient address for the network before any limit is evaluated: EVM addresses must be `0x` plus 40 hex characters (and pass the EIP-55 checksum when mixed-case), Solana addresses must be base58 for 32 bytes, the zero address and zero or non-finite amounts are rejected. The check lives in the engine (`core/payee.py`, `core/rules.py`) and is enabled by the Anna policy (`policies/anna.yaml`); the default policy keeps it off for backwards compatibility. A well-formed address still does not prove the recipient is safe.

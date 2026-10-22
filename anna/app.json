@@ -1,7 +1,7 @@
 {
   "slug": "verigate-authority",
   "name": "Verigate Authority",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "tagline": "Give your AI agent an action. Verigate decides if it has the authority.",
   "description": "Describe a payment in plain language. Anna AI reads your request, asks about anything missing or unclear, flags risks such as instructions hidden in the text, and explains the result in simple terms. Verigate's deterministic policy engine returns the signed ALLOW/WARN/BLOCK decision, including validation of the recipient address; AI input can only make a result stricter, never more permissive. Checks are simulations: nothing is executed or recorded. The signed decision receipt can be verified independently.",
   "category": "productivity",

@@ -169,6 +169,41 @@ await test("malformed model output: clear error, no check is run", async () => {
   eq(ui.calls.tools.length, 0);
 });
 
+await test("unreadable model output is retried once, then the check runs", async () => {
+  let n = 0;
+  const ui = await launch({ interpret: () => (++n === 1 ? "Sure! Here is the analysis you asked for." : undefined) });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  ok(!ui.shown("error"), "no error after a successful retry");
+});
+
+await test("trailing commas in the model JSON are tolerated", async () => {
+  const messy = '{"payee": "' + VALID + '", "asset": "USDC", "network": "base", "amount": 25, "resource": null, "summary": "ok", "ambiguities": [], "questions": [], "risk_flags": [],}';
+  const ui = await launch({ interpret: messy });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+});
+
+await test("repeated unreadable output: clear message, no check, stale text cleared", async () => {
+  let n = 0;
+  const ui = await launch({
+    description: "Pay my usual merchant on Base",
+    interpret: () => (++n === 1 ? interpretJson({ payee: VALID, network: "base", questions: ["How much?"] }) : "I cannot produce JSON today."),
+  });
+  await ui.click();
+  ok(ui.text("interpretation").length > 0, "the first run leaves a summary");
+  await ui.click();
+  ok(ui.shown("error") && ui.text("error").includes("could not be read"), "readable explanation of the failure");
+  eq(ui.text("interpretation"), "", "the stale summary is gone");
+  eq(ui.calls.tools.length, 0);
+});
+
+await test("missing details are asked once each, AI duplicates are not repeated", async () => {
+  const ui = await launch({ description: "Pay my usual merchant on Base", interpret: interpretJson({ network: "base", questions: ["Which recipient address should receive the payment?", "Who is the specific payee (name or address)?"] }) });
+  await ui.click();
+  eq(ui.$("clarify-list").querySelectorAll("li").length, 3, "recipient, asset, amount exactly once each");
+});
+
 await test("explanation failure falls back to a deterministic explanation", async () => {
   const ui = await launch({ explain: new Error("LLM down") });
   await ui.click();
