@@ -30,3 +30,16 @@ The script reads the key without echoing it, updates the root-only environment f
 ## Pilot scope
 
 The policy in `policies/valta-pilot.yaml` permits only `valta.chat_completions` for `ai_inference` at `https://valta.co/v1/chat/completions`. The adapter additionally requires an explicit completion-token limit from 1 to 256, `n=1`, non-streaming mode, and binds the exact canonical request body and Valta run ID into the signed action. Valta Cap remains the upstream spend control.
+
+## Live smoke-test evidence
+
+Checked on 2026-11-04 against the Gensyn2 loopback deployment:
+
+- Service: `verigate-valta.service` active; `GET /health` returned `{"status":"ok"}`.
+- Valta virtual key: configured in the root-only environment file (value intentionally not recorded).
+- Signed request: accepted by Verigate; decision `ALLOW`; an execution authorization was issued and consumed before forwarding.
+- Run ID: `verigate-live-smoke-9f8aa668b176`.
+- Execution authorization ID: `5aa42132b1b9262135ef5f3062fea070e6793fdb7dc200cc23bd243e80727e1c`.
+- Upstream result: HTTP `429`, OpenAI error `insufficient_quota` / `credit_balance_exhausted` (no API credits remaining).
+
+This confirms the Verigate authorization and forwarding path reached Valta/OpenAI. It does **not** confirm a successful model completion. Repeat the smoke test after OpenAI API billing/credits are available. No automatic retry is performed.
