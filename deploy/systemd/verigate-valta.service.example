@@ -1,0 +1,22 @@
+[Unit]
+Description=Verigate Valta Pilot API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/verigate-valta-pilot
+EnvironmentFile=/etc/verigate-valta/verigate.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/verigate-valta-pilot/.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8004 --workers 1 --log-level warning
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/verigate-valta
+
+[Install]
+WantedBy=multi-user.target
