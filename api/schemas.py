@@ -77,6 +77,19 @@ class IdentityAuthorizationRequest(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
+class ValtaChatCompletionProxyRequest(BaseModel):
+    """One signed Valta Chat Completions request for the in-process proxy route."""
+
+    agent_id: str = Field(..., min_length=1)
+    identity_id: str = Field(..., min_length=1)
+    capability_id: str = Field(..., min_length=1)
+    agent_signature: str = Field(..., min_length=1)
+    intent_id: str = Field(..., min_length=1)
+    timestamp: float = Field(..., gt=0)
+    run_id: str = Field(..., min_length=1, max_length=200)
+    request: dict = Field(..., description="OpenAI-compatible Chat Completions JSON body")
+
+
 class RuleMatchResponse(BaseModel):
     rule: str
     severity: str

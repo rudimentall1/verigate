@@ -29,6 +29,7 @@ Endpoints:
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import subprocess
@@ -37,7 +38,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.auth import ApiKeyMiddleware
@@ -74,6 +75,14 @@ from core.policy_version import (
     GovernedPolicyVersionRegistry,
 )
 from core.storage import Storage
+from adapters.valta import (
+    ACTION_TYPE as VALTA_ACTION_TYPE,
+    ValtaProxyClient,
+    ValtaProxyError,
+    ValtaProxyExecutionAdapter,
+    action_for_chat_completion,
+    canonical_request_bytes,
+)
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
 from x402.parser import X402ParseError, offer_to_intent, parse_payment_required_header
@@ -107,6 +116,7 @@ from .schemas import (
     GovernedPolicyControlRequest,
     GovernedPolicyControlResponse,
     X402HeaderRequest,
+    ValtaChatCompletionProxyRequest,
 )
 
 POLICY_PATH = os.environ.get("VERIGATE_POLICY", "policies/default.yaml")
@@ -490,6 +500,129 @@ def consume_execution(req: ExecutionConsumeRequest) -> dict:
     )
     ok, reason = router.consume(req.authorization.model_dump())
     return {"execute": ok, "reason": reason}
+
+
+@app.post("/v1/integrations/valta/chat/completions")
+def valta_chat_completions(req: ValtaChatCompletionProxyRequest):
+    """Authorize an exact Valta request, consume once, then forward it."""
+    assert _engine is not None and _storage is not None
+
+    # Shared global Valta credentials across tenants are deliberately disabled.
+    if tenant_key_mode():
+        raise HTTPException(
+            status_code=503,
+            detail="Valta integration is disabled in tenant-key mode until per-tenant Valta virtual-key mapping is configured",
+        )
+
+    virtual_key = os.environ.get("VALTA_VIRTUAL_KEY", "")
+    if not virtual_key.startswith("vk_live_"):
+        raise HTTPException(
+            status_code=503,
+            detail="Valta integration is disabled: VALTA_VIRTUAL_KEY is not configured",
+        )
+    try:
+        valta_timeout = float(os.environ.get("VALTA_PROXY_TIMEOUT_SECONDS", "30"))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="VALTA_PROXY_TIMEOUT_SECONDS must be numeric") from exc
+    if not math.isfinite(valta_timeout) or valta_timeout <= 0:
+        raise HTTPException(status_code=503, detail="VALTA_PROXY_TIMEOUT_SECONDS must be finite and positive")
+
+    try:
+        request_body = canonical_request_bytes(req.request)
+        action = action_for_chat_completion(
+            agent_id=req.agent_id,
+            run_id=req.run_id,
+            request=req.request,
+            intent_id=req.intent_id,
+            timestamp=req.timestamp,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        artifacts = _engine.authorize_action(
+            action,
+            req.capability_id,
+            req.identity_id,
+            req.agent_signature,
+            issuer_private_key(PRIVATE_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    receipt = artifacts["decision_receipt"]
+    authorization = artifacts.get("execution_authorization")
+    decision = receipt["payload"]["decision"]["decision"]
+    if authorization is None:
+        status = "approval_required" if decision == "WARN" else "blocked"
+        code = 409 if decision == "WARN" else 403
+        return JSONResponse(
+            status_code=code,
+            content={
+                "status": status,
+                "decision": decision,
+                "decision_receipt": receipt,
+                "execution_authorization": None,
+                "valta_response": None,
+            },
+        )
+
+    try:
+        client = ValtaProxyClient(virtual_key, timeout=valta_timeout)
+        adapter = ValtaProxyExecutionAdapter(request_body, req.run_id, client)
+        router = ExecutionRouter(
+            NetworkRegistry(),
+            _storage,
+            issuer_public_key(PUBLIC_KEY_PATH),
+            generic_adapters={VALTA_ACTION_TYPE: adapter},
+        )
+        # The adapter owns the validated body and client; the router still
+        # verifies the artifact and consumes its one-time nonce before sending.
+        valta_response = router.execute(authorization, lambda _authorization: None)
+    except ValtaProxyError as exc:
+        if exc.outcome_unknown:
+            status_code = 504
+        elif exc.status_code is not None and (400 <= exc.status_code < 500 or exc.status_code == 503):
+            # Preserve Valta's explicit denial/rate-limit status for callers.
+            status_code = exc.status_code
+        else:
+            status_code = 502
+        allowed_error_fields = {
+            "approved", "reason", "id", "message", "plan", "limit",
+            "upgradeTo", "upgradeUrl", "error",
+        }
+        upstream_response = (
+            {key: value for key, value in exc.response.items() if key in allowed_error_fields}
+            if isinstance(exc.response, dict)
+            else None
+        )
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "status": "upstream_outcome_unknown" if exc.outcome_unknown else "upstream_error",
+                "decision": decision,
+                "decision_receipt": receipt,
+                "execution_authorization": authorization,
+                "upstream_status": exc.status_code,
+                "upstream_response": upstream_response,
+                "error": str(exc),
+                "retry_allowed": False,
+            },
+        )
+    except (PermissionError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return {
+        "status": "executed",
+        "decision": decision,
+        "decision_receipt": receipt,
+        "execution_authorization": authorization,
+        "valta_response": valta_response,
+    }
 
 
 @app.post(
