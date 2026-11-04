@@ -43,3 +43,16 @@ Checked on 2026-11-04 against the Gensyn2 loopback deployment:
 - Upstream result: HTTP `429`, OpenAI error `insufficient_quota` / `credit_balance_exhausted` (no API credits remaining).
 
 This confirms the Verigate authorization and forwarding path reached Valta/OpenAI. It does **not** confirm a successful model completion. Repeat the smoke test after OpenAI API billing/credits are available. No automatic retry is performed.
+
+## Follow-up verification
+
+A subsequent server check on 2026-11-04 confirmed that `verigate-valta.service` remained active and the loopback health endpoint still returned `{"status":"ok"}`. No upstream completion request was sent during this check, so it incurred no model usage.
+
+The targeted pytest suite was **not rerun on the server**: the deployed virtual environment does not currently contain the `pytest` module. The earlier repository-level test result is not replaced by this server check. Install test dependencies only in a separate development/test environment if a fresh server-side test run is required.
+
+## Current acceptance status
+
+- Deployment and local health: **verified**.
+- Signed Verigate authorization and forwarding to Valta/OpenAI: **verified**, with the recorded upstream quota error.
+- Successful OpenAI model completion through Valta: **not yet verified**; blocked by exhausted API credits.
+- Public exposure: **not enabled**; the service remains loopback-only.
