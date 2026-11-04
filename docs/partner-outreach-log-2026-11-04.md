@@ -6,12 +6,12 @@ This log records actual outreach and verified channel limitations. It does not i
 
 | Date | Organization | Recipient / channel | Subject / reference | Status |
 |---|---|---|---|---|
-| 2026-11-04 | Valta | Debo Jolaosho, `debo@valta.co`; existing Gmail thread | Valta × Verigate integration update and evaluation handoff | Sent. Asked for sandbox/test credentials and target API boundary. Live smoke request is documented accurately as ALLOW + consumed authorization followed by upstream HTTP 429 `credit_balance_exhausted`. |
+| 2026-11-04 | Valta | Debo Jolaosho, `debo@valta.co`; existing Gmail thread | [Gmail thread](https://mail.google.com/mail/u/0/#all/1a1a196ebdee7d63) | Sent. Asked for sandbox/test credentials and target API boundary. Live smoke request is documented accurately as ALLOW + consumed authorization followed by upstream HTTP 429 `credit_balance_exhausted`. |
 | 2026-11-04 | Valta | GitHub Issue | https://github.com/Valta-hq/Valta-MCP/issues/1 | Open. Scope now proposes gating `valta_transfer_funds` before `POST /wallet/transfer`. No transfer has been executed. |
-| 2026-11-04 | Circle | `alliance@circle.com` | Circle Agent Stack × Verigate: independent authorization proofs for agent payments | Sent. Asked for technical routing, narrow testnet evaluation, and paid pilot / Alliance pathway. |
-| 2026-11-04 | AiFinPay | `contact@aifinpay.io` | AiFinPay × Verigate: verifiable authorization before x402 payment execution | Sent. Proposed a quote-bound pre-payment authorization proof; asked for test route and commercial pilot / partnership discussion. |
-| 2026-11-04 | Alchemy / AgentCard / AgentPay | `legal@alchemy.com` (published as business / partnership contact on AgentCard) | Alchemy Agent Wallets / AgentPay × Verigate: independent authorization evidence | Sent. Asked to route to the Agent Wallets, AgentPay, or AgentCard product/engineering owner for a narrow evaluation. |
-| 2026-11-03 | Griffin AI | `collaborations@griffinai.io` | Griffin AI × Verigate: authority control for on-chain agent actions | Previously sent. No follow-up sent; allow time for response. |
+| 2026-11-04 | Circle | `alliance@circle.com` | [Gmail thread](https://mail.google.com/mail/u/0/#all/1a1a56626dd47e94) | Sent. Subject: Circle Agent Stack × Verigate: independent authorization proofs for agent payments. Asked for technical routing, narrow testnet evaluation, and paid pilot / Alliance pathway. |
+| 2026-11-04 | AiFinPay | `contact@aifinpay.io` | [Gmail thread](https://mail.google.com/mail/u/0/#all/1a1a5663177d42ae) | Sent. Subject: AiFinPay × Verigate: verifiable authorization before x402 payment execution. Proposed a quote-bound pre-payment authorization proof; asked for test route and commercial pilot / partnership discussion. |
+| 2026-11-04 | Alchemy / AgentCard / AgentPay | `legal@alchemy.com` (published as business / partnership contact on AgentCard) | [Gmail thread](https://mail.google.com/mail/u/0/#all/1a1a567b86f119de) | Sent. Subject: Alchemy Agent Wallets / AgentPay × Verigate: independent authorization evidence. Asked to route to the Agent Wallets, AgentPay, or AgentCard product/engineering owner for a narrow evaluation. |
+| 2026-11-03 | Griffin AI | `collaborations@griffinai.io` | [Gmail thread](https://mail.google.com/mail/u/0/#all/1a1a197c299a5573) | Previously sent. Subject: Griffin AI × Verigate: authority control for on-chain agent actions. No follow-up sent; allow time for response. |
 
 ## Public projects mentioned in outreach
 
