@@ -65,6 +65,28 @@ Verigate ALLOW can still be denied by Valta. Either system can stop the call.
 - API tests cover authorized dispatch, changed-request rejection, policy
   blocking and fail-closed behavior when no virtual key is configured.
 
+## Valta credential types
+
+Valta has two separate credentials for this integration:
+
+- The account management API key starts with `sk_valta_`. It authenticates
+  management calls at `https://valta.co/api/v1`, such as reading agents,
+  storing an OpenAI provider key, and minting or revoking virtual keys.
+- The proxy virtual key starts with `vk_live_`. It authenticates only
+  `POST https://valta.co/v1/chat/completions` and is the only credential
+  accepted by this Verigate adapter.
+
+Never place the `sk_valta_` management key in `VALTA_VIRTUAL_KEY`. The
+management key cannot call the Chat Completions proxy. The virtual key is
+agent-scoped and is returned only once when minted.
+
+A live approved proxy request also requires an OpenAI provider key to be
+stored for that same Valta agent. Valta checks for that provider key before
+running Cap; a missing provider key returns `403 no_provider_key`. An
+approved request is billed to the OpenAI account associated with that key.
+A Valta denial can be tested without an OpenAI balance only after the agent
+has a provider key configured and Cap is set to deny the request.
+
 ## API configuration
 
 Set the Valta virtual key only in the process secret store or deployment
