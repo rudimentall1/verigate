@@ -7,6 +7,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
+import unittest
 from unittest.mock import patch
 
 from cryptography.hazmat.primitives import serialization
@@ -29,8 +30,8 @@ class FakeValtaProxyClient:
         return {"id": "valta-api-mock", "choices": [{"message": {"content": "ok"}}]}
 
 
-class TestValtaApiRoute:
-    def setup_method(self):
+class TestValtaApiRoute(unittest.TestCase):
+    def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.old = {
@@ -38,8 +39,7 @@ class TestValtaApiRoute:
             for name in (
                 "POLICY_PATH", "DB_PATH", "PRIVATE_KEY_PATH", "PUBLIC_KEY_PATH",
                 "GOVERNANCE_PRIVATE_KEY_PATH", "GOVERNANCE_PUBLIC_KEY_PATH",
-                "GOVERNANCE_POLICY_PATH", "_storage", "_engine", "_policy",
-                "_governance_policy",
+                "GOVERNANCE_POLICY_PATH",
             )
         }
         # Each test gets an isolated Verigate store and issuer keys.
@@ -122,11 +122,12 @@ class TestValtaApiRoute:
             "request": self.request,
         }
 
-    def teardown_method(self):
+    def tearDown(self):
         if main._storage is not None:
             main._storage.close()
         for name, value in self.old.items():
             setattr(main, name, value)
+        main._storage = main._engine = main._policy = main._governance_policy = None
         self.tmp.cleanup()
 
     def test_api_route_executes_only_after_verigate_authorization(self):
