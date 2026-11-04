@@ -24,6 +24,7 @@ PURPOSE = "ai_inference"
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _MAX_REQUEST_BYTES = 1024 * 1024
+_MAX_COMPLETION_TOKENS = 256
 
 
 class ValtaProxyError(RuntimeError):
@@ -83,6 +84,22 @@ def _parse_chat_request(request_body: bytes) -> dict[str, Any]:
         raise ValueError("Valta Chat Completions requires a non-empty messages array")
     if request.get("stream", False) is True:
         raise ValueError("Valta proxy pilot supports non-streaming Chat Completions only")
+    limits = [
+        request[name]
+        for name in ("max_tokens", "max_completion_tokens")
+        if name in request
+    ]
+    if not limits:
+        raise ValueError("Valta pilot requires an explicit max_tokens or max_completion_tokens budget")
+    if any(isinstance(value, bool) or not isinstance(value, int) for value in limits):
+        raise ValueError("Valta completion token budget must be an integer")
+    if any(value < 1 or value > _MAX_COMPLETION_TOKENS for value in limits):
+        raise ValueError(f"Valta pilot completion token budget must be between 1 and {_MAX_COMPLETION_TOKENS}")
+    if len(limits) == 2 and limits[0] != limits[1]:
+        raise ValueError("max_tokens and max_completion_tokens must match when both are supplied")
+    n = request.get("n", 1)
+    if isinstance(n, bool) or not isinstance(n, int) or n != 1:
+        raise ValueError("Valta pilot permits exactly one completion choice (n=1)")
     return request
 
 

@@ -204,6 +204,34 @@ class ValtaProxyAdapterTests(unittest.TestCase):
 
         self.assertEqual([], client.calls)
 
+    def test_request_requires_small_explicit_token_budget_and_n_equals_one(self):
+        missing_budget = {
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": "bounded request"}],
+        }
+        with self.assertRaisesRegex(ValueError, "explicit max_tokens"):
+            action_for_chat_completion(
+                agent_id=self.agent_id,
+                run_id=self.run_id,
+                request=missing_budget,
+            )
+
+        too_large = {**self.request, "max_tokens": 257}
+        with self.assertRaisesRegex(ValueError, "between 1 and 256"):
+            action_for_chat_completion(
+                agent_id=self.agent_id,
+                run_id=self.run_id,
+                request=too_large,
+            )
+
+        multiple_choices = {**self.request, "n": 2}
+        with self.assertRaisesRegex(ValueError, "n=1"):
+            action_for_chat_completion(
+                agent_id=self.agent_id,
+                run_id=self.run_id,
+                request=multiple_choices,
+            )
+
     def test_streaming_and_invalid_run_ids_are_rejected(self):
         streaming = {**self.request, "stream": True}
         with self.assertRaisesRegex(ValueError, "non-streaming"):

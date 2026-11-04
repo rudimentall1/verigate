@@ -46,6 +46,9 @@ Verigate ALLOW can still be denied by Valta. Either system can stop the call.
 - Exact canonical request body is bound by SHA-256 into the signed action.
 - The Valta run ID is bound into the action and sent as X-Valta-Run-Id.
 - Streaming requests are rejected; this pilot supports non-streaming calls.
+- Request bodies are capped at 1 MiB. An explicit `max_tokens` or
+  `max_completion_tokens` budget from 1 to 256 is required, and `n` must be
+  1, to bound pilot usage.
 - The Valta virtual key is held only by the private client, not included in the
   signed action or request body.
 - ExecutionRouter owns one-time nonce consumption.
@@ -85,9 +88,10 @@ requires a pre-registered active identity and a narrow capability.
 
 The route returns the signed decision receipt and execution authorization
 alongside the Valta response. WARN returns 409 without an upstream call;
-BLOCK returns 403 without an upstream call. An upstream timeout returns 504
-with `retry_allowed: false`: the one-time authorization has already been
-consumed and the upstream result may be uncertain.
+BLOCK returns 403 without an upstream call. Valta's 4xx/503 denial status and
+bounded denial details are preserved for the caller. An upstream timeout
+returns 504 with `retry_allowed: false`: the one-time authorization has
+already been consumed and the upstream result may be uncertain.
 
 The route fails closed in tenant-key mode. A shared global Valta key is not
 safe for multiple tenants; a per-tenant virtual-key mapping and secret-store

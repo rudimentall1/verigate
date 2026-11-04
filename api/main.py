@@ -584,7 +584,22 @@ def valta_chat_completions(req: ValtaChatCompletionProxyRequest):
         # verifies the artifact and consumes its one-time nonce before sending.
         valta_response = router.execute(authorization, lambda _authorization: None)
     except ValtaProxyError as exc:
-        status_code = 504 if exc.outcome_unknown else 502
+        if exc.outcome_unknown:
+            status_code = 504
+        elif exc.status_code is not None and (400 <= exc.status_code < 500 or exc.status_code == 503):
+            # Preserve Valta's explicit denial/rate-limit status for callers.
+            status_code = exc.status_code
+        else:
+            status_code = 502
+        allowed_error_fields = {
+            "approved", "reason", "id", "message", "plan", "limit",
+            "upgradeTo", "upgradeUrl", "error",
+        }
+        upstream_response = (
+            {key: value for key, value in exc.response.items() if key in allowed_error_fields}
+            if isinstance(exc.response, dict)
+            else None
+        )
         return JSONResponse(
             status_code=status_code,
             content={
@@ -593,6 +608,7 @@ def valta_chat_completions(req: ValtaChatCompletionProxyRequest):
                 "decision_receipt": receipt,
                 "execution_authorization": authorization,
                 "upstream_status": exc.status_code,
+                "upstream_response": upstream_response,
                 "error": str(exc),
                 "retry_allowed": False,
             },

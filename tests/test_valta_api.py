@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
-from adapters.valta import action_for_chat_completion, canonical_request_bytes
+from adapters.valta import action_for_chat_completion, canonical_request_bytes, ValtaProxyError
 from api import main
 from core.capabilities import CapabilityRegistry
 from core.identity import IdentityRegistry, sign_action_intent
@@ -28,6 +28,20 @@ class FakeValtaProxyClient:
     def chat_completions(self, request_body: bytes, run_id: str) -> dict:
         self.calls.append((request_body, run_id))
         return {"id": "valta-api-mock", "choices": [{"message": {"content": "ok"}}]}
+
+
+class DeniedValtaProxyClient:
+    def chat_completions(self, request_body: bytes, run_id: str) -> dict:
+        raise ValtaProxyError(
+            "Valta proxy returned HTTP 403",
+            status_code=403,
+            response={
+                "approved": False,
+                "reason": "frozen",
+                "id": "deny_valta_test",
+                "message": "agent is frozen",
+            },
+        )
 
 
 class TestValtaApiRoute(unittest.TestCase):
@@ -181,6 +195,23 @@ class TestValtaApiRoute(unittest.TestCase):
         assert response.status_code == 403, response.text
         assert response.json()["decision"] == "BLOCK"
         assert fake.calls == []
+
+    def test_api_route_preserves_valta_cap_denial_without_retry(self):
+        denied = DeniedValtaProxyClient()
+        with patch.dict(os.environ, {"VALTA_VIRTUAL_KEY": "vk_live_test_only"}):
+            with TestClient(main.app) as client:
+                self._register_identity_and_capability()
+                with patch("api.main.ValtaProxyClient", return_value=denied):
+                    response = client.post(
+                        "/v1/integrations/valta/chat/completions",
+                        json=self._signed_payload(),
+                    )
+
+        assert response.status_code == 403, response.text
+        result = response.json()
+        assert result["status"] == "upstream_error"
+        assert result["upstream_response"]["reason"] == "frozen"
+        assert result["retry_allowed"] is False
 
     def test_api_route_fails_closed_without_valta_virtual_key(self):
         fake = FakeValtaProxyClient()
