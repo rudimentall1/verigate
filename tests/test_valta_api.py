@@ -166,7 +166,7 @@ class TestValtaApiRoute(unittest.TestCase):
     def test_api_route_rejects_changed_request_before_valta_call(self):
         fake = FakeValtaProxyClient()
         signed = self._signed_payload()
-        changed = {**self.request, "max_tokens": 2048}
+        changed = {**self.request, "max_tokens": 128}
         signed["request"] = changed
         with patch.dict(os.environ, {"VALTA_VIRTUAL_KEY": "vk_live_test_only"}):
             with TestClient(main.app) as client:

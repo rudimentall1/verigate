@@ -191,7 +191,7 @@ class ValtaProxyAdapterTests(unittest.TestCase):
         artifacts = self.authorize()
         authorization = artifacts["execution_authorization"]
         tampered = dict(self.request)
-        tampered["max_tokens"] = 4096
+        tampered["max_tokens"] = 128
         tampered_body = canonical_request_bytes(tampered)
         client = FakeValtaClient()
         adapter = ValtaProxyExecutionAdapter(tampered_body, self.run_id, client)
