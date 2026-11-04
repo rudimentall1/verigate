@@ -29,6 +29,7 @@ Endpoints:
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import subprocess
@@ -519,6 +520,12 @@ def valta_chat_completions(req: ValtaChatCompletionProxyRequest):
             status_code=503,
             detail="Valta integration is disabled: VALTA_VIRTUAL_KEY is not configured",
         )
+    try:
+        valta_timeout = float(os.environ.get("VALTA_PROXY_TIMEOUT_SECONDS", "30"))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="VALTA_PROXY_TIMEOUT_SECONDS must be numeric") from exc
+    if not math.isfinite(valta_timeout) or valta_timeout <= 0:
+        raise HTTPException(status_code=503, detail="VALTA_PROXY_TIMEOUT_SECONDS must be finite and positive")
 
     try:
         request_body = canonical_request_bytes(req.request)
@@ -565,10 +572,7 @@ def valta_chat_completions(req: ValtaChatCompletionProxyRequest):
         )
 
     try:
-        timeout = float(os.environ.get("VALTA_PROXY_TIMEOUT_SECONDS", "30"))
-        if timeout <= 0:
-            raise ValueError("VALTA_PROXY_TIMEOUT_SECONDS must be positive")
-        client = ValtaProxyClient(virtual_key, timeout=timeout)
+        client = ValtaProxyClient(virtual_key, timeout=valta_timeout)
         adapter = ValtaProxyExecutionAdapter(request_body, req.run_id, client)
         router = ExecutionRouter(
             NetworkRegistry(),
