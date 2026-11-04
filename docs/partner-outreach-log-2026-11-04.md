@@ -45,3 +45,15 @@ OWNERA is private and is deliberately excluded from all external outreach.
 - If there is no response, a single concise follow-up can be considered after five business days (from 2026-11-04, target date 2026-11-11).
 - Do not expand into substantial custom integration work without an agreed scope, named technical owner, test environment, acceptance criteria, and written commercial model.
 - Keep all claims tied to public repository evidence. Do not claim partner acceptance, production adoption, independent audit, revenue, or successful live provider completion where those have not been demonstrated.
+
+
+## Additional outreach sent — 2026-11-04
+
+| Organization | Recipient | Subject | Gmail message | Scope |
+|---|---|---|---|---|
+| Nevermined | `contact@nevermined.ai` | Nevermined × Verigate: independent authority proofs before agent payments | [Sent](https://mail.google.com/mail/u/0/#all/1a1a577f8ad839d6) | Proposed a sandbox payment-flow evaluation with mandate-bound ALLOW, out-of-policy DENY, replay/tamper rejection, and portable evidence. Asked about paid pilot / co-development / revenue sharing. |
+| Privy | `sales@privy.io` | Privy Wallet Actions × Verigate: independent authorization for agent transfers | [Sent](https://mail.google.com/mail/u/0/#all/1a1a578089c287d3) | Proposed independent authorization before one Wallet Actions transfer; explicitly preserves Privy's signing policies and user consent. Mentioned Agentic Wallet Guardian as an unaudited working prototype. Asked about paid pilot / ecosystem partnership. |
+| Exa | `sales@exa.ai` | Exa × Verigate: verifiable authorization for agent-initiated API purchases | [Sent](https://mail.google.com/mail/u/0/#all/1a1a5781b792502f) | Proposed authorization at agent API-purchase boundary, complementing Nevermined settlement. Clearly labelled x402-attest as PoC and no Exa integration as existing. Asked about co-integration and partner commercial model. |
+| Prava | `support@prava.space` | Prava × Verigate: independent signed authorization for agent payments | [Sent](https://mail.google.com/mail/u/0/#all/1a1a5782494b43bb) | Proposed sandbox authorization before checkout, preserving Prava's passkey/biometric final user confirmation. Asked for product/engineering routing and paid pilot / partnership. |
+
+All four messages were sent successfully through Gmail. No reply or commercial agreement is implied by delivery.
