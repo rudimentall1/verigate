@@ -130,6 +130,9 @@ class ValtaProxyExecutionAdapter:
         except (KeyError, TypeError):
             return False, "authorization is missing the Valta action binding"
 
+        if not isinstance(action, dict) or not isinstance(details, dict):
+            return False, "Valta authorization binding has an invalid shape"
+
         if action.get("action_type") != ACTION_TYPE or action.get("purpose") != PURPOSE:
             return False, "authorization is not for a Valta AI inference action"
         if action.get("target") != VALTA_CHAT_COMPLETIONS_URL:
