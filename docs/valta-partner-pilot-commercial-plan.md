@@ -53,12 +53,13 @@ The repository tests use a fake Valta client and cover authorization-path behavi
 
 ## 3. Proposed pilot: one execution boundary
 
-The first pilot must target one execution boundary agreed with Valta. Two candidates must not be conflated:
+The first pilot must target one execution boundary agreed with Valta. Three paths must not be conflated:
 
-1. **Existing Chat Completions path:** the current Verigate adapter in front of Valta's OpenAI-compatible endpoint. This is the path already deployed and smoke-tested, but the successful upstream completion remains unverified.
-2. **Valta MCP financial/proxy path:** a new adapter inside or alongside Valta-MCP. This requires a separate implementation and tests. The current Chat Completions adapter does not prove this path.
+1. **Existing Chat Completions path:** the current Verigate adapter in front of Valta's OpenAI-compatible endpoint. This is the path already deployed and smoke-tested, but the successful upstream completion remains unverified. It gates model inference, not a wallet transfer.
+2. **MCP wallet-transfer path:** the current Valta-MCP repository exposes `valta_transfer_funds`, which calls `POST /wallet/transfer` with `fromAgentId`, `toAgentId`, `amount`, and optional `description`. This is the clearest first target for demonstrating independent authorization before a financial side effect. It requires a new action schema, adapter, and tests. No transfer has been executed or claimed.
+3. **MCP proxy path:** `valta_proxy_request` is a spend-gated outbound call to supported providers. This is a possible later target, but it is not the same as a wallet-to-wallet transfer.
 
-Valta should choose the first target based on its product priorities and the sandbox/API boundary it can support.
+Valta-MCP Issue #1 now asks maintainers whether `valta_transfer_funds` is the right first financial execution boundary and requests sandbox/test semantics. The existing Chat Completions adapter does not prove either MCP path.
 
 ## 4. Acceptance criteria
 
