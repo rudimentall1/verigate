@@ -1,0 +1,9 @@
+allowed_action_types:
+  - valta.chat_completions
+allowed_purposes:
+  - ai_inference
+allowed_targets:
+  - https://valta.co/v1/chat/completions
+allowed_destinations:
+  - https://valta.co/v1/chat/completions
+rate_limit_per_minute: 5
