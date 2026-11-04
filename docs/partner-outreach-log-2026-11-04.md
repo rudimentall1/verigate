@@ -13,6 +13,10 @@ This log records actual outreach and verified channel limitations. It does not i
 | 2026-11-04 | Alchemy / AgentCard / AgentPay | `legal@alchemy.com` (published as business / partnership contact on AgentCard) | [Gmail thread](https://mail.google.com/mail/u/0/#all/1a1a567b86f119de) | Sent. Subject: Alchemy Agent Wallets / AgentPay × Verigate: independent authorization evidence. Asked to route to the Agent Wallets, AgentPay, or AgentCard product/engineering owner for a narrow evaluation. |
 | 2026-11-03 | Griffin AI | `collaborations@griffinai.io` | [Gmail thread](https://mail.google.com/mail/u/0/#all/1a1a197c299a5573) | Previously sent. Subject: Griffin AI × Verigate: authority control for on-chain agent actions. No follow-up sent; allow time for response. |
 
+| 2026-11-04 | x402 Agentic | `hello@x402agentic.ai` | [Gmail thread](https://mail.google.com/mail/u/0/#all/1a1a569f8ddfc692) | Sent. Subject: x402 Agentic × Verigate: quote-bound authorization and verifiable payment evidence. Proposed x402 quote-bound authorization, testnet/mock tests, and paid integration / ecosystem partnership. |
+| 2026-11-04 | Axblade | `contact@axblade.io` | [Gmail thread](https://mail.google.com/mail/u/0/#all/1a1a56a05a422303) | Sent. Subject: Axblade × Verigate: independent authority proofs for agent payment mandates. Proposed Arc Testnet evaluation complementing Axblade mandates; asked about paid pilot / co-development. |
+| 2026-11-04 | Wirex | `partners@wirexapp.com` | [Gmail thread](https://mail.google.com/mail/u/0/#all/1a1a56a10f14cdae) | Sent. Subject: Wirex AGENTS × Verigate: independent authorization for agent payment execution. Asked to route to AGENTS / developer platform owner and discuss a paid pilot / partnership. |
+
 ## Public projects mentioned in outreach
 
 - **Verigate:** https://github.com/rudimentall1/verigate — action-bound identity/capability/policy authorization and one-time execution enforcement.
