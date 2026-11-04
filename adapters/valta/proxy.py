@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import urllib.error
 import urllib.request
@@ -22,15 +23,24 @@ ACTION_TYPE = "valta.chat_completions"
 PURPOSE = "ai_inference"
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+_MAX_REQUEST_BYTES = 1024 * 1024
 
 
 class ValtaProxyError(RuntimeError):
     """A Valta proxy failure. Requests are never retried automatically."""
 
-    def __init__(self, message: str, *, status_code: int | None = None, response: Any = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        response: Any = None,
+        outcome_unknown: bool = False,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.response = response
+        self.outcome_unknown = outcome_unknown
 
 
 def canonical_request_bytes(request: dict[str, Any]) -> bytes:
@@ -38,13 +48,16 @@ def canonical_request_bytes(request: dict[str, Any]) -> bytes:
     if not isinstance(request, dict):
         raise TypeError("Valta request must be a JSON object")
     try:
-        return json.dumps(
+        encoded = json.dumps(
             request,
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,
             allow_nan=False,
         ).encode("utf-8")
+        if len(encoded) > _MAX_REQUEST_BYTES:
+            raise ValueError("Valta pilot request exceeds the 1 MiB request limit")
+        return encoded
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Valta request is not canonical JSON: {exc}") from exc
 
@@ -73,10 +86,25 @@ def _parse_chat_request(request_body: bytes) -> dict[str, Any]:
     return request
 
 
-def action_for_chat_completion(*, agent_id: str, run_id: str, request: dict[str, Any]) -> ActionIntent:
-    """Create the exact action that the agent must sign before authorization."""
+def action_for_chat_completion(
+    *,
+    agent_id: str,
+    run_id: str,
+    request: dict[str, Any],
+    intent_id: str | None = None,
+    timestamp: float | None = None,
+) -> ActionIntent:
+    """Create the exact action that the agent must sign before authorization.
+
+    API consumers supply intent_id and timestamp so the server reconstructs
+    the same signed ActionIntent. Local callers may omit them.
+    """
     if not isinstance(agent_id, str) or not agent_id.strip():
         raise ValueError("agent_id is required")
+    if intent_id is not None and (not isinstance(intent_id, str) or not intent_id.strip()):
+        raise ValueError("intent_id must be a non-empty string")
+    if timestamp is not None and (not isinstance(timestamp, (int, float)) or not math.isfinite(timestamp) or timestamp <= 0):
+        raise ValueError("timestamp must be a finite positive Unix timestamp")
     _validate_run_id(run_id)
     body = canonical_request_bytes(request)
     _parse_chat_request(body)
@@ -98,6 +126,8 @@ def action_for_chat_completion(*, agent_id: str, run_id: str, request: dict[str,
                 "request_format": "openai-chat-completions",
             },
         },
+        **({"intent_id": intent_id} if intent_id is not None else {}),
+        **({"timestamp": float(timestamp)} if timestamp is not None else {}),
     )
 
 
@@ -223,7 +253,8 @@ class ValtaProxyClient:
         except (urllib.error.URLError, TimeoutError) as exc:
             # Outcome can be uncertain after dispatch. Do not retry.
             raise ValtaProxyError(
-                "Valta proxy request failed or timed out; outcome may be uncertain, do not retry automatically"
+                "Valta proxy request failed or timed out; outcome may be uncertain, do not retry automatically",
+                outcome_unknown=True,
             ) from exc
 
         if len(raw) > _MAX_RESPONSE_BYTES:
