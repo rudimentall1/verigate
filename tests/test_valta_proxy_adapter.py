@@ -137,11 +137,11 @@ class ValtaProxyAdapterTests(unittest.TestCase):
         self.assertTrue(verify_execution_authorization(authorization, self.issuer_public_key)[0])
 
         body = canonical_request_bytes(self.request)
-        adapter = ValtaProxyExecutionAdapter(body, self.run_id)
         client = FakeValtaClient()
+        adapter = ValtaProxyExecutionAdapter(body, self.run_id, client)
         result = self.router(adapter).execute(
             authorization,
-            lambda _authorization: client.chat_completions(body, self.run_id),
+            lambda _authorization: self.fail("unbound router callback must not execute"),
         )
 
         self.assertEqual("chatcmpl-valta-mock", result["id"])
@@ -177,14 +177,13 @@ class ValtaProxyAdapterTests(unittest.TestCase):
         artifacts = self.authorize()
         authorization = artifacts["execution_authorization"]
         body = canonical_request_bytes(self.request)
-        adapter = ValtaProxyExecutionAdapter(body, self.run_id)
         client = FakeValtaClient()
+        adapter = ValtaProxyExecutionAdapter(body, self.run_id, client)
         router = self.router(adapter)
-        send = lambda _authorization: client.chat_completions(body, self.run_id)
 
-        router.execute(authorization, send)
+        router.execute(authorization, lambda _authorization: self.fail("unbound router callback must not execute"))
         with self.assertRaisesRegex(PermissionError, "already consumed"):
-            router.execute(authorization, send)
+            router.execute(authorization, lambda _authorization: self.fail("unbound router callback must not execute"))
 
         self.assertEqual(1, len(client.calls))
 
@@ -194,13 +193,13 @@ class ValtaProxyAdapterTests(unittest.TestCase):
         tampered = dict(self.request)
         tampered["max_tokens"] = 4096
         tampered_body = canonical_request_bytes(tampered)
-        adapter = ValtaProxyExecutionAdapter(tampered_body, self.run_id)
         client = FakeValtaClient()
+        adapter = ValtaProxyExecutionAdapter(tampered_body, self.run_id, client)
 
         with self.assertRaisesRegex(ValueError, "differs from the signed action"):
             self.router(adapter).execute(
                 authorization,
-                lambda _authorization: client.chat_completions(tampered_body, self.run_id),
+                lambda _authorization: self.fail("unbound router callback must not execute"),
             )
 
         self.assertEqual([], client.calls)

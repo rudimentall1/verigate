@@ -25,9 +25,8 @@ tenant deployment.
    registered capability. Only ALLOW can return an ExecutionAuthorization.
 5. ExecutionRouter.execute() verifies the signed authorization, validates the
    Valta adapter binding, and consumes the one-time nonce.
-6. Only after successful consumption does the side-effect callback call
-   ValtaProxyClient.chat_completions() with the exact bytes covered by the
-   authorization.
+6. Only after successful consumption does the adapter's private client send
+   the exact request bytes covered by the authorization to Valta.
 
 The Verigate authorization does not replace Valta's own spend policy. A
 Verigate ALLOW can still be denied by Valta. Either system can stop the call.
@@ -38,16 +37,19 @@ Verigate ALLOW can still be denied by Valta. Either system can stop the call.
 - Exact canonical request body is bound by SHA-256 into the signed action.
 - The Valta run ID is bound into the action and sent as X-Valta-Run-Id.
 - Streaming requests are rejected; this pilot supports non-streaming calls.
-- The Valta virtual key is never included in the signed action or request body.
+- The Valta virtual key is held only by the private client, not included in the
+  signed action or request body.
 - ExecutionRouter owns one-time nonce consumption.
 - The adapter cannot consume or execute directly; callers must use
   ExecutionRouter.execute().
+- The adapter owns the validated request bytes and ignores the router callback
+  so a caller cannot validate one body and forward another.
 - HTTP redirects are rejected so a Valta virtual key is not forwarded to a
   different origin.
 - Requests are never retried automatically. A timeout after dispatch can
   leave the upstream outcome uncertain; the caller must reconcile before
   issuing another action.
-- Tests use a fake Valta transport. They do not call Valta or OpenAI.
+- Tests use a fake Valta client. They do not call Valta or OpenAI.
 
 ## Run the tests
 
@@ -59,13 +61,13 @@ PYTHONPATH=. python3 -m unittest tests.test_valta_proxy_adapter -v
 
 The tests cover:
 
-- ALLOW: a valid signed action reaches the fake Valta transport only after
+- ALLOW: a valid signed action reaches the fake Valta client only after
   execution authorization is consumed.
 - DENY: a policy denial produces no execution authorization.
-- REPLAY: the second use of an authorization is rejected and the transport is
+- REPLAY: the second use of an authorization is rejected and the client is
   called only once.
-- TAMPER: changing the model request after authorization is rejected before
-  the transport is called.
+- TAMPER: changing the request body after authorization is rejected before
+  the client is called.
 - Invalid run IDs and streaming requests are rejected.
 
 ## Live Valta connection

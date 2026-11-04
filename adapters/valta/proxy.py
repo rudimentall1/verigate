@@ -2,8 +2,8 @@
 
 The adapter binds the exact canonical Chat Completions request into a signed
 ActionIntent. ExecutionRouter validates that binding and consumes the
-one-time ExecutionAuthorization before the caller can send the request to
-Valta. This module does not create wallets, move funds, or retry requests.
+one-time ExecutionAuthorization before this adapter's private client can send
+the request to Valta. This module does not create wallets or move funds.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ VALTA_CHAT_COMPLETIONS_URL = "https://valta.co/v1/chat/completions"
 ACTION_TYPE = "valta.chat_completions"
 PURPOSE = "ai_inference"
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
-_MAX_RESPONSE_BYTES = 8 *  1024 * 1024
+_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
 
 class ValtaProxyError(RuntimeError):
@@ -102,22 +102,25 @@ def action_for_chat_completion(*, agent_id: str, run_id: str, request: dict[str,
 
 
 class ValtaProxyExecutionAdapter:
-    """ExecutionRouter adapter that verifies the exact request before dispatch.
+    """ExecutionRouter adapter that verifies and sends the exact signed request.
 
-    Instantiate one adapter per request. The actual HTTP client is supplied as
-    the router's side-effect callback, so this class never handles or stores
-    the virtual-key secret.
+    Instantiate one adapter per request. Its client owns the virtual key and
+    request dispatch. The router's generic callback is deliberately ignored;
+    this prevents a caller from validating one body but forwarding another.
     """
 
     execution_external_state_scope = "none"
     execution_enforcement_scope = "direct"
 
-    def __init__(self, request_body: bytes, run_id: str) -> None:
+    def __init__(self, request_body: bytes, run_id: str, client: Any) -> None:
         _validate_run_id(run_id)
         _parse_chat_request(request_body)
+        if not callable(getattr(client, "chat_completions", None)):
+            raise TypeError("client must provide chat_completions(request_body, run_id)")
         self.request_body = request_body
         self.run_id = run_id
         self.request_sha256 = hashlib.sha256(request_body).hexdigest()
+        self.client = client
 
     def validate(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         try:
@@ -127,8 +130,8 @@ class ValtaProxyExecutionAdapter:
         except (KeyError, TypeError):
             return False, "authorization is missing the Valta action binding"
 
-        if action.get("action_type") != ACTION_TYPE:
-            return False, "authorization is not for a Valta Chat Completions action"
+        if action.get("action_type") != ACTION_TYPE or action.get("purpose") != PURPOSE:
+            return False, "authorization is not for a Valta AI inference action"
         if action.get("target") != VALTA_CHAT_COMPLETIONS_URL:
             return False, "authorized target is not the Valta Chat Completions endpoint"
         if action.get("resource") != self.run_id:
@@ -147,9 +150,9 @@ class ValtaProxyExecutionAdapter:
         return True, "Valta request matches the signed action"
 
     def execute_after_consume(self, authorization: dict[str, Any], side_effect: Callable[[dict[str, Any]], Any]) -> Any:
-        # ExecutionRouter calls this only after it has verified and consumed
-        # the one-time authorization.
-        return side_effect(authorization)
+        # This method is called by ExecutionRouter only after signature,
+        # adapter, execution-path and one-time nonce checks have succeeded.
+        return self.client.chat_completions(self.request_body, self.run_id)
 
     def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         raise RuntimeError("Verigate ExecutionRouter must own one-time authorization consumption")
