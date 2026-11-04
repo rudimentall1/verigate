@@ -10,10 +10,17 @@ Valta remains responsible for its own Cap limits, freeze state, virtual-key
 checks, and upstream OpenAI billing. Verigate adds an independent,
 agent-identity-bound authorization for the exact request body.
 
-The first implementation is a local Python execution adapter. It is designed
-to run in the same trusted process as the Verigate ExecutionRouter and its
-SQLite storage. It is not a new public API route and is not a hosted multi-
-tenant deployment.
+The integration includes a Python execution adapter and an opt-in
+Verigate API route:
+
+`POST /v1/integrations/valta/chat/completions`
+
+The route is disabled unless `VALTA_VIRTUAL_KEY` contains a Valta
+`vk_live_...` virtual key. It is single-tenant only for this pilot and fails
+closed when Verigate tenant-key mode is enabled until per-tenant Valta secret
+isolation is implemented. The route and adapter run in the same trusted
+process as Verigate's ExecutionRouter and SQLite storage. This is not yet a
+hosted multi-tenant service.
 
 ## Request lifecycle
 
@@ -21,11 +28,13 @@ tenant deployment.
 2. The action builder canonicalizes the request and hashes its exact UTF-8 JSON
    bytes into a Verigate ActionIntent.
 3. The agent signs that intent with its registered Ed25519 identity.
-4. GuardrailEngine.authorize_action() checks the policy, identity and
+4. The API reconstructs the same ActionIntent using the supplied intent ID
+   and timestamp. The agent signature must match the exact request body.
+5. GuardrailEngine.authorize_action() checks the policy, identity and
    registered capability. Only ALLOW can return an ExecutionAuthorization.
-5. ExecutionRouter.execute() verifies the signed authorization, validates the
+6. ExecutionRouter.execute() verifies the signed authorization, validates the
    Valta adapter binding, and consumes the one-time nonce.
-6. Only after successful consumption does the adapter's private client send
+7. Only after successful consumption does the adapter's private client send
    the exact request bytes covered by the authorization to Valta.
 
 The Verigate authorization does not replace Valta's own spend policy. A
@@ -50,6 +59,40 @@ Verigate ALLOW can still be denied by Valta. Either system can stop the call.
   leave the upstream outcome uncertain; the caller must reconcile before
   issuing another action.
 - Tests use a fake Valta client. They do not call Valta or OpenAI.
+- API tests cover authorized dispatch, changed-request rejection, policy
+  blocking and fail-closed behavior when no virtual key is configured.
+
+## API configuration
+
+Set the Valta virtual key only in the process secret store or deployment
+environment; never commit it:
+
+~~~bash
+export VALTA_VIRTUAL_KEY="vk_live_..."
+export VALTA_PROXY_TIMEOUT_SECONDS="30"
+~~~
+
+The deployment must also follow the production API authentication, encrypted
+issuer-key and signed-intent requirements in
+`docs/security-configuration.md`.
+
+The caller sends `agent_id`, `identity_id`, `capability_id`,
+`agent_signature`, `intent_id`, `timestamp`, `run_id` and the
+OpenAI-compatible `request` object. It constructs and signs the same
+ActionIntent locally using `action_for_chat_completion()`. The server
+reconstructs the action, rejects a mismatched signature or request body, and
+requires a pre-registered active identity and a narrow capability.
+
+The route returns the signed decision receipt and execution authorization
+alongside the Valta response. WARN returns 409 without an upstream call;
+BLOCK returns 403 without an upstream call. An upstream timeout returns 504
+with `retry_allowed: false`: the one-time authorization has already been
+consumed and the upstream result may be uncertain.
+
+The route fails closed in tenant-key mode. A shared global Valta key is not
+safe for multiple tenants; a per-tenant virtual-key mapping and secret-store
+integration must be implemented before enabling this route in a multi-tenant
+deployment.
 
 ## Run the tests
 

@@ -182,8 +182,8 @@ class ValtaProxyClient:
     def __init__(self, virtual_key: str, *, timeout: float = 30.0) -> None:
         if not isinstance(virtual_key, str) or not virtual_key.startswith("vk_live_"):
             raise ValueError("a Valta live virtual key (vk_live_...) is required")
-        if timeout <= 0:
-            raise ValueError("timeout must be positive")
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError("timeout must be a finite positive number")
         parsed = urlparse(VALTA_CHAT_COMPLETIONS_URL)
         if parsed.scheme != "https" or parsed.hostname != "valta.co":
             raise ValueError("Valta proxy URL must remain the fixed HTTPS Valta endpoint")
