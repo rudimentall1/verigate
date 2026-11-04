@@ -36,6 +36,9 @@ OWNERA is private and is deliberately excluded from all external outreach.
 | PortalDot | Public developer/community channels are present (Discord and official X account); our PortalPilot and Verigate-PortalDot work has testnet evidence. | No verified partner email was found. Do not guess an inbox or claim PortalDot Wallet/DaaS adoption. Continue through the official hackathon/community channel when available. |
 | Pink Agentic AI Payments | Public sandbox and a call for three design partners are advertised. The stated target is teams with real agents making recurring purchases of API credits, ads, cloud, travel, or supplier payments. | Our current projects do not establish that live recurring business use case. Do not present ourselves as an operating design partner when that is not true. |
 
+| Blockchain0x | Official contact page only | https://www.blockchain0x.com/contact | Not sent. The official page describes a partnership form and masks its direct email address; the email link failed to reveal an address. Do not guess it. |
+| Sony Onchain Entertainment Incubation Program (FANOVA) | Official application portal | https://onchain-entertainment.sony.com/en/incubation-program/ | Not emailed because the official route is an application form, not a public partnership inbox. FANOVA is a strong thematic fit; prepare an application from its actual Soneium evidence and do not invent company/team/legal facts. |
+
 ## Follow-up discipline
 
 - Do not send duplicate messages while an initial message is still fresh.
