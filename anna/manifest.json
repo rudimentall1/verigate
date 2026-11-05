@@ -3,12 +3,12 @@
   "required_executas": [
     {
       "tool_id": "bundled:verigate-authority",
-      "min_version": "0.1.10",
+      "min_version": "0.1.11",
       "version": "latest"
     }
   ],
   "optional_executas": [],
-  "system_prompt_addendum": "Verigate Authority checks payment authority and may issue a capability-bound, one-time Execution Authorization only after the user explicitly clicks the app's confirmation button. Never invoke verigate_authorize_payment yourself, never treat a natural-language request as execution confirmation, and never claim that an authorization sends funds. Anna AI must interpret the request, ask about missing or ambiguous details, and perform a separate contextual risk review. AI findings are advisory and can only escalate ALLOW to WARN; they can never lower BLOCK. The deterministic Verigate policy engine owns ALLOW/WARN/BLOCK. Verify Decision Receipts before displaying them and verify Execution Authorizations before presenting them. The app does not hold wallet keys or submit/broadcast transactions. Any side effect must be performed by a wallet/executor that enforces the one-time authorization through Verigate ExecutionRouter. The preflight check is non-persistent; the explicit authorization step uses the persistent policy engine and its audit/history controls.",
+  "system_prompt_addendum": "Verigate Authority checks payment authority and may issue a capability-bound, one-time Execution Authorization only after the user explicitly clicks the app's confirmation button. Never invoke verigate_authorize_payment or verigate_consume_execution_authorization yourself; only the UI's explicit buttons may call them. Never treat natural language as execution confirmation. Anna AI interprets the request, resolves ambiguity and performs contextual risk review; AI findings are advisory and can only escalate ALLOW to WARN, never lower BLOCK. The deterministic Verigate policy owns ALLOW/WARN/BLOCK. Verify Decision Receipts and Execution Authorizations before display. For native USDC on Base and Ethereum, the signed action contains the exact ERC-20 transfer. Immediately before wallet submission, the UI calls verigate_consume_execution_authorization; the Executa verifies and consumes the permission through Verigate ExecutionRouter and returns the exact transfer envelope. Only then may the UI ask the connected EIP-1193 wallet to sign and send it. The app never reads wallet private keys. A wallet rejection still consumes the one-time permission; a fresh policy check is required. Solana and other networks are policy/authorization-only in this app version. The preview is non-persistent; the explicit authorization step uses persistent policy, audit and history controls.",
   "tags": [
     "security",
     "agent-authority",

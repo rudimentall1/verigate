@@ -7,6 +7,8 @@ import sys
 import time
 import tempfile
 from pathlib import Path
+from decimal import Decimal, InvalidOperation
+import re
 
 if getattr(sys, "frozen", False):
     _BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
@@ -19,7 +21,7 @@ else:
 
 sys.path.insert(0, str(_SOURCE_REPO_ROOT))
 
-VERSION = "0.1.10"
+VERSION = "0.1.11"
 _POLICY_PATH = _BUNDLE_ROOT / "policies" / "anna.yaml"
 
 # Anna Executa protocol 1.1: `describe` must answer from a bare process start,
@@ -92,6 +94,18 @@ MANIFEST = {
             "parameters": [
                 {"name": "authorization_json", "type": "string", "description": "Complete Execution Authorization JSON object.", "required": True}
             ]
+        },
+        {
+            "name": "verigate_consume_execution_authorization",
+            "description": (
+                "Verify and consume a one-time EVM USDC Execution Authorization through Verigate ExecutionRouter. "
+                "Returns the exact signed Base/Ethereum transaction envelope for a connected wallet to review and submit. "
+                "This tool never signs or broadcasts; a consumed permission cannot be reused, including after wallet rejection."
+            ),
+            "timeout": 30,
+            "parameters": [
+                {"name": "authorization_json", "type": "string", "description": "Complete signed Execution Authorization JSON object.", "required": True}
+            ],
         },
         {
             "name": "verigate_verify_decision_receipt",
@@ -255,6 +269,89 @@ def _verigate_policy_summary(args: dict) -> dict:
     return {"success": True, "data": data}
 
 
+_EVM_USDC_NETWORKS = {
+    "ethereum": {
+        "chain_id": 1,
+        "contract": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    },
+    "base": {
+        "chain_id": 8453,
+        "contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    },
+}
+
+
+def _build_anna_evm_transaction(network: str, asset: str, payee: str, amount: object) -> dict | None:
+    """Build a canonical native-USDC ERC-20 transfer envelope for supported EVM chains."""
+    config = _EVM_USDC_NETWORKS.get(network.lower())
+    if config is None or asset.upper() != "USDC":
+        return None
+    if not isinstance(payee, str) or re.fullmatch(r"0x[0-9a-fA-F]{40}", payee) is None:
+        raise ValueError("EVM USDC wallet execution requires a 20-byte recipient address")
+    try:
+        units = Decimal(str(amount)) * Decimal(1_000_000)
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError("USDC amount must be a valid decimal") from exc
+    if not units.is_finite() or units <= 0 or units != units.to_integral_value():
+        raise ValueError("USDC amount must be positive and use no more than 6 decimal places")
+    raw_amount = int(units)
+    if raw_amount >= 2**256:
+        raise ValueError("USDC amount exceeds the ERC-20 uint256 range")
+    # transfer(address,uint256): selector + 32-byte recipient + 32-byte amount.
+    calldata = (
+        "0xa9059cbb"
+        + payee[2:].lower().rjust(64, "0")
+        + format(raw_amount, "064x")
+    )
+    return {
+        "chain_id": config["chain_id"],
+        "to": config["contract"],
+        "value_wei": 0,
+        "data": calldata,
+    }
+
+
+def _restore_execution_authorization_numbers(authorization: dict) -> dict:
+    """Restore schema-defined floats lost when JSON.stringify turns 25.0 into 25."""
+    payload = authorization.get("payload")
+    if not isinstance(payload, dict):
+        return authorization
+    action = payload.get("action")
+    if isinstance(action, dict):
+        for field in ("amount", "timestamp"):
+            value = action.get(field)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                action[field] = float(value)
+    authority_state = payload.get("authority_state")
+    if isinstance(authority_state, dict):
+        for field in ("evaluated_at", "history_start_at", "multiplier"):
+            value = authority_state.get(field)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                authority_state[field] = float(value)
+    policy = payload.get("authority_policy")
+    if isinstance(policy, dict):
+        for field in ("probation_multiplier", "limited_multiplier", "standard_multiplier", "elevated_multiplier"):
+            value = policy.get(field)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                policy[field] = float(value)
+    effective = payload.get("effective_authority")
+    if isinstance(effective, dict):
+        value = effective.get("authority_multiplier")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            effective["authority_multiplier"] = float(value)
+        limits = effective.get("per_action_limits")
+        if isinstance(limits, dict):
+            for asset, value in limits.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    limits[asset] = float(value)
+    signed_policy = payload.get("signed_policy_version")
+    if isinstance(signed_policy, dict) and isinstance(signed_policy.get("payload"), dict):
+        value = signed_policy["payload"].get("created_at")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            signed_policy["payload"]["created_at"] = float(value)
+    return authorization
+
+
 def _verigate_authorize_payment(args: dict) -> dict:
     required = ("agent_id", "payee", "asset", "network", "amount", "human_confirmed")
     for name in required:
@@ -307,17 +404,22 @@ def _verigate_authorize_payment(args: dict) -> dict:
                 raise PermissionError("stored capability does not match this agent and policy")
             registry.resolve(capability_id)  # revoked/inactive authority fails closed
 
+        intent_metadata = {
+            "anna_user_confirmation": {
+                "confirmed": True,
+                "source": "anna-app-confirmation-button",
+                "confirmed_at": time.time(),
+            },
+        }
+        evm_transaction = _build_anna_evm_transaction(network, asset, payee, args["amount"])
+        if evm_transaction is not None:
+            intent_metadata["evm_transaction"] = evm_transaction
+
         intent = PaymentIntent(
             agent_id=agent_id, payee=payee, asset=asset, network=network,
             amount=amount,
             resource=resource,
-            metadata={
-                "anna_user_confirmation": {
-                    "confirmed": True,
-                    "source": "anna-app-confirmation-button",
-                    "confirmed_at": time.time(),
-                },
-            },
+            metadata=intent_metadata,
         )
         artifacts = engine.authorize_with_capability(
             intent, capability_id, private_key, advisory=advisory
@@ -419,6 +521,72 @@ def _verigate_verify_execution_authorization(args: dict) -> dict:
         return {"success": False, "error": f"execution authorization verification unavailable: {exc}"}
 
 
+def _verigate_consume_execution_authorization(args: dict) -> dict:
+    """Consume a signed EVM permission at ExecutionRouter before wallet submission."""
+    raw = args.get("authorization_json")
+    if not isinstance(raw, str) or not raw.strip():
+        return {"success": False, "error": "authorization_json must be a non-empty JSON string"}
+    if len(raw) > 262_144:
+        return {"success": False, "error": "authorization_json exceeds the 256 KiB limit"}
+    try:
+        authorization = json.loads(raw)
+        if not isinstance(authorization, dict):
+            raise ValueError("authorization_json must contain an object")
+        _restore_execution_authorization_numbers(authorization)
+        payload = authorization.get("payload")
+        action = payload.get("action") if isinstance(payload, dict) else None
+        if not isinstance(action, dict):
+            raise ValueError("authorization is missing the signed action")
+        metadata = action.get("metadata")
+        if not isinstance(metadata, dict) or not isinstance(metadata.get("evm_transaction"), dict):
+            raise ValueError("wallet submission is currently enabled only for native USDC transfers on Base and Ethereum")
+        if action.get("network") not in _EVM_USDC_NETWORKS or action.get("asset") != "USDC":
+            raise ValueError("wallet submission is currently enabled only for native USDC transfers on Base and Ethereum")
+        confirmed = metadata.get("anna_user_confirmation")
+        if not isinstance(confirmed, dict) or confirmed.get("confirmed") is not True:
+            raise ValueError("signed action has no explicit Anna UI confirmation")
+
+        from attest.keys import load_public_key
+        from enforcement.evm import EVMExecutionAdapter
+        from enforcement.networks import NetworkRegistry
+        from enforcement.router import ExecutionRouter
+
+        # Independently reconstruct the expected transfer from the signed
+        # payment fields. Do this before consuming the nonce so malformed or
+        # inconsistent artifacts do not burn a valid permission.
+        transaction = EVMExecutionAdapter._transaction(action)
+        expected_transaction = _build_anna_evm_transaction(
+            action["network"], action["asset"], action["target"], action["amount"]
+        )
+        if expected_transaction is None or transaction != expected_transaction:
+            raise ValueError("signed EVM transaction does not exactly match the authorized USDC payment")
+        expected_chain_id = _EVM_USDC_NETWORKS[action["network"]]["chain_id"]
+        if transaction["chain_id"] != expected_chain_id:
+            raise ValueError("signed EVM chain does not match the selected network")
+
+        engine, _ = _get_state()
+        public_key = load_public_key(_resolve_data_dir() / "issuer.pub")
+        router = ExecutionRouter(NetworkRegistry(), engine.storage, public_key)
+        consumed, reason = router.consume(authorization)
+        if not consumed:
+            raise PermissionError(reason)
+
+        # Router has verified the signature, EVM adapter and one-time nonce.
+        # Return only the exact adapter-normalized transaction envelope.
+        return {"success": True, "data": {
+            "authorization_id": payload.get("authorization_id"),
+            "consumed": True,
+            "execution_status": "CONSUMED_AWAITING_WALLET",
+            "network": action["network"],
+            "transaction": transaction,
+            "wallet_submission_required": True,
+            "transaction_submitted": False,
+            "message": "ExecutionRouter consumed the one-time permission. The connected wallet must still review, sign and submit this exact transaction.",
+        }}
+    except (OSError, ValueError, TypeError, RuntimeError, PermissionError, LookupError) as exc:
+        return {"success": False, "error": f"wallet execution was not authorized: {exc}"}
+
+
 def _verigate_verify_decision_receipt(args: dict) -> dict:
     raw = args.get("receipt_json")
     if not isinstance(raw, str) or not raw.strip():
@@ -493,6 +661,7 @@ def invoke(tool: str, args: dict) -> dict:
         "verigate_check",
         "verigate_authorize_payment",
         "verigate_verify_execution_authorization",
+        "verigate_consume_execution_authorization",
         "verigate_policy_summary",
         "verigate_verify_decision_receipt",
     ):
@@ -505,6 +674,8 @@ def invoke(tool: str, args: dict) -> dict:
         return _verigate_authorize_payment(args)
     if tool == "verigate_verify_execution_authorization":
         return _verigate_verify_execution_authorization(args)
+    if tool == "verigate_consume_execution_authorization":
+        return _verigate_consume_execution_authorization(args)
     if tool == "verigate_policy_summary":
         return _verigate_policy_summary(args)
     return _verigate_verify_decision_receipt(args)

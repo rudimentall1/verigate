@@ -83,3 +83,26 @@ verifies the signature, action fingerprint, expiry and one-time nonce before inv
 The Anna app does not hold wallet keys, sign wallet transactions or broadcast them. It is an
 authorization hand-off, not a wallet. An executor that bypasses Verigate's router is outside this
 enforcement boundary.
+
+
+## Connected-wallet execution (App 0.1.12 / Executa 0.1.11)
+
+For native USDC on Base and Ethereum, the Executa constructs the ERC-20 transfer(address,uint256)
+calldata from the policy-checked recipient and amount and places that transaction envelope inside
+the signed ActionIntent. The token contract addresses are Circle's native USDC deployments:
+Base 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 and Ethereum
+0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48. USDC uses six decimal places.
+
+After the user explicitly clicks Send with connected wallet, the app checks the active
+EIP-1193 chain and account, then calls verigate_consume_execution_authorization. That tool
+passes the signed artifact through ExecutionRouter.consume, which verifies the issuer
+signature, network adapter, exact execution artifact and single-use nonce. Only after that
+succeeds does the UI pass the exact adapter-normalized envelope to eth_sendTransaction.
+The wallet—not Anna or Verigate—signs and broadcasts. Verigate never receives a wallet private
+key. A wallet rejection after router consumption burns the one-time permission; the user must
+run a fresh check and request a new one.
+
+This wallet path is deliberately limited to native USDC on Base and Ethereum. Solana still
+supports policy checks and signed authorization artifacts, but this app version does not
+compose or submit a Solana token transaction. A returned transaction hash means SUBMITTED,
+not CONFIRMED. The app does not claim finality from a wallet response.

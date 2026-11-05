@@ -85,6 +85,14 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
       for (let i = 0; i < 400; i++) { await sleep(25); if (!$("execution-btn").disabled) break; }
       await sleep(30);
     },
+    async clickWallet() {
+      $("wallet-execute-btn").click();
+      for (let i = 0; i < 400; i++) {
+        await sleep(25);
+        if (/Transaction hash|consumed, but wallet/i.test($("execution-status").textContent)) break;
+      }
+      await sleep(30);
+    },
     text: (id) => $(id).textContent,
     shown: (id) => $(id).style.display !== "none" && $(id).style.display !== "",
   };
@@ -129,6 +137,55 @@ await test("one-time execution permission is issued only after a separate user c
   ok(ui.text("execution-json").includes("authorization_id"), "signed permission displayed; error=" + ui.text("error") + "; status=" + ui.text("execution-status") + "; tools=" + JSON.stringify(ui.calls.tools));
   ok(ui.text("execution-status").includes("Not consumed"), "permission is not represented as a sent transaction");
   ok(ui.text("status").includes("No funds were sent"), "status is explicit");
+});
+
+await test("wallet hand-off consumes through ExecutionRouter before exact USDC send", async () => {
+  const ui = await launch({});
+  const walletCalls = [];
+  ui.window.confirm = () => true;
+  ui.window.ethereum = {
+    request: async ({ method, params }) => {
+      walletCalls.push({ method, params });
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_sendTransaction") return "0x" + "a".repeat(64);
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.click();
+  await ui.clickExecution();
+  ok(ui.shown("wallet-execute-btn"), "wallet action is available for signed Base USDC transfer");
+  await ui.clickWallet();
+  ok(ui.calls.tools.includes("verigate_consume_execution_authorization"), "permission consumed by Verigate tool");
+  eq(walletCalls.map(x => x.method).join(","), "eth_chainId,eth_requestAccounts,eth_chainId,eth_accounts,eth_sendTransaction");
+  const send = walletCalls.find(x => x.method === "eth_sendTransaction");
+  eq(send.params[0].to.toLowerCase(), "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
+  ok(send.params[0].data.includes(VALID.slice(2).toLowerCase()), "wallet receives the signed recipient");
+  ok(ui.text("execution-status").includes("transaction hash"), "submitted hash is displayed");
+  ok(ui.text("execution-status").includes("SUBMITTED"), "submission is not misrepresented as confirmation");
+});
+
+await test("wallet network drift after consumption prevents submission", async () => {
+  const ui = await launch({});
+  const walletCalls = [];
+  let chainReads = 0;
+  ui.window.confirm = () => true;
+  ui.window.ethereum = {
+    request: async ({ method, params }) => {
+      walletCalls.push({ method, params });
+      if (method === "eth_chainId") return ++chainReads === 1 ? "0x2105" : "0x1";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_sendTransaction") return "0x" + "b".repeat(64);
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.click();
+  await ui.clickExecution();
+  await ui.clickWallet();
+  ok(ui.calls.tools.includes("verigate_consume_execution_authorization"), "router consumed the permission");
+  eq(walletCalls.some(x => x.method === "eth_sendTransaction"), false, "no send on changed chain");
+  ok(ui.text("execution-status").includes("consumed"), "consumption is disclosed");
+  ok(ui.text("execution-status").includes("network changed"), "network drift is disclosed");
 });
 
 await test("tampered receipt is rejected before any decision is displayed", async () => {

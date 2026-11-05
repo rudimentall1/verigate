@@ -236,7 +236,7 @@ class PluginTests(unittest.TestCase):
 
     def test_manifest_is_consistent(self):
         m = self.plug.handle({"method": "describe"})
-        self.assertEqual([t["name"] for t in m["tools"]], ["verigate_check", "verigate_policy_summary", "verigate_authorize_payment", "verigate_verify_execution_authorization", "verigate_verify_decision_receipt"])
+        self.assertEqual([t["name"] for t in m["tools"]], ["verigate_check", "verigate_policy_summary", "verigate_authorize_payment", "verigate_verify_execution_authorization", "verigate_consume_execution_authorization", "verigate_verify_decision_receipt"])
         self.assertEqual(m["version"], self.plug.VERSION)
 
 

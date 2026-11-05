@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -42,10 +44,12 @@ def main() -> None:
     if not executable.exists():
         raise SystemExit(f"binary not found: {executable}")
 
-    proc = subprocess.Popen(
-        [str(executable)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, text=True,
-    )
+    with tempfile.TemporaryDirectory(prefix="verigate-anna-smoke-") as data_dir:
+        smoke_env = {**os.environ, "VERIGATE_ANNA_DATA_DIR": data_dir}
+        proc = subprocess.Popen(
+            [str(executable)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, env=smoke_env,
+        )
 
     def send(frame: dict | str) -> None:
         proc.stdin.write((frame if isinstance(frame, str) else json.dumps(frame)) + "\n")
@@ -117,6 +121,46 @@ def main() -> None:
         if summary.get("success") is not True or not summary.get("data", {}).get("payee_validation"):
             raise SystemExit(f"policy summary failed: {summary}")
 
+        # 3d. Exercise the actual packaged ExecutionRouter wallet hand-off.
+        send({"jsonrpc": "2.0", "id": 33, "method": "invoke", "params": {
+            "tool": "verigate_authorize_payment",
+            "arguments": {
+                "agent_id": "anna-binary-wallet-smoke",
+                "payee": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+                "asset": "USDC", "network": "base", "amount": 25,
+                "human_confirmed": True,
+            },
+        }})
+        authorized = recv().get("result", {})
+        if authorized.get("success") is not True:
+            raise SystemExit(f"wallet authorization failed: {authorized}")
+        authorization = authorized.get("data", {}).get("execution_authorization")
+        if not isinstance(authorization, dict):
+            raise SystemExit(f"wallet authorization artifact missing: {authorized}")
+
+        send({"jsonrpc": "2.0", "id": 34, "method": "invoke", "params": {
+            "tool": "verigate_consume_execution_authorization",
+            "arguments": {"authorization_json": json.dumps(authorization)},
+        }})
+        consumed = recv().get("result", {})
+        handoff = consumed.get("data", {})
+        tx = handoff.get("transaction", {})
+        if (consumed.get("success") is not True or handoff.get("consumed") is not True
+                or handoff.get("transaction_submitted") is not False
+                or tx.get("chain_id") != 8453
+                or tx.get("to", "").lower() != "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+                or not tx.get("data", "").startswith("0xa9059cbb")):
+            raise SystemExit(f"ExecutionRouter wallet hand-off failed: {consumed}")
+
+        # The exact same signed authorization must not be consumable twice.
+        send({"jsonrpc": "2.0", "id": 35, "method": "invoke", "params": {
+            "tool": "verigate_consume_execution_authorization",
+            "arguments": {"authorization_json": json.dumps(authorization)},
+        }})
+        replay = recv().get("result", {})
+        if replay.get("success") is not False:
+            raise SystemExit(f"one-time authorization replay was not rejected: {replay}")
+
         # 4. error handling must not kill the process
         send("this is not json")
         if recv().get("error", {}).get("code") != -32700:
@@ -137,7 +181,7 @@ def main() -> None:
 
     if proc.returncode != 0:
         raise SystemExit(f"binary exited with {proc.returncode}\nSTDERR:\n{proc.stderr.read()}")
-    print(f"binary smoke test passed: describe in {elapsed:.1f}s, decision={decision}, signed=yes")
+    print(f"binary smoke test passed: describe in {elapsed:.1f}s, decision={decision}, signed=yes, wallet_handoff=consumed_once")
 
 
 if __name__ == "__main__":

@@ -107,7 +107,7 @@
           <ul id="clarify-list" class="rules"></ul>
           <label id="confirm-wrap" class="confirm"><input id="confirm-details" type="checkbox" /> I confirm the details above are what I mean</label>
         </div>
-        <div class="note">Anna AI reads and reviews your request. The final ALLOW, WARN or BLOCK always comes from Verigate's deterministic policy, and AI input can only make a result stricter, never more permissive. The first check is a preview. Only after you click the separate confirmation button does Verigate run its persistent policy, record the authorization attempt and, for ALLOW only, issue a one-time signed permission. The Anna app does not send funds; a connected executor must enforce the permission through ExecutionRouter.</div>
+        <div class="note">Anna AI reads and reviews your request. The final ALLOW, WARN or BLOCK always comes from Verigate's deterministic policy. For native USDC on Base and Ethereum, a separate confirmed step binds the exact ERC-20 transfer to the signed permission. ExecutionRouter consumes that permission before the connected wallet is asked to sign and submit. The app never receives wallet private keys. Solana remains policy/authorization-only in this version.</div>
         <div id="interpretation" aria-live="polite"></div>
         <p id="status" role="status">Connecting to Anna…</p>
         <div id="error" role="alert"></div>
@@ -148,6 +148,7 @@
           <p id="execution-summary" class="helper">A fresh policy check is required before a permission can be issued.</p>
           <div class="actions">
             <button id="execution-btn" class="secondary" type="button">Create one-time permission</button>
+            <button id="wallet-execute-btn" class="primary" type="button" style="display:none" disabled>Send with connected wallet</button>
           </div>
           <p id="execution-status" class="helper"></p>
           <details>
@@ -156,7 +157,7 @@
           </details>
         </section>
       </section>
-      <p class="fineprint">The first check is a non-persistent preview. A separate user-confirmed step can issue a one-time capability-bound Execution Authorization for ALLOW only. The app does not hold wallet keys or submit transactions; a downstream executor must enforce the authorization through Verigate ExecutionRouter. WARN and BLOCK never receive execution authority.</p>
+      <p class="fineprint">The first check is a non-persistent preview. For native USDC on Base/Ethereum, the user can explicitly issue a one-time permission, consume it through ExecutionRouter and then sign the exact transfer in an injected wallet. Verigate never sees the wallet private key. Solana is not yet enabled for wallet submission. WARN and BLOCK never receive execution authority.</p>
     </main>
     <script src="anna-tool-ids.js"></script>
     <script type="module" src="app.js"></script>

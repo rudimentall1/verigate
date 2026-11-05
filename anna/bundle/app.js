@@ -8,7 +8,7 @@ const TOOL_ID =
 
 const $ = (id) => document.getElementById(id);
 const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], lastExecutionAuthorization: null, busy: false, lastInterpretedDescription: "", requestId: 0 };
-const buttons = [$("check-btn"), $("execution-btn")];
+const buttons = [$("check-btn"), $("execution-btn"), $("wallet-execute-btn")];
 const inputs = ["action-description", "agent-id", "target", "asset", "network", "amount", "resource", "confirm-details"].map($);
 const FIELD_IDS = ["target", "asset", "network", "amount"];
 const FIELD_LABELS = { target: "recipient", asset: "asset", network: "network", amount: "amount" };
@@ -28,6 +28,12 @@ function setBusy(busy, message) {
     state.lastExecutionAuthorization === null;
   $("execution-btn").disabled = busy || !state.anna || !canPrepareExecution;
   inputs.forEach((input) => { input.disabled = busy; });
+  const walletReady = Boolean(
+    state.lastExecutionAuthorization &&
+    state.lastValues &&
+    ["base", "ethereum"].includes(String(state.lastValues.network).toLowerCase())
+  );
+  $("wallet-execute-btn").disabled = busy || !state.anna || !walletReady;
   $("status").textContent = message || (busy ? "Working…" : "Ready.");
 }
 
@@ -58,6 +64,8 @@ function clearResult() {
   $("execution-summary").textContent = "";
   $("execution-status").textContent = "";
   $("execution-json").textContent = "";
+  $("wallet-execute-btn").style.display = "none";
+  $("wallet-execute-btn").textContent = "Send with connected wallet";
   $("decision").textContent = "";
   $("decision").className = "decision";
   $("result-title").textContent = "";
@@ -626,15 +634,23 @@ async function prepareExecutionAuthorization() {
     }
     state.lastReceipt = receipt;
     state.lastExecutionAuthorization = authorization;
+    const evmTransaction = authorization.payload?.action?.metadata?.evm_transaction;
+    const walletNetworkSupported = Boolean(evmTransaction) && ["base", "ethereum"].includes(v.network.toLowerCase());
+    $("wallet-execute-btn").style.display = walletNetworkSupported ? "inline-flex" : "none";
     $("receipt-json").textContent = JSON.stringify(receipt, null, 2);
     $("execution-json").textContent = JSON.stringify(authorization, null, 2);
     $("execution-summary").textContent =
       "One-time permission verified. It is bound to " + v.amount + " " + v.asset +
-      " on " + v.network + " for " + v.payee + ".";
+      " on " + v.network + " for " + v.payee + "." +
+      (walletNetworkSupported
+        ? " Verigate has also bound the exact native-USDC transfer to the signed permission."
+        : " Wallet submission is not enabled for this network in this app version.");
     $("execution-status").textContent =
       "Ed25519 verified ? expires " + new Date(verification.expires_at * 1000).toLocaleString() +
       " ? capability " + data.capability_id +
-      ". Not consumed; no transaction was submitted. The wallet/executor must pass this exact action through ExecutionRouter.";
+      (walletNetworkSupported
+        ? ". Not consumed. Select Send with connected wallet to consume this permission at ExecutionRouter, then review and sign in your wallet."
+        : ". Not consumed; no transaction was submitted. Solana and other non-EVM routes remain policy/authorization-only here.");
     setBusy(false, "One-time execution permission created and verified. No funds were sent.");
   } catch (error) {
     if (state.lastExecutionAuthorization === null) $("execution-json").textContent = "";
@@ -642,6 +658,128 @@ async function prepareExecutionAuthorization() {
     setBusy(false, "No transaction was sent.");
   }
 }
+
+async function executeWithConnectedWallet() {
+  clearError();
+  if (state.busy) return;
+  const authorization = state.lastExecutionAuthorization;
+  const values = state.lastValues;
+  if (!state.anna || !authorization || !values) {
+    showError("Create and verify a fresh one-time permission first.");
+    return;
+  }
+  const network = String(values.network || "").toLowerCase();
+  const networkConfig = {
+    base: { chainId: "0x2105", explorer: "https://basescan.org/tx/" },
+    ethereum: { chainId: "0x1", explorer: "https://etherscan.io/tx/" }
+  }[network];
+  if (!networkConfig) {
+    showError("Wallet submission is currently enabled only for USDC on Base and Ethereum.");
+    return;
+  }
+  const provider = window.ethereum;
+  if (!provider || typeof provider.request !== "function") {
+    showError("No EIP-1193 wallet was detected in this Anna app session. Open the app in a browser with an injected EVM wallet.");
+    return;
+  }
+  const action = authorization.payload?.action;
+  const expectedTx = action?.metadata?.evm_transaction;
+  if (!expectedTx || expectedTx.chain_id !== Number.parseInt(networkConfig.chainId, 16)) {
+    showError("The signed permission is missing a matching EVM transaction. No wallet call was made.");
+    return;
+  }
+
+  let consumed = false;
+  try {
+    let activeChain = String(await provider.request({ method: "eth_chainId" })).toLowerCase();
+    if (activeChain !== networkConfig.chainId) {
+      await provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: networkConfig.chainId }]
+      });
+      activeChain = String(await provider.request({ method: "eth_chainId" })).toLowerCase();
+    }
+    if (activeChain !== networkConfig.chainId) {
+      throw new Error("Wallet is on the wrong network. Switch to " + network + " and try again.");
+    }
+    const accounts = await provider.request({ method: "eth_requestAccounts" });
+    const from = Array.isArray(accounts) ? accounts[0] : "";
+    if (typeof from !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(from)) {
+      throw new Error("The wallet did not return a valid account.");
+    }
+    const confirmWallet = window.confirm(
+      "Send this exact USDC transfer with your connected wallet?\\n\\n" +
+      values.amount + " USDC on " + network + "\\nRecipient: " + values.payee +
+      "\\nWallet: " + from +
+      "\\n\\nVerigate will consume the one-time permission first. Your wallet will then show the transaction for signing. Network fees may apply."
+    );
+    if (!confirmWallet) return;
+
+    setBusy(true, "Verigate is verifying and consuming the one-time permission…");
+    const response = await state.anna.tools.invoke({
+      tool_id: TOOL_ID,
+      method: "verigate_consume_execution_authorization",
+      args: { authorization_json: JSON.stringify(authorization) }
+    });
+    const outer = response?.result ?? response;
+    const data = outer?.data;
+    if (outer?.success !== true || !data || data.consumed !== true ||
+        data.authorization_id !== authorization.payload?.authorization_id ||
+        data.wallet_submission_required !== true || data.transaction_submitted !== false) {
+      throw new Error(outer?.error || "ExecutionRouter did not consume this permission. No wallet transaction was requested.");
+    }
+    consumed = true;
+    state.lastExecutionAuthorization = null;
+    $("wallet-execute-btn").disabled = true;
+    $("wallet-execute-btn").textContent = "Permission consumed";
+    const tx = data.transaction;
+    if (!tx || tx.chain_id !== expectedTx.chain_id ||
+        String(tx.to).toLowerCase() !== String(expectedTx.to).toLowerCase() ||
+        tx.value_wei !== expectedTx.value_wei ||
+        String(tx.data).toLowerCase() !== String(expectedTx.data).toLowerCase()) {
+      throw new Error("ExecutionRouter returned a transaction that differs from the signed artifact. Wallet submission stopped.");
+    }
+
+    setBusy(true, "ExecutionRouter accepted the permission. Waiting for your wallet signature…");
+    const finalChain = String(await provider.request({ method: "eth_chainId" })).toLowerCase();
+    if (finalChain !== networkConfig.chainId) {
+      throw new Error("The wallet network changed after permission consumption. No transaction was sent; request a fresh permission.");
+    }
+    const finalAccounts = await provider.request({ method: "eth_accounts" });
+    if (!Array.isArray(finalAccounts) || typeof finalAccounts[0] !== "string" ||
+        finalAccounts[0].toLowerCase() !== from.toLowerCase()) {
+      throw new Error("The active wallet account changed after permission consumption. No transaction was sent; request a fresh permission.");
+    }
+    const txHash = await provider.request({
+      method: "eth_sendTransaction",
+      params: [{
+        from,
+        to: tx.to,
+        value: "0x0",
+        data: tx.data
+      }]
+    });
+    if (typeof txHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+      throw new Error("The wallet returned no valid transaction hash. Check wallet activity before retrying.");
+    }
+    $("wallet-execute-btn").textContent = "Transaction submitted";
+    $("execution-status").textContent =
+      "ExecutionRouter consumed the one-time permission; transaction hash " +
+      txHash + " — SUBMITTED, not yet confirmed. Explorer: " + networkConfig.explorer + txHash;
+    setBusy(false, "Wallet submitted the authorized transaction. Wait for on-chain confirmation.");
+  } catch (error) {
+    if (consumed) {
+      state.lastExecutionAuthorization = null;
+      $("wallet-execute-btn").style.display = "none";
+      $("execution-status").textContent =
+        "The one-time permission was consumed, but wallet submission did not complete or could not be verified: " +
+        (error?.message || String(error)) + ". Check wallet activity. A fresh policy check and new permission are required before another attempt.";
+    }
+    showError(error?.message || String(error));
+    setBusy(false, consumed ? "Permission consumed. No retry is possible with this authorization." : "Wallet execution did not start. The permission remains unused.");
+  }
+}
+
 
 async function main() {
   try {
@@ -656,6 +794,7 @@ async function main() {
   }
   $("check-btn").addEventListener("click", checkAuthority);
   $("execution-btn").addEventListener("click", prepareExecutionAuthorization);
+  $("wallet-execute-btn").addEventListener("click", executeWithConnectedWallet);
   const invalidate = () => {
     state.requestId += 1;
     clearResult();

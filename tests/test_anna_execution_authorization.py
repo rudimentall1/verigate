@@ -77,6 +77,38 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
         self.assertTrue(confirmation["confirmed"])
         self.assertEqual(confirmation["source"], "anna-app-confirmation-button")
 
+    def test_allow_binds_canonical_native_usdc_transfer_to_signed_action(self):
+        result = plugin._verigate_authorize_payment(self._args())
+        self.assertTrue(result["success"], result)
+        authorization = result["data"]["execution_authorization"]
+        action = authorization["payload"]["action"]
+        tx = action["metadata"]["evm_transaction"]
+        self.assertEqual(tx["chain_id"], 8453)
+        self.assertEqual(tx["to"].lower(), "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913")
+        expected_data = (
+            "0xa9059cbb"
+            + ("0" * 24)
+            + VALID_PAYEE[2:].lower()
+            + format(25_000_000, "064x")
+        )
+        self.assertEqual(tx["data"], expected_data)
+        self.assertEqual(tx["value_wei"], 0)
+
+    def test_wallet_handoff_consumes_through_router_once(self):
+        result = plugin._verigate_authorize_payment(self._args())
+        self.assertTrue(result["success"], result)
+        authorization = result["data"]["execution_authorization"]
+        raw = json.dumps(authorization)
+        first = plugin._verigate_consume_execution_authorization({"authorization_json": raw})
+        self.assertTrue(first["success"], first)
+        self.assertTrue(first["data"]["consumed"])
+        self.assertEqual(first["data"]["execution_status"], "CONSUMED_AWAITING_WALLET")
+        self.assertFalse(first["data"]["transaction_submitted"])
+        self.assertEqual(first["data"]["transaction"]["chain_id"], 8453)
+        replay = plugin._verigate_consume_execution_authorization({"authorization_json": raw})
+        self.assertFalse(replay["success"])
+        self.assertIn("already consumed", replay["error"])
+
     def test_warn_and_block_never_get_execution_authority(self):
         warn = plugin._verigate_authorize_payment(self._args(amount=300))
         self.assertTrue(warn["success"], warn)
@@ -95,10 +127,12 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
         public_key = load_public_key(Path(self.tmp.name) / "issuer.pub")
         router = ExecutionRouter(NetworkRegistry(), engine.storage, public_key)
         calls = []
-        action = router.execute(authorization, lambda exact_action: calls.append(exact_action) or "mock-tx")
-        self.assertEqual(action, "mock-tx")
+        result = router.execute(authorization, lambda exact_action: calls.append(exact_action) or "mock-tx")
+        self.assertEqual(result, "mock-tx")
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0]["target"], VALID_PAYEE)
+        self.assertEqual(calls[0]["chain_id"], 8453)
+        self.assertEqual(calls[0]["value_wei"], 0)
+        self.assertIn(VALID_PAYEE[2:].lower(), calls[0]["data"].lower())
         with self.assertRaises(PermissionError):
             router.execute(authorization, lambda exact_action: calls.append(exact_action) or "replay")
         self.assertEqual(len(calls), 1)
