@@ -418,13 +418,15 @@ class GuardrailEngine:
         intent: PaymentIntent,
         capability_id: str,
         private_key,
+        *,
+        advisory: Sequence[RuleMatch] = (),
     ) -> dict:
         """Payment adapter with explicit static/dynamic authority binding."""
         return self._authorize_control_plane(
             intent.as_action_intent(),
             private_key,
             capability_id=capability_id,
-            decision=self.evaluate(intent),
+            decision=self.evaluate(intent, advisory=advisory),
         )
 
     def authorize_with_identity(

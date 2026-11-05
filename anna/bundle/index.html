@@ -107,7 +107,7 @@
           <ul id="clarify-list" class="rules"></ul>
           <label id="confirm-wrap" class="confirm"><input id="confirm-details" type="checkbox" /> I confirm the details above are what I mean</label>
         </div>
-        <div class="note">Anna AI reads and reviews your request. The final ALLOW, WARN or BLOCK always comes from Verigate's deterministic policy, and AI input can only make a result stricter, never more permissive. A check is a simulation: nothing is recorded or executed. Each check treats the recipient as new; cumulative daily-spend and per-minute call limits are not evaluated.</div>
+        <div class="note">Anna AI reads and reviews your request. The final ALLOW, WARN or BLOCK always comes from Verigate's deterministic policy, and AI input can only make a result stricter, never more permissive. The first check is a preview. Only after you click the separate confirmation button does Verigate run its persistent policy, record the authorization attempt and, for ALLOW only, issue a one-time signed permission. The Anna app does not send funds; a connected executor must enforce the permission through ExecutionRouter.</div>
         <div id="interpretation" aria-live="polite"></div>
         <p id="status" role="status">Connecting to Anna…</p>
         <div id="error" role="alert"></div>
@@ -143,8 +143,20 @@
           <summary>View signed receipt JSON</summary>
           <pre id="receipt-json"></pre>
         </details>
+        <section id="execution-panel" class="note" style="display:none">
+          <h2>One-time execution permission</h2>
+          <p id="execution-summary" class="helper">A fresh policy check is required before a permission can be issued.</p>
+          <div class="actions">
+            <button id="execution-btn" class="secondary" type="button">Create one-time permission</button>
+          </div>
+          <p id="execution-status" class="helper"></p>
+          <details>
+            <summary>View signed Execution Authorization</summary>
+            <pre id="execution-json"></pre>
+          </details>
+        </section>
       </section>
-      <p class="fineprint">Verigate checks policy authority only, as a simulation. No transaction is submitted or executed and no payment history is stored. Each check assumes a new recipient; cumulative daily spend and call-rate controls are not evaluated. ALLOW is not execution approval and does not guarantee that the recipient is safe or that a payment will succeed.</p>
+      <p class="fineprint">The first check is a non-persistent preview. A separate user-confirmed step can issue a one-time capability-bound Execution Authorization for ALLOW only. The app does not hold wallet keys or submit transactions; a downstream executor must enforce the authorization through Verigate ExecutionRouter. WARN and BLOCK never receive execution authority.</p>
     </main>
     <script src="anna-tool-ids.js"></script>
     <script type="module" src="app.js"></script>

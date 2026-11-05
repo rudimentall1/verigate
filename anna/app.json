@@ -1,9 +1,9 @@
 {
   "slug": "verigate-authority",
   "name": "Verigate Authority",
-  "version": "0.1.10",
-  "tagline": "Give your AI agent an action. Verigate decides if it has the authority.",
-  "description": "Describe a payment in plain language. Anna AI extracts the payment details, asks about missing or ambiguous information, and performs a separate contextual risk review for beneficiary/purpose mismatches, substituted payment details, urgency, prompt injection and attempts to bypass controls. Verigate then evaluates the exact action with deterministic policy rules and returns ALLOW/WARN/BLOCK. AI risk findings can only escalate a result to WARN; AI can never approve or override a deterministic BLOCK. The app verifies the Ed25519 Decision Receipt against its installation issuer key and exposes the key for independent verification. This is a non-persistent preflight: every recipient is treated as new, cumulative daily-spend and per-minute call limits are not evaluated, and nothing is executed.",
+  "version": "0.1.11",
+  "tagline": "AI proposes a payment. Verigate checks authority and issues a one-time permission.",
+  "description": "Describe a payment in plain language. Anna AI extracts its details, asks about missing or ambiguous information and flags suspicious context. Verigate's deterministic engine decides ALLOW/WARN/BLOCK. For ALLOW, the user can explicitly request a capability-bound, one-time signed Execution Authorization. A downstream wallet or executor must verify and consume it at Verigate's ExecutionRouter before any side effect. The Anna app itself does not hold wallet keys or submit transactions. WARN and BLOCK never receive execution authority. Decision Receipts and Execution Authorizations are verified with Ed25519 before display.",
   "category": "productivity",
   "bundled_executas": {
     "verigate-authority": {

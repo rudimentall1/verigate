@@ -1,9 +1,9 @@
 {
   "slug": "verigate-authority",
   "name": "verigate-authority",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "executa_type": "tool",
-  "description": "Evaluates agent actions against Verigate deterministic policy rules, returns a signed ALLOW/WARN/BLOCK Decision Receipt and verifies its Ed25519 signature before the result is shown.",
+  "description": "Verigate payment authority checks and one-time signed execution permissions for downstream Verigate-enforced executors. Anna does not hold wallet keys or submit transactions.",
   "tool_id": "tool-dev-verigate-authority",
   "type": "python",
   "distribution": {

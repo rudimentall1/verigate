@@ -56,3 +56,11 @@ new_payee_cap:
 # even to a known payee.
 confirmation_required_over:
   USDC: 250
+
+# Rolling 24-hour spend cap per asset, shared across all recipients.
+# The preview reads persisted history; user-confirmed authorization records it.
+daily_cap:
+  USDC: 2000
+
+# Anti-runaway-loop protection, based on persisted payment attempts.
+rate_limit_per_minute: 30

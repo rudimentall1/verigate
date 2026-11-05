@@ -192,11 +192,12 @@ class PluginTests(unittest.TestCase):
         s = self.plug.invoke("verigate_policy_summary", {})["data"]
         self.assertEqual(s["per_tx_cap"]["USDC"], 500)
         self.assertTrue(s["payee_validation"])
-        self.assertTrue(s["simulation"])
-        self.assertFalse(s["history_recorded"])
-        self.assertEqual(s["new_payee_assumption"], "new")
-        self.assertEqual(s["not_evaluated"], ["cumulative_daily_spend", "calls_per_minute"])
-        self.assertNotIn("daily_cap", s)
+        self.assertTrue(s["preview_non_persistent"])
+        self.assertFalse(s["history_recorded_for_preview"])
+        self.assertTrue(s["history_used_for_limits"])
+        self.assertTrue(s["authorization_records_history"])
+        self.assertEqual(s["daily_cap"]["USDC"], 2000)
+        self.assertEqual(s["rate_limit_per_minute"], 30)
 
     def test_decision_receipt_verifier_accepts_valid_and_rejects_tampered(self):
         from copy import deepcopy
@@ -235,7 +236,7 @@ class PluginTests(unittest.TestCase):
 
     def test_manifest_is_consistent(self):
         m = self.plug.handle({"method": "describe"})
-        self.assertEqual([t["name"] for t in m["tools"]], ["verigate_check", "verigate_policy_summary", "verigate_verify_decision_receipt"])
+        self.assertEqual([t["name"] for t in m["tools"]], ["verigate_check", "verigate_policy_summary", "verigate_authorize_payment", "verigate_verify_execution_authorization", "verigate_verify_decision_receipt"])
         self.assertEqual(m["version"], self.plug.VERSION)
 
 

@@ -80,6 +80,11 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
       for (let i = 0; i < 400; i++) { await sleep(25); if (!$("check-btn").disabled) break; }
       await sleep(30);
     },
+    async clickExecution() {
+      $("execution-btn").click();
+      for (let i = 0; i < 400; i++) { await sleep(25); if (!$("execution-btn").disabled) break; }
+      await sleep(30);
+    },
     text: (id) => $(id).textContent,
     shown: (id) => $(id).style.display !== "none" && $(id).style.display !== "",
   };
@@ -109,6 +114,22 @@ await test("valid request: AI reads it, Verigate allows, limits table is shown",
   ok(ui.text("receipt-json").includes("signature"), "signed receipt shown");
 });
 
+
+await test("one-time execution permission is issued only after a separate user click", async () => {
+  const ui = await launch({});
+  ui.window.confirm = () => true;
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  ok(ui.shown("execution-panel"), "permission action is offered for ALLOW");
+  ok(ui.$("execution-json").textContent === "", "no execution permission is issued automatically");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no authorization tool before user click");
+  await ui.clickExecution();
+  ok(ui.calls.tools.includes("verigate_authorize_payment"), "explicit click invoked authorization tool");
+  ok(ui.calls.tools.includes("verigate_verify_execution_authorization"), "execution permission signature verified");
+  ok(ui.text("execution-json").includes("authorization_id"), "signed permission displayed; error=" + ui.text("error") + "; status=" + ui.text("execution-status") + "; tools=" + JSON.stringify(ui.calls.tools));
+  ok(ui.text("execution-status").includes("Not consumed"), "permission is not represented as a sent transaction");
+  ok(ui.text("status").includes("No funds were sent"), "status is explicit");
+});
 
 await test("tampered receipt is rejected before any decision is displayed", async () => {
   const ui = await launch({ tamperSignature: true });

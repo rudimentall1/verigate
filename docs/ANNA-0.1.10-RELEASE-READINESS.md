@@ -1,3 +1,7 @@
+# Historical snapshot ? superseded
+
+Current status: ANNA-0.1.11-EXECUTION-AUTH-INTEGRATION.md.
+
 # Anna App 0.1.10 ? Release Readiness
 
 ## Build identity

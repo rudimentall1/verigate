@@ -67,3 +67,19 @@ Before resubmitting, publish the app bundle, install it as a fresh Anna Cloud Ag
 - a network outside the default allowed list (BLOCK).
 
 Record the actual returned decision and matched rules during those tests. Do not state that a case passed unless the cloud agent returned that result.
+
+
+## Capability-bound execution authorization
+
+After a preview returns ALLOW, the user can explicitly click Create one-time permission.
+The Executa re-runs the persistent policy, stores the authorization/audit artifacts and issues
+a short-lived, one-time Ed25519 Execution Authorization only if the fresh decision is still ALLOW.
+WARN and BLOCK never receive execution authority. The app verifies the authorization before
+displaying it.
+
+The authorization binds the exact payment action, capability, policy and dynamic-authority
+snapshot. A downstream wallet/executor must pass it through Verigate ExecutionRouter; the router
+verifies the signature, action fingerprint, expiry and one-time nonce before invoking the executor.
+The Anna app does not hold wallet keys, sign wallet transactions or broadcast them. It is an
+authorization hand-off, not a wallet. An executor that bypasses Verigate's router is outside this
+enforcement boundary.

@@ -7,8 +7,8 @@ const TOOL_ID =
   DEV_FALLBACK_TOOL_ID;
 
 const $ = (id) => document.getElementById(id);
-const state = { anna: null, lastReceipt: null, busy: false, lastInterpretedDescription: "", requestId: 0 };
-const buttons = [$("check-btn")];
+const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], lastExecutionAuthorization: null, busy: false, lastInterpretedDescription: "", requestId: 0 };
+const buttons = [$("check-btn"), $("execution-btn")];
 const inputs = ["action-description", "agent-id", "target", "asset", "network", "amount", "resource", "confirm-details"].map($);
 const FIELD_IDS = ["target", "asset", "network", "amount"];
 const FIELD_LABELS = { target: "recipient", asset: "asset", network: "network", amount: "amount" };
@@ -23,6 +23,10 @@ const FLAG_CODES = new Set(["prompt_injection", "urgency_pressure", "recipient_m
 function setBusy(busy, message) {
   state.busy = busy;
   buttons.forEach((button) => { button.disabled = busy || !state.anna; });
+  const canPrepareExecution =
+    String(state.lastReceipt?.payload?.decision?.decision || "").toUpperCase() === "ALLOW" &&
+    state.lastExecutionAuthorization === null;
+  $("execution-btn").disabled = busy || !state.anna || !canPrepareExecution;
   inputs.forEach((input) => { input.disabled = busy; });
   $("status").textContent = message || (busy ? "Working…" : "Ready.");
 }
@@ -46,7 +50,14 @@ function hideClarify() {
 
 function clearResult() {
   state.lastReceipt = null;
+  state.lastValues = null;
+  state.lastFlags = [];
+  state.lastExecutionAuthorization = null;
   $("result").style.display = "none";
+  $("execution-panel").style.display = "none";
+  $("execution-summary").textContent = "";
+  $("execution-status").textContent = "";
+  $("execution-json").textContent = "";
   $("decision").textContent = "";
   $("decision").className = "decision";
   $("result-title").textContent = "";
@@ -256,9 +267,17 @@ async function verifyDecisionReceipt(receipt) {
   return data;
 }
 
-async function loadLimits() {
+async function loadLimits(values) {
   try {
-    const response = await state.anna.tools.invoke({ tool_id: TOOL_ID, method: "verigate_policy_summary", args: {} });
+    const response = await state.anna.tools.invoke({
+      tool_id: TOOL_ID,
+      method: "verigate_policy_summary",
+      args: {
+        agent_id: values?.agent_id || "",
+        payee: values?.payee || "",
+        asset: values?.asset || ""
+      }
+    });
     const outer = response?.result ?? response;
     const data = outer?.data;
     return outer?.success === true && data && typeof data === "object" ? data : null;
@@ -286,11 +305,24 @@ function buildLimitRows(limits, values, ruleIds) {
   const confirm = cap(limits.confirmation_required_over);
   if (confirm !== null) add("Human review above", String(values.amount), String(confirm), values.amount > confirm ? "review" : "ok");
   const newPayee = cap(limits.new_payee_cap);
-  if (newPayee !== null) {
-    const label = limits.simulation && limits.new_payee_assumption === "new"
-      ? "Recipient cap (simulation assumes first payment)"
-      : "First payment to a recipient";
-    add(label, String(values.amount), String(newPayee), values.amount > newPayee ? "review" : "ok");
+  if (newPayee !== null && limits.recipient_seen_before !== undefined) {
+    if (!limits.recipient_seen_before) {
+      add("First payment to this recipient", String(values.amount), String(newPayee),
+        ruleIds.has("new_payee_cap_exceeded") ? "review" : "ok");
+    } else {
+      add("Recipient history", "previously used", "first-payment cap no longer applies", "ok");
+    }
+  }
+  const daily = cap(limits.daily_cap);
+  if (daily !== null) {
+    const used = Number(limits.rolling_24h_spend || 0);
+    add("Rolling 24-hour spend (all recipients)", String(used + values.amount), String(daily),
+      ruleIds.has("daily_cap_exceeded") ? "review" : "ok");
+  }
+  if (Number(limits.rate_limit_per_minute) > 0) {
+    add("Recent payment attempts (last minute)", String(Number(limits.calls_last_minute || 0)),
+      String(limits.rate_limit_per_minute) + " per minute",
+      ruleIds.has("rate_limit_exceeded") ? "blocked" : "ok");
   }
   if (limits.payee_validation) add("Recipient address format", "checked by Verigate", "valid for the network", ruleIds.has("invalid_payee") ? "blocked" : "ok");
   if (limits.require_positive_amount) add("Amount greater than zero", String(values.amount), "> 0", ruleIds.has("amount_not_positive") ? "blocked" : "ok");
@@ -468,7 +500,7 @@ async function checkAuthority() {
 
   setBusy(true, "Verigate is evaluating the request against its policy…");
   try {
-    const limits = await loadLimits();
+    const limits = await loadLimits(values);
     if (requestId !== state.requestId) return;
     const args = {
       agent_id: values.agent_id,
@@ -485,6 +517,14 @@ async function checkAuthority() {
     envelope.verification = await verifyDecisionReceipt(envelope.receipt);
     if (requestId !== state.requestId) return;
     state.lastReceipt = envelope.receipt;
+    state.lastValues = { ...values };
+    state.lastFlags = [...review.flags];
+    state.lastExecutionAuthorization = null;
+    $("execution-panel").style.display = envelope.decision === "ALLOW" ? "block" : "none";
+    $("execution-btn").disabled = envelope.decision !== "ALLOW";
+    $("execution-summary").textContent = envelope.decision === "ALLOW"
+      ? "Verigate can now issue a one-time permission bound to this exact payment request. Nothing will be sent from this app."
+      : "Only ALLOW can receive execution authority.";
 
     const pill = $("decision");
     pill.textContent = envelope.decision;
@@ -505,12 +545,101 @@ async function checkAuthority() {
     if (requestId !== state.requestId) return;
     $("result-summary").textContent = explained.explanation;
     $("suggestion").textContent = explained.next ? "What could change this: " + explained.next : "";
-    setBusy(false, "Check complete. Nothing was recorded or executed.");
+    setBusy(false, "Preview complete. No payment was sent. For ALLOW, you can separately request a one-time execution permission.");
   } catch (error) {
     if (requestId !== state.requestId) return;
     clearResult();
     showError(error?.message || String(error));
     setBusy(false, "Check failed.");
+  }
+}
+
+async function prepareExecutionAuthorization() {
+  clearError();
+  if (!state.anna || !state.lastReceipt || !state.lastValues) {
+    showError("Run a fresh check first.");
+    return;
+  }
+  const currentDecision = String(state.lastReceipt?.payload?.decision?.decision || "").toUpperCase();
+  if (currentDecision !== "ALLOW") {
+    showError("Only an ALLOW decision can receive execution authority.");
+    return;
+  }
+  const v = state.lastValues;
+  const confirmed = window.confirm(
+    "Create a one-time Verigate execution permission for this exact request?\\n\\n" +
+    v.amount + " " + v.asset + " on " + v.network + "\\nRecipient: " + v.payee +
+    "\\nPurpose: " + (v.resource || "not specified") +
+    "\\n\\nThis will NOT send funds. A separate wallet/executor must enforce the permission."
+  );
+  if (!confirmed) return;
+
+  setBusy(true, "Verigate is rechecking policy and issuing a one-time permission?");
+  try {
+    const args = {
+      agent_id: v.agent_id,
+      payee: v.payee,
+      asset: v.asset.toUpperCase(),
+      network: v.network.toLowerCase(),
+      amount: v.amount,
+      resource: v.resource,
+      human_confirmed: true
+    };
+    if (state.lastFlags.length) args.ai_flags_json = JSON.stringify(state.lastFlags);
+    const response = await state.anna.tools.invoke({
+      tool_id: TOOL_ID,
+      method: "verigate_authorize_payment",
+      args
+    });
+    const outer = response?.result ?? response;
+    if (outer?.success !== true || !outer?.data) {
+      throw new Error(outer?.error || "Verigate could not issue execution authority.");
+    }
+    const data = outer.data;
+    const receipt = data.decision_receipt;
+    if (!receipt?.payload) throw new Error("Verigate returned no signed decision receipt.");
+    const decision = String(receipt.payload?.decision?.decision || "").toUpperCase();
+    if (decision !== "ALLOW" || !data.execution_authorization) {
+      state.lastReceipt = receipt;
+      $("decision").textContent = decision || "UNKNOWN";
+      $("decision").className = "decision " + decision.toLowerCase();
+      $("result-title").textContent = decision === "WARN" ? "Human review required" : "Blocked by policy";
+      $("execution-status").textContent = data.reason || "No execution permission was issued.";
+      $("execution-summary").textContent = "The fresh persistent policy check did not return ALLOW. No execution permission exists.";
+      state.lastExecutionAuthorization = null;
+      $("execution-btn").disabled = true;
+      throw new Error("The fresh policy check returned " + (decision || "no decision") + ". No execution permission was issued.");
+    }
+    await verifyDecisionReceipt(receipt);
+    const authorization = data.execution_authorization;
+    const verificationResponse = await state.anna.tools.invoke({
+      tool_id: TOOL_ID,
+      method: "verigate_verify_execution_authorization",
+      args: { authorization_json: JSON.stringify(authorization) }
+    });
+    const verifiedOuter = verificationResponse?.result ?? verificationResponse;
+    const verification = verifiedOuter?.data;
+    if (verifiedOuter?.success !== true || verification?.verified !== true ||
+        verification?.algorithm !== "Ed25519" ||
+        verification?.authorization_id !== authorization.payload?.authorization_id) {
+      throw new Error("Execution Authorization signature verification failed. It will not be presented as valid.");
+    }
+    state.lastReceipt = receipt;
+    state.lastExecutionAuthorization = authorization;
+    $("receipt-json").textContent = JSON.stringify(receipt, null, 2);
+    $("execution-json").textContent = JSON.stringify(authorization, null, 2);
+    $("execution-summary").textContent =
+      "One-time permission verified. It is bound to " + v.amount + " " + v.asset +
+      " on " + v.network + " for " + v.payee + ".";
+    $("execution-status").textContent =
+      "Ed25519 verified ? expires " + new Date(verification.expires_at * 1000).toLocaleString() +
+      " ? capability " + data.capability_id +
+      ". Not consumed; no transaction was submitted. The wallet/executor must pass this exact action through ExecutionRouter.";
+    setBusy(false, "One-time execution permission created and verified. No funds were sent.");
+  } catch (error) {
+    if (state.lastExecutionAuthorization === null) $("execution-json").textContent = "";
+    showError(error?.message || String(error));
+    setBusy(false, "No transaction was sent.");
   }
 }
 
@@ -526,6 +655,7 @@ async function main() {
     buttons.forEach((button) => { button.disabled = true; });
   }
   $("check-btn").addEventListener("click", checkAuthority);
+  $("execution-btn").addEventListener("click", prepareExecutionAuthorization);
   const invalidate = () => {
     state.requestId += 1;
     clearResult();

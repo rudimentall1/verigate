@@ -1,8 +1,10 @@
+import hashlib
 import json
 import math
 import os
 import signal
 import sys
+import time
 import tempfile
 from pathlib import Path
 
@@ -17,7 +19,7 @@ else:
 
 sys.path.insert(0, str(_SOURCE_REPO_ROOT))
 
-VERSION = "0.1.9"
+VERSION = "0.1.10"
 _POLICY_PATH = _BUNDLE_ROOT / "policies" / "anna.yaml"
 
 # Anna Executa protocol 1.1: `describe` must answer from a bare process start,
@@ -28,9 +30,9 @@ MANIFEST = {
     "display_name": "Verigate Authority",
     "version": VERSION,
     "description": (
-        "Evaluates agent actions against Verigate's deterministic policy and returns a signed "
-        "ALLOW/WARN/BLOCK authority decision that can be verified independently. It does not "
-        "sign, submit, broadcast, or execute a blockchain transaction."
+        "Checks agent payment authority and can issue a capability-bound, one-time signed "
+        "Execution Authorization for an external wallet or executor. Anna does not hold wallet "
+        "keys or broadcast transactions; execution must pass through a Verigate enforcement adapter."
     ),
     "author": "rudimentall1",
     "homepage": "https://github.com/rudimentall1/verigate",
@@ -61,6 +63,35 @@ MANIFEST = {
             "description": "Return the active policy limits (networks, assets, caps, confirmation threshold) so a request can be compared with them. Read-only.",
             "timeout": 15,
             "parameters": [],
+        },
+        {
+            "name": "verigate_authorize_payment",
+            "description": (
+                "After the user explicitly confirms the exact payment in the Anna UI, evaluate it "
+                "with persistent Verigate policy and issue a capability-bound, one-time signed "
+                "Execution Authorization only when the result is ALLOW. WARN and BLOCK never receive "
+                "execution authority. This does not send funds. A wallet/executor must enforce the "
+                "authorization through Verigate ExecutionRouter before any side effect."
+            ),
+            "timeout": 30,
+            "parameters": [
+                {"name": "agent_id", "type": "string", "description": "Identifier of the agent requesting the payment.", "required": True},
+                {"name": "payee", "type": "string", "description": "Exact payment recipient.", "required": True},
+                {"name": "asset", "type": "string", "description": "Payment asset, e.g. USDC.", "required": True},
+                {"name": "network", "type": "string", "description": "Exact network, e.g. base.", "required": True},
+                {"name": "amount", "type": "number", "description": "Exact payment amount.", "required": True},
+                {"name": "resource", "type": "string", "description": "Payment purpose or invoice reference.", "required": False, "default": ""},
+                {"name": "ai_flags_json", "type": "string", "description": "Advisory AI risk flags. They may only escalate ALLOW to WARN.", "required": False, "default": ""},
+                {"name": "human_confirmed", "type": "boolean", "description": "Must be true; supplied only by the explicit Anna UI confirmation action.", "required": True}
+            ]
+        },
+        {
+            "name": "verigate_verify_execution_authorization",
+            "description": "Read-only Ed25519 verification of a capability-bound one-time Execution Authorization. Returns the exact authorized action and expiry. Never consumes it.",
+            "timeout": 15,
+            "parameters": [
+                {"name": "authorization_json", "type": "string", "description": "Complete Execution Authorization JSON object.", "required": True}
+            ]
         },
         {
             "name": "verigate_verify_decision_receipt",
@@ -195,22 +226,197 @@ def _verigate_check(args: dict) -> dict:
 def _verigate_policy_summary(args: dict) -> dict:
     engine, _ = _get_state()
     p = engine.policy
-    return {
-        "success": True,
-        "data": {
-            "allowed_networks": p.allowed_networks,
-            "allowed_assets": p.allowed_assets,
-            "per_tx_cap": p.per_tx_cap,
-            "new_payee_cap": p.new_payee_cap,
-            "confirmation_required_over": p.confirmation_required_over,
-            "payee_validation": p.payee_validation,
-            "require_positive_amount": p.require_positive_amount,
-            "simulation": True,
-            "history_recorded": False,
-            "new_payee_assumption": "new",
-            "not_evaluated": ["cumulative_daily_spend", "calls_per_minute"],
-        },
+    data = {
+        "allowed_networks": p.allowed_networks,
+        "allowed_assets": p.allowed_assets,
+        "per_tx_cap": p.per_tx_cap,
+        "new_payee_cap": p.new_payee_cap,
+        "daily_cap": p.daily_cap,
+        "rate_limit_per_minute": p.rate_limit_per_minute,
+        "confirmation_required_over": p.confirmation_required_over,
+        "payee_validation": p.payee_validation,
+        "require_positive_amount": p.require_positive_amount,
+        "preview_non_persistent": True,
+        "history_recorded_for_preview": False,
+        "history_used_for_limits": True,
+        "authorization_records_history": True,
     }
+    agent_id = args.get("agent_id")
+    payee = args.get("payee")
+    asset = args.get("asset")
+    if isinstance(agent_id, str) and agent_id.strip():
+        data["calls_last_minute"] = engine.storage.calls_last_minute(agent_id.strip())
+        if isinstance(asset, str) and asset.strip():
+            data["rolling_24h_spend"] = engine.storage.spent_today(agent_id.strip(), asset.strip().upper())
+        if isinstance(payee, str) and payee.strip():
+            data["recipient_seen_before"] = engine.storage.payee_seen_before(
+                agent_id.strip(), payee.strip(), "__anna_policy_summary__"
+            )
+    return {"success": True, "data": data}
+
+
+def _verigate_authorize_payment(args: dict) -> dict:
+    required = ("agent_id", "payee", "asset", "network", "amount", "human_confirmed")
+    for name in required:
+        if name not in args:
+            raise RpcError(-32602, f"missing required argument: {name}")
+    if args.get("human_confirmed") is not True:
+        return {"success": False, "error": "explicit user confirmation is required"}
+    try:
+        from core.capabilities import CapabilityRegistry
+        from core.models import Capability, PaymentIntent
+
+        for name in ("agent_id", "payee", "asset", "network"):
+            if not isinstance(args[name], str) or not args[name].strip():
+                raise ValueError(f"{name} must be a non-empty string")
+        amount = float(args["amount"])
+        if not math.isfinite(amount) or amount <= 0:
+            raise ValueError("amount must be finite and greater than zero")
+
+        agent_id = _clean(args["agent_id"], 128)
+        asset = _clean(args["asset"], 12).upper()
+        network = _clean(args["network"], 24).lower()
+        payee = _clean(args["payee"], 256)
+        resource = _clean(args.get("resource", ""), 200)
+        advisory = _parse_ai_flags(args.get("ai_flags_json"))
+
+        engine, private_key = _get_state()
+        policy = engine.policy
+        capability_id = "anna-payment-" + hashlib.sha256(
+            f"{agent_id}:{policy.digest}".encode("utf-8")
+        ).hexdigest()[:24]
+        registry = CapabilityRegistry(engine.storage)
+        existing = engine.storage.capability(capability_id)
+        if existing is None:
+            registry.register(Capability(
+                capability_id=capability_id,
+                agent_id=agent_id,
+                allowed_actions=("payment",),
+                allowed_targets=tuple(policy.allowed_payees or ()),
+                allowed_networks=tuple(policy.allowed_networks or ()),
+                allowed_assets=tuple(policy.allowed_assets or ()),
+                max_per_action=dict(policy.per_tx_cap or {}),
+                metadata={
+                    "source": "anna-verigate-authority",
+                    "policy_sha256": policy.digest,
+                    "scope": "payment",
+                },
+            ))
+        else:
+            if existing.agent_id != agent_id or existing.metadata.get("policy_sha256") != policy.digest:
+                raise PermissionError("stored capability does not match this agent and policy")
+            registry.resolve(capability_id)  # revoked/inactive authority fails closed
+
+        intent = PaymentIntent(
+            agent_id=agent_id, payee=payee, asset=asset, network=network,
+            amount=amount,
+            resource=resource,
+            metadata={
+                "anna_user_confirmation": {
+                    "confirmed": True,
+                    "source": "anna-app-confirmation-button",
+                    "confirmed_at": time.time(),
+                },
+            },
+        )
+        artifacts = engine.authorize_with_capability(
+            intent, capability_id, private_key, advisory=advisory
+        )
+        decision = artifacts["decision_receipt"]["payload"]["decision"]["decision"]
+        execution = artifacts.get("execution_authorization")
+        if decision != "ALLOW" or execution is None:
+            return {"success": True, "data": {
+                **artifacts,
+                "execution_authorization": None,
+                "execution_status": "NOT_ISSUED",
+                "reason": "Only ALLOW can receive execution authority. WARN requires review; BLOCK is denied.",
+            }}
+        return {"success": True, "data": {
+            **artifacts,
+            "execution_status": "ISSUED",
+            "execution_model": "one_time_capability_bound",
+            "execution_boundary": "ExecutionRouter",
+            "transaction_submitted": False,
+            "wallet_key_access": False,
+            "capability_id": capability_id,
+        }}
+    except (ValueError, TypeError, PermissionError, LookupError) as exc:
+        return {"success": False, "error": f"execution authorization not issued: {exc}"}
+
+
+def _verigate_verify_execution_authorization(args: dict) -> dict:
+    raw = args.get("authorization_json")
+    if not isinstance(raw, str) or not raw.strip():
+        return {"success": False, "error": "authorization_json must be a non-empty JSON string"}
+    if len(raw) > 262_144:
+        return {"success": False, "error": "authorization_json exceeds the 256 KiB limit"}
+    try:
+        authorization = json.loads(raw)
+        if not isinstance(authorization, dict):
+            raise ValueError("authorization_json must contain an object")
+
+        # JavaScript JSON.stringify removes the distinction between integral
+        # floats and integers (for example 25.0 becomes 25). Restore fields
+        # whose signed schema defines them as floats before Ed25519 verification.
+        payload = authorization.get("payload")
+        if isinstance(payload, dict):
+            action = payload.get("action")
+            if isinstance(action, dict):
+                for field in ("amount", "timestamp"):
+                    value = action.get(field)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        action[field] = float(value)
+            authority_state = payload.get("authority_state")
+            if isinstance(authority_state, dict):
+                for field in ("evaluated_at", "history_start_at", "multiplier"):
+                    value = authority_state.get(field)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        authority_state[field] = float(value)
+            policy = payload.get("authority_policy")
+            if isinstance(policy, dict):
+                for field in ("probation_multiplier", "limited_multiplier", "standard_multiplier", "elevated_multiplier"):
+                    value = policy.get(field)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        policy[field] = float(value)
+            effective = payload.get("effective_authority")
+            if isinstance(effective, dict):
+                for field in ("authority_multiplier",):
+                    value = effective.get(field)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        effective[field] = float(value)
+                limits = effective.get("per_action_limits")
+                if isinstance(limits, dict):
+                    for asset, value in limits.items():
+                        if isinstance(value, (int, float)) and not isinstance(value, bool):
+                            limits[asset] = float(value)
+            signed_policy = payload.get("signed_policy_version")
+            if isinstance(signed_policy, dict) and isinstance(signed_policy.get("payload"), dict):
+                created_at = signed_policy["payload"].get("created_at")
+                if isinstance(created_at, (int, float)) and not isinstance(created_at, bool):
+                    signed_policy["payload"]["created_at"] = float(created_at)
+
+        data_dir = _resolve_data_dir()
+        from attest.keys import load_public_key
+        from attest.receipt import verify_execution_authorization
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        public_key = load_public_key(data_dir / "issuer.pub")
+        verified, reason = verify_execution_authorization(authorization, public_key)
+        payload = authorization.get("payload") if isinstance(authorization.get("payload"), dict) else {}
+        public_key_raw = public_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
+        return {"success": True, "data": {
+            "verified": bool(verified),
+            "reason": reason,
+            "algorithm": "Ed25519",
+            "key_fingerprint_sha256": hashlib.sha256(public_key_raw).hexdigest(),
+            "authorization_id": payload.get("authorization_id"),
+            "expires_at": payload.get("expires_at"),
+            "action": payload.get("action") if verified else None,
+            "verification_scope": "local_installation_issuer_key",
+            "consumed": False,
+            "transaction_submitted": False,
+        }}
+    except (OSError, ValueError, TypeError, RuntimeError) as exc:
+        return {"success": False, "error": f"execution authorization verification unavailable: {exc}"}
 
 
 def _verigate_verify_decision_receipt(args: dict) -> dict:
@@ -283,12 +489,22 @@ def _verigate_verify_decision_receipt(args: dict) -> dict:
 
 
 def invoke(tool: str, args: dict) -> dict:
-    if tool not in ("verigate_check", "verigate_policy_summary", "verigate_verify_decision_receipt"):
+    if tool not in (
+        "verigate_check",
+        "verigate_authorize_payment",
+        "verigate_verify_execution_authorization",
+        "verigate_policy_summary",
+        "verigate_verify_decision_receipt",
+    ):
         raise RpcError(-32601, f"Unknown tool: {tool}")
     if not isinstance(args, dict):
         raise RpcError(-32602, "arguments must be an object")
     if tool == "verigate_check":
         return _verigate_check(args)
+    if tool == "verigate_authorize_payment":
+        return _verigate_authorize_payment(args)
+    if tool == "verigate_verify_execution_authorization":
+        return _verigate_verify_execution_authorization(args)
     if tool == "verigate_policy_summary":
         return _verigate_policy_summary(args)
     return _verigate_verify_decision_receipt(args)
