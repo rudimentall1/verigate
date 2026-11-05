@@ -57,3 +57,14 @@ OWNERA is private and is deliberately excluded from all external outreach.
 | Prava | `support@prava.space` | Prava × Verigate: independent signed authorization for agent payments | [Sent](https://mail.google.com/mail/u/0/#all/1a1a5782494b43bb) | Proposed sandbox authorization before checkout, preserving Prava's passkey/biometric final user confirmation. Asked for product/engineering routing and paid pilot / partnership. |
 
 All four messages were sent successfully through Gmail. No reply or commercial agreement is implied by delivery.
+
+
+## Additional outreach sent — 2026-11-05
+
+| Organization | Recipient | Subject | Gmail message | Scope |
+|---|---|---|---|---|
+| delta | `myles@delta.network` | delta × Verigate: independent agent authority before settlement | [Sent](https://mail.google.com/mail/u/0/#all/1a1aa07683b374f0) | Proposed complementing delta Domains / Local Laws with Verigate identity-capability checks and single-use action-bound authorization before execution. Asked about sandbox/testnet evaluation and paid pilot / design-partner / SDK route. |
+| Subnet345 / Plexus | `hello@subnet345.com` | Subnet345 / Plexus × Verigate: execution authorization proofs for agent actions | [Sent](https://mail.google.com/mail/u/0/#all/1a1aa0772143d747) | Proposed Verigate as deterministic authorization at the execution boundary and Plexus as the tamper-evident record substrate. Explicitly distinguished shipped record capabilities from runtime enforcement still in development. Asked about a narrow paid evaluation / co-development. |
+| Alloy | `hello@alloy.build` | Alloy WalletKit × Verigate: provider-neutral, single-use authority proofs | [Sent](https://mail.google.com/mail/u/0/#all/1a1aa077e5ea5daa) | Proposed an independent, portable one-time authorization artifact alongside Alloy PolicyKit / RiskGuard / WalletKit, not as a replacement. Asked about a mock/test-provider evaluation and a fixed-scope paid pilot / design partnership. |
+
+All three messages were confirmed sent by Gmail. No replies or agreements are implied.
