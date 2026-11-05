@@ -79,3 +79,14 @@ All three messages were confirmed sent by Gmail. No replies or agreements are im
 ## Monitoring
 
 A daily Gmail monitoring automation was created on 2026-11-05 (task ID `6aec09becc9c8191b0c06ea03ad0c50c`). It alerts only for new substantive partner replies and does not send follow-ups or make commitments.
+
+
+## Additional outreach sent — 2026-11-05
+
+| Organization | Recipient | Subject | Gmail message | Scope |
+|---|---|---|---|---|
+| Openfort | `support@openfort.xyz` | Openfort × Verigate: independent authorization before agent wallet execution | [Sent](https://mail.google.com/mail/u/0/#all/1a1aa0958197071b) | Proposed a sandbox backend-wallet transaction test with exact-action authorization, ALLOW/DENY, replay/tamper rejection, and portable evidence. Asked for routing to product/integrations and a fixed-scope paid pilot or ecosystem partnership. |
+| Particle Network | `pantao@particle.network` | Particle Network × Verigate: one-time authority proofs for agent smart-account actions | [Sent](https://mail.google.com/mail/u/0/#all/1a1aa0960438a418) | Proposed an additional action-bound authorization around Particle smart-account/session execution, preserving Particle's signer and session protections. Asked for account-abstraction/partnership contact and a paid pilot. |
+| ZeroDev | `support@zerodev.app` | ZeroDev × Verigate: independent authorization for Kernel session transactions | [Sent](https://mail.google.com/mail/u/0/#all/1a1aa0969394058d) | Proposed a testnet Kernel-session integration with exact-action single-use permission and replay/tamper checks, complementing rather than bypassing ZeroDev's permissions. Asked for routing and paid pilot discussion. |
+
+All three messages were confirmed sent by Gmail. These are initial partnership inquiries, not accepted integrations or commercial agreements.
