@@ -35,9 +35,10 @@ def check_manifest(manifest: dict) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: python anna/smoke_binary.py <executable>")
+    if len(sys.argv) not in {2, 3}:
+        raise SystemExit("usage: python anna/smoke_binary.py <executable> [expected-version]")
     executable = Path(sys.argv[1]).resolve()
+    expected_version = sys.argv[2] if len(sys.argv) == 3 else None
     if not executable.exists():
         raise SystemExit(f"binary not found: {executable}")
 
@@ -65,6 +66,11 @@ def main() -> None:
         if "result" not in described:
             raise SystemExit(f"describe failed: {described}")
         check_manifest(described["result"])
+        if expected_version and described["result"].get("version") != expected_version:
+            raise SystemExit(
+                f"binary version mismatch: expected {expected_version}, "
+                f"described {described['result'].get('version')!r}"
+            )
         if elapsed > 5.0:
             raise SystemExit(f"describe took {elapsed:.1f}s, Anna's limit is 5s")
         if elapsed > 3.0:
@@ -80,7 +86,7 @@ def main() -> None:
         send({"jsonrpc": "2.0", "id": 3, "method": "invoke", "params": {
             "tool": "verigate_check",
             "arguments": {
-                "agent_id": "anna-cloud-smoke", "payee": "0xMerchantDemo",
+                "agent_id": "anna-cloud-smoke", "payee": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
                 "asset": "USDC", "network": "base", "amount": 10.5,
             },
         }})
@@ -92,6 +98,24 @@ def main() -> None:
         decision = receipt.get("payload", {}).get("decision", {}).get("decision")
         if decision not in {"ALLOW", "WARN", "BLOCK"} or not receipt.get("signature"):
             raise SystemExit(f"invalid signed decision response: {invoked}")
+
+        # 3b. a malformed recipient must be BLOCKed (regression: "0xabc" used to be ALLOWed)
+        send({"jsonrpc": "2.0", "id": 31, "method": "invoke", "params": {
+            "tool": "verigate_check",
+            "arguments": {"agent_id": "anna-cloud-smoke", "payee": "0xabc",
+                          "asset": "USDC", "network": "base", "amount": 10.5},
+        }})
+        bad = recv().get("result", {})
+        bad_decision = (bad.get("data", {}).get("decision_receipt", {}).get("payload", {})
+                        .get("decision", {}).get("decision"))
+        if bad.get("success") is not True or bad_decision != "BLOCK":
+            raise SystemExit(f"malformed recipient must be BLOCK, got: {bad}")
+
+        # 3c. the policy summary tool answers
+        send({"jsonrpc": "2.0", "id": 32, "method": "invoke", "params": {"tool": "verigate_policy_summary", "arguments": {}}})
+        summary = recv().get("result", {})
+        if summary.get("success") is not True or not summary.get("data", {}).get("payee_validation"):
+            raise SystemExit(f"policy summary failed: {summary}")
 
         # 4. error handling must not kill the process
         send("this is not json")

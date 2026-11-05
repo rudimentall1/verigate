@@ -6,6 +6,8 @@ The engine is the single owner of the evaluate -> persist flow.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from . import rules as R
 from .models import ActionIntent, Decision, GuardrailDecision, PaymentIntent, RuleMatch, Severity
 from .policy import Policy
@@ -104,7 +106,13 @@ class GuardrailEngine:
         )
         return artifacts
 
-    def evaluate(self, intent: PaymentIntent) -> GuardrailDecision:
+    def evaluate(
+        self,
+        intent: PaymentIntent,
+        *,
+        advisory: Sequence[RuleMatch] = (),
+        persist: bool = True,
+    ) -> GuardrailDecision:
         """Evaluate and persist one payment atomically.
 
         The transaction covers:
@@ -119,6 +127,8 @@ class GuardrailEngine:
             matches: list[RuleMatch] = []
 
             for check in (
+                R.check_payee_format,
+                R.check_positive_amount,
                 R.check_blocked_payee,
                 R.check_payee_allowlist,
                 R.check_network_allowed,
@@ -172,6 +182,11 @@ class GuardrailEngine:
             if match:
                 matches.append(match)
 
+            # Advisory input (for example an AI risk review) can only add scrutiny:
+            # only WARN matches are accepted, so it can escalate ALLOW to WARN but
+            # can never grant authority or lower a decision.
+            matches.extend(m for m in advisory if m.severity == Severity.WARN)
+
             if any(match.severity == Severity.BLOCK for match in matches):
                 final = Decision.BLOCK
             elif any(match.severity == Severity.WARN for match in matches):
@@ -190,12 +205,13 @@ class GuardrailEngine:
             # IMPORTANT:
             # evaluate() is now responsible for exactly one audit record.
             # Callers must NOT call storage.record() again.
-            self.storage.record(
-                intent,
-                decision,
-                signature=None,
-                commit=False,
-            )
+            if persist:
+                self.storage.record(
+                    intent,
+                    decision,
+                    signature=None,
+                    commit=False,
+                )
 
             return decision
 
@@ -370,14 +386,21 @@ class GuardrailEngine:
             agent_signature=agent_signature,
         )
 
-    def authorize(self, intent: PaymentIntent, private_key) -> dict:
+    def authorize(
+        self,
+        intent: PaymentIntent,
+        private_key,
+        *,
+        advisory: Sequence[RuleMatch] = (),
+        persist: bool = True,
+    ) -> dict:
         """Legacy payment decision endpoint; never mints execution authority.
 
         Executable authorization requires an explicit capability-bound control
         plane path via ``authorize_with_capability`` or ``authorize_with_identity``.
         """
         action = intent.as_action_intent()
-        decision = self.evaluate(intent)
+        decision = self.evaluate(intent, advisory=advisory, persist=persist)
         artifacts = AuthorizationService().issue_decision_receipt(
             action,
             decision,
@@ -385,6 +408,9 @@ class GuardrailEngine:
             private_key,
             signed_policy=self.signed_policy_version(private_key),
         )
+        if not persist:
+            # Simulation: the signed receipt is returned but nothing is recorded.
+            return artifacts
         return self._persist_authorization(artifacts, intent.intent_id)
 
     def authorize_with_capability(

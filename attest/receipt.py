@@ -244,8 +244,10 @@ def verify_receipt(receipt: dict[str, Any], public_key: Ed25519PublicKey) -> tup
                 return False, "policy version does not match effective policy"
         _verify(payload, signature, public_key)
         return True, "valid decision receipt"
-    except (KeyError, TypeError, ValueError, InvalidSignature):
-        return False, "invalid or tampered decision receipt"
+    except InvalidSignature:
+        return False, "decision receipt Ed25519 signature does not match its canonical payload"
+    except (KeyError, TypeError, ValueError) as exc:
+        return False, f"invalid decision receipt structure or encoding: {type(exc).__name__}"
 
 
 def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519PublicKey, verification_time: int | None = None) -> tuple[bool, str]:

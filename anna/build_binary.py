@@ -31,6 +31,7 @@ def main() -> None:
         "--collect-submodules", "core",
         "--collect-submodules", "attest",
         "--add-data", f"{ROOT / 'policies' / 'default.yaml'}{separator}policies",
+        "--add-data", f"{ROOT / 'policies' / 'anna.yaml'}{separator}policies",
         "--distpath", str(DIST),
         "--workpath", str(work),
         "--specpath", str(spec),

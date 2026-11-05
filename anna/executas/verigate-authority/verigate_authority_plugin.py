@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import signal
 import sys
@@ -16,8 +17,8 @@ else:
 
 sys.path.insert(0, str(_SOURCE_REPO_ROOT))
 
-VERSION = "0.1.3"
-_POLICY_PATH = _BUNDLE_ROOT / "policies" / "default.yaml"
+VERSION = "0.1.9"
+_POLICY_PATH = _BUNDLE_ROOT / "policies" / "anna.yaml"
 
 # Anna Executa protocol 1.1: `describe` must answer from a bare process start,
 # so everything that touches the filesystem or heavy imports is lazy (see
@@ -27,9 +28,9 @@ MANIFEST = {
     "display_name": "Verigate Authority",
     "version": VERSION,
     "description": (
-        "Wraps Verigate's Agent Authority Control Plane as a single verigate_check tool: "
-        "give it an agent action, get back a signed ALLOW/WARN/BLOCK authority decision "
-        "that can be verified independently without trusting this Executa."
+        "Evaluates agent actions against Verigate's deterministic policy and returns a signed "
+        "ALLOW/WARN/BLOCK authority decision that can be verified independently. It does not "
+        "sign, submit, broadcast, or execute a blockchain transaction."
     ),
     "author": "rudimentall1",
     "homepage": "https://github.com/rudimentall1/verigate",
@@ -40,9 +41,9 @@ MANIFEST = {
         {
             "name": "verigate_check",
             "description": (
-                "Ask Verigate's Agent Authority Control Plane whether an agent has authority "
-                "for a payment-shaped action. Returns the signed ALLOW/WARN/BLOCK decision; "
-                "the signature can be verified independently later."
+                "Simulate a payment-shaped action against Verigate policy and return the signed "
+                "ALLOW/WARN/BLOCK decision. This checks authority only; it does not submit, "
+                "broadcast, or execute a payment, and it does not record anything."
             ),
             "timeout": 30,
             "parameters": [
@@ -52,8 +53,27 @@ MANIFEST = {
                 {"name": "network", "type": "string", "description": "Network the action runs on, e.g. base.", "required": True},
                 {"name": "amount", "type": "number", "description": "Amount of the asset.", "required": True},
                 {"name": "resource", "type": "string", "description": "Optional resource the action pays for.", "required": False, "default": ""},
+                {"name": "ai_flags_json", "type": "string", "description": "Optional JSON array of AI risk flags [{code, message}]. Advisory only: flags can raise ALLOW to WARN but never lower a decision.", "required": False, "default": ""},
             ],
-        }
+        },
+        {
+            "name": "verigate_policy_summary",
+            "description": "Return the active policy limits (networks, assets, caps, confirmation threshold) so a request can be compared with them. Read-only.",
+            "timeout": 15,
+            "parameters": [],
+        },
+        {
+            "name": "verigate_verify_decision_receipt",
+            "description": (
+                "Cryptographically verify a Verigate Decision Receipt using this installation's "
+                "trusted Ed25519 issuer public key. Returns the verification result, SHA-256 key "
+                "fingerprint and PEM public key for independent verification."
+            ),
+            "timeout": 15,
+            "parameters": [
+                {"name": "receipt_json", "type": "string", "description": "Complete Decision Receipt JSON object.", "required": True},
+            ],
+        },
     ],
 }
 
@@ -113,6 +133,34 @@ def _get_state():
     return _state
 
 
+def _clean(text: object, limit: int) -> str:
+    return " ".join(str(text).split())[:limit]
+
+
+def _parse_ai_flags(raw: object) -> list:
+    """Turn the optional AI flags into advisory WARN matches (at most 5)."""
+    from core.models import RuleMatch, Severity
+
+    if raw in (None, ""):
+        return []
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError as exc:
+        raise ValueError("ai_flags_json must be valid JSON") from exc
+    if not isinstance(data, list):
+        raise ValueError("ai_flags_json must be a JSON array")
+    flags = []
+    for item in data[:5]:
+        if isinstance(item, dict):
+            code, message = _clean(item.get("code", "other"), 32), _clean(item.get("message", ""), 200)
+        elif isinstance(item, str):
+            code, message = "other", _clean(item, 200)
+        else:
+            continue
+        flags.append(RuleMatch("ai_risk_flag", Severity.WARN, f"AI review ({code or 'other'}): {message}".strip()))
+    return flags
+
+
 def _verigate_check(args: dict) -> dict:
     for name in _REQUIRED_ARGS:
         if name not in args:
@@ -120,27 +168,130 @@ def _verigate_check(args: dict) -> dict:
     try:
         from core.models import PaymentIntent
 
+        for name in ("agent_id", "payee", "asset", "network"):
+            if not isinstance(args[name], str):
+                raise TypeError(f"{name} must be a string")
+        amount = float(args["amount"])
+        if not math.isfinite(amount):
+            raise ValueError("amount must be a finite number")
         intent = PaymentIntent(
-            agent_id=args["agent_id"],
-            payee=args["payee"],
-            asset=args["asset"],
-            network=args["network"],
-            amount=float(args["amount"]),
-            resource=args.get("resource", ""),
+            agent_id=args["agent_id"].strip(),
+            payee=args["payee"].strip(),
+            asset=args["asset"].strip(),
+            network=args["network"].strip(),
+            amount=amount,
+            resource=_clean(args.get("resource", ""), 200),
         )
+        advisory = _parse_ai_flags(args.get("ai_flags_json"))
         engine, private_key = _get_state()
-        attestation = engine.authorize(intent, private_key)
+        # A check is a simulation: nothing is recorded, so the same request always
+        # gets the same answer and repeated tests do not consume any budget.
+        attestation = engine.authorize(intent, private_key, advisory=advisory, persist=False)
     except (ValueError, TypeError) as exc:
         return {"success": False, "error": f"invalid arguments: {exc}"}
     return {"success": True, "data": attestation}
 
 
+def _verigate_policy_summary(args: dict) -> dict:
+    engine, _ = _get_state()
+    p = engine.policy
+    return {
+        "success": True,
+        "data": {
+            "allowed_networks": p.allowed_networks,
+            "allowed_assets": p.allowed_assets,
+            "per_tx_cap": p.per_tx_cap,
+            "new_payee_cap": p.new_payee_cap,
+            "confirmation_required_over": p.confirmation_required_over,
+            "payee_validation": p.payee_validation,
+            "require_positive_amount": p.require_positive_amount,
+            "simulation": True,
+            "history_recorded": False,
+            "new_payee_assumption": "new",
+            "not_evaluated": ["cumulative_daily_spend", "calls_per_minute"],
+        },
+    }
+
+
+def _verigate_verify_decision_receipt(args: dict) -> dict:
+    raw = args.get("receipt_json")
+    if not isinstance(raw, str) or not raw.strip():
+        return {"success": False, "error": "receipt_json must be a non-empty JSON string"}
+    if len(raw) > 262_144:
+        return {"success": False, "error": "receipt_json exceeds the 256 KiB limit"}
+    try:
+        receipt = json.loads(raw)
+    except (ValueError, TypeError):
+        return {"success": False, "error": "receipt_json is not valid JSON"}
+    if not isinstance(receipt, dict):
+        return {"success": False, "error": "receipt_json must contain a receipt object"}
+
+    # JSON transports such as JavaScript JSON.stringify normalize integral
+    # floats (25.0 -> 25). Restore the schema-defined float fields before
+    # checking the Python-signed canonical payload. Without this step a valid
+    # receipt would appear tampered after crossing the Anna host boundary.
+    payload = receipt.get("payload")
+    if isinstance(payload, dict):
+        intent = payload.get("intent")
+        if isinstance(intent, dict):
+            for field in ("amount", "timestamp"):
+                value = intent.get(field)
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    intent[field] = float(value)
+        decision = payload.get("decision")
+        if isinstance(decision, dict):
+            value = decision.get("evaluated_at")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                decision["evaluated_at"] = float(value)
+        signed_policy = payload.get("signed_policy_version")
+        if isinstance(signed_policy, dict) and isinstance(signed_policy.get("payload"), dict):
+            policy_created = signed_policy["payload"].get("created_at")
+            if isinstance(policy_created, (int, float)) and not isinstance(policy_created, bool):
+                signed_policy["payload"]["created_at"] = float(policy_created)
+
+    try:
+        # Verification is read-only: it loads only the public trust anchor and
+        # never creates, unlocks or reads the issuer's private signing key.
+        data_dir = _resolve_data_dir()
+        public_path = data_dir / "issuer.pub"
+        from attest.keys import load_public_key
+        from attest.receipt import verify_receipt
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+        import hashlib
+
+        public_key = load_public_key(public_path)
+        verified, reason = verify_receipt(receipt, public_key)
+        public_key_raw = public_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
+        public_key_pem = public_key.public_bytes(
+            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+        ).decode("ascii")
+        fingerprint = hashlib.sha256(public_key_raw).hexdigest()
+    except (OSError, ValueError, TypeError, RuntimeError) as exc:
+        return {"success": False, "error": f"receipt verification unavailable: {exc}"}
+
+    return {
+        "success": True,
+        "data": {
+            "verified": bool(verified),
+            "reason": reason,
+            "algorithm": "Ed25519",
+            "key_fingerprint_sha256": fingerprint,
+            "public_key_pem": public_key_pem,
+            "verification_scope": "local_installation_issuer_key",
+        },
+    }
+
+
 def invoke(tool: str, args: dict) -> dict:
-    if tool != "verigate_check":
+    if tool not in ("verigate_check", "verigate_policy_summary", "verigate_verify_decision_receipt"):
         raise RpcError(-32601, f"Unknown tool: {tool}")
     if not isinstance(args, dict):
         raise RpcError(-32602, "arguments must be an object")
-    return _verigate_check(args)
+    if tool == "verigate_check":
+        return _verigate_check(args)
+    if tool == "verigate_policy_summary":
+        return _verigate_policy_summary(args)
+    return _verigate_verify_decision_receipt(args)
 
 
 def handle(request: dict):
@@ -163,8 +314,12 @@ def _write(frame: dict) -> None:
 
 
 def main() -> None:
+    # Anna sends JSON-RPC as UTF-8. Windows may otherwise decode piped stdin
+    # using the active ANSI code page, corrupting non-ASCII receipt text and
+    # making a valid Ed25519 signature appear invalid.
     try:
-        sys.stdout.reconfigure(encoding="utf-8", newline="\n")
+        sys.stdin.reconfigure(encoding="utf-8", errors="strict", newline=None)
+        sys.stdout.reconfigure(encoding="utf-8", errors="strict", newline="\n")
     except (AttributeError, ValueError):
         pass
     try:
