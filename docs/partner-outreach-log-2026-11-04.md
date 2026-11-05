@@ -127,3 +127,17 @@ Funding-search discipline: verify every opportunity from official rules before a
 | Arbitrum Foundation grants / ArbiFuel / Audit Program | Official directory: https://arbitrum.foundation/grants . Foundation grant page currently lists rolling milestone-based support for dApps and Infrastructure & Tools. ArbiFuel is active gas-fee sponsorship for early teams. The Arbitrum Audit Program is listed as $10M in ARB over 12 months for third-party smart-contract audit subsidies. | Relevant as a separate pathway from the already-submitted Arbitrum Mentorship application. An Arbitrum-focused Verigate adapter could fit Infrastructure & Tools; ArbiFuel can reduce test/deployment gas costs but is not cash grant funding. Audit subsidy would apply only if a qualifying Arbitrum smart-contract project actually needs an external audit. | Do not re-submit Mentorship. Evaluate a separate Foundation infrastructure grant only after defining a specific Arbitrum deliverable and scope. ArbiFuel is a possible no-cash-cost support route. No new application submitted. |
 
 For ARIA, the official solicitation also specifies a 3–18 month project period, detailed technical/team/budget proposal, and requires that foreground software funded under Track 2/3 be released under MIT and Apache 2.0; pre-existing background IP remains owned by the applicant. Non-UK organisations must explain how their work will contribute to impact in the UK. These terms must be considered before applying.
+
+
+## Inbox review — 2026-11-05 (evening)
+
+| Organization | New inbound message | Verified status / next step |
+|---|---|---|
+| Circle | Michael Onagoruwa said the Circle team has no Russian-speaking colleagues and proposed continuing by email. [Message](https://mail.google.com/mail/u/0/#all/1a1ac12ea150b1c9) | Rinat accepted email communication and asked for the next step toward technical evaluation, a product/engineering contact, and a possible fixed-scope paid pilot or grant route. [Reply sent](https://mail.google.com/mail/u/0/#all/1a1acb7234d15967). The Google Calendar appointment for 2026-11-05 22:15–22:45 GMT+5 was subsequently cancelled by Michael; this is consistent with switching to email, not a partnership rejection. [Cancellation notice](https://mail.google.com/mail/u/0/#all/1a1acb8d8063ed8c). No funding or pilot commitment yet. |
+| ZeroDev | Automated acknowledgement from Linear created support ticket **ZDS-368** for the Verigate inquiry. [Ticket acknowledgement](https://mail.google.com/mail/u/0/#all/1a1aa0969394058d) | Not a substantive product/engineering response. Await review; do not send duplicate inquiry. |
+| Openfort | No reply located as of the evening inbox review. | Initial email sent; no follow-up due yet. |
+| Particle Network | No reply located as of the evening inbox review. | Initial email sent; no follow-up due yet. |
+| Tether | No reply located as of the evening inbox review. | Initial grant-fit inquiry sent; not a formal grant application. |
+| Other contacted prospects | No other substantive human response located in the inbox search for 2026-11-04 onward. | Continue monitoring; automated receipts and marketing mail are not counted as partner interest. |
+
+Circle's meeting is no longer scheduled. Continue by email only unless Michael proposes another format.
