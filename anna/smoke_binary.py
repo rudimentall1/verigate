@@ -16,6 +16,9 @@ def check_manifest(manifest: dict) -> None:
     for field in ("name", "version", "description"):
         if not isinstance(manifest.get(field), str) or not manifest[field]:
             raise SystemExit(f"describe: missing or empty required field '{field}'")
+    capabilities = set(manifest.get("host_capabilities") or [])
+    if not {"aps.scope.app.read", "aps.scope.app.write"}.issubset(capabilities):
+        raise SystemExit("describe: App-scoped APS read/write capabilities are required")
     tools = manifest.get("tools")
     if not isinstance(tools, list) or not tools:
         raise SystemExit("describe: 'tools' must be a non-empty list")
