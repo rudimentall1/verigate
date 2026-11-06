@@ -89,6 +89,20 @@ class AnnaAppContractTest(unittest.TestCase):
             with self.subTest(platform=platform):
                 self.assertEqual(artifact["entrypoint"], expected)
 
+    def test_multiplatform_workflow_smokes_the_final_archives(self):
+        workflow = (ROOT / ".github" / "workflows" / "anna-executa-binaries.yml").read_text(encoding="utf-8")
+        package_step = workflow.index("      - name: Package binary")
+        smoke_step = workflow.index("      - name: Smoke-test extracted release package")
+        upload_step = workflow.index("      - name: Upload release package")
+        self.assertLess(package_step, smoke_step)
+        self.assertLess(smoke_step, upload_step)
+        self.assertIn("python anna/smoke_package.py", workflow)
+        verifier = (ANNA / "smoke_package.py").read_text(encoding="utf-8")
+        self.assertIn("verify_checksum(archive_path)", verifier)
+        self.assertIn("read_package(archive_path, target)", verifier)
+        self.assertIn("smoke_binary.py", verifier)
+        self.assertIn("verify_runner_target(target)", verifier)
+
     def test_binary_distribution_has_cloud_agent_linux_target(self):
         distribution = EXECUTA.get("distribution", {})
         self.assertEqual(distribution.get("active"), "binary")
