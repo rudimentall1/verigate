@@ -37,7 +37,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, tamperSignature = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   const calls = { tools: [], llm: 0, toolArgs: {} };
@@ -62,6 +62,13 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
           const data = result?.data;
           const receipt = data?.decision_receipt ?? data?.receipt;
           if (receipt) receipt.signature = "AA" + String(receipt.signature || "").slice(2);
+        }
+        if (method === "verigate_authorize_payment" && tamperAuthorizationDecision) {
+          const receipt = result?.data?.decision_receipt;
+          if (receipt?.payload?.decision) receipt.payload.decision.decision = "BLOCK";
+        }
+        if (method === "verigate_verify_execution_authorization" && tamperExecutionVerificationAction) {
+          if (result?.data?.action) result.data.action.target = "0x" + "1".repeat(40);
         }
         if (verificationResponseShape === "direct") return result;
         if (verificationResponseShape === "double") return { result: { result } };
@@ -140,6 +147,26 @@ await test("one-time execution permission is issued only after a separate user c
   ok(ui.text("execution-json").includes("authorization_id"), "signed permission displayed; error=" + ui.text("error") + "; status=" + ui.text("execution-status") + "; tools=" + JSON.stringify(ui.calls.tools));
   ok(ui.text("execution-status").includes("Not consumed"), "permission is not represented as a sent transaction");
   ok(ui.text("status").includes("No funds were sent"), "status is explicit");
+});
+
+await test("fresh authorization decision receipt is verified before WARN/BLOCK can be displayed", async () => {
+  const ui = await launch({ tamperAuthorizationDecision: true });
+  ui.window.confirm = () => true;
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  await ui.clickExecution();
+  eq(ui.text("decision"), "", "unverified fresh decision is not displayed");
+  ok(ui.shown("error") && ui.text("error").includes("signature verification failed"), "tampered decision receipt rejected");
+  eq(ui.text("execution-json"), "", "no execution authorization displayed");
+});
+
+await test("execution authorization must bind the exact checked payment", async () => {
+  const ui = await launch({ tamperExecutionVerificationAction: true });
+  ui.window.confirm = () => true;
+  await ui.click();
+  await ui.clickExecution();
+  eq(ui.text("execution-json"), "", "mismatched authorization is not displayed");
+  ok(ui.shown("error") && ui.text("error").includes("exact-action verification failed"), "mismatched action rejected");
 });
 
 await test("wallet hand-off consumes through ExecutionRouter before exact USDC send", async () => {
