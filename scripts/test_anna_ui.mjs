@@ -112,7 +112,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, policySummaryInvokeFails = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows) {
@@ -166,6 +166,9 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
           const error = new Error("Anna session refresh rejected before policy summary");
           error.status = 401;
           throw error;
+        }
+        if (method === "verigate_policy_summary" && policySummaryReturnsError) {
+          return { result: { success: false, error: { code: 401, message: "Anna session refresh rejected in tool response" } } };
         }
         const result = await callPlugin(method, args, { appStorage, appContext: true });
         if (method === "verigate_check" && tamperSignature) {
@@ -316,6 +319,15 @@ await test("Anna policy-summary 401 is surfaced instead of silently ignored", as
   ok(ui.text("error").includes("[401] Anna session refresh rejected before policy summary"), "HTTP status and source error are preserved");
   ok(ui.text("error").includes("session, permission or quota error"), "failure is classified as a host authorization issue");
   eq(ui.calls.tools.includes("verigate_check"), false, "policy evaluation does not proceed after host authorization failure");
+});
+
+await test("Anna policy-summary 401 returned in an error envelope is surfaced instead of ignored", async () => {
+  const ui = await launch({ policySummaryReturnsError: true });
+  await ui.click();
+  ok(ui.shown("error"), "tool response auth failure is visible");
+  ok(ui.text("error").includes("[401] Anna session refresh rejected in tool response"), "error envelope status and message are preserved");
+  ok(ui.text("error").includes("session, permission or quota error"), "failure is classified as an Anna host authorization issue");
+  eq(ui.calls.tools.includes("verigate_check"), false, "policy evaluation does not proceed after an auth error envelope");
 });
 
 await test("Anna authorization invocation failure exposes the session error instead of a generic message", async () => {
