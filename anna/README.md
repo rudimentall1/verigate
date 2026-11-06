@@ -85,7 +85,7 @@ authorization hand-off, not a wallet. An executor that bypasses Verigate's route
 enforcement boundary.
 
 
-## Connected-wallet execution (App 0.1.12 / Executa 0.1.11)
+## Connected-wallet execution (App 0.1.13 candidate / Executa 0.1.11)
 
 For native USDC on Base and Ethereum, the Executa constructs the ERC-20 transfer(address,uint256)
 calldata from the policy-checked recipient and amount and places that transaction envelope inside
