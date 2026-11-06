@@ -51,6 +51,9 @@
       "window": [
         "set_title",
         "ready"
+      ],
+      "storage": [
+        "set"
       ]
     },
     "csp_overrides": {
@@ -66,5 +69,9 @@
     ],
     "seed_storage": {},
     "user_id": 1
-  }
+  },
+  "host_capabilities": [
+    "aps.scope.app.read",
+    "aps.scope.app.write"
+  ]
 }
