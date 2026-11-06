@@ -631,6 +631,8 @@ async function prepareExecutionAuthorization() {
     const data = outer.data;
     const receipt = data.decision_receipt;
     if (!receipt?.payload) throw new Error("Verigate returned no signed decision receipt.");
+    // A fresh decision must be cryptographically verified before any outcome is displayed.
+    await verifyDecisionReceipt(receipt);
     const decision = String(receipt.payload?.decision?.decision || "").toUpperCase();
     if (decision !== "ALLOW" || !data.execution_authorization) {
       state.lastReceipt = receipt;
@@ -643,7 +645,6 @@ async function prepareExecutionAuthorization() {
       $("execution-btn").disabled = true;
       throw new Error("The fresh policy check returned " + (decision || "no decision") + ". No execution permission was issued.");
     }
-    await verifyDecisionReceipt(receipt);
     const authorization = data.execution_authorization;
     const verificationResponse = await state.anna.tools.invoke({
       tool_id: TOOL_ID,
@@ -652,10 +653,23 @@ async function prepareExecutionAuthorization() {
     });
     const verifiedOuter = unwrapToolResult(verificationResponse);
     const verification = verifiedOuter?.data;
+    const authorizedAction = verification?.action;
+    const exactActionMatches = Boolean(authorizedAction) &&
+      authorizedAction.agent_id === v.agent_id &&
+      authorizedAction.action_type === "payment" &&
+      authorizedAction.target === v.payee &&
+      String(authorizedAction.asset || "").toUpperCase() === v.asset.toUpperCase() &&
+      String(authorizedAction.network || "").toLowerCase() === v.network.toLowerCase() &&
+      Number(authorizedAction.amount) === v.amount &&
+      String(authorizedAction.resource || "") === String(v.resource || "");
     if (verifiedOuter?.success !== true || verification?.verified !== true ||
         verification?.algorithm !== "Ed25519" ||
-        verification?.authorization_id !== authorization.payload?.authorization_id) {
-      throw new Error("Execution Authorization signature verification failed. It will not be presented as valid.");
+        verification?.authorization_id !== authorization.payload?.authorization_id ||
+        typeof verification?.key_fingerprint_sha256 !== "string" ||
+        !/^[0-9a-f]{64}$/i.test(verification.key_fingerprint_sha256) ||
+        !Number.isFinite(Number(verification?.expires_at)) ||
+        !exactActionMatches) {
+      throw new Error("Execution Authorization signature or exact-action verification failed. It will not be presented as valid.");
     }
     state.lastReceipt = receipt;
     state.lastExecutionAuthorization = authorization;
@@ -679,6 +693,7 @@ async function prepareExecutionAuthorization() {
     setBusy(false, "One-time execution permission created and verified. No funds were sent.");
   } catch (error) {
     if (state.lastExecutionAuthorization === null) $("execution-json").textContent = "";
+    if (/signature verification failed|exact-action verification failed/i.test(error?.message || "")) clearResult();
     showError(error?.message || String(error));
     setBusy(false, "No transaction was sent.");
   }
