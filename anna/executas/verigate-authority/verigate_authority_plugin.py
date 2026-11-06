@@ -191,7 +191,7 @@ _state = None
 def _get_state():
     global _state
     if _state is None:
-        from attest.keys import generate_keypair, load_private_key
+        from attest.keys import ensure_keypair
         from core.engine import GuardrailEngine
         from core.policy import Policy
         from core.storage import Storage
@@ -199,12 +199,11 @@ def _get_state():
         data_dir = _resolve_data_dir()
         private_path = data_dir / "issuer.key"
         public_path = data_dir / "issuer.pub"
-        if not private_path.exists():
-            generate_keypair(private_path, public_path)
+        private_key = ensure_keypair(private_path, public_path)
         engine = GuardrailEngine(
             Policy.load(str(_POLICY_PATH)), Storage(str(data_dir / "verigate.db"))
         )
-        _state = (engine, load_private_key(private_path))
+        _state = (engine, private_key)
     return _state
 
 
