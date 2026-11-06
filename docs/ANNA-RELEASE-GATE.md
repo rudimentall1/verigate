@@ -28,6 +28,7 @@ This gate prevents incremental Marketplace uploads. A candidate is not ready mer
 - [ ] Execution Authorization is issued only after a separate explicit user confirmation and a fresh persistent policy check returns ALLOW.
 - [ ] Verify that the Agent cannot invoke authorization/consumption tools directly from chat to bypass the UI confirmation. If the runtime exposes those methods to the model, require a server-verifiable UI-origin confirmation; a prompt instruction and client-supplied boolean alone are not a security boundary.
 - [ ] Both privileged methods require separate 60-second App-scope approvals: one bound to the exact payment before issuing Execution Authorization, and one bound to the exact authorization ID and transaction before ExecutionRouter consumption. Each record is ETag-deleted exactly once.
+- [ ] Critical approvals use the in-App dialog rather than browser `window.confirm()`; dialog cancellation writes no approval record and does not consume an existing permission.
 - [ ] WARN and BLOCK never receive execution authority.
 - [ ] The wallet path is limited to the explicitly supported native-USDC networks.
 - [ ] The exact signed transaction is reconstructed and compared before wallet submission.
