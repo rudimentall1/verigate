@@ -1023,16 +1023,8 @@ async function executeWithConnectedWallet() {
 
 
 async function main() {
-  try {
-    state.anna = await AnnaAppRuntime.connect();
-    await state.anna.window.set_title({ title: "Verigate Authority" });
-    if (state.anna.window.ready) await state.anna.window.ready();
-    setBusy(false, "Connected to Anna. Describe a payment to get started.");
-  } catch {
-    state.anna = null;
-    setBusy(false, "Standalone preview. Open inside Anna to use its LLM and the Verigate tool.");
-    buttons.forEach((button) => { button.disabled = true; });
-  }
+  // Bind UI events before the asynchronous host handshake. A slow or failed
+  // Anna connection must not leave the view with uninitialized controls.
   $("check-btn").addEventListener("click", checkAuthority);
   $("execution-btn").addEventListener("click", prepareExecutionAuthorization);
   $("wallet-execute-btn").addEventListener("click", executeWithConnectedWallet);
@@ -1047,6 +1039,20 @@ async function main() {
     input.addEventListener("input", () => { $("confirm-details").checked = false; invalidate(); });
     input.addEventListener("change", invalidate);
   });
+
+  setBusy(true, "Connecting to Anna…");
+  try {
+    state.anna = await AnnaAppRuntime.connect();
+    if (!state.anna) throw new Error("Anna runtime returned no session.");
+    await state.anna.window.set_title({ title: "Verigate Authority" });
+    if (state.anna.window.ready) await state.anna.window.ready();
+    setBusy(false, "Connected to Anna. Describe a payment to get started.");
+  } catch (error) {
+    state.anna = null;
+    setBusy(false, "Anna connection failed: " + errorDetail(error) +
+      ". Reopen the app from Anna and check the session. Standalone preview is unavailable for AI and Executa actions.");
+    buttons.forEach((button) => { button.disabled = true; });
+  }
 }
 
 main();
