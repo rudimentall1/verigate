@@ -260,8 +260,8 @@ await test("execution authorization must bind the exact checked payment", async 
   ok(ui.shown("error") && ui.text("error").includes("exact-action verification failed"), "mismatched action rejected");
 });
 
-await test("direct chat invocation cannot bypass App UI confirmation", async () => {
-  const result = await callPlugin("verigate_authorize_payment", {
+await test("direct chat invocation cannot bypass App UI confirmation or consume wallet authority", async () => {
+  const denied = await callPlugin("verigate_authorize_payment", {
     agent_id: "anna-direct-call",
     payee: VALID,
     asset: "USDC",
@@ -269,9 +269,33 @@ await test("direct chat invocation cannot bypass App UI confirmation", async () 
     amount: 25,
     confirmation_nonce: "a".repeat(48)
   }, { appStorage: new Map(), appContext: false });
-  eq(result.success, false, "direct invocation is denied");
-  ok(result.error.includes("app-scoped UI confirmation unavailable"), "missing App context is explicit");
-  eq(result.data?.execution_authorization, undefined, "no execution authorization is issued");
+  eq(denied.success, false, "direct authorization invocation is denied");
+  ok(denied.error.includes("app-scoped UI confirmation unavailable"), "missing App context is explicit");
+  eq(denied.data?.execution_authorization, undefined, "no execution authorization is issued");
+
+  const storage = new Map();
+  const nonce = "b".repeat(48);
+  const now = Date.now();
+  const paymentApproval = {
+    version: 1, kind: "payment_authorization", nonce,
+    agent_id: "anna-direct-call", payee: VALID, asset: "USDC", network: "base",
+    amount: 25, resource: "direct-call-test", created_at_ms: now, expires_at_ms: now + 60000
+  };
+  storage.set("verigate/approvals/" + nonce, { value: paymentApproval, etag: "etag-auth", expiresAt: now + 60000 });
+  const authorized = await callPlugin("verigate_authorize_payment", {
+    agent_id: paymentApproval.agent_id, payee: paymentApproval.payee, asset: paymentApproval.asset,
+    network: paymentApproval.network, amount: paymentApproval.amount, resource: paymentApproval.resource,
+    confirmation_nonce: nonce
+  }, { appStorage: storage, appContext: true });
+  ok(authorized.success && authorized.data.execution_authorization, "App context can issue a permission after a real approval record");
+
+  const authorization = authorized.data.execution_authorization;
+  const fakeConsumeNonce = "c".repeat(48);
+  const directConsume = await callPlugin("verigate_consume_execution_authorization", {
+    authorization_json: JSON.stringify(authorization), confirmation_nonce: fakeConsumeNonce
+  }, { appStorage: new Map(), appContext: false });
+  eq(directConsume.success, false, "direct consume invocation is denied");
+  ok(directConsume.error.includes("wallet execution was not authorized"), "consume denial is explicit");
 });
 
 await test("wallet hand-off consumes through ExecutionRouter before exact USDC send", async () => {
@@ -292,6 +316,10 @@ await test("wallet hand-off consumes through ExecutionRouter before exact USDC s
   ok(ui.shown("wallet-execute-btn"), "wallet action is available for signed Base USDC transfer");
   await ui.clickWallet();
   ok(ui.calls.tools.includes("verigate_consume_execution_authorization"), "permission consumed by Verigate tool");
+  eq(ui.calls.storage.length, 2, "separate App UI approval is stored for wallet submission");
+  eq(ui.calls.storage[1].value.kind, "wallet_submission", "wallet approval is distinct from authorization approval");
+  eq(ui.calls.storage[1].value.authorization_id, ui.calls.toolArgs.verigate_consume_execution_authorization.authorization_json ? JSON.parse(ui.calls.toolArgs.verigate_consume_execution_authorization.authorization_json).payload.authorization_id : null, "wallet approval binds the signed authorization");
+  eq(ui.appStorage.size, 0, "wallet approval is consumed exactly once");
   eq(walletCalls.map(x => x.method).join(","), "eth_chainId,eth_requestAccounts,eth_chainId,eth_accounts,eth_sendTransaction");
   const send = walletCalls.find(x => x.method === "eth_sendTransaction");
   eq(send.params[0].to.toLowerCase(), "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
