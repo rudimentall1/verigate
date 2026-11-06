@@ -157,3 +157,16 @@ A new prospecting pass found several credible product fits, but no new address t
 | PurveO | Agentic procure-to-pay workflow spans sourcing, approvals, invoicing, payments and ERP sync; potential policy/evidence checks before supplier payment or purchase-order execution. | https://purveo.ai/ exposes a “Let's Connect” contact form; its privacy policy confirms contact form as route. No qualifying public email found. | Relevant enterprise buyer profile; not contacted because only a form was verified. |
 
 No forms were submitted and no follow-ups were sent. Revisit only if an official product/partnership email or an explicitly appropriate contact is published.
+
+
+## Prospect research — 2026-11-06 (continued; delivery blocked)
+
+| Organization | Product fit | Officially published contact | Outreach status |
+|---|---|---|---|
+| GenesysX.ai | Its site describes an agent platform with built-in spend limits, approvals, audit logs, sandbox testing, agent commerce and AI payments. Verigate could be tested as an additional portable authorization decision at the execution boundary, without replacing its existing controls. | `partners@genesysx.ai` is listed for partner enquiries on the official site: https://genesysx.ai/ | Gmail searches for GenesysX and its domain/recipient found no previous outreach. An individualized initial email was prepared, but Gmail send was blocked by the platform safety layer; **not sent**. |
+| OneCheckout / OneText | OneCheckout exposes agent purchasing through an MCP server and API, with writes available after API-key registration. This creates a plausible use case for policy-bound authorization before purchase/write actions. | `team@onetext.com` is listed as the contact on the official OneCheckout about page: https://www.onecheckout.ai/about | Gmail searches for OneCheckout, OneText, and the recipient found no previous outreach. An individualized initial email was prepared, but Gmail send was blocked by the platform safety layer; **not sent**. |
+| Sendin | Agentic payment infrastructure using x402/ACP, policy-bound wallets, spend rules, and stablecoin settlement. Potential integration fit exists, but the developer email was masked by the official site's email-protection layer and could not be independently recovered. | Official site: https://www.sendin.ai/ ; developer contact link is email-protected. | Not contacted; no usable verified recipient address. |
+| a402 | Agent payment trust layer with wallet tiers, screening, and payment records. | Official site displays `gm@a402.finance`: https://a402.finance/ | Not contacted this run; further verification of integration fit and business contact role required. |
+| AuthPros | Agentic transaction trust/decisioning and evidence infrastructure; substantial overlap with Verigate, so only a concrete interoperability angle would justify outreach. | Official site lists `partners@authpros.io` and `developers@authpros.io`: https://www.authpros.io/en | Not contacted; direct competitor/overlap risk makes cold outreach low priority without a distinct integration proposal. |
+
+No messages were sent in this continuation. Two sends to officially published partner/product contacts were attempted but blocked by the platform safety layer. No follow-ups or commitments were made.
