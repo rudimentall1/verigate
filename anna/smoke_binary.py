@@ -179,6 +179,7 @@ def main() -> None:
         now_ms = int(time.time() * 1000)
         approval = {
             "version": 1,
+            "kind": "payment_authorization",
             "nonce": nonce,
             "agent_id": "anna-binary-wallet-smoke",
             "payee": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
@@ -208,14 +209,50 @@ def main() -> None:
         if not isinstance(authorization, dict):
             raise SystemExit(f"wallet authorization artifact missing: {authorized}")
 
-        consume = lambda req_id: {
-            "jsonrpc": "2.0", "id": req_id, "method": "invoke", "params": {
-                "tool": "verigate_consume_execution_authorization",
-                "arguments": {"authorization_json": json.dumps(authorization)},
-            }
+        # A direct chat invocation cannot consume the permission, even if it knows the signed JSON.
+        direct_consume_nonce = "c" * 48
+        direct_consume = invoke_with_storage(35, {
+            "tool": "verigate_consume_execution_authorization",
+            "arguments": {
+                "authorization_json": json.dumps(authorization),
+                "confirmation_nonce": direct_consume_nonce,
+            },
+            "context": {"invoke_id": "smoke-direct-consume"},
+        }, None, False).get("result", {})
+        if direct_consume.get("success") is not False:
+            raise SystemExit(f"direct wallet consume bypassed App UI approval: {direct_consume}")
+
+        # The explicit wallet button writes a second one-time approval bound to the exact signed transaction.
+        wallet_nonce = "b" * 48
+        wallet_now_ms = int(time.time() * 1000)
+        action = authorization["payload"]["action"]
+        tx_approval = action["metadata"]["evm_transaction"]
+        wallet_approval = {
+            "version": 1,
+            "kind": "wallet_submission",
+            "nonce": wallet_nonce,
+            "authorization_id": authorization["payload"]["authorization_id"],
+            "agent_id": action["agent_id"],
+            "target": action["target"],
+            "asset": action["asset"],
+            "network": action["network"],
+            "amount": action["amount"],
+            "resource": action.get("resource") or "",
+            "chain_id": tx_approval["chain_id"],
+            "to": tx_approval["to"],
+            "value_wei": tx_approval["value_wei"],
+            "data": tx_approval["data"],
+            "created_at_ms": wallet_now_ms,
+            "expires_at_ms": wallet_now_ms + 60_000,
         }
-        send(consume(35))
-        consumed = recv().get("result", {})
+        consumed = invoke_with_storage(36, {
+            "tool": "verigate_consume_execution_authorization",
+            "arguments": {
+                "authorization_json": json.dumps(authorization),
+                "confirmation_nonce": wallet_nonce,
+            },
+            "context": {"invoke_id": "smoke-wallet-click", "app_id": "verigate-test-app"},
+        }, wallet_approval, True).get("result", {})
         handoff = consumed.get("data", {})
         tx = handoff.get("transaction", {})
         if (consumed.get("success") is not True or handoff.get("consumed") is not True
@@ -225,9 +262,19 @@ def main() -> None:
                 or not tx.get("data", "").startswith("0xa9059cbb")):
             raise SystemExit(f"ExecutionRouter wallet hand-off failed: {consumed}")
 
-        # The exact same signed authorization must not be consumable twice.
-        send(consume(36))
-        replay = recv().get("result", {})
+        # Even a second fresh UI approval cannot replay an already consumed authorization.
+        replay_nonce = "e" * 48
+        replay_now_ms = int(time.time() * 1000)
+        replay_approval = {**wallet_approval, "nonce": replay_nonce,
+                           "created_at_ms": replay_now_ms, "expires_at_ms": replay_now_ms + 60_000}
+        replay = invoke_with_storage(37, {
+            "tool": "verigate_consume_execution_authorization",
+            "arguments": {
+                "authorization_json": json.dumps(authorization),
+                "confirmation_nonce": replay_nonce,
+            },
+            "context": {"invoke_id": "smoke-replay", "app_id": "verigate-test-app"},
+        }, replay_approval, True).get("result", {})
         if replay.get("success") is not False:
             raise SystemExit(f"one-time authorization replay was not rejected: {replay}")
 
