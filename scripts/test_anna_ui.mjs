@@ -183,6 +183,9 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
         await sleep(10);
       }
       if (!$("approval-dialog").hasAttribute("open")) throw new Error("in-app execution confirmation did not open");
+      if (!$("approval-message").textContent.includes("25 USDC") || !$("approval-message").textContent.includes("Recipient:")) {
+        throw new Error("execution confirmation does not show the exact payment details");
+      }
       $("approval-accept").click();
       for (let i = 0; i < 400; i++) { await sleep(25); if (!$("execution-btn").disabled) break; }
       await sleep(30);
@@ -194,6 +197,9 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
         await sleep(10);
       }
       if (!$("approval-dialog").hasAttribute("open")) throw new Error("in-app wallet confirmation did not open");
+      if (!$("approval-message").textContent.includes("25 USDC") || !$("approval-message").textContent.includes("Wallet:")) {
+        throw new Error("wallet confirmation does not show the exact transfer and wallet");
+      }
       $("approval-accept").click();
       for (let i = 0; i < 400; i++) {
         await sleep(25);
@@ -250,6 +256,21 @@ await test("one-time execution permission is issued only after a separate user c
   ok(ui.text("execution-json").includes("authorization_id"), "signed permission displayed; error=" + ui.text("error") + "; status=" + ui.text("execution-status") + "; tools=" + JSON.stringify(ui.calls.tools));
   ok(ui.text("execution-status").includes("Not consumed"), "permission is not represented as a sent transaction");
   ok(ui.text("status").includes("No funds were sent"), "status is explicit");
+});
+
+await test("canceling the in-app permission dialog creates no approval", async () => {
+  const ui = await launch({});
+  await ui.click();
+  ui.$("execution-btn").click();
+  for (let i = 0; i < 200; i++) {
+    if (ui.$("approval-dialog").hasAttribute("open")) break;
+    await sleep(10);
+  }
+  ok(ui.$("approval-dialog").hasAttribute("open"), "in-app dialog opened");
+  ui.$("approval-cancel").click();
+  await sleep(40);
+  eq(ui.calls.storage.length, 0, "cancel does not write an App approval");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "cancel does not call authorization");
 });
 
 await test("fresh authorization decision receipt is verified before WARN/BLOCK can be displayed", async () => {
@@ -341,6 +362,30 @@ await test("wallet hand-off consumes through ExecutionRouter before exact USDC s
   ok(send.params[0].data.includes(VALID.slice(2).toLowerCase()), "wallet receives the signed recipient");
   ok(ui.text("execution-status").includes("transaction hash"), "submitted hash is displayed");
   ok(ui.text("execution-status").includes("SUBMITTED"), "submission is not misrepresented as confirmation");
+});
+
+await test("canceling wallet confirmation leaves the permission unused", async () => {
+  const ui = await launch({});
+  ui.window.ethereum = {
+    request: async ({ method }) => {
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.click();
+  await ui.clickExecution();
+  ui.$("wallet-execute-btn").click();
+  for (let i = 0; i < 200; i++) {
+    if (ui.$("approval-dialog").hasAttribute("open")) break;
+    await sleep(10);
+  }
+  ok(ui.$("approval-dialog").hasAttribute("open"), "wallet confirmation opened");
+  ui.$("approval-cancel").click();
+  await sleep(40);
+  eq(ui.calls.storage.length, 1, "cancel does not write the wallet-submission approval");
+  eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), false, "cancel does not consume permission");
+  ok(ui.text("execution-json").includes("authorization_id"), "unused permission remains available");
 });
 
 await test("wallet network drift after consumption prevents submission", async () => {
