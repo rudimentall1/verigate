@@ -101,6 +101,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.12' }}
           EVENT_NAME: ${{ github.event_name }}
+          PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release || false }}
         run: |
           TAG="anna-verigate-authority-v${VERSION}"
           TITLE="Verigate Authority Executa v${VERSION}"
@@ -120,4 +121,8 @@ jobs:
           else
             gh release create "$TAG" release-assets/* \
               --title "$TITLE" --generate-notes
+          fi
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$PUBLISH_RELEASE" == "true" ]]; then
+            gh release edit "$TAG" --draft=false --title "$TITLE"
           fi
