@@ -168,7 +168,7 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
   const $ = (id) => window.document.getElementById(id);
   $("action-description").value = description;
   const ui = {
-    window, $, calls,
+    window, $, calls, appStorage,
     set: (id, v) => { $(id).value = v; $(id).dispatchEvent(new window.Event("input")); },
     async click() {
       $("check-btn").click();
@@ -226,8 +226,14 @@ await test("one-time execution permission is issued only after a separate user c
   ok(ui.shown("execution-panel"), "permission action is offered for ALLOW");
   ok(ui.$("execution-json").textContent === "", "no execution permission is issued automatically");
   eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no authorization tool before user click");
+  eq(ui.calls.storage.length, 0, "no approval token is written before user click");
   await ui.clickExecution();
   ok(ui.calls.tools.includes("verigate_authorize_payment"), "explicit click invoked authorization tool");
+  eq(ui.calls.storage.length, 1, "explicit click writes one app-scoped approval");
+  eq(ui.calls.storage[0].scope, "app", "approval is app-scoped");
+  eq(ui.calls.storage[0].ttl_seconds, 60, "approval expires after 60 seconds");
+  eq(ui.calls.toolArgs.verigate_authorize_payment.confirmation_nonce, ui.calls.storage[0].value.nonce, "tool call is bound to the UI-generated nonce");
+  eq(ui.appStorage.size, 0, "approval is consumed exactly once before permission is issued");
   ok(ui.calls.tools.includes("verigate_verify_execution_authorization"), "execution permission signature verified");
   ok(ui.text("execution-json").includes("authorization_id"), "signed permission displayed; error=" + ui.text("error") + "; status=" + ui.text("execution-status") + "; tools=" + JSON.stringify(ui.calls.tools));
   ok(ui.text("execution-status").includes("Not consumed"), "permission is not represented as a sent transaction");
@@ -252,6 +258,20 @@ await test("execution authorization must bind the exact checked payment", async 
   await ui.clickExecution();
   eq(ui.text("execution-json"), "", "mismatched authorization is not displayed");
   ok(ui.shown("error") && ui.text("error").includes("exact-action verification failed"), "mismatched action rejected");
+});
+
+await test("direct chat invocation cannot bypass App UI confirmation", async () => {
+  const result = await callPlugin("verigate_authorize_payment", {
+    agent_id: "anna-direct-call",
+    payee: VALID,
+    asset: "USDC",
+    network: "base",
+    amount: 25,
+    confirmation_nonce: "a".repeat(48)
+  }, { appStorage: new Map(), appContext: false });
+  eq(result.success, false, "direct invocation is denied");
+  ok(result.error.includes("app-scoped UI confirmation unavailable"), "missing App context is explicit");
+  eq(result.data?.execution_authorization, undefined, "no execution authorization is issued");
 });
 
 await test("wallet hand-off consumes through ExecutionRouter before exact USDC send", async () => {
