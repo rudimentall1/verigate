@@ -25,6 +25,8 @@ class AnnaAppContractTest(unittest.TestCase):
             (ANNA / "executas" / "verigate-authority").resolve(),
         )
         self.assertTrue((ANNA / bundled["verigate-authority"]["path"] / "executa.json").is_file())
+        required = next(item for item in APP_MANIFEST["required_executas"] if item.get("tool_id") == "bundled:verigate-authority")
+        self.assertEqual(required.get("min_version"), EXECUTA["version"])
 
     def test_app_manifest_declares_the_bundled_executa_and_ui_entry(self):
         required = {item.get("tool_id") for item in APP_MANIFEST.get("required_executas", [])}
