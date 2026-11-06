@@ -137,7 +137,7 @@ def load_private_key(
     if cached is not None:
         return cached
     data = p.read_bytes()
-    encrypted = b"ENCRYPTED" in data.split(b"\\n", 1)[0]
+    encrypted = b"ENCRYPTED" in data.split(b"\n", 1)[0]
     if encrypted:
         if passphrase is None:
             raise ValueError(
