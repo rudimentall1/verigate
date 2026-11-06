@@ -107,7 +107,7 @@ jobs:
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             IS_DRAFT="$(gh release view "$TAG" --json isDraft --jq '.isDraft')"
-            if [[ "$EVENT_NAME" == "push" && "$IS_DRAFT" == "true" ]]; then
+            if [[ "$IS_DRAFT" == "true" ]]; then
               gh release upload "$TAG" release-assets/* --clobber
               gh release edit "$TAG" --title "$TITLE"
             else
