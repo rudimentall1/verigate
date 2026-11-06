@@ -38,6 +38,12 @@ def check_manifest(manifest: dict) -> None:
             if "required" in param and not isinstance(param["required"], bool):
                 raise SystemExit(f"describe: 'required' must be boolean: {param}")
 
+    for privileged in ("verigate_authorize_payment", "verigate_consume_execution_authorization"):
+        tool = next((item for item in tools if item.get("name") == privileged), None)
+        names = {item.get("name"): item for item in (tool or {}).get("parameters", [])}
+        if tool is None or not names.get("confirmation_nonce", {}).get("required"):
+            raise SystemExit(f"describe: {privileged} must require an App UI confirmation nonce")
+
 
 def main() -> None:
     if len(sys.argv) not in {2, 3}:
