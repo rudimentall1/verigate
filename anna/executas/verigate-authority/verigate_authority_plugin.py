@@ -34,9 +34,8 @@ _loop = None
 VERSION = "0.1.11"
 _POLICY_PATH = _BUNDLE_ROOT / "policies" / "anna.yaml"
 
-# Anna Executa protocol 1.1: `describe` must answer from a bare process start,
-# so everything that touches the filesystem or heavy imports is lazy (see
-# _get_state) and `parameters` is a LIST of parameter objects, not a JSON Schema.
+# Anna Executa protocol 2.0: negotiate APS support in `initialize`; keep
+# `describe` filesystem-free and declare parameters as a list of parameter objects.
 MANIFEST = {
     "name": "verigate-authority",
     "display_name": "Verigate Authority",
