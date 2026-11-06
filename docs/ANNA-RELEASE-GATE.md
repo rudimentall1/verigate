@@ -121,6 +121,13 @@ The current payment intake uses one bounded `llm.complete` call per explicit che
 - [x] Host Upload is not used as a substitute for durable storage. This app currently creates no user-facing report/document files; APS Files is the appropriate Anna API to evaluate for durable Executa state. That separate database/key persistence integration has not yet been implemented and remains blocked below.
 - [ ] Verify the user's real APS storage grant and the full App-write → Executa-read → ETag-delete flow on Anna Cloud Agent.
 
+### Explicit data-directory safety — implemented, CI pending
+
+- `VERIGATE_ANNA_DATA_DIR` is now authoritative when set. If that exact directory cannot be created or written, Executa fails closed instead of silently falling back to the install directory, home directory, or system temp.
+- This prevents a misconfigured persistent path from appearing healthy while silently creating a new issuer key and empty accounting database elsewhere.
+- Added `tests/test_anna_data_directory.py` for explicit-path success, explicit-path failure without fallback, and legacy resolution when no override is set.
+- This is a safety guard, not proof that Anna Cloud's selected directory is persistent. Cloud restart/reinstall verification remains mandatory.
+
 ### Persistence architecture decision — no unsafe SQLite snapshot shortcut
 
 The APS guide distinguishes KV (small JSON state) from Files (durable objects). It does not provide a transactional database API or conditional atomic replacement of a multi-table SQLite database. A naive pattern of downloading a SQLite file, mutating it locally, uploading it, and updating a KV pointer with ETag is not sufficient: concurrent Executa invocations can start from the same generation, and a CAS conflict after a local authorization/accounting transaction does not automatically roll back or merge that transaction. WAL sidecars and crash consistency add another failure mode.
