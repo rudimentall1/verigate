@@ -58,6 +58,16 @@ class AnnaAppContractTest(unittest.TestCase):
         self.assertEqual(EXECUTA["version"], PLUGIN.VERSION)
         self.assertEqual(EXECUTA["version"], PLUGIN.MANIFEST["version"])
 
+    def test_vendored_aps_sdk_is_included_in_python_and_binary_build(self):
+        sdk = ANNA / "executas" / "verigate-authority" / "executa_sdk"
+        self.assertTrue((sdk / "storage.py").is_file())
+        self.assertTrue((sdk / "context.py").is_file())
+        self.assertTrue((sdk / "LICENSE").is_file())
+        pyproject = (sdk.parent / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('packages = ["executa_sdk"]', pyproject)
+        build = (ANNA / "build_binary.py").read_text(encoding="utf-8")
+        self.assertIn('"--collect-submodules", "executa_sdk"', build)
+
     def test_binary_workflow_default_tracks_executa_version_and_entrypoint(self):
         workflow = (ROOT / ".github" / "workflows" / "anna-executa-binaries.yml").read_text(encoding="utf-8")
         match = re.search(r'default:\s*["\']([^"\']+)["\']', workflow)
