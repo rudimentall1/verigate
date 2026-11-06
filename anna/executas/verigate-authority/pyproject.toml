@@ -17,3 +17,4 @@ dependencies = [
 
 [tool.setuptools]
 py-modules = ["verigate_authority_plugin"]
+packages = ["executa_sdk"]
