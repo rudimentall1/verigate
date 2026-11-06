@@ -623,9 +623,12 @@ await test("model text is rendered as text, never as HTML", async () => {
   ok(ui.text("result-summary").includes("<b>bold</b>"), "shown literally");
 });
 
-await test("standalone preview: button is disabled", async () => {
+await test("Anna connection failure is surfaced and app actions stay disabled", async () => {
   const ui = await launch({ connectFails: true });
-  ok(ui.$("check-btn").disabled, "disabled");
+  ok(ui.$("check-btn").disabled, "AI action stays disabled without a host session");
+  ok(ui.text("status").includes("Anna connection failed: no host"), "the original host connection error is visible");
+  ok(ui.text("status").includes("check the session"), "the user gets a concrete recovery direction");
+  eq(ui.calls.tools.length, 0, "no Executa call can run without a connected host");
 });
 
 const failed = results.filter(([, passed]) => !passed).length;
