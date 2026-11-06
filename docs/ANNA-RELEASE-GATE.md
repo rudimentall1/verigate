@@ -4,18 +4,18 @@
 
 - Candidate: Anna App **0.1.13**, bundled Executa **0.1.12**.
 - Branch: `integrate/anna-0.1.9-mainline`; PR #16 remains open. No merge to `main`.
-- Verified source head: `a248402ee8431848faf9fde047247ae7f4031011`.
-- GitHub Actions run **#556** is green on that exact source head:
-  - 509 Python tests passed.
-  - Contract and ExecutionRouter suites passed.
-  - Official `@anna-ai/cli@0.1.59 validate --strict` passed.
-  - Anna UI end-to-end: **28/28 passed**, including in-App dialog cancellation, duplicate-click protection and direct-call denial with and without App context.
-  - Linux PyInstaller binary built and smoke-tested; App-scope approval and wallet hand-off were consumed once, and replay was rejected.
-  - Linux `0.1.12` archive verified; archive root contains `manifest.json` and `verigate-authority`.
-- The four-platform build workflow is now artifact-only by default; creating a GitHub Release requires an explicit opt-in. Windows and both macOS targets remain unbuilt.
-- Nothing has been uploaded to Anna Dashboard. No Marketplace publish/review and no wallet transaction have occurred.
+- Current source head: `6f7c9c9de9175887f410b9f7bed534a1324ef113`; PR #16 remains open.
+- Latest CI run **#?** on the current candidate passed: 509 Python tests, contract/ExecutionRouter tests, Anna UI E2E, and official Anna CLI strict manifest/Host API validation.
+- The previous Linux candidate run #556 also passed the Linux Executa smoke test (App-scope approval and wallet hand-off consumed once; replay rejected).
+- Multi-platform build run **42182842484**: Linux x86_64, Windows x86_64 and macOS ARM64 builds/smoke tests/package verification passed and uploaded artifacts; macOS Intel x86_64 was still building at the last check.
+- The package script writes SHA-256 checksums and verifies archive-root `manifest.json` plus the expected entrypoint. The workflow artifact upload pattern includes both archive and checksum.
+- `app.json`, `manifest.json`, `bundle/index.html`, `bundle/app.js`, and `executa.json` already follow Anna's Bundled Executa guidance: stable handle `verigate-authority`, `bundled:verigate-authority`, `required:bundled:verigate-authority`, generated `window.__ANNA_TOOL_IDS__` mapping with local dev fallback, and the local development tool_id in `executa.json`.
+- The official forum guide adds a release hand-off step after successful builds: GitHub Release assets -> download packages into `anna/executas/verigate-authority/dist/` -> `anna-app apps publish` -> install and test locally and in Anna Cloud Agent (Linux). We have not performed the GitHub Release step or Anna publish step.
+- Nothing has been uploaded to Anna Dashboard. No Marketplace review/public release and no wallet transaction have occurred.
 
-Next: run the multi-platform build with GitHub Release publishing disabled, verify all four artifacts, then perform one consolidated real Anna acceptance pass. Do not merge or publish to the Marketplace as part of this gate.
+Next: finish macOS Intel build; verify four platform artifacts and checksums; make a GitHub Release of the exact four packages; place the packages at the configured `binary_artifacts.path` under `dist/`; then run one consolidated Anna Cloud Agent acceptance. Only after that prepare one Anna CLI publish/upload pass. Do not merge or submit for Marketplace review as part of this gate.
+
+Reference: [Anna Forum — Build on Anna 101](https://forum.anna.partners/t/build-on-anna-101/228).
 
 This gate prevents incremental Marketplace uploads. A candidate is not ready merely because the Python unit suite or the UI mock passes.
 
