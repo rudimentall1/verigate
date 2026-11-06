@@ -57,7 +57,7 @@ def main() -> None:
         smoke_env = {**os.environ, "VERIGATE_ANNA_DATA_DIR": data_dir}
         proc = subprocess.Popen(
             [str(executable)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, text=True, env=smoke_env,
+            stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=smoke_env,
         )
 
     def send(frame: dict | str) -> None:
