@@ -113,7 +113,7 @@ def main() -> None:
     if not isinstance(configured, dict):
         raise SystemExit(f"target not declared in executa.json: {target}")
 
-    archive_path = DIST / configured["path"].replace("{version}", version)
+    archive_path = EXECUTA_DIR / configured["path"].replace("{version}", version)
     if not archive_path.is_file():
         raise SystemExit(f"release package not found: {archive_path}")
     digest = verify_checksum(archive_path)
