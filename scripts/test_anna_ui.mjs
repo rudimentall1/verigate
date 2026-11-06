@@ -112,7 +112,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows) {
@@ -153,8 +153,13 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
       invoke: async ({ method, args }) => {
         calls.tools.push(method); calls.toolArgs[method] = args;
         if (method === "verigate_authorize_payment" && authorizeInvokeFails) {
-          const error = new Error("401 Unauthorized while refreshing Anna session");
-          error.code = 401;
+          const error = new Error("Unauthorized while refreshing Anna session");
+          error.status = 401;
+          throw error;
+        }
+        if (method === "verigate_verify_execution_authorization" && verifyAuthorizationInvokeFails) {
+          const error = new Error("Anna session expired during authorization verification");
+          error.status = 401;
           throw error;
         }
         const result = await callPlugin(method, args, { appStorage, appContext: true });
@@ -305,10 +310,21 @@ await test("Anna authorization invocation failure exposes the session error inst
   eq(ui.text("decision"), "ALLOW");
   await ui.clickExecution();
   ok(ui.shown("error"), "authorization invocation failure is visible");
-  ok(ui.text("error").includes("[401] 401 Unauthorized while refreshing Anna session"), "HTTP/session failure is preserved");
+  ok(ui.text("error").includes("[401] Unauthorized while refreshing Anna session"), "HTTP/session failure is preserved");
   ok(ui.text("error").includes("remaining usage quota"), "next diagnostic direction is actionable");
   eq(ui.calls.storage.length, 1, "approval exists only as a short-lived record after explicit confirmation");
   eq(ui.text("execution-json"), "", "no permission is presented");
+});
+
+await test("Anna authorization verification refresh failure exposes HTTP status and fails closed", async () => {
+  const ui = await launch({ verifyAuthorizationInvokeFails: true });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  await ui.clickExecution();
+  ok(ui.shown("error"), "authorization verification failure is visible");
+  ok(ui.text("error").includes("[401] Anna session expired during authorization verification"), "HTTP status and verification-stage error are preserved");
+  eq(ui.text("execution-json"), "", "unverified authorization is never presented");
+  ok(!ui.text("status").includes("permission created and verified"), "failed verification is not reported as success");
 });
 
 await test("repeated permission clicks cannot create duplicate approvals", async () => {
