@@ -697,8 +697,8 @@ function requestUserConfirmation({ title, message, confirmLabel = "Confirm" }) {
 
 function errorDetail(error) {
   if (typeof error === "string") return error;
-  const code = error?.code ?? error?.data?.code;
-  const message = error?.message || error?.data?.message || String(error || "Unknown host error");
+  const code = error?.code ?? error?.data?.code ?? error?.status ?? error?.response?.status ?? error?.data?.status;
+  const message = error?.message || error?.data?.message || error?.response?.data?.message || String(error || "Unknown host error");
   return (code !== undefined ? "[" + code + "] " : "") + message;
 }
 
@@ -873,7 +873,7 @@ async function prepareExecutionAuthorization() {
   } catch (error) {
     if (state.lastExecutionAuthorization === null) $("execution-json").textContent = "";
     if (/signature verification failed|exact-action verification failed/i.test(error?.message || "")) clearResult();
-    showError(error?.message || String(error));
+    showError(errorDetail(error));
     setBusy(false, "No transaction was sent.");
   }
 }
