@@ -276,26 +276,63 @@ function unwrapToolResult(response) {
   return current;
 }
 
+function extractReceiptVerification(response) {
+  // Anna host versions differ in how they wrap Executa results: some preserve
+  // {success, data}, while others return the inner data object or JSON text in
+  // a content block. Locate the cryptographic result without treating a
+  // transport wrapper's missing "success" field as a failed signature check.
+  const queue = [response];
+  const seen = new Set();
+  for (let depth = 0; queue.length && depth < 32; depth += 1) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+
+    if (typeof current.verified === "boolean" &&
+        (current.algorithm === "Ed25519" || typeof current.reason === "string")) {
+      return current;
+    }
+
+    for (const key of ["result", "data", "structuredContent", "output"]) {
+      const value = current[key];
+      if (value && typeof value === "object") queue.push(value);
+    }
+    if (Array.isArray(current.content)) {
+      for (const item of current.content) {
+        if (item && typeof item.text === "string") {
+          try { queue.push(JSON.parse(item.text)); } catch { /* non-JSON text block */ }
+        } else if (item && typeof item === "object") {
+          queue.push(item);
+        }
+      }
+    }
+  }
+  return null;
+}
+
 async function verifyDecisionReceipt(receipt) {
   const response = await state.anna.tools.invoke({
     tool_id: TOOL_ID,
     method: "verigate_verify_decision_receipt",
     args: { receipt_json: JSON.stringify(receipt) }
   });
-  const outer = unwrapToolResult(response);
-  const data = outer?.data ?? outer;
-  const errorMessage = typeof outer?.error === "string"
-    ? outer.error
-    : outer?.error?.message;
-  if (outer?.success !== true || !data || data.verified !== true ||
-      data.algorithm !== "Ed25519" ||
-      typeof data.key_fingerprint_sha256 !== "string" ||
-      !/^[0-9a-f]{64}$/i.test(data.key_fingerprint_sha256) ||
-      typeof data.public_key_pem !== "string" ||
-      !data.public_key_pem.includes("BEGIN PUBLIC KEY")) {
-    const reason = data?.reason || errorMessage ||
-      "Anna Executa returned an unexpected verification response";
+  const data = extractReceiptVerification(response);
+  if (!data || data.verified !== true) {
+    const reason = data?.reason ||
+      response?.error?.message || response?.error ||
+      "Anna Executa returned no successful Ed25519 verification result";
     throw new Error("Decision receipt signature verification failed: " + reason + ". No decision is displayed.");
+  }
+  if (data.algorithm !== "Ed25519") {
+    throw new Error("Decision receipt verification returned an unsupported signature algorithm. No decision is displayed.");
+  }
+  if (typeof data.key_fingerprint_sha256 !== "string" ||
+      !/^[0-9a-f]{64}$/i.test(data.key_fingerprint_sha256)) {
+    throw new Error("Decision receipt verification did not return a valid issuer-key fingerprint. No decision is displayed.");
+  }
+  if (typeof data.public_key_pem !== "string" ||
+      !data.public_key_pem.includes("BEGIN PUBLIC KEY")) {
+    throw new Error("Decision receipt verification did not return the issuer public key. No decision is displayed.");
   }
   return data;
 }
