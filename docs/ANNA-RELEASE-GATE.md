@@ -4,8 +4,8 @@
 
 - Candidate: Anna App **0.1.13**, bundled Executa **0.1.12**.
 - Branch: `integrate/anna-0.1.9-mainline`; PR #16 remains open. No merge to `main`.
-- Current PR source head: `65109b45a5b654b1ad2cfb53d2b32166fc71de4a`; PR #16 remains open and unmerged.
-- Latest CI run **#589** passed on that exact PR head: 509 Python tests, contract/ExecutionRouter tests, Anna UI E2E, and official Anna CLI strict manifest/Host API validation.
+- Current PR head: `a325e74a8f79b3bf8e1882196f7b2a2755d3f3d8`; PR #16 remains open and unmerged. This latest commit updates release-gate documentation only.
+- Latest code CI run **#589** passed on code head `65109b45a5b654b1ad2cfb53d2b32166fc71de4a`: 509 Python tests, contract/ExecutionRouter tests, Anna UI E2E, and official Anna CLI strict manifest/Host API validation.
 - Multi-platform binary workflow run **#17** (run ID `42186375291`, binary source commit `cd768515c1b178333a0d4bfbefd8f2154e988951`) completed successfully on all four targets: Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel x86_64. Each target packaged the binary, verified the SHA-256 sidecar and archive manifest/entrypoint, extracted the binary from the final archive, ran the protocol/security smoke suite, and uploaded the archive plus checksum.
 - I downloaded all four run #17 artifacts and independently verified the outer Actions artifact digests, archive-sidecar SHA-256, archive-root manifest, platform entrypoint, and Unix executable bit. The resulting package SHA-256 values are:
   - Linux x86_64: `c8bd06566bd22b76f06b2e6fb1e35c780b661b69906b85b09ba245c649abed0d`
