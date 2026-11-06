@@ -13,7 +13,7 @@
   - macOS ARM64: `b6ace24d9be7607ddbd2952fc7dfd26fe1ffefa512faca34746d7e6a24b5a0cc`
   - macOS Intel x86_64: `fc6cf585bc816243327a67f408d53cbe3ff928cb5ab61cce956634f9e136fdbc`
 - The release job completed successfully and created a **draft** GitHub Release with the four archives and four checksum sidecars. Draft URL reported by GitHub CLI: https://github.com/rudimentall1/verigate/releases/tag/untagged-8d1c909e607f189c17ed. GitHub's draft-release flow uses an untagged URL until the draft is published; this is not the public version/tag. The draft has not been published.
-- A ready-to-copy package bundle has been assembled outside the repository, with all eight files under `anna/executas/verigate-authority/dist/`: `anna-executa-dist-0.1.12.zip`.
+- A ready-to-copy package bundle has been assembled outside the repository, with all eight files under `anna/executas/verigate-authority/dist/`: `anna-executa-dist-0.1.12.zip` (SHA-256 `f3b573a0835f85705bebee9dec16797500b659307f72f893b36f4e039e67e318`).
 - `app.json`, `manifest.json`, `bundle/index.html`, `bundle/app.js`, and `executa.json` follow Anna's Bundled Executa guidance: stable handle `verigate-authority`, `bundled:verigate-authority`, `required:bundled:verigate-authority`, generated `window.__ANNA_TOOL_IDS__` mapping with local dev fallback, and the local development tool_id in `executa.json`.
 - No Anna candidate version has been uploaded. No Marketplace review/public release or wallet transaction has occurred.
 
@@ -138,4 +138,4 @@ Do not mark this gate passed based on local smoke tests or mocked APS responses.
 
 ## Release decision
 
-A candidate is **source-ready** only when sections 1–4 are green. It is **Anna-ready** only after section 5 passes. Marketplace submission/review/public release is a separate action and must not be performed as part of these checks.
+A candidate is **source-ready** only when sections 1–4 are green. It is **Anna-ready** only after sections 5–6 pass, including the real Cloud Agent persistence test. Marketplace submission/review/public release is a separate action and must not be performed as part of these checks.
