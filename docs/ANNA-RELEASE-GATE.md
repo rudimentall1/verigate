@@ -4,16 +4,20 @@
 
 - Candidate: Anna App **0.1.13**, bundled Executa **0.1.12**.
 - Branch: `integrate/anna-0.1.9-mainline`; PR #16 remains open. No merge to `main`.
-- Current source head: `6f7c9c9de9175887f410b9f7bed534a1324ef113`; PR #16 remains open.
-- Latest CI run **#566** on code candidate `6f7c9c9de9175887f410b9f7bed534a1324ef113` passed: 509 Python tests, contract/ExecutionRouter tests, Anna UI E2E, and official Anna CLI strict manifest/Host API validation.
-- The previous Linux candidate run #556 also passed the Linux Executa smoke test (App-scope approval and wallet hand-off consumed once; replay rejected).
-- Multi-platform build run **#12** (workflow run ID `42182842484`, source commit `e068b8c72b11a9fdc900ddf2021456b83056f57a`) completed successfully on all four targets: Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel x86_64. All four build, smoke-test, package-verification and artifact-upload jobs passed. The four uploaded packages are available as workflow artifacts; their GitHub artifact SHA-256 digests are recorded by Actions.
-- The package script writes SHA-256 checksums and verifies archive-root `manifest.json` plus the expected entrypoint. The workflow artifact upload pattern includes both archive and checksum.
-- `app.json`, `manifest.json`, `bundle/index.html`, `bundle/app.js`, and `executa.json` already follow Anna's Bundled Executa guidance: stable handle `verigate-authority`, `bundled:verigate-authority`, `required:bundled:verigate-authority`, generated `window.__ANNA_TOOL_IDS__` mapping with local dev fallback, and the local development tool_id in `executa.json`.
-- The official forum guide adds a release hand-off step after successful builds: GitHub Release assets -> download packages into `anna/executas/verigate-authority/dist/` -> `anna-app apps publish` -> install and test locally and in Anna Cloud Agent (Linux). We have not performed the GitHub Release step or Anna publish step.
-- Nothing has been uploaded to Anna Dashboard. No Marketplace review/public release and no wallet transaction have occurred.
+- Current PR source head: `65109b45a5b654b1ad2cfb53d2b32166fc71de4a`; PR #16 remains open and unmerged.
+- Latest CI run **#589** passed on that exact PR head: 509 Python tests, contract/ExecutionRouter tests, Anna UI E2E, and official Anna CLI strict manifest/Host API validation.
+- Multi-platform binary workflow run **#17** (run ID `42186375291`, binary source commit `cd768515c1b178333a0d4bfbefd8f2154e988951`) completed successfully on all four targets: Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel x86_64. Each target packaged the binary, verified the SHA-256 sidecar and archive manifest/entrypoint, extracted the binary from the final archive, ran the protocol/security smoke suite, and uploaded the archive plus checksum.
+- I downloaded all four run #17 artifacts and independently verified the outer Actions artifact digests, archive-sidecar SHA-256, archive-root manifest, platform entrypoint, and Unix executable bit. The resulting package SHA-256 values are:
+  - Linux x86_64: `c8bd06566bd22b76f06b2e6fb1e35c780b661b69906b85b09ba245c649abed0d`
+  - Windows x86_64: `39c5a268d9c2773917df78bdce191dec55cb3ea058302ce7117353aab742371d`
+  - macOS ARM64: `b6ace24d9be7607ddbd2952fc7dfd26fe1ffefa512faca34746d7e6a24b5a0cc`
+  - macOS Intel x86_64: `fc6cf585bc816243327a67f408d53cbe3ff928cb5ab61cce956634f9e136fdbc`
+- The release job completed successfully and created a **draft** GitHub Release with the four archives and four checksum sidecars. Draft URL reported by GitHub CLI: https://github.com/rudimentall1/verigate/releases/tag/untagged-8d1c909e607f189c17ed. GitHub's draft-release flow uses an untagged URL until the draft is published; this is not the public version/tag. The draft has not been published.
+- A ready-to-copy package bundle has been assembled outside the repository, with all eight files under `anna/executas/verigate-authority/dist/`: `anna-executa-dist-0.1.12.zip`.
+- `app.json`, `manifest.json`, `bundle/index.html`, `bundle/app.js`, and `executa.json` follow Anna's Bundled Executa guidance: stable handle `verigate-authority`, `bundled:verigate-authority`, `required:bundled:verigate-authority`, generated `window.__ANNA_TOOL_IDS__` mapping with local dev fallback, and the local development tool_id in `executa.json`.
+- No Anna candidate version has been uploaded. No Marketplace review/public release or wallet transaction has occurred.
 
-Next: inspect/download all four workflow artifacts and their included `.sha256` files; make a GitHub Release of the exact four packages; place the packages at the configured `binary_artifacts.path` under `dist/`; then run one consolidated Anna Cloud Agent acceptance. Only after that prepare one Anna CLI publish/upload pass. Do not merge or submit for Marketplace review as part of this gate.
+Next: put the verified `dist/` bundle into the local project checkout, then run the Anna CLI publish step once to create an immutable candidate version (not a Marketplace submission). Install that candidate and perform one consolidated local + real Anna Cloud Agent acceptance. The key/database persistence gate below remains blocking until the Cloud restart test is passed. Do not publish the draft GitHub Release, submit for Marketplace review, or merge PR #16 as part of this gate.
 
 Reference: [Anna Forum — Build on Anna 101](https://forum.anna.partners/t/build-on-anna-101/228).
 
@@ -27,7 +31,7 @@ This gate prevents incremental Marketplace uploads. A candidate is not ready mer
 - [x] Every method's parameter names, types and required flags match its implementation.
 - [x] Executa identity and version agree across `executa.json`, the Python plugin and its `describe` response.
 - [x] The active distribution profile is the intended release profile and includes `linux-x86_64` for Anna Cloud Agent.
-- [ ] Archive entrypoints and archive-root manifests match the actual built artifacts.
+- [x] Archive entrypoints, archive-root manifests, checksums and executable permissions match the actual built artifacts; each extracted package binary passed the smoke suite.
 
 ## 2. Deterministic authority and cryptography
 
@@ -61,7 +65,7 @@ Required before a candidate can be called source-ready:
 - [x] Contract and ExecutionRouter end-to-end suites.
 - [x] Anna UI end-to-end tests against the real bundle and real Python Executa process, with scripted LLM responses.
 - [x] Cross-layer App/Executa/manifest contract tests.
-- [ ] Multi-platform binary builds and smoke tests for every declared platform.
+- [x] Multi-platform binary builds, archive verification and extracted-package smoke tests for all four declared platforms.
 - [x] `anna-app validate --strict` on the exact release candidate.
 - [x] The final CI run is green on the exact candidate commit (not merely an earlier parent commit).
 
@@ -114,7 +118,7 @@ The current payment intake uses one bounded `llm.complete` call per explicit che
 - [x] App UI writes only a short-lived unique approval record in the private `app` KV scope.
 - [x] The bundled Executa reads the approval, validates its nonce, exact action binding and 60-second expiry, then consumes it with ETag-conditional delete.
 - [x] App manifest permits the UI's `storage.set`; Executa declares `aps.scope.app.read` and `aps.scope.app.write` and negotiates KV in `initialize`.
-- [x] No APS Files or Host Upload capability is added unnecessarily: this release does not create persistent user files or transfer large attachments. For future durable reports/exports use APS Files; use Host Upload only for temporary transfer.
+- [x] Host Upload is not used as a substitute for durable storage. This app currently creates no user-facing report/document files; APS Files is the appropriate Anna API to evaluate for durable Executa state. That separate database/key persistence integration has not yet been implemented and remains blocked below.
 - [ ] Verify the user's real APS storage grant and the full App-write → Executa-read → ETag-delete flow on Anna Cloud Agent.
 
 ### Persistence durability — BLOCKED pending real Cloud Agent restart test
