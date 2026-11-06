@@ -587,6 +587,54 @@ async function checkAuthority() {
   }
 }
 
+function requestUserConfirmation({ title, message, confirmLabel = "Confirm" }) {
+  const dialog = $("approval-dialog");
+  const heading = $("approval-title");
+  const body = $("approval-message");
+  const accept = $("approval-accept");
+  const cancel = $("approval-cancel");
+  if (!dialog || !heading || !body || !accept || !cancel) {
+    return Promise.reject(new Error("The in-app confirmation dialog is unavailable. No permission was issued."));
+  }
+
+  heading.textContent = title;
+  body.textContent = message;
+  accept.textContent = confirmLabel;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (approved) => {
+      if (settled) return;
+      settled = true;
+      dialog.removeEventListener("cancel", onCancel);
+      accept.removeEventListener("click", onAccept);
+      cancel.removeEventListener("click", onCancelClick);
+      if (typeof dialog.close === "function" && dialog.open) dialog.close();
+      else dialog.removeAttribute("open");
+      resolve(approved);
+    };
+    const onAccept = () => finish(true);
+    const onCancelClick = () => finish(false);
+    const onCancel = (event) => {
+      event.preventDefault();
+      finish(false);
+    };
+
+    accept.addEventListener("click", onAccept);
+    cancel.addEventListener("click", onCancelClick);
+    dialog.addEventListener("cancel", onCancel);
+    try {
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+      cancel.focus();
+    } catch (error) {
+      finish(false);
+      showError("The in-app confirmation could not be opened. No permission was issued.");
+    }
+  });
+}
+
+
 async function storeAppApproval(kind, fields) {
   if (!state.anna?.storage?.set) {
     throw new Error("Anna App storage is unavailable. No execution permission was issued.");
@@ -625,12 +673,14 @@ async function prepareExecutionAuthorization() {
     return;
   }
   const v = state.lastValues;
-  const confirmed = window.confirm(
-    "Create a one-time Verigate execution permission for this exact request?\\n\\n" +
-    v.amount + " " + v.asset + " on " + v.network + "\\nRecipient: " + v.payee +
-    "\\nPurpose: " + (v.resource || "not specified") +
-    "\\n\\nThis will NOT send funds. A separate wallet/executor must enforce the permission."
-  );
+  const confirmed = await requestUserConfirmation({
+    title: "Confirm one-time permission",
+    message:
+      v.amount + " " + v.asset + " on " + v.network + "\\nRecipient: " + v.payee +
+      "\\nPurpose: " + (v.resource || "not specified") +
+      "\\n\\nThis does NOT send funds. It creates a one-time permission for a separate wallet or executor.",
+    confirmLabel: "Create permission"
+  });
   if (!confirmed) return;
 
   setBusy(true, "Verigate is rechecking policy and issuing a one-time permission?");
@@ -783,12 +833,14 @@ async function executeWithConnectedWallet() {
     if (typeof from !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(from)) {
       throw new Error("The wallet did not return a valid account.");
     }
-    const confirmWallet = window.confirm(
-      "Send this exact USDC transfer with your connected wallet?\\n\\n" +
-      values.amount + " USDC on " + network + "\\nRecipient: " + values.payee +
-      "\\nWallet: " + from +
-      "\\n\\nVerigate will consume the one-time permission first. Your wallet will then show the transaction for signing. Network fees may apply."
-    );
+    const confirmWallet = await requestUserConfirmation({
+      title: "Confirm wallet submission",
+      message:
+        values.amount + " USDC on " + network + "\\nRecipient: " + values.payee +
+        "\\nWallet: " + from +
+        "\\n\\nVerigate will consume the one-time permission first. Your wallet will then show this exact transaction for signing. Network fees may apply.",
+      confirmLabel: "Continue to wallet"
+    });
     if (!confirmWallet) return;
 
     setBusy(true, "Verigate is verifying and consuming the one-time permission…");
