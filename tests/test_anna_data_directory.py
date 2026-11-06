@@ -41,9 +41,14 @@ class AnnaDataDirectoryTest(unittest.TestCase):
             blocker = root / "not-a-directory"
             blocker.write_text("occupied", encoding="utf-8")
             fallback = root / "fallback"
-            with patch.dict(os.environ, {"VERIGATE_ANNA_DATA_DIR": str(blocker / "state"}):
+            with patch.dict(
+                os.environ,
+                {"VERIGATE_ANNA_DATA_DIR": str(blocker / "state")},
+            ):
                 with patch.object(self.plugin, "_DEFAULT_DATA_DIR", fallback):
-                    with self.assertRaisesRegex(RuntimeError, "no writable Verigate data directory"):
+                    with self.assertRaisesRegex(
+                        RuntimeError, "no writable Verigate data directory"
+                    ):
                         self.plugin._resolve_data_dir()
             self.assertFalse(fallback.exists())
 
