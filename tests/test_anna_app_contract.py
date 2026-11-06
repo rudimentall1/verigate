@@ -37,7 +37,7 @@ class AnnaAppContractTest(unittest.TestCase):
 
     def test_every_frontend_executa_method_exists_in_describe(self):
         source = (ANNA / "bundle" / "app.js").read_text(encoding="utf-8")
-        invoked = set(re.findall(r'method:\\s*["\\'](verigate_[a-z0-9_]+)["\\']', source))
+        invoked = set(re.findall(r'method:\s*["\'](verigate_[a-z0-9_]+)["\']', source))
         described = {tool["name"] for tool in PLUGIN.MANIFEST.get("tools", [])}
         self.assertTrue(invoked, "frontend must invoke at least one Verigate tool")
         self.assertEqual(invoked - described, set(), "frontend invokes methods absent from Executa describe")
