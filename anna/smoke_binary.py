@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -60,14 +62,28 @@ def main() -> None:
             stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=smoke_env,
         )
 
+    stdout_lines: queue.Queue[str | None] = queue.Queue()
+
+    def collect_stdout() -> None:
+        try:
+            for line in proc.stdout:
+                stdout_lines.put(line)
+        finally:
+            stdout_lines.put(None)
+
+    threading.Thread(target=collect_stdout, name="anna-smoke-stdout", daemon=True).start()
+
     def send(frame: dict | str) -> None:
         proc.stdin.write((frame if isinstance(frame, str) else json.dumps(frame)) + "\n")
         proc.stdin.flush()
 
-    def recv() -> dict:
-        line = proc.stdout.readline()
-        if not line:
-            raise SystemExit(f"no response; stderr:\n{proc.stderr.read()}")
+    def recv(timeout: float = 10.0) -> dict:
+        try:
+            line = stdout_lines.get(timeout=timeout)
+        except queue.Empty as exc:
+            raise SystemExit(f"timed out waiting {timeout:.1f}s for a JSON-RPC response") from exc
+        if line is None:
+            raise SystemExit("process closed stdout before returning the expected JSON-RPC response")
         return json.loads(line)
 
     def invoke_with_storage(req_id: int, params: dict, approval: dict | None, app_context: bool) -> dict:
@@ -111,8 +127,8 @@ def main() -> None:
         send({"jsonrpc": "2.0", "id": 1, "method": "describe"})
         described = recv()
         elapsed = time.monotonic() - started
-        if "result" not in described:
-            raise SystemExit(f"describe failed: {described}")
+        if described.get("id") != 1 or "result" not in described:
+            raise SystemExit(f"describe failed or returned the wrong ID: {described}")
         check_manifest(described["result"])
         if expected_version and described["result"].get("version") != expected_version:
             raise SystemExit(
@@ -123,6 +139,13 @@ def main() -> None:
             raise SystemExit(f"describe took {elapsed:.1f}s, Anna's limit is 5s")
         if elapsed > 3.0:
             print(f"warning: describe took {elapsed:.1f}s (limit 5s)")
+
+        # 1b. A second describe with a string ID proves the process remains alive
+        # and preserves JSON-RPC request IDs of different types.
+        send({"jsonrpc": "2.0", "id": "describe-repeat", "method": "describe"})
+        repeated = recv()
+        if repeated.get("id") != "describe-repeat" or repeated.get("result") != described["result"]:
+            raise SystemExit(f"repeated describe failed or returned the wrong ID: {repeated}")
 
         # 2. health
         send({"jsonrpc": "2.0", "id": 2, "method": "health"})
@@ -292,8 +315,15 @@ def main() -> None:
         if recv().get("error", {}).get("code") != -32601:
             raise SystemExit("unknown tool must return -32601")
         send({"jsonrpc": "2.0", "id": 5, "method": "invoke", "params": {"tool": "verigate_check", "arguments": {}}})
-        if recv().get("error", {}).get("code") != -32602:
-            raise SystemExit("missing arguments must return -32602")
+        invalid_params = recv()
+        if invalid_params.get("id") != 5 or invalid_params.get("error", {}).get("code") != -32602:
+            raise SystemExit("missing arguments must return -32602 with the matching ID")
+
+        # 5. The process must recover after protocol and business errors.
+        send({"jsonrpc": "2.0", "id": "describe-after-errors", "method": "describe"})
+        recovered = recv()
+        if recovered.get("id") != "describe-after-errors" or recovered.get("result", {}).get("version") != described["result"].get("version"):
+            raise SystemExit(f"describe did not recover after errors: {recovered}")
     finally:
         proc.stdin.close()
         try:
