@@ -54,18 +54,22 @@ class ExecutaManifestTest(unittest.TestCase):
         params = {p["name"]: p for p in tool["parameters"]}
         self.assertTrue(params["confirmation_nonce"]["required"])
         self.assertNotIn("human_confirmed", params)
+        consume = next(t for t in manifest["tools"] if t["name"] == "verigate_consume_execution_authorization")
+        consume_params = {p["name"]: p for p in consume["parameters"]}
+        self.assertTrue(consume_params["confirmation_nonce"]["required"])
 
     def test_initialize_negotiates_v2_storage(self):
         result = self.plugin.handle({"method": "initialize", "params": {}})
         self.assertEqual(result["protocolVersion"], "2.0")
         self.assertTrue(result["capabilities"]["storage"]["kv"])
 
-    def test_sync_tool_dispatch_cannot_issue_execution_authority(self):
-        with self.assertRaises(self.plugin.RpcError):
-            self.plugin.handle({"method": "invoke", "params": {
-                "tool": "verigate_authorize_payment",
-                "arguments": {"human_confirmed": True},
-            }})
+    def test_sync_tool_dispatch_cannot_issue_or_consume_execution_authority(self):
+        for tool in ("verigate_authorize_payment", "verigate_consume_execution_authorization"):
+            with self.subTest(tool=tool), self.assertRaises(self.plugin.RpcError):
+                self.plugin.handle({"method": "invoke", "params": {
+                    "tool": tool,
+                    "arguments": {"human_confirmed": True},
+                }})
 
     def test_version_matches_executa_json(self):
         executa = json.loads((PLUGIN.parent / "executa.json").read_text(encoding="utf-8"))
