@@ -63,11 +63,9 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
           const receipt = data?.decision_receipt ?? data?.receipt;
           if (receipt) receipt.signature = "AA" + String(receipt.signature || "").slice(2);
         }
-        if (method === "verigate_verify_decision_receipt") {
-          if (verificationResponseShape === "direct") return result;
-          if (verificationResponseShape === "double") return { result: { result } };
-          if (verificationResponseShape === "nested_data") return { result: { data: result } };
-        }
+        if (verificationResponseShape === "direct") return result;
+        if (verificationResponseShape === "double") return { result: { result } };
+        if (verificationResponseShape === "nested_data") return { result: { data: result } };
         return { result };
       },
     },
