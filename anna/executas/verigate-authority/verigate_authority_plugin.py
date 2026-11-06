@@ -114,12 +114,14 @@ MANIFEST = {
             "name": "verigate_consume_execution_authorization",
             "description": (
                 "Verify and consume a one-time EVM USDC Execution Authorization through Verigate ExecutionRouter. "
+                "Requires a fresh one-time App UI confirmation for the exact wallet submission. "
                 "Returns the exact signed Base/Ethereum transaction envelope for a connected wallet to review and submit. "
                 "This tool never signs or broadcasts; a consumed permission cannot be reused, including after wallet rejection."
             ),
             "timeout": 30,
             "parameters": [
-                {"name": "authorization_json", "type": "string", "description": "Complete signed Execution Authorization JSON object.", "required": True}
+                {"name": "authorization_json", "type": "string", "description": "Complete signed Execution Authorization JSON object.", "required": True},
+                {"name": "confirmation_nonce", "type": "string", "description": "One-time nonce created by the Anna UI after the user confirms wallet submission.", "required": True},
             ],
         },
         {
@@ -367,14 +369,8 @@ def _restore_execution_authorization_numbers(authorization: dict) -> dict:
     return authorization
 
 
-async def _consume_app_confirmation(args: dict, normalized: dict) -> dict:
-    """Consume a short-lived approval written only by the Anna App UI.
-
-    App-scope APS is available to this bundled Executa only when the host
-    invokes it from the owning App context. A direct chat/agent invocation
-    has no such app context and therefore cannot manufacture this approval.
-    """
-    nonce = args.get("confirmation_nonce")
+async def _consume_app_approval(nonce: object, expected: dict) -> dict:
+    """Read and atomically consume a short-lived approval from the owning App's APS scope."""
     if not isinstance(nonce, str) or re.fullmatch(r"[0-9a-f]{48}", nonce) is None:
         raise PermissionError("a valid one-time App UI confirmation nonce is required")
     key = f"verigate/approvals/{nonce}"
@@ -382,17 +378,15 @@ async def _consume_app_confirmation(args: dict, normalized: dict) -> dict:
     if record.get("exists") is not True or not isinstance(record.get("value"), dict):
         raise PermissionError("no app-scoped UI approval exists for this invocation")
     approval = record["value"]
-
-    for field in ("agent_id", "payee", "asset", "network", "resource"):
-        if approval.get(field) != normalized[field]:
-            raise PermissionError(f"UI approval does not match the requested {field}")
-    stored_amount = approval.get("amount")
-    if isinstance(stored_amount, bool) or not isinstance(stored_amount, (int, float)):
-        raise PermissionError("UI approval amount is invalid")
-    if float(stored_amount) != normalized["amount"]:
-        raise PermissionError("UI approval does not match the requested amount")
     if approval.get("nonce") != nonce or approval.get("version") != 1:
         raise PermissionError("UI approval nonce or version is invalid")
+    for field, expected_value in expected.items():
+        stored_value = approval.get(field)
+        if isinstance(expected_value, (int, float)) and not isinstance(expected_value, bool):
+            if isinstance(stored_value, bool) or not isinstance(stored_value, (int, float)) or float(stored_value) != float(expected_value):
+                raise PermissionError(f"UI approval does not match {field}")
+        elif stored_value != expected_value:
+            raise PermissionError(f"UI approval does not match {field}")
 
     now_ms = int(time.time() * 1000)
     created_at_ms = approval.get("created_at_ms")
@@ -412,6 +406,29 @@ async def _consume_app_confirmation(args: dict, normalized: dict) -> dict:
     if deleted.get("deleted") is not True:
         raise PermissionError("UI approval could not be consumed exactly once")
     return approval
+
+
+async def _consume_app_confirmation(args: dict, normalized: dict) -> dict:
+    expected = {"kind": "payment_authorization", **normalized}
+    return await _consume_app_approval(args.get("confirmation_nonce"), expected)
+
+
+async def _consume_app_wallet_submission(args: dict, authorization: dict, action: dict, transaction: dict) -> dict:
+    payload = authorization.get("payload") or {}
+    expected = {
+        "kind": "wallet_submission",
+        "authorization_id": payload.get("authorization_id"),
+        "agent_id": action.get("agent_id"),
+        "target": action.get("target"),
+        "asset": action.get("asset"),
+        "network": action.get("network"),
+        "amount": action.get("amount"),
+        "chain_id": transaction.get("chain_id"),
+        "to": transaction.get("to"),
+        "value_wei": transaction.get("value_wei"),
+        "data": transaction.get("data"),
+    }
+    return await _consume_app_approval(args.get("confirmation_nonce"), expected)
 
 
 async def _verigate_authorize_payment(args: dict) -> dict:
@@ -599,11 +616,13 @@ def _verigate_verify_execution_authorization(args: dict) -> dict:
         return {"success": False, "error": f"execution authorization verification unavailable: {exc}"}
 
 
-def _verigate_consume_execution_authorization(args: dict) -> dict:
-    """Consume a signed EVM permission at ExecutionRouter before wallet submission."""
+async def _verigate_consume_execution_authorization(args: dict) -> dict:
+    """Consume a signed EVM permission only after a one-time App UI send confirmation."""
     raw = args.get("authorization_json")
     if not isinstance(raw, str) or not raw.strip():
         return {"success": False, "error": "authorization_json must be a non-empty JSON string"}
+    if not isinstance(args.get("confirmation_nonce"), str):
+        return {"success": False, "error": "confirmation_nonce is required for App UI wallet approval"}
     if len(raw) > 262_144:
         return {"success": False, "error": "authorization_json exceeds the 256 KiB limit"}
     try:
@@ -642,6 +661,10 @@ def _verigate_consume_execution_authorization(args: dict) -> dict:
         if transaction["chain_id"] != expected_chain_id:
             raise ValueError("signed EVM chain does not match the selected network")
 
+        # The model may see the authorization JSON, but it cannot create the
+        # short-lived app-scope approval written by the explicit wallet button.
+        await _consume_app_wallet_submission(args, authorization, action, transaction)
+
         engine, _ = _get_state()
         public_key = load_public_key(_resolve_data_dir() / "issuer.pub")
         router = ExecutionRouter(NetworkRegistry(), engine.storage, public_key)
@@ -661,7 +684,7 @@ def _verigate_consume_execution_authorization(args: dict) -> dict:
             "transaction_submitted": False,
             "message": "ExecutionRouter consumed the one-time permission. The connected wallet must still review, sign and submit this exact transaction.",
         }}
-    except (OSError, ValueError, TypeError, RuntimeError, PermissionError, LookupError) as exc:
+    except (OSError, ValueError, TypeError, RuntimeError, PermissionError, LookupError, StorageError) as exc:
         return {"success": False, "error": f"wallet execution was not authorized: {exc}"}
 
 
@@ -755,8 +778,8 @@ def handle(request: dict):
 
 
 def invoke(tool: str, args: dict) -> dict:
-    if tool == "verigate_authorize_payment":
-        raise RpcError(-32603, "authorization must run through the async App-context approval gate")
+    if tool in ("verigate_authorize_payment", "verigate_consume_execution_authorization"):
+        raise RpcError(-32603, "privileged execution methods must run through the async App-context approval gate")
     if tool not in (
         "verigate_check",
         "verigate_verify_execution_authorization",
@@ -772,7 +795,7 @@ def invoke(tool: str, args: dict) -> dict:
     if tool == "verigate_verify_execution_authorization":
         return _verigate_verify_execution_authorization(args)
     if tool == "verigate_consume_execution_authorization":
-        return _verigate_consume_execution_authorization(args)
+        raise RpcError(-32603, "wallet submission must run through the async App-context approval gate")
     if tool == "verigate_policy_summary":
         return _verigate_policy_summary(args)
     return _verigate_verify_decision_receipt(args)
@@ -800,6 +823,8 @@ async def _handle_invoke(req_id, params: dict) -> None:
         with bind_invoke(params):
             if tool == "verigate_authorize_payment":
                 result = await _verigate_authorize_payment(args)
+            elif tool == "verigate_consume_execution_authorization":
+                result = await _verigate_consume_execution_authorization(args)
             else:
                 result = await asyncio.to_thread(invoke, tool, args)
         _ok(req_id, result)
