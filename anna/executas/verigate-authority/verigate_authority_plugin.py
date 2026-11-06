@@ -151,14 +151,24 @@ class RpcError(Exception):
 
 
 def _resolve_data_dir() -> Path:
-    """First writable location wins, so a read-only install dir cannot break us."""
-    candidates = []
+    """Resolve local state storage without silently abandoning an explicit path.
+
+    When an operator sets VERIGATE_ANNA_DATA_DIR, that path is authoritative.
+    Falling back to a home or temporary directory after it fails would make
+    issuer-key rotation and accounting-history loss look like a successful
+    startup. In that case, fail closed instead.
+    """
     override = os.environ.get("VERIGATE_ANNA_DATA_DIR")
     if override:
-        candidates.append(Path(override))
-    candidates.append(_DEFAULT_DATA_DIR)
-    candidates.append(Path.home() / ".verigate-authority")
-    candidates.append(Path(tempfile.gettempdir()) / "verigate-authority")
+        candidates = [Path(override)]
+    else:
+        candidates = [
+            _DEFAULT_DATA_DIR,
+            Path.home() / ".verigate-authority",
+            Path(tempfile.gettempdir()) / "verigate-authority",
+        ]
+
+    errors = []
     for candidate in candidates:
         try:
             candidate.mkdir(parents=True, exist_ok=True)
@@ -166,9 +176,13 @@ def _resolve_data_dir() -> Path:
             probe.write_text("ok", encoding="utf-8")
             probe.unlink()
             return candidate
-        except OSError:
-            continue
-    raise RuntimeError("no writable data directory available")
+        except OSError as exc:
+            errors.append(f"{candidate}: {exc}")
+            if override:
+                break
+
+    detail = "; ".join(errors) or "no candidate paths configured"
+    raise RuntimeError(f"no writable Verigate data directory available: {detail}")
 
 
 _state = None
