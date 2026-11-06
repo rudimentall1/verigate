@@ -1,9 +1,11 @@
+import asyncio
 import hashlib
 import json
 import math
 import os
 import signal
 import sys
+import threading
 import time
 import tempfile
 from pathlib import Path
@@ -20,6 +22,14 @@ else:
     _DEFAULT_DATA_DIR = Path(__file__).resolve().parent / ".data"
 
 sys.path.insert(0, str(_SOURCE_REPO_ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from executa_sdk import PROTOCOL_VERSION_V2, StorageClient, StorageError, bind_invoke, make_response_router
+from executa_sdk.sampling import _write_frame
+
+_storage = StorageClient()
+_route_response = make_response_router(_storage)
+_loop = None
 
 VERSION = "0.1.11"
 _POLICY_PATH = _BUNDLE_ROOT / "policies" / "anna.yaml"
@@ -37,6 +47,7 @@ MANIFEST = {
         "keys or broadcast transactions; execution must pass through a Verigate enforcement adapter."
     ),
     "author": "rudimentall1",
+    "host_capabilities": ["aps.scope.app.read", "aps.scope.app.write"],
     "homepage": "https://github.com/rudimentall1/verigate",
     "icon": "\U0001f6e1\ufe0f",
     "category": "security",
@@ -88,7 +99,7 @@ MANIFEST = {
                 {"name": "amount", "type": "number", "description": "Exact payment amount.", "required": True},
                 {"name": "resource", "type": "string", "description": "Payment purpose or invoice reference.", "required": False, "default": ""},
                 {"name": "ai_flags_json", "type": "string", "description": "Advisory AI risk flags. They may only escalate ALLOW to WARN.", "required": False, "default": ""},
-                {"name": "human_confirmed", "type": "boolean", "description": "Must be true; supplied only by the explicit Anna UI confirmation action.", "required": True}
+                {"name": "confirmation_nonce", "type": "string", "description": "One-time nonce created by the Anna App UI after explicit user confirmation. Direct chat invocation has no app-scoped approval record and fails closed.", "required": True}
             ]
         },
         {
@@ -356,13 +367,58 @@ def _restore_execution_authorization_numbers(authorization: dict) -> dict:
     return authorization
 
 
-def _verigate_authorize_payment(args: dict) -> dict:
-    required = ("agent_id", "payee", "asset", "network", "amount", "human_confirmed")
+async def _consume_app_confirmation(args: dict, normalized: dict) -> dict:
+    """Consume a short-lived approval written only by the Anna App UI.
+
+    App-scope APS is available to this bundled Executa only when the host
+    invokes it from the owning App context. A direct chat/agent invocation
+    has no such app context and therefore cannot manufacture this approval.
+    """
+    nonce = args.get("confirmation_nonce")
+    if not isinstance(nonce, str) or re.fullmatch(r"[0-9a-f]{48}", nonce) is None:
+        raise PermissionError("a valid one-time App UI confirmation nonce is required")
+    key = f"verigate/approvals/{nonce}"
+    record = await _storage.get(key, scope="app", timeout=10.0)
+    if record.get("exists") is not True or not isinstance(record.get("value"), dict):
+        raise PermissionError("no app-scoped UI approval exists for this invocation")
+    approval = record["value"]
+
+    for field in ("agent_id", "payee", "asset", "network", "resource"):
+        if approval.get(field) != normalized[field]:
+            raise PermissionError(f"UI approval does not match the requested {field}")
+    stored_amount = approval.get("amount")
+    if isinstance(stored_amount, bool) or not isinstance(stored_amount, (int, float)):
+        raise PermissionError("UI approval amount is invalid")
+    if float(stored_amount) != normalized["amount"]:
+        raise PermissionError("UI approval does not match the requested amount")
+    if approval.get("nonce") != nonce or approval.get("version") != 1:
+        raise PermissionError("UI approval nonce or version is invalid")
+
+    now_ms = int(time.time() * 1000)
+    created_at_ms = approval.get("created_at_ms")
+    expires_at_ms = approval.get("expires_at_ms")
+    if (isinstance(created_at_ms, bool) or not isinstance(created_at_ms, int)
+            or isinstance(expires_at_ms, bool) or not isinstance(expires_at_ms, int)
+            or created_at_ms > now_ms + 5_000
+            or expires_at_ms <= now_ms
+            or expires_at_ms - created_at_ms > 60_000
+            or now_ms - created_at_ms > 60_000):
+        raise PermissionError("UI approval is expired or outside its 60-second validity window")
+
+    etag = record.get("etag")
+    if not isinstance(etag, str) or not etag:
+        raise PermissionError("UI approval has no storage ETag; refusing non-atomic consumption")
+    deleted = await _storage.delete(key, scope="app", if_match=etag, timeout=10.0)
+    if deleted.get("deleted") is not True:
+        raise PermissionError("UI approval could not be consumed exactly once")
+    return approval
+
+
+async def _verigate_authorize_payment(args: dict) -> dict:
+    required = ("agent_id", "payee", "asset", "network", "amount", "confirmation_nonce")
     for name in required:
         if name not in args:
             raise RpcError(-32602, f"missing required argument: {name}")
-    if args.get("human_confirmed") is not True:
-        return {"success": False, "error": "explicit user confirmation is required"}
     try:
         from core.capabilities import CapabilityRegistry
         from core.models import Capability, PaymentIntent
@@ -374,12 +430,25 @@ def _verigate_authorize_payment(args: dict) -> dict:
         if not math.isfinite(amount) or amount <= 0:
             raise ValueError("amount must be finite and greater than zero")
 
-        agent_id = _clean(args["agent_id"], 128)
-        asset = _clean(args["asset"], 12).upper()
-        network = _clean(args["network"], 24).lower()
-        payee = _clean(args["payee"], 256)
-        resource = _clean(args.get("resource", ""), 200)
+        normalized = {
+            "agent_id": _clean(args["agent_id"], 128),
+            "payee": _clean(args["payee"], 256),
+            "asset": _clean(args["asset"], 12).upper(),
+            "network": _clean(args["network"], 24).lower(),
+            "amount": amount,
+            "resource": _clean(args.get("resource", ""), 200),
+        }
+        # This is the security boundary: a client boolean is not proof of
+        # human approval. The app-scoped, one-time record must be present and
+        # atomically consumed before any persistent authorization is issued.
+        approval = await _consume_app_confirmation(args, normalized)
         advisory = _parse_ai_flags(args.get("ai_flags_json"))
+
+        agent_id = normalized["agent_id"]
+        asset = normalized["asset"]
+        network = normalized["network"]
+        payee = normalized["payee"]
+        resource = normalized["resource"]
 
         engine, private_key = _get_state()
         policy = engine.policy
@@ -411,8 +480,11 @@ def _verigate_authorize_payment(args: dict) -> dict:
         intent_metadata = {
             "anna_user_confirmation": {
                 "confirmed": True,
-                "source": "anna-app-confirmation-button",
-                "confirmed_at": time.time(),
+                "source": "anna-app-scoped-one-time-approval",
+                "confirmed_at": approval["created_at_ms"] / 1000.0,
+                "approval_nonce_sha256": hashlib.sha256(
+                    args["confirmation_nonce"].encode("ascii")
+                ).hexdigest(),
             },
         }
         evm_transaction = _build_anna_evm_transaction(network, asset, payee, args["amount"])
@@ -445,10 +517,12 @@ def _verigate_authorize_payment(args: dict) -> dict:
             "transaction_submitted": False,
             "wallet_key_access": False,
             "capability_id": capability_id,
+            "confirmation_source": "anna-app-scoped-one-time-approval",
         }}
+    except StorageError as exc:
+        return {"success": False, "error": f"app-scoped UI confirmation unavailable: {exc.message}"}
     except (ValueError, TypeError, PermissionError, LookupError) as exc:
         return {"success": False, "error": f"execution authorization not issued: {exc}"}
-
 
 def _verigate_verify_execution_authorization(args: dict) -> dict:
     raw = args.get("authorization_json")
@@ -661,9 +735,10 @@ def _verigate_verify_decision_receipt(args: dict) -> dict:
 
 
 def invoke(tool: str, args: dict) -> dict:
+    if tool == "verigate_authorize_payment":
+        raise RpcError(-32603, "authorization must run through the async App-context approval gate")
     if tool not in (
         "verigate_check",
-        "verigate_authorize_payment",
         "verigate_verify_execution_authorization",
         "verigate_consume_execution_authorization",
         "verigate_policy_summary",
@@ -674,8 +749,6 @@ def invoke(tool: str, args: dict) -> dict:
         raise RpcError(-32602, "arguments must be an object")
     if tool == "verigate_check":
         return _verigate_check(args)
-    if tool == "verigate_authorize_payment":
-        return _verigate_authorize_payment(args)
     if tool == "verigate_verify_execution_authorization":
         return _verigate_verify_execution_authorization(args)
     if tool == "verigate_consume_execution_authorization":
@@ -685,29 +758,98 @@ def invoke(tool: str, args: dict) -> dict:
     return _verigate_verify_decision_receipt(args)
 
 
-def handle(request: dict):
-    method = request.get("method")
-    params = request.get("params") or {}
-    if method == "describe":
-        return MANIFEST
-    if method == "health":
-        return {"status": "ready", "message": "", "details": {}}
-    if method == "invoke":
-        if not isinstance(params, dict) or "tool" not in params:
-            raise RpcError(-32602, "invoke requires params.tool")
-        return invoke(params["tool"], params.get("arguments") or {})
-    raise RpcError(-32601, f"Unknown method: {method}")
-
-
 def _write(frame: dict) -> None:
-    sys.stdout.write(json.dumps(frame) + "\n")
-    sys.stdout.flush()
+    _write_frame(frame)
+
+
+def _ok(req_id, result: dict) -> None:
+    _write({"jsonrpc": "2.0", "id": req_id, "result": result})
+
+
+def _err(req_id, code: int, message: str, data: dict | None = None) -> None:
+    error = {"code": code, "message": message}
+    if data:
+        error["data"] = data
+    _write({"jsonrpc": "2.0", "id": req_id, "error": error})
+
+
+async def _handle_invoke(req_id, params: dict) -> None:
+    tool = params.get("tool")
+    args = params.get("arguments") or {}
+    try:
+        with bind_invoke(params):
+            if tool == "verigate_authorize_payment":
+                result = await _verigate_authorize_payment(args)
+            else:
+                result = await asyncio.to_thread(invoke, tool, args)
+        _ok(req_id, result)
+    except StorageError as exc:
+        _err(req_id, exc.code, exc.message, exc.data)
+    except RpcError as exc:
+        _err(req_id, exc.code, exc.message)
+    except Exception as exc:  # noqa: BLE001 - keep one invocation from killing the process
+        _err(req_id, -32603, f"Internal error: {exc}")
+
+
+def _handle_initialize(req_id, _params: dict) -> None:
+    _ok(req_id, {
+        "protocolVersion": PROTOCOL_VERSION_V2,
+        "serverInfo": {"name": MANIFEST["display_name"], "version": MANIFEST["version"]},
+        "capabilities": {"storage": {"kv": True}},
+    })
+
+
+def _stdin_loop() -> None:
+    for raw in sys.stdin:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            msg = json.loads(raw)
+        except ValueError:
+            _err(None, -32700, "Parse error")
+            continue
+        if not isinstance(msg, dict):
+            _err(None, -32600, "Invalid request")
+            continue
+        # Responses to our APS reverse-RPC requests are dispatched before
+        # host-initiated requests are processed.
+        if "method" not in msg and _route_response(msg):
+            continue
+        method = msg.get("method")
+        req_id = msg.get("id")
+        if method == "initialize":
+            _handle_initialize(req_id, msg.get("params") or {})
+        elif method == "notifications/initialized":
+            continue
+        elif method == "describe":
+            _ok(req_id, MANIFEST)
+        elif method == "health":
+            _ok(req_id, {"status": "ready", "message": "", "details": {}})
+        elif method == "shutdown":
+            _ok(req_id, {})
+            return
+        elif method == "invoke":
+            if _loop is None:
+                _err(req_id, -32603, "event loop is not ready")
+            else:
+                asyncio.run_coroutine_threadsafe(
+                    _handle_invoke(req_id, msg.get("params") or {}), _loop
+                )
+        else:
+            _err(req_id, -32601, f"Unknown method: {method}")
+
+
+async def _main() -> None:
+    global _loop
+    _loop = asyncio.get_running_loop()
+    reader = threading.Thread(target=_stdin_loop, daemon=True)
+    reader.start()
+    while reader.is_alive():
+        await asyncio.sleep(0.1)
 
 
 def main() -> None:
-    # Anna sends JSON-RPC as UTF-8. Windows may otherwise decode piped stdin
-    # using the active ANSI code page, corrupting non-ASCII receipt text and
-    # making a valid Ed25519 signature appear invalid.
     try:
         sys.stdin.reconfigure(encoding="utf-8", errors="strict", newline=None)
         sys.stdout.reconfigure(encoding="utf-8", errors="strict", newline="\n")
@@ -717,27 +859,7 @@ def main() -> None:
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     except (ValueError, OSError):
         pass
-
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            request = json.loads(line)
-        except ValueError:
-            _write({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}})
-            continue
-        if not isinstance(request, dict):
-            _write({"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid request"}})
-            continue
-        request_id = request.get("id")
-        try:
-            result = handle(request)
-            _write({"jsonrpc": "2.0", "id": request_id, "result": result})
-        except RpcError as exc:
-            _write({"jsonrpc": "2.0", "id": request_id, "error": {"code": exc.code, "message": exc.message}})
-        except Exception as exc:  # noqa: BLE001 - never let one request kill the process
-            _write({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32603, "message": f"Internal error: {exc}"}})
+    asyncio.run(_main())
 
 
 if __name__ == "__main__":
