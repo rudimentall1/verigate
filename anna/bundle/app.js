@@ -235,10 +235,10 @@ function showClarify(items, needConfirm) {
 
 function extractDecisionEnvelope(toolResponse) {
   const outer = unwrapToolResult(toolResponse);
-  if (outer?.error) {
-    throw new Error(outer.error.message || outer.error || "Verigate check failed.");
+  if (outer?.error || outer?.success === false) {
+    const failure = outer.error || outer;
+    throw new Error("Verigate check failed: " + errorDetail(failure));
   }
-  if (outer?.success === false) throw new Error(outer.error || "Verigate could not check this action.");
   const data = outer?.data ?? outer;
   const receipt = data?.decision_receipt ?? data?.receipt ?? null;
   if (!receipt?.payload) throw new Error("Verigate returned no signed decision receipt. Please retry; do not treat this as an approval.");
@@ -849,6 +849,11 @@ async function prepareExecutionAuthorization() {
       args: { authorization_json: JSON.stringify(authorization) }
     });
     const verifiedOuter = unwrapToolResult(verificationResponse);
+    if (verifiedOuter?.success === false || verifiedOuter?.error) {
+      throw new Error("Anna could not verify the Execution Authorization: " +
+        errorDetail(verifiedOuter.error || verifiedOuter) +
+        ". No permission will be presented as valid.");
+    }
     const verification = verifiedOuter?.data;
     const authorizedAction = verification?.action;
     const exactActionMatches = Boolean(authorizedAction) &&
