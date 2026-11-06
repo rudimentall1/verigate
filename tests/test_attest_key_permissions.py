@@ -38,6 +38,12 @@ class IssuerKeyPermissionsTest(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(self.directory.stat().st_mode), 0o700)
         self.assertEqual(stat.S_IMODE(self.private_path.stat().st_mode), 0o600)
 
+    def test_encrypted_private_key_still_round_trips(self):
+        generate_keypair(self.private_path, self.public_path, passphrase=b"test-passphrase")
+        self.assertIsNotNone(load_private_key(self.private_path, passphrase=b"test-passphrase"))
+        with self.assertRaises(ValueError):
+            load_private_key(self.private_path, passphrase=b"wrong-passphrase")
+
     def test_private_key_symlink_is_rejected(self):
         generate_keypair(self.private_path, self.public_path)
         link = self.directory / "issuer-link.key"
