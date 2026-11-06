@@ -1,9 +1,9 @@
 {
   "slug": "verigate-authority",
   "name": "Verigate Authority",
-  "version": "0.1.3",
-  "tagline": "Give your AI agent an action. Verigate decides if it has the authority.",
-  "description": "Verigate is an Agent Authority Control Plane: before an AI agent's action (a payment, a tool call, an on-chain transaction) executes, Verigate evaluates it against a deterministic, signed policy and returns a cryptographically signed ALLOW/WARN/BLOCK decision. This App wraps Verigate's existing GuardrailEngine so any Anna agent can call verigate_check on an action and get back a signed, independently verifiable authority decision -- without trusting Anna's or Verigate's own server to tell the truth about what was decided.",
+  "version": "0.1.15",
+  "tagline": "AI proposes a payment. Verigate checks it before the app requests a wallet signature.",
+  "description": "Describe a payment in plain language. Anna AI extracts details, asks about ambiguity and flags suspicious context. Verigate's deterministic policy engine decides ALLOW/WARN/BLOCK. For ALLOW, the user confirms the exact payment in the app to issue a one-time signed Execution Authorization. A separate confirmation is required before wallet submission; each step is gated by a 60-second App-scoped, one-time approval that direct model/tool calls cannot create. For native USDC on Base and Ethereum, Verigate ExecutionRouter verifies and consumes the signed permission before the connected EIP-1193 wallet is asked to sign and submit the exact transfer. Wallet private keys stay in the wallet. Anna does not hold keys. Solana remains policy/authorization-only in this release. WARN and BLOCK never receive execution authority. Decision Receipts and permissions are verified with Ed25519.",
   "category": "productivity",
   "bundled_executas": {
     "verigate-authority": {

@@ -31,6 +31,8 @@ class Policy:
     daily_cap: dict[str, float] = field(default_factory=dict)  # asset -> max amount / 24h
     new_payee_cap: dict[str, float] = field(default_factory=dict)  # tighter cap, first-seen payee
     rate_limit_per_minute: int = 0  # 0 = disabled
+    payee_validation: bool = False  # BLOCK malformed recipient addresses
+    require_positive_amount: bool = False  # BLOCK zero/negative/non-finite amounts
     confirmation_required_over: dict[str, float] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -78,6 +80,8 @@ class Policy:
             daily_cap=raw.get("daily_cap", {}) or {},
             new_payee_cap=raw.get("new_payee_cap", {}) or {},
             rate_limit_per_minute=int(raw.get("rate_limit_per_minute", 0) or 0),
+            payee_validation=bool(raw.get("payee_validation", False)),
+            require_positive_amount=bool(raw.get("require_positive_amount", False)),
             confirmation_required_over=raw.get("confirmation_required_over", {}) or {},
             raw=raw,
         )

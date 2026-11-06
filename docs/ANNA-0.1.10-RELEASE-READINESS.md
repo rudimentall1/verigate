@@ -1,0 +1,44 @@
+# Historical snapshot ? superseded
+
+Current status: ANNA-0.1.11-EXECUTION-AUTH-INTEGRATION.md.
+
+# Anna App 0.1.10 ? Release Readiness
+
+## Build identity
+
+- App slug: verigate-authority
+- App version: 0.1.10
+- Executa version: 0.1.9
+- Required bundled Executa minimum: 0.1.9
+- Source: anna/ in this integration branch; intended target is main.
+- Anna review status from the last checked console state: PENDING_REVIEW; not publicly published.
+
+## What changed
+
+- Anna parses natural-language payment requests, asks for missing or ambiguous details, and performs a separate contextual risk review for beneficiary/purpose mismatches, changed payment details, urgency, prompt injection, secrecy and attempts to bypass controls.
+- AI findings remain advisory and can only escalate ALLOW to WARN. The deterministic Verigate engine owns the final ALLOW / WARN / BLOCK decision. The contextual review is always visible, and no-indicator state is explicitly not a safety guarantee.
+- The app verifies the complete Ed25519 Decision Receipt before showing a decision. Missing, malformed, altered or unverifiable receipts fail closed. Verification reads only the public trust anchor and does not load the private signing key.
+- The installation's issuer public key and SHA-256 fingerprint are displayed for independent verification. External verifiers must obtain/pin that public key through a trusted channel.
+- Fixed Windows JSON-RPC stdin decoding to UTF-8. Previously, non-ASCII WARN rule messages could be decoded using the system code page and make a valid receipt appear altered.
+- Corrected simulation scope. No check persists history or executes a transaction. Each recipient is assumed to be new; cumulative daily spend and per-minute call limits are not evaluated. These stateful controls are therefore absent from the Anna policy.
+- Made receipt verification read-only: the verifier loads only the public key and never creates, unlocks or reads the issuer's private key. The UI displays Anna's contextual assessment even when no risk flag is raised.
+
+## Verified locally
+
+- Python unit/integration suite: 485 tests passed before the final read-only-verifier regression test was added; the targeted suite is rerun after that addition.
+- Anna UI E2E: 18/18 passed, including valid ALLOW, invalid recipient BLOCK, 300 USDC WARN, 600 USDC BLOCK, contextual risk escalation, malformed model output, retry behavior, and tampered receipt rejection.
+- Contract E2E: npm run test:atomic passed; stale authorization reverted and the side effect occurred only after fresh authorization.
+- Contract access control: npm run test:guard passed; non-executor calls, stale state and value mismatch were rejected.
+- anna-app validate --strict: passed from the anna/ directory.
+- Windows Executa rebuilt from source and smoke-tested: describe handshake in 0.4 s, decision returned, signature present.
+- Node 24 emitted the known ?WS native-binary warning on Windows; Ganache fell back to its JavaScript implementation and both contract tests passed.
+- npm ci reported 36 dependency audit advisories in the existing development toolchain. They were not auto-fixed because forcing a dependency upgrade may change contract test behavior and is outside the Anna app patch.
+
+## Still required before claiming release or approval
+
+1. Run a fresh-install test in a real Anna Cloud Agent using the newly built Executa, including 0xabc, 300 USDC, 600 USDC, a recipient/purpose mismatch, prompt injection, and a Unicode WARN message.
+2. Build and smoke-test Linux x86_64, macOS ARM64 and macOS x86_64 binaries through the release workflow.
+3. Publish the Executa 0.1.9 release assets, update the Anna app candidate, and complete Anna's review.
+4. Verify the public Marketplace listing and test with a non-developer Anna account. No publication, external-user test, or MAU claim is made by this document.
+
+The Anna app remains a preflight policy simulation, not a transaction executor or persistent spend ledger.

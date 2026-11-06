@@ -1,6 +1,7 @@
 """Deterministic effective authority: the intersection of every authority ceiling."""
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .authority_state import AuthoritySnapshot
@@ -42,6 +43,17 @@ def _context_intersection(capability: dict[str, Any], policy: dict[str, Any]) ->
     return result
 
 
+def _finite_decimal(value: Any) -> Decimal | None:
+    """Normalize numeric values crossing JSON boundaries without float comparisons."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return number if number.is_finite() else None
+
+
 def verify_effective_action(action: dict[str, Any], authority: dict[str, Any]) -> tuple[bool, str]:
     """Enforce the signed effective ceiling at the execution boundary."""
     for field in ("action_type", "target", "resource", "network", "asset"):
@@ -58,11 +70,30 @@ def verify_effective_action(action: dict[str, Any], authority: dict[str, Any]) -
                 return False, f"execution context '{key}' outside effective authority"
         elif actual != expected:
             return False, f"execution context '{key}' outside effective authority"
+
     limits = authority.get("per_action_limits", {})
     asset = action.get("asset")
-    amount = action.get("amount")
-    if asset in limits and (amount is None or amount > limits[asset]):
-        return False, "execution amount exceeds effective authority"
+    if asset in limits:
+        raw_amount = action.get("amount")
+        raw_exact = action.get("amount_exact")
+        # ActionIntent signs both the compatibility amount and its exact
+        # decimal form. Refuse missing or divergent representations rather
+        # than accidentally checking one amount while executing another.
+        if (raw_amount is None) != (raw_exact is None):
+            return False, "authorized amount and exact amount do not match"
+        amount = _finite_decimal(raw_exact if raw_exact is not None else raw_amount)
+        compatibility_amount = _finite_decimal(raw_amount)
+        limit = _finite_decimal(limits[asset])
+        if (
+            amount is None
+            or compatibility_amount is None
+            or limit is None
+            or amount < 0
+            or limit < 0
+            or amount != compatibility_amount
+            or amount > limit
+        ):
+            return False, "execution amount exceeds effective authority"
     return True, "execution action is within effective authority"
 
 

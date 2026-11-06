@@ -42,3 +42,33 @@ jobs:
 
       - name: Guard access-control test
         run: npm run test:guard
+
+  anna-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          npm install --no-save --no-audit --no-fund jsdom
+
+      - name: Anna CLI strict manifest and Host API validation
+        working-directory: anna
+        run: npx --yes @anna-ai/cli@0.1.59 validate --manifest manifest.json --bundle bundle --strict
+
+      - name: Anna app end-to-end UI test (real app and plugin, scripted LLM)
+        run: node scripts/test_anna_ui.mjs
+
+      - name: Build and smoke-test Linux Anna Executa binary
+        run: |
+          pip install pyinstaller
+          python anna/build_binary.py
+          python anna/smoke_binary.py anna/executas/verigate-authority/dist/verigate-authority "0.1.13"
+          python anna/package_binary.py linux-x86_64 "0.1.13"
