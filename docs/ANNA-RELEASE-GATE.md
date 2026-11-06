@@ -20,6 +20,7 @@ This gate prevents incremental Marketplace uploads. A candidate is not ready mer
 - [ ] Every Decision Receipt is verified before any decision is displayed, including fresh decisions returned during execution authorization.
 - [ ] Every Execution Authorization is signature-verified, unexpired, and bound to the exact agent, action, target, amount, asset, network and resource shown in the UI.
 - [ ] Missing keys, malformed responses, invalid signatures and unexpected response envelopes fail closed without displaying a decision or permission.
+- [ ] Issuer private keys are stored with POSIX mode 0600 inside a mode-0700 app data directory; legacy permissions are tightened and symlinked key paths are rejected.
 
 ## 3. Execution boundary
 
