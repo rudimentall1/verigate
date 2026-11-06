@@ -4,18 +4,18 @@
 
 - Candidate: Anna App **0.1.13**, bundled Executa **0.1.12**.
 - Branch: `integrate/anna-0.1.9-mainline`; PR #16 remains open. No merge to `main`.
-- Verified source head: `6b237609bc82f7993b2e68e84d5fc2be490f1587`.
-- GitHub Actions run **#549** is green on that exact head:
+- Verified source head: `a248402ee8431848faf9fde047247ae7f4031011`.
+- GitHub Actions run **#556** is green on that exact source head:
   - 509 Python tests passed.
   - Contract and ExecutionRouter suites passed.
   - Official `@anna-ai/cli@0.1.59 validate --strict` passed.
   - Anna UI end-to-end: **28/28 passed**, including in-App dialog cancellation, duplicate-click protection and direct-call denial with and without App context.
-  - Linux PyInstaller binary built and smoke-tested; the smoke test covered App-scope approval, wallet hand-off and replay rejection.
+  - Linux PyInstaller binary built and smoke-tested; App-scope approval and wallet hand-off were consumed once, and replay was rejected.
   - Linux `0.1.12` archive verified; archive root contains `manifest.json` and `verigate-authority`.
-- Four-platform release is still pending: Windows and both macOS targets have not yet been built.
+- The four-platform build workflow is now artifact-only by default; creating a GitHub Release requires an explicit opt-in. Windows and both macOS targets remain unbuilt.
 - Nothing has been uploaded to Anna Dashboard. No Marketplace publish/review and no wallet transaction have occurred.
 
-Next: run the existing multi-platform `workflow_dispatch` on this branch with version `0.1.12`; then perform one consolidated real Anna acceptance pass. Do not merge or publish to the Marketplace as part of this gate.
+Next: run the multi-platform build with GitHub Release publishing disabled, verify all four artifacts, then perform one consolidated real Anna acceptance pass. Do not merge or publish to the Marketplace as part of this gate.
 
 This gate prevents incremental Marketplace uploads. A candidate is not ready merely because the Python unit suite or the UI mock passes.
 
