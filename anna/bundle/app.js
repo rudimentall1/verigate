@@ -695,9 +695,16 @@ function requestUserConfirmation({ title, message, confirmLabel = "Confirm" }) {
 }
 
 
+function errorDetail(error) {
+  if (typeof error === "string") return error;
+  const code = error?.code ?? error?.data?.code;
+  const message = error?.message || error?.data?.message || String(error || "Unknown host error");
+  return (code !== undefined ? "[" + code + "] " : "") + message;
+}
+
 async function storeAppApproval(kind, fields) {
   if (!state.anna?.storage?.set) {
-    throw new Error("Anna App storage is unavailable. No execution permission was issued.");
+    throw new Error("Anna App Persistent Storage is unavailable (storage.set is not exposed). No execution permission was issued.");
   }
   const nonceBytes = new Uint8Array(24);
   window.crypto.getRandomValues(nonceBytes);
@@ -711,12 +718,17 @@ async function storeAppApproval(kind, fields) {
     created_at_ms: createdAtMs,
     expires_at_ms: createdAtMs + 60_000
   };
-  await state.anna.storage.set({
-    scope: "app",
-    key: "verigate/approvals/" + nonce,
-    value: approval,
-    ttl_seconds: 60
-  });
+  try {
+    await state.anna.storage.set({
+      scope: "app",
+      key: "verigate/approvals/" + nonce,
+      value: approval,
+      ttl_seconds: 60
+    });
+  } catch (error) {
+    throw new Error("Anna Persistent Storage could not save the one-time App approval: " + errorDetail(error) +
+      ". Check that App-scope storage access is granted and that storage quota is available. No execution permission was issued.");
+  }
   return { nonce, approval };
 }
 
@@ -774,14 +786,24 @@ async function prepareExecutionAuthorization() {
       confirmation_nonce: confirmationNonce
     };
     if (state.lastFlags.length) args.ai_flags_json = JSON.stringify(state.lastFlags);
-    const response = await state.anna.tools.invoke({
-      tool_id: TOOL_ID,
-      method: "verigate_authorize_payment",
-      args
-    });
+    let response;
+    try {
+      response = await state.anna.tools.invoke({
+        tool_id: TOOL_ID,
+        method: "verigate_authorize_payment",
+        args
+      });
+    } catch (error) {
+      throw new Error("Anna could not invoke Verigate's authorization tool: " + errorDetail(error) +
+        ". Check the Anna session, Executa availability and remaining usage quota. No execution permission was issued.");
+    }
     const outer = unwrapToolResult(response);
     if (outer?.success !== true || !outer?.data) {
-      throw new Error(outer?.error || "Verigate could not issue execution authority.");
+      const detail = outer?.error
+        ? errorDetail(outer.error)
+        : "Unexpected response envelope (" + (outer && typeof outer === "object" ? Object.keys(outer).join(", ") || "empty object" : typeof outer) + ")";
+      throw new Error("Verigate authorization tool did not return a successful result: " + detail +
+        ". No execution permission was issued.");
     }
     const data = outer.data;
     const receipt = data.decision_receipt;
