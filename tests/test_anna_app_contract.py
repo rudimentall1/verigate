@@ -50,7 +50,7 @@ class AnnaAppContractTest(unittest.TestCase):
 
     def test_binary_workflow_default_tracks_executa_version_and_entrypoint(self):
         workflow = (ROOT / ".github" / "workflows" / "anna-executa-binaries.yml").read_text(encoding="utf-8")
-        match = re.search(r'default:\\s*["\']([^"\']+)["\']', workflow)
+        match = re.search(r'default:\s*["\']([^"\']+)["\']', workflow)
         self.assertIsNotNone(match, "binary workflow must declare a version default")
         self.assertEqual(match.group(1), EXECUTA["version"])
         build = (ANNA / "build_binary.py").read_text(encoding="utf-8")
