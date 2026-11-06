@@ -92,7 +92,7 @@ Execution Authorization is not unlocked by a client-supplied `human_confirmed` b
 
 The App declares `aps.scope.app.read` and `aps.scope.app.write` at the App and Executa capability layers; the iframe receives only `anna.storage.set`. The user must grant the bundled Executa's Persistent Storage permission in Anna. The approval record contains no wallet key and expires after 60 seconds.
 
-## Connected-wallet execution (App 0.1.13 candidate / Executa 0.1.11)
+## Connected-wallet execution (App 0.1.13 candidate / Executa 0.1.12)
 
 For native USDC on Base and Ethereum, the Executa constructs the ERC-20 transfer(address,uint256)
 calldata from the policy-checked recipient and amount and places that transaction envelope inside
