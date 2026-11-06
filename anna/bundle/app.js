@@ -256,20 +256,34 @@ function extractDecisionEnvelope(toolResponse) {
 
 
 function unwrapToolResult(response) {
-  // Anna host/tool adapters may add more than one result/data envelope.
-  // Unwrap only recognizable transport wrappers; never alter the receipt.
+  // Anna host/tool adapters may wrap Executa output in result/data envelopes
+  // or MCP-style content text. Decode only valid JSON objects; leave receipts
+  // and unknown payloads untouched.
   let current = response;
-  for (let depth = 0; depth < 4; depth += 1) {
-    if (current && typeof current === "object" &&
-        current.result && typeof current.result === "object") {
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (!current || typeof current !== "object") break;
+    if (current.result && typeof current.result === "object") {
       current = current.result;
       continue;
     }
-    if (current && typeof current === "object" &&
-        current.data && typeof current.data === "object" &&
+    if (current.data && typeof current.data === "object" &&
         (typeof current.data.success === "boolean" || current.data.error)) {
       current = current.data;
       continue;
+    }
+    if (Array.isArray(current.content)) {
+      const textBlock = current.content.find((item) =>
+        item && typeof item.text === "string"
+      );
+      if (textBlock) {
+        try {
+          const parsed = JSON.parse(textBlock.text);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            current = parsed;
+            continue;
+          }
+        } catch { /* preserve non-JSON content for the caller */ }
+      }
     }
     break;
   }
