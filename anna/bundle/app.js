@@ -639,49 +639,53 @@ async function checkAuthority() {
 }
 
 function requestUserConfirmation({ title, message, confirmLabel = "Confirm" }) {
-  const dialog = $("approval-dialog");
+  // Use an ordinary in-app overlay instead of the native <dialog> API. Some
+  // embedded WebViews do not implement showModal() consistently.
+  const overlay = $("approval-overlay");
   const heading = $("approval-title");
   const body = $("approval-message");
   const accept = $("approval-accept");
   const cancel = $("approval-cancel");
-  if (!dialog || !heading || !body || !accept || !cancel) {
-    return Promise.reject(new Error("The in-app confirmation dialog is unavailable. No permission was issued."));
+  if (!overlay || !heading || !body || !accept || !cancel) {
+    return Promise.reject(new Error("The in-app confirmation UI is unavailable. No permission was issued."));
   }
 
   heading.textContent = title;
   body.textContent = message;
   accept.textContent = confirmLabel;
+  const previousFocus = document.activeElement;
 
   return new Promise((resolve) => {
     let settled = false;
     const finish = (approved) => {
       if (settled) return;
       settled = true;
-      dialog.removeEventListener("cancel", onCancel);
       accept.removeEventListener("click", onAccept);
-      cancel.removeEventListener("click", onCancelClick);
-      if (typeof dialog.close === "function" && dialog.open) dialog.close();
-      else dialog.removeAttribute("open");
+      cancel.removeEventListener("click", onCancel);
+      overlay.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onKeyDown);
+      overlay.hidden = true;
+      if (previousFocus && typeof previousFocus.focus === "function") previousFocus.focus();
       resolve(approved);
     };
     const onAccept = () => finish(true);
-    const onCancelClick = () => finish(false);
-    const onCancel = (event) => {
-      event.preventDefault();
-      finish(false);
+    const onCancel = () => finish(false);
+    const onBackdrop = (event) => {
+      if (event.target === overlay) finish(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(false);
+      }
     };
 
     accept.addEventListener("click", onAccept);
-    cancel.addEventListener("click", onCancelClick);
-    dialog.addEventListener("cancel", onCancel);
-    try {
-      if (typeof dialog.showModal === "function") dialog.showModal();
-      else dialog.setAttribute("open", "");
-      cancel.focus();
-    } catch (error) {
-      finish(false);
-      showError("The in-app confirmation could not be opened. No permission was issued.");
-    }
+    cancel.addEventListener("click", onCancel);
+    overlay.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onKeyDown);
+    overlay.hidden = false;
+    accept.focus();
   });
 }
 
