@@ -1,4 +1,4 @@
-"""The Anna Executa `describe` manifest must match protocol 1.1.
+"""The Anna Executa must expose a valid describe manifest and negotiate protocol 2.0 for APS.
 
 Anna rejected v0.1.1 with "describe handshake failed" because `parameters` was a
 JSON Schema object instead of a list and the manifest had no `description`.
@@ -46,6 +46,27 @@ class ExecutaManifestTest(unittest.TestCase):
         self.assertEqual([p["name"] for p in tool["parameters"]], ["agent_id", "payee", "asset"])
         self.assertTrue(all(p["required"] is False for p in tool["parameters"]))
 
+    def test_app_scope_capabilities_and_nonce_approval_are_declared(self):
+        manifest = self.plugin.MANIFEST
+        self.assertIn("aps.scope.app.read", manifest["host_capabilities"])
+        self.assertIn("aps.scope.app.write", manifest["host_capabilities"])
+        tool = next(t for t in manifest["tools"] if t["name"] == "verigate_authorize_payment")
+        params = {p["name"]: p for p in tool["parameters"]}
+        self.assertTrue(params["confirmation_nonce"]["required"])
+        self.assertNotIn("human_confirmed", params)
+
+    def test_initialize_negotiates_v2_storage(self):
+        result = self.plugin.handle({"method": "initialize", "params": {}})
+        self.assertEqual(result["protocolVersion"], "2.0")
+        self.assertTrue(result["capabilities"]["storage"]["kv"])
+
+    def test_sync_tool_dispatch_cannot_issue_execution_authority(self):
+        with self.assertRaises(self.plugin.RpcError):
+            self.plugin.handle({"method": "invoke", "params": {
+                "tool": "verigate_authorize_payment",
+                "arguments": {"human_confirmed": True},
+            }})
+
     def test_version_matches_executa_json(self):
         executa = json.loads((PLUGIN.parent / "executa.json").read_text(encoding="utf-8"))
         self.assertEqual(self.plugin.MANIFEST["version"], executa["version"])
@@ -66,15 +87,16 @@ class ExecutaManifestTest(unittest.TestCase):
     def test_plugin_process_answers_describe_and_survives_bad_input(self):
         proc = subprocess.run(
             [sys.executable, str(PLUGIN)],
-            input='{"jsonrpc":"2.0","id":1,"method":"describe"}\nnot json\n{"jsonrpc":"2.0","id":2,"method":"health"}\n',
+            input='{"jsonrpc":"2.0","id":0,"method":"initialize"}\n{"jsonrpc":"2.0","id":1,"method":"describe"}\nnot json\n{"jsonrpc":"2.0","id":2,"method":"health"}\n',
             text=True, capture_output=True, timeout=60,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         frames = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
-        self.assertEqual(len(frames), 3)
-        self.assertIn("result", frames[0])
-        self.assertEqual(frames[1]["error"]["code"], -32700)
-        self.assertEqual(frames[2]["result"]["status"], "ready")
+        self.assertEqual(len(frames), 4)
+        self.assertEqual(frames[0]["result"]["protocolVersion"], "2.0")
+        self.assertIn("result", frames[1])
+        self.assertEqual(frames[2]["error"]["code"], -32700)
+        self.assertEqual(frames[3]["result"]["status"], "ready")
 
 
 if __name__ == "__main__":
