@@ -79,6 +79,8 @@ class AnnaAppContractTest(unittest.TestCase):
         self.assertIn("push:\n    branches:\n      - integrate/anna-0.1.9-mainline", workflow)
         self.assertIn("if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}", workflow)
         self.assertIn("permissions:\n  contents: read", workflow)
+        smoke = (ANNA / "smoke_binary.py").read_text(encoding="utf-8")
+        self.assertIn('encoding="utf-8", errors="replace"', smoke)
         build = (ANNA / "build_binary.py").read_text(encoding="utf-8")
         binary_name = re.search(r'"--name",\s*"([^"]+)"', build)
         self.assertIsNotNone(binary_name, "binary builder must name its output")
