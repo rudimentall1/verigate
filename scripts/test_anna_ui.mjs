@@ -187,7 +187,10 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
         throw new Error("execution confirmation does not show the exact payment details");
       }
       $("approval-accept").click();
-      for (let i = 0; i < 400; i++) { await sleep(25); if (!$("execution-btn").disabled) break; }
+      for (let i = 0; i < 400; i++) {
+        await sleep(25);
+        if ($("execution-json").textContent || $("error").style.display === "block") break;
+      }
       await sleep(30);
     },
     async clickWallet() {
