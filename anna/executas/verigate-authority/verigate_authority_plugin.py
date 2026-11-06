@@ -734,6 +734,26 @@ def _verigate_verify_decision_receipt(args: dict) -> dict:
     }
 
 
+def handle(request: dict):
+    method = request.get("method")
+    params = request.get("params") or {}
+    if method == "initialize":
+        return {
+            "protocolVersion": PROTOCOL_VERSION_V2,
+            "serverInfo": {"name": MANIFEST["display_name"], "version": MANIFEST["version"]},
+            "capabilities": {"storage": {"kv": True}},
+        }
+    if method == "describe":
+        return MANIFEST
+    if method == "health":
+        return {"status": "ready", "message": "", "details": {}}
+    if method == "invoke":
+        if not isinstance(params, dict) or "tool" not in params:
+            raise RpcError(-32602, "invoke requires params.tool")
+        return invoke(params["tool"], params.get("arguments") or {})
+    raise RpcError(-32601, f"Unknown method: {method}")
+
+
 def invoke(tool: str, args: dict) -> dict:
     if tool == "verigate_authorize_payment":
         raise RpcError(-32603, "authorization must run through the async App-context approval gate")
