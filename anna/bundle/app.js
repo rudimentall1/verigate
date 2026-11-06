@@ -609,14 +609,40 @@ async function prepareExecutionAuthorization() {
 
   setBusy(true, "Verigate is rechecking policy and issuing a one-time permission?");
   try {
+    const nonceBytes = new Uint8Array(24);
+    window.crypto.getRandomValues(nonceBytes);
+    const confirmationNonce = Array.from(nonceBytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const createdAtMs = Date.now();
+    const approval = {
+      version: 1,
+      nonce: confirmationNonce,
+      agent_id: String(v.agent_id).trim(),
+      payee: String(v.payee).trim(),
+      asset: String(v.asset).trim().toUpperCase(),
+      network: String(v.network).trim().toLowerCase(),
+      amount: Number(v.amount),
+      resource: String(v.resource || "").trim(),
+      created_at_ms: createdAtMs,
+      expires_at_ms: createdAtMs + 60_000
+    };
+    const approvalKey = "verigate/approvals/" + confirmationNonce;
+    if (!state.anna.storage?.set) {
+      throw new Error("Anna App storage is unavailable. No execution permission was issued.");
+    }
+    await state.anna.storage.set({
+      scope: "app",
+      key: approvalKey,
+      value: approval,
+      ttl_seconds: 60
+    });
     const args = {
-      agent_id: v.agent_id,
-      payee: v.payee,
-      asset: v.asset.toUpperCase(),
-      network: v.network.toLowerCase(),
-      amount: v.amount,
-      resource: v.resource,
-      human_confirmed: true
+      agent_id: approval.agent_id,
+      payee: approval.payee,
+      asset: approval.asset,
+      network: approval.network,
+      amount: approval.amount,
+      resource: approval.resource,
+      confirmation_nonce: confirmationNonce
     };
     if (state.lastFlags.length) args.ai_flags_json = JSON.stringify(state.lastFlags);
     const response = await state.anna.tools.invoke({
