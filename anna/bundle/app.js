@@ -675,12 +675,21 @@ function requestUserConfirmation({ title, message, confirmLabel = "Confirm" }) {
     cancel.addEventListener("click", onCancelClick);
     dialog.addEventListener("cancel", onCancel);
     try {
-      if (typeof dialog.showModal === "function") dialog.showModal();
-      else dialog.setAttribute("open", "");
+      if (typeof dialog.showModal === "function") {
+        try {
+          dialog.showModal();
+        } catch {
+          // Some embedded webviews expose showModal() but do not support modal
+          // dialogs. Keep the same explicit in-app confirmation, non-modally.
+          dialog.setAttribute("open", "");
+        }
+      } else {
+        dialog.setAttribute("open", "");
+      }
       cancel.focus();
     } catch (error) {
       finish(false);
-      showError("The in-app confirmation could not be opened. No permission was issued.");
+      showError("The in-app confirmation could not be opened. No permission was issued: " + (error?.message || String(error)));
     }
   });
 }
