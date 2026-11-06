@@ -42,6 +42,16 @@ class AnnaAppContractTest(unittest.TestCase):
         self.assertTrue(invoked, "frontend must invoke at least one Verigate tool")
         self.assertEqual(invoked - described, set(), "frontend invokes methods absent from Executa describe")
 
+    def test_app_scoped_confirmation_storage_is_declared_end_to_end(self):
+        expected = {"aps.scope.app.read", "aps.scope.app.write"}
+        self.assertTrue(expected.issubset(set(APP_MANIFEST.get("host_capabilities", []))))
+        self.assertTrue(expected.issubset(set(PLUGIN.MANIFEST.get("host_capabilities", []))))
+        self.assertEqual(APP_MANIFEST.get("ui", {}).get("host_api", {}).get("storage"), ["set"])
+        source = (ANNA / "bundle" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("state.anna.storage.set", source)
+        self.assertIn("confirmation_nonce", source)
+        self.assertNotIn("human_confirmed: true", source)
+
     def test_tool_identity_and_version_are_consistent(self):
         self.assertEqual(EXECUTA["slug"], "verigate-authority")
         self.assertEqual(EXECUTA["tool_id"], "tool-dev-verigate-authority")
