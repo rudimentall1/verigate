@@ -78,7 +78,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/integrate/anna-0.1.9-mainline') || (github.event_name == 'workflow_dispatch' && inputs.publish_release) }}
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -96,11 +96,28 @@ jobs:
           pattern: verigate-authority-*
           merge-multiple: true
 
-      - name: Publish GitHub Release
+      - name: Create or refresh candidate GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.12' }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          gh release create "anna-verigate-authority-v${VERSION}" release-assets/* \
-            --title "Verigate Authority Executa v${VERSION}" \
-            --generate-notes
+          TAG="anna-verigate-authority-v${VERSION}"
+          TITLE="Verigate Authority Executa v${VERSION}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            IS_DRAFT="$(gh release view "$TAG" --json isDraft --jq '.isDraft')"
+            if [[ "$EVENT_NAME" == "push" && "$IS_DRAFT" == "true" ]]; then
+              gh release upload "$TAG" release-assets/* --clobber
+              gh release edit "$TAG" --title "$TITLE"
+            else
+              echo "Refusing to overwrite an existing published release: $TAG" >&2
+              exit 1
+            fi
+          elif [[ "$EVENT_NAME" == "push" ]]; then
+            gh release create "$TAG" release-assets/* \
+              --title "$TITLE" --generate-notes --draft
+          else
+            gh release create "$TAG" release-assets/* \
+              --title "$TITLE" --generate-notes
+          fi
