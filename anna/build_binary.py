@@ -28,6 +28,8 @@ def main() -> None:
         "--console",
         "--name", "verigate-authority",
         "--paths", str(ROOT),
+        "--paths", str(ENTRY.parent),
+        "--collect-submodules", "executa_sdk",
         "--collect-submodules", "core",
         "--collect-submodules", "attest",
         "--add-data", f"{ROOT / 'policies' / 'default.yaml'}{separator}policies",
