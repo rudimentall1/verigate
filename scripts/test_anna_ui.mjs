@@ -37,7 +37,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, tamperSignature = false, wrapVerificationResponse = false, description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, tamperSignature = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   const calls = { tools: [], llm: 0, toolArgs: {} };
@@ -63,8 +63,10 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
           const receipt = data?.decision_receipt ?? data?.receipt;
           if (receipt) receipt.signature = "AA" + String(receipt.signature || "").slice(2);
         }
-        if (method === "verigate_verify_decision_receipt" && wrapVerificationResponse) {
-          return { result: { result } };
+        if (method === "verigate_verify_decision_receipt") {
+          if (verificationResponseShape === "direct") return result;
+          if (verificationResponseShape === "double") return { result: { result } };
+          if (verificationResponseShape === "nested_data") return { result: { data: result } };
         }
         return { result };
       },
@@ -191,11 +193,13 @@ await test("wallet network drift after consumption prevents submission", async (
   ok(ui.text("execution-status").includes("network changed"), "network drift is disclosed");
 });
 
-await test("nested Anna tool response envelopes are unwrapped before receipt verification", async () => {
-  const ui = await launch({ wrapVerificationResponse: true });
-  await ui.click();
-  eq(ui.text("decision"), "ALLOW");
-  ok(ui.text("proof").includes("Ed25519 signature verified"), "nested result still requires a verified signature");
+await test("Anna tool response envelopes are unwrapped without weakening receipt verification", async () => {
+  for (const shape of ["direct", "single", "double", "nested_data"]) {
+    const ui = await launch({ verificationResponseShape: shape });
+    await ui.click();
+    eq(ui.text("decision"), "ALLOW", shape + " response envelope");
+    ok(ui.text("proof").includes("Ed25519 signature verified"), shape + " still requires a verified signature");
+  }
 });
 
 await test("tampered receipt is rejected before any decision is displayed", async () => {
