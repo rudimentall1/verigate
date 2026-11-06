@@ -121,6 +121,18 @@ The current payment intake uses one bounded `llm.complete` call per explicit che
 - [x] Host Upload is not used as a substitute for durable storage. This app currently creates no user-facing report/document files; APS Files is the appropriate Anna API to evaluate for durable Executa state. That separate database/key persistence integration has not yet been implemented and remains blocked below.
 - [ ] Verify the user's real APS storage grant and the full App-write → Executa-read → ETag-delete flow on Anna Cloud Agent.
 
+### Persistence architecture decision — no unsafe SQLite snapshot shortcut
+
+The APS guide distinguishes KV (small JSON state) from Files (durable objects). It does not provide a transactional database API or conditional atomic replacement of a multi-table SQLite database. A naive pattern of downloading a SQLite file, mutating it locally, uploading it, and updating a KV pointer with ETag is not sufficient: concurrent Executa invocations can start from the same generation, and a CAS conflict after a local authorization/accounting transaction does not automatically roll back or merge that transaction. WAL sidecars and crash consistency add another failure mode.
+
+Therefore:
+- Do not mirror the live SQLite file to APS Files after each tool call and call that durable accounting.
+- Do not put the SQLite database or issuer private key into the App's shared scope merely to make a persistence test pass.
+- APS KV may hold small private metadata; APS Files may hold immutable snapshots or exports, but neither is currently an adequate replacement for the atomic transaction semantics used by `core.storage.Storage`.
+- The safe production path is a durable transactional database with per-user/tool isolation and atomic nonce/accounting operations, or an Anna-supported persistent transactional volume with documented single-writer guarantees. The adapter must commit the database transaction before returning a signed authorization, and must preserve replay records and issuer-key identity across restarts.
+
+Infrastructure check on 2026-11-06: the connected Render workspace has one free web service (`verigate-portaldot-explorer`) and no Postgres instances. No database or paid resource was created. Do not provision paid infrastructure without the user's explicit approval.
+
 ### Persistence durability — BLOCKED pending real Cloud Agent restart test
 
 The policy/accounting database (`verigate.db`) and Ed25519 issuer keypair (`issuer.key` / `issuer.pub`) are currently kept in a local data directory. The resolver tries the directory beside the Executa binary, then `~/.verigate-authority`, then the system temporary directory. They are not currently stored through APS.
