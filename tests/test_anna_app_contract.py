@@ -54,7 +54,7 @@ class AnnaAppContractTest(unittest.TestCase):
         self.assertIsNotNone(match, "binary workflow must declare a version default")
         self.assertEqual(match.group(1), EXECUTA["version"])
         build = (ANNA / "build_binary.py").read_text(encoding="utf-8")
-        binary_name = re.search(r'"--name",\\s*"([^"]+)"', build)
+        binary_name = re.search(r'"--name",\s*"([^"]+)"', build)
         self.assertIsNotNone(binary_name, "binary builder must name its output")
         for platform, artifact in EXECUTA["distribution"]["profiles"]["binary"]["binary_artifacts"].items():
             expected = binary_name.group(1) + (".exe" if platform == "windows-x86_64" else "")
