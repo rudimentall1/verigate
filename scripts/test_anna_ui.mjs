@@ -162,6 +162,7 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
       },
     },
   };
+  window.confirm = () => { throw new Error("browser modal dialogs are not available in the sandboxed Anna UI"); };
   window.__TEST_RUNTIME__ = { connect: async () => { if (connectFails) throw new Error("no host"); return anna; } };
   window.eval(appSource);
   await sleep(30);
@@ -177,11 +178,23 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
     },
     async clickExecution() {
       $("execution-btn").click();
+      for (let i = 0; i < 200; i++) {
+        if ($("approval-dialog").hasAttribute("open")) break;
+        await sleep(10);
+      }
+      if (!$("approval-dialog").hasAttribute("open")) throw new Error("in-app execution confirmation did not open");
+      $("approval-accept").click();
       for (let i = 0; i < 400; i++) { await sleep(25); if (!$("execution-btn").disabled) break; }
       await sleep(30);
     },
     async clickWallet() {
       $("wallet-execute-btn").click();
+      for (let i = 0; i < 200; i++) {
+        if ($("approval-dialog").hasAttribute("open")) break;
+        await sleep(10);
+      }
+      if (!$("approval-dialog").hasAttribute("open")) throw new Error("in-app wallet confirmation did not open");
+      $("approval-accept").click();
       for (let i = 0; i < 400; i++) {
         await sleep(25);
         if (/Transaction hash|consumed, but wallet/i.test($("execution-status").textContent)) break;
@@ -220,7 +233,6 @@ await test("valid request: AI reads it, Verigate allows, limits table is shown",
 
 await test("one-time execution permission is issued only after a separate user click", async () => {
   const ui = await launch({});
-  ui.window.confirm = () => true;
   await ui.click();
   eq(ui.text("decision"), "ALLOW");
   ok(ui.shown("execution-panel"), "permission action is offered for ALLOW");
@@ -242,7 +254,6 @@ await test("one-time execution permission is issued only after a separate user c
 
 await test("fresh authorization decision receipt is verified before WARN/BLOCK can be displayed", async () => {
   const ui = await launch({ tamperAuthorizationDecision: true });
-  ui.window.confirm = () => true;
   await ui.click();
   eq(ui.text("decision"), "ALLOW");
   await ui.clickExecution();
@@ -253,7 +264,6 @@ await test("fresh authorization decision receipt is verified before WARN/BLOCK c
 
 await test("execution authorization must bind the exact checked payment", async () => {
   const ui = await launch({ tamperExecutionVerificationAction: true });
-  ui.window.confirm = () => true;
   await ui.click();
   await ui.clickExecution();
   eq(ui.text("execution-json"), "", "mismatched authorization is not displayed");
@@ -307,7 +317,6 @@ await test("direct chat invocation cannot bypass App UI confirmation or consume 
 await test("wallet hand-off consumes through ExecutionRouter before exact USDC send", async () => {
   const ui = await launch({});
   const walletCalls = [];
-  ui.window.confirm = () => true;
   ui.window.ethereum = {
     request: async ({ method, params }) => {
       walletCalls.push({ method, params });
@@ -338,7 +347,6 @@ await test("wallet network drift after consumption prevents submission", async (
   const ui = await launch({});
   const walletCalls = [];
   let chainReads = 0;
-  ui.window.confirm = () => true;
   ui.window.ethereum = {
     request: async ({ method, params }) => {
       walletCalls.push({ method, params });
