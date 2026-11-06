@@ -255,21 +255,46 @@ function extractDecisionEnvelope(toolResponse) {
 }
 
 
+function unwrapToolResult(response) {
+  // Anna host/tool adapters may add more than one result/data envelope.
+  // Unwrap only recognizable transport wrappers; never alter the receipt.
+  let current = response;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (current && typeof current === "object" &&
+        current.result && typeof current.result === "object") {
+      current = current.result;
+      continue;
+    }
+    if (current && typeof current === "object" &&
+        current.data && typeof current.data === "object" &&
+        (typeof current.data.success === "boolean" || current.data.error)) {
+      current = current.data;
+      continue;
+    }
+    break;
+  }
+  return current;
+}
+
 async function verifyDecisionReceipt(receipt) {
   const response = await state.anna.tools.invoke({
     tool_id: TOOL_ID,
     method: "verigate_verify_decision_receipt",
     args: { receipt_json: JSON.stringify(receipt) }
   });
-  const outer = response?.result ?? response;
-  const data = outer?.data;
+  const outer = unwrapToolResult(response);
+  const data = outer?.data ?? outer;
+  const errorMessage = typeof outer?.error === "string"
+    ? outer.error
+    : outer?.error?.message;
   if (outer?.success !== true || !data || data.verified !== true ||
       data.algorithm !== "Ed25519" ||
       typeof data.key_fingerprint_sha256 !== "string" ||
       !/^[0-9a-f]{64}$/i.test(data.key_fingerprint_sha256) ||
       typeof data.public_key_pem !== "string" ||
       !data.public_key_pem.includes("BEGIN PUBLIC KEY")) {
-    const reason = data?.reason || outer?.error || "verification did not succeed";
+    const reason = data?.reason || errorMessage ||
+      "Anna Executa returned an unexpected verification response";
     throw new Error("Decision receipt signature verification failed: " + reason + ". No decision is displayed.");
   }
   return data;
