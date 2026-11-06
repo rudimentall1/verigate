@@ -112,9 +112,14 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, showModalThrows = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
+  if (showModalThrows) {
+    window.document.getElementById("approval-dialog").showModal = () => {
+      throw new Error("modal dialogs are unsupported in this embedded webview");
+    };
+  }
   const appStorage = new Map();
   const calls = { tools: [], llm: 0, toolArgs: {}, storage: [] };
   const anna = {
@@ -259,6 +264,17 @@ await test("one-time execution permission is issued only after a separate user c
   ok(ui.text("execution-json").includes("authorization_id"), "signed permission displayed; error=" + ui.text("error") + "; status=" + ui.text("execution-status") + "; tools=" + JSON.stringify(ui.calls.tools));
   ok(ui.text("execution-status").includes("Not consumed"), "permission is not represented as a sent transaction");
   ok(ui.text("status").includes("No funds were sent"), "status is explicit");
+});
+
+await test("embedded webview showModal failure falls back to explicit non-modal confirmation", async () => {
+  const ui = await launch({ showModalThrows: true });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  await ui.clickExecution();
+  ok(ui.calls.tools.includes("verigate_authorize_payment"), "explicit confirmation still reaches authorization");
+  eq(ui.calls.storage.length, 1, "approval is stored only after user confirmation");
+  ok(ui.text("execution-json").includes("authorization_id"), "verified one-time permission is returned");
+  ok(!ui.shown("error"), "modal fallback does not surface a false failure");
 });
 
 await test("repeated permission clicks cannot create duplicate approvals", async () => {
