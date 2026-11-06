@@ -1,3 +1,4 @@
+# Derived from Anna's anna-executa-examples SDK (Copyright (c) 2026 Anna); MIT license in LICENSE.
 """Invoke context — gives plugin tools a typed view of the per-call
 ``params.context`` payload sent by the host Agent.
 
