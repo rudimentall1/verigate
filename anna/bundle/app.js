@@ -676,9 +676,9 @@ async function prepareExecutionAuthorization() {
   const confirmed = await requestUserConfirmation({
     title: "Confirm one-time permission",
     message:
-      v.amount + " " + v.asset + " on " + v.network + "\\nRecipient: " + v.payee +
-      "\\nPurpose: " + (v.resource || "not specified") +
-      "\\n\\nThis does NOT send funds. It creates a one-time permission for a separate wallet or executor.",
+      v.amount + " " + v.asset + " on " + v.network + "\nRecipient: " + v.payee +
+      "\nPurpose: " + (v.resource || "not specified") +
+      "\n\nThis does NOT send funds. It creates a one-time permission for a separate wallet or executor.",
     confirmLabel: "Create permission"
   });
   if (!confirmed) return;
@@ -836,9 +836,9 @@ async function executeWithConnectedWallet() {
     const confirmWallet = await requestUserConfirmation({
       title: "Confirm wallet submission",
       message:
-        values.amount + " USDC on " + network + "\\nRecipient: " + values.payee +
-        "\\nWallet: " + from +
-        "\\n\\nVerigate will consume the one-time permission first. Your wallet will then show this exact transaction for signing. Network fees may apply.",
+        values.amount + " USDC on " + network + "\nRecipient: " + values.payee +
+        "\nWallet: " + from +
+        "\n\nVerigate will consume the one-time permission first. Your wallet will then show this exact transaction for signing. Network fees may apply.",
       confirmLabel: "Continue to wallet"
     });
     if (!confirmWallet) return;
