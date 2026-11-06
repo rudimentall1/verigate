@@ -379,6 +379,8 @@ async function loadLimits(values) {
     const data = outer?.data;
     return outer?.success === true && data && typeof data === "object" ? data : null;
   } catch (error) {
+    // Preserve an auth/quota error already normalized from a returned tool envelope.
+    if (String(error?.message || "").startsWith("Anna policy-summary request failed:")) throw error;
     const code = error?.code ?? error?.data?.code ?? error?.status ?? error?.response?.status ?? error?.data?.status;
     const authOrQuota = Number(code) === 401 || Number(code) === 403 ||
       [-32001, -32002, -32006, -32007].includes(Number(code));
