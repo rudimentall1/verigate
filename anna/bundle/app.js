@@ -673,17 +673,28 @@ async function prepareExecutionAuthorization() {
     return;
   }
   const v = state.lastValues;
-  const confirmed = await requestUserConfirmation({
-    title: "Confirm one-time permission",
-    message:
-      v.amount + " " + v.asset + " on " + v.network + "\nRecipient: " + v.payee +
-      "\nPurpose: " + (v.resource || "not specified") +
-      "\n\nThis does NOT send funds. It creates a one-time permission for a separate wallet or executor.",
-    confirmLabel: "Create permission"
-  });
-  if (!confirmed) return;
+  setBusy(true, "Waiting for confirmation to create a one-time permission…");
+  let confirmed = false;
+  try {
+    confirmed = await requestUserConfirmation({
+      title: "Confirm one-time permission",
+      message:
+        v.amount + " " + v.asset + " on " + v.network + "\nRecipient: " + v.payee +
+        "\nPurpose: " + (v.resource || "not specified") +
+        "\n\nThis does NOT send funds. It creates a one-time permission for a separate wallet or executor.",
+      confirmLabel: "Create permission"
+    });
+  } catch (error) {
+    showError(error?.message || String(error));
+    setBusy(false, "No permission was created.");
+    return;
+  }
+  if (!confirmed) {
+    setBusy(false, "Permission creation was cancelled. No approval was written.");
+    return;
+  }
 
-  setBusy(true, "Verigate is rechecking policy and issuing a one-time permission?");
+  setBusy(true, "Verigate is rechecking policy and issuing a one-time permission…");
   try {
     const { nonce: confirmationNonce, approval } = await storeAppApproval("payment_authorization", {
       agent_id: String(v.agent_id).trim(),
@@ -817,6 +828,7 @@ async function executeWithConnectedWallet() {
 
   let consumed = false;
   try {
+    setBusy(true, "Checking the connected wallet before confirmation…");
     let activeChain = String(await provider.request({ method: "eth_chainId" })).toLowerCase();
     if (activeChain !== networkConfig.chainId) {
       await provider.request({
@@ -841,7 +853,10 @@ async function executeWithConnectedWallet() {
         "\n\nVerigate will consume the one-time permission first. Your wallet will then show this exact transaction for signing. Network fees may apply.",
       confirmLabel: "Continue to wallet"
     });
-    if (!confirmWallet) return;
+    if (!confirmWallet) {
+      setBusy(false, "Wallet submission was cancelled. The permission remains unused.");
+      return;
+    }
 
     setBusy(true, "Verigate is verifying and consuming the one-time permission…");
     const { nonce: confirmationNonce } = await storeAppApproval("wallet_submission", {
