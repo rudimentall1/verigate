@@ -112,7 +112,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows) {
@@ -161,6 +161,9 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
           const error = new Error("Anna session expired during authorization verification");
           error.status = 401;
           throw error;
+        }
+        if (method === "verigate_verify_execution_authorization" && verifyAuthorizationReturnsError) {
+          return { result: { success: false, error: { code: 401, message: "Anna session refresh rejected during verification" } } };
         }
         if (method === "verigate_policy_summary" && policySummaryInvokeFails) {
           const error = new Error("Anna session refresh rejected before policy summary");
@@ -351,6 +354,17 @@ await test("Anna authorization verification refresh failure exposes HTTP status 
   ok(ui.text("error").includes("[401] Anna session expired during authorization verification"), "HTTP status and verification-stage error are preserved");
   eq(ui.text("execution-json"), "", "unverified authorization is never presented");
   ok(!ui.text("status").includes("permission created and verified"), "failed verification is not reported as success");
+});
+
+await test("Anna verification error envelope exposes HTTP status and fails closed", async () => {
+  const ui = await launch({ verifyAuthorizationReturnsError: true });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  await ui.clickExecution();
+  ok(ui.shown("error"), "verification error envelope is visible");
+  ok(ui.text("error").includes("[401] Anna session refresh rejected during verification"), "HTTP status and source message are preserved");
+  eq(ui.text("execution-json"), "", "unverified permission is never presented");
+  ok(!ui.text("status").includes("permission created and verified"), "failure is not reported as success");
 });
 
 await test("repeated permission clicks cannot create duplicate approvals", async () => {
