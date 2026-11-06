@@ -166,3 +166,46 @@ def load_public_key(path: str | Path) -> Ed25519PublicKey:
     if not isinstance(key, Ed25519PublicKey):
         raise ValueError("Key file does not contain an Ed25519 public key")
     return key
+
+
+def ensure_keypair(
+    private_key_path: str | Path,
+    public_key_path: str | Path,
+) -> Ed25519PrivateKey:
+    """Load one stable issuer identity, creating it only when neither file exists.
+
+    A half-present or mismatched pair is corruption, not permission to rotate
+    the issuer identity. Fail closed so old receipts remain verifiable and
+    accounting state cannot silently acquire a new signer.
+    """
+    private_path = Path(private_key_path)
+    public_path = Path(public_key_path)
+    if private_path.resolve() == public_path.resolve():
+        raise ValueError("private and public key paths must be different")
+    if private_path.is_symlink() or public_path.is_symlink():
+        raise PermissionError("issuer key files must not be symbolic links")
+
+    private_exists = private_path.exists()
+    public_exists = public_path.exists()
+    if not private_exists and not public_exists:
+        generate_keypair(private_path, public_path)
+    elif private_exists != public_exists:
+        raise RuntimeError(
+            "incomplete issuer keypair; refusing to generate or rotate issuer identity"
+        )
+
+    private_key = load_private_key(private_path)
+    public_key = load_public_key(public_path)
+    private_raw = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    public_raw = public_key.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    if private_raw != public_raw:
+        raise RuntimeError(
+            "issuer private/public keys do not match; refusing to sign with a changed identity"
+        )
+    return private_key
