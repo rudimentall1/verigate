@@ -63,17 +63,11 @@ jobs:
       - name: Build frozen Executa
         run: python anna/build_binary.py
 
-      - name: Smoke-test binary
-        shell: bash
-        run: |
-          if [ "${{ matrix.target }}" = "windows-x86_64" ]; then
-            python anna/smoke_binary.py anna/executas/verigate-authority/dist/verigate-authority.exe "${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.12' }}"
-          else
-            python anna/smoke_binary.py anna/executas/verigate-authority/dist/verigate-authority "${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.12' }}"
-          fi
-
       - name: Package binary
         run: python anna/package_binary.py "${{ matrix.target }}" "${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.12' }}"
+
+      - name: Smoke-test extracted release package
+        run: python anna/smoke_package.py "${{ matrix.target }}" "${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.12' }}"
 
       - name: Upload release package
         uses: actions/upload-artifact@v4
