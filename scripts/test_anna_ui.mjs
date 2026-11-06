@@ -261,6 +261,26 @@ await test("one-time execution permission is issued only after a separate user c
   ok(ui.text("status").includes("No funds were sent"), "status is explicit");
 });
 
+await test("repeated permission clicks cannot create duplicate approvals", async () => {
+  const ui = await launch({});
+  await ui.click();
+  ui.$("execution-btn").click();
+  for (let i = 0; i < 200; i++) {
+    if (ui.$("approval-dialog").hasAttribute("open")) break;
+    await sleep(10);
+  }
+  ok(ui.$("approval-dialog").hasAttribute("open"), "confirmation opened");
+  ok(ui.$("execution-btn").disabled, "execution control is locked while confirmation is pending");
+  ui.$("execution-btn").click();
+  ui.$("approval-accept").click();
+  for (let i = 0; i < 400; i++) {
+    await sleep(25);
+    if (ui.$("execution-json").textContent || ui.$("error").style.display === "block") break;
+  }
+  eq(ui.calls.storage.length, 1, "only one App approval was written");
+  eq(ui.calls.tools.filter(x => x === "verigate_authorize_payment").length, 1, "only one authorization call ran");
+});
+
 await test("canceling the in-app permission dialog creates no approval", async () => {
   const ui = await launch({});
   await ui.click();
