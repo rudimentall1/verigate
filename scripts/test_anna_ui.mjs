@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 
 const root = process.cwd();
@@ -21,15 +21,90 @@ const VALID = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-ui-"));
 
-function callPlugin(method, args) {
-  const request = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "invoke", params: { tool: method, arguments: args } }) + "\n";
-  const run = spawnSync(PY, [PLUGIN], { input: request, encoding: "utf8", env: { ...process.env, VERIGATE_ANNA_DATA_DIR: dataDir, PYTHONPATH: root } });
-  for (const line of run.stdout.split("\n")) {
-    if (!line.trim().startsWith("{")) continue;
-    const msg = JSON.parse(line);
-    if (msg.id === 1) return msg.error ? { success: false, error: msg.error.message } : msg.result;
-  }
-  throw new Error("plugin gave no response: " + run.stderr.slice(0, 300));
+function callPlugin(method, args, { appStorage = new Map(), appContext = true } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(PY, [PLUGIN], {
+      env: { ...process.env, VERIGATE_ANNA_DATA_DIR: dataDir, PYTHONPATH: root },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let buffer = "";
+    let stderr = "";
+    let settled = false;
+    const send = (frame) => child.stdin.write(JSON.stringify(frame) + "\n");
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+      child.stdin.end();
+    };
+    const respondToHostRequest = (msg) => {
+      const params = msg.params || {};
+      const key = params.key;
+      if (params.scope !== "app" || !appContext) {
+        send({ jsonrpc: "2.0", id: msg.id, error: { code: -32021, message: "app-scoped storage is unavailable outside the owning App context" } });
+        return;
+      }
+      if (msg.method === "storage/get") {
+        const record = appStorage.get(key);
+        if (!record || record.expiresAt <= Date.now()) {
+          appStorage.delete(key);
+          send({ jsonrpc: "2.0", id: msg.id, result: { value: null, exists: false } });
+        } else {
+          send({ jsonrpc: "2.0", id: msg.id, result: { value: record.value, etag: record.etag, exists: true } });
+        }
+        return;
+      }
+      if (msg.method === "storage/delete") {
+        const record = appStorage.get(key);
+        if (!record || record.etag !== params.if_match) {
+          send({ jsonrpc: "2.0", id: msg.id, error: { code: -32023, message: "storage ETag precondition failed" } });
+        } else {
+          appStorage.delete(key);
+          send({ jsonrpc: "2.0", id: msg.id, result: { deleted: true } });
+        }
+        return;
+      }
+      send({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "unexpected host method " + msg.method } });
+    };
+    child.stdout.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      let newline;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (!line) continue;
+        let msg;
+        try { msg = JSON.parse(line); }
+        catch (e) { reject(new Error("plugin emitted invalid JSON: " + line)); child.kill(); return; }
+        if (msg.method && msg.method.startsWith("storage/")) {
+          respondToHostRequest(msg);
+        } else if (msg.id === 1) {
+          finish(msg.error ? { success: false, error: msg.error.message } : msg.result);
+        } else if (msg.id === 0 && msg.result?.protocolVersion !== "2.0") {
+          reject(new Error("plugin did not negotiate Executa protocol v2"));
+          child.kill();
+          return;
+        }
+      }
+    });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (!settled) reject(new Error("plugin exited without a result (code " + code + "): " + stderr.slice(0, 500)));
+    });
+    send({ jsonrpc: "2.0", id: 0, method: "initialize", params: {} });
+    send({ jsonrpc: "2.0", method: "notifications/initialized", params: {} });
+    send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "invoke",
+      params: {
+        tool: method,
+        arguments: args,
+        context: { invoke_id: "test-invoke-1", ...(appContext ? { app_id: "verigate-test-app" } : {}) },
+      },
+    });
+  });
 }
 
 function interpretJson(o) {
@@ -40,7 +115,8 @@ const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resourc
 async function launch({ interpret, explain, connectFails = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
-  const calls = { tools: [], llm: 0, toolArgs: {} };
+  const appStorage = new Map();
+  const calls = { tools: [], llm: 0, toolArgs: {}, storage: [] };
   const anna = {
     window: { set_title: async () => {}, ready: async () => {} },
     llm: {
@@ -54,10 +130,19 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
         return { content: out };
       },
     },
+    storage: {
+      set: async ({ scope, key, value, ttl_seconds }) => {
+        if (scope !== "app" || ttl_seconds !== 60) throw new Error("unexpected approval storage scope or TTL");
+        const etag = "etag-" + String(appStorage.size + 1);
+        appStorage.set(key, { value, etag, expiresAt: Date.now() + ttl_seconds * 1000 });
+        calls.storage.push({ scope, key, value, ttl_seconds });
+        return { etag };
+      },
+    },
     tools: {
       invoke: async ({ method, args }) => {
         calls.tools.push(method); calls.toolArgs[method] = args;
-        const result = callPlugin(method, args);
+        const result = await callPlugin(method, args, { appStorage, appContext: true });
         if (method === "verigate_check" && tamperSignature) {
           const data = result?.data;
           const receipt = data?.decision_receipt ?? data?.receipt;
