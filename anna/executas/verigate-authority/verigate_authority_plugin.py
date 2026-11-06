@@ -423,6 +423,7 @@ async def _consume_app_wallet_submission(args: dict, authorization: dict, action
         "asset": action.get("asset"),
         "network": action.get("network"),
         "amount": action.get("amount"),
+        "resource": action.get("resource") or "",
         "chain_id": transaction.get("chain_id"),
         "to": transaction.get("to"),
         "value_wei": transaction.get("value_wei"),
