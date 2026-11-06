@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Anna 0.1.13 candidate / Executa 0.1.12
+
+- Restored and documented stateful Anna policy controls: preview checks remain non-persistent but read prior authorization history; the explicit authorization step records the new authorization and audit history. This supersedes the older 0.1.10 note below about omitting cumulative controls.
+- Restricted POSIX issuer private-key storage to mode 0600 inside a mode-0700 directory; legacy permissions are tightened and symlinked private-key paths are rejected.
+- Replaced browser `window.confirm()` approval prompts with an in-App dialog for sandbox compatibility; cancellation leaves the approval/permission untouched.
+- Added regression coverage for key-file permissions, encrypted key compatibility, symlink rejection and both in-App confirmation cancellation paths.
+
+
 ## Unreleased
 
 ### Security
