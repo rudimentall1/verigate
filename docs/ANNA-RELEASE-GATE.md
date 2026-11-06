@@ -84,6 +84,54 @@ Only after sections 1–4 pass, install one candidate in a test Agent and run th
 
 The real Anna acceptance pass must record the exact App version, Executa version, Agent type (Cloud or local), tool handle resolution, test results and relevant error text. Never infer cloud compatibility from local jsdom tests.
 
+## 6. Additional Anna platform guidance — 2026-11-06
+
+Reviewed the official forum guides:
+- Build on Anna 102 — Tool & Executa.
+- Build on Anna 103 — Agent Session Usage.
+- Getting Started with Anna APS — Save Files, Find Them Again, and Know When to Use Upload.
+
+### Executa protocol — source review passed; Cloud remains unverified
+
+- [x] App bundle uses the CLI-generated `window.__ANNA_TOOL_IDS__` mapping with a development fallback.
+- [x] `describe` returns the tool manifest directly in JSON-RPC `result`; no extra `manifest` or business-result wrapper.
+- [x] Tool parameter declarations use the required list-of-objects format and supported types.
+- [x] `initialize` negotiates protocol v2 and advertises KV support.
+- [x] The process keeps reading stdin after `describe`, correlates APS reverse-RPC responses, and returns one JSON-RPC response per line.
+- [x] Linux, Windows, macOS ARM64 and macOS Intel binaries passed the current smoke-test workflow.
+- [ ] Actual install, tool discovery and repeated invocation on a real Anna Cloud Agent remain unverified.
+
+### Agent Session — deliberately not required for this release
+
+The current payment intake uses one bounded `llm.complete` call per explicit check. Missing or ambiguous details are shown as form questions; the user edits the form and starts a fresh check. It does not promise a persistent chat conversation, so the stateless completion API is sufficient for this interaction model.
+
+- [x] No automatic Agent Session or Agent tool-routing permission is enabled.
+- [ ] A future conversational intake upgrade may adopt Agent Session for follow-up context, streaming, cancellation and refresh recovery.
+- [ ] If adopted, create one Session per conversation, restore it by saved session UUID, and use `quotaCaps.allowed_tools: []` for the intake model. The LLM must never receive a path to privileged Verigate authorization or wallet-consumption methods; only explicit App UI buttons may invoke those methods.
+
+### APS — approval KV path passed by code review; actual Host grant/persistence pending
+
+- [x] App UI writes only a short-lived unique approval record in the private `app` KV scope.
+- [x] The bundled Executa reads the approval, validates its nonce, exact action binding and 60-second expiry, then consumes it with ETag-conditional delete.
+- [x] App manifest permits the UI's `storage.set`; Executa declares `aps.scope.app.read` and `aps.scope.app.write` and negotiates KV in `initialize`.
+- [x] No APS Files or Host Upload capability is added unnecessarily: this release does not create persistent user files or transfer large attachments. For future durable reports/exports use APS Files; use Host Upload only for temporary transfer.
+- [ ] Verify the user's real APS storage grant and the full App-write → Executa-read → ETag-delete flow on Anna Cloud Agent.
+
+### Persistence durability — BLOCKED pending real Cloud Agent restart test
+
+The policy/accounting database (`verigate.db`) and Ed25519 issuer keypair (`issuer.key` / `issuer.pub`) are currently kept in a local data directory. The resolver tries the directory beside the Executa binary, then `~/.verigate-authority`, then the system temporary directory. They are not currently stored through APS.
+
+The binary smoke test uses a temporary data directory and verifies a single running process; it does not prove that the keypair and SQLite state survive a Cloud Agent process restart, tool reinstall, or replacement of the binary package.
+
+Before calling the App Cloud-ready:
+1. In a real Cloud Agent, record the issuer public-key fingerprint and a persisted audit/history or spend-state record.
+2. Restart the Agent / Executa process without deleting its data.
+3. Confirm the issuer fingerprint is unchanged and the persisted policy/accounting record remains.
+4. Repeat after an Executa package update/reinstall if the platform supports that lifecycle.
+5. If state does not survive the supported lifecycle, implement durable storage for the private signing key and policy database using the appropriate private APS scope or another Anna-supported persistent store. Do not silently generate a new issuer key or reset spend history after a restart.
+
+Do not mark this gate passed based on local smoke tests or mocked APS responses.
+
 ## Release decision
 
 A candidate is **source-ready** only when sections 1–4 are green. It is **Anna-ready** only after section 5 passes. Marketplace submission/review/public release is a separate action and must not be performed as part of these checks.
