@@ -234,7 +234,7 @@ function showClarify(items, needConfirm) {
 }
 
 function extractDecisionEnvelope(toolResponse) {
-  const outer = toolResponse?.result ?? toolResponse;
+  const outer = unwrapToolResult(toolResponse);
   if (outer?.error) {
     throw new Error(outer.error.message || outer.error || "Verigate check failed.");
   }
@@ -311,7 +311,7 @@ async function loadLimits(values) {
         asset: values?.asset || ""
       }
     });
-    const outer = response?.result ?? response;
+    const outer = unwrapToolResult(response);
     const data = outer?.data;
     return outer?.success === true && data && typeof data === "object" ? data : null;
   } catch {
@@ -624,7 +624,7 @@ async function prepareExecutionAuthorization() {
       method: "verigate_authorize_payment",
       args
     });
-    const outer = response?.result ?? response;
+    const outer = unwrapToolResult(response);
     if (outer?.success !== true || !outer?.data) {
       throw new Error(outer?.error || "Verigate could not issue execution authority.");
     }
@@ -650,7 +650,7 @@ async function prepareExecutionAuthorization() {
       method: "verigate_verify_execution_authorization",
       args: { authorization_json: JSON.stringify(authorization) }
     });
-    const verifiedOuter = verificationResponse?.result ?? verificationResponse;
+    const verifiedOuter = unwrapToolResult(verificationResponse);
     const verification = verifiedOuter?.data;
     if (verifiedOuter?.success !== true || verification?.verified !== true ||
         verification?.algorithm !== "Ed25519" ||
@@ -746,7 +746,7 @@ async function executeWithConnectedWallet() {
       method: "verigate_consume_execution_authorization",
       args: { authorization_json: JSON.stringify(authorization) }
     });
-    const outer = response?.result ?? response;
+    const outer = unwrapToolResult(response);
     const data = outer?.data;
     if (outer?.success !== true || !data || data.consumed !== true ||
         data.authorization_id !== authorization.payload?.authorization_id ||
