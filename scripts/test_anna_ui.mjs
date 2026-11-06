@@ -272,6 +272,12 @@ await test("direct chat invocation cannot bypass App UI confirmation or consume 
   eq(denied.success, false, "direct authorization invocation is denied");
   ok(denied.error.includes("app-scoped UI confirmation unavailable"), "missing App context is explicit");
   eq(denied.data?.execution_authorization, undefined, "no execution authorization is issued");
+  const inAppWithoutClick = await callPlugin("verigate_authorize_payment", {
+    agent_id: "anna-direct-call", payee: VALID, asset: "USDC", network: "base",
+    amount: 25, confirmation_nonce: "f".repeat(48)
+  }, { appStorage: new Map(), appContext: true });
+  eq(inAppWithoutClick.success, false, "App context alone is not a user approval");
+  ok(inAppWithoutClick.error.includes("no app-scoped UI approval"), "UI-created record is still required");
 
   const storage = new Map();
   const nonce = "b".repeat(48);
