@@ -12,7 +12,7 @@ ALLOWED_TYPES = {"string", "integer", "number", "boolean", "array", "object"}
 
 
 def check_manifest(manifest: dict) -> None:
-    """Mirror what Anna's `describe` handshake requires (Executa protocol 1.1)."""
+    """Mirror Anna Executa protocol-v2 describe and APS capability requirements."""
     for field in ("name", "version", "description"):
         if not isinstance(manifest.get(field), str) or not manifest[field]:
             raise SystemExit(f"describe: missing or empty required field '{field}'")
@@ -61,7 +61,42 @@ def main() -> None:
             raise SystemExit(f"no response; stderr:\n{proc.stderr.read()}")
         return json.loads(line)
 
+    def invoke_with_storage(req_id: int, params: dict, approval: dict | None, app_context: bool) -> dict:
+        send({"jsonrpc": "2.0", "id": req_id, "method": "invoke", "params": params})
+        while True:
+            msg = recv()
+            method = msg.get("method")
+            if method == "storage/get":
+                rpc_params = msg.get("params") or {}
+                if rpc_params.get("scope") != "app" or not app_context:
+                    send({"jsonrpc": "2.0", "id": msg["id"], "error": {
+                        "code": -32021, "message": "app-scoped storage unavailable outside App context"
+                    }})
+                else:
+                    send({"jsonrpc": "2.0", "id": msg["id"], "result": {
+                        "value": approval, "etag": "smoke-approval-etag", "exists": True
+                    }})
+            elif method == "storage/delete":
+                rpc_params = msg.get("params") or {}
+                if (not app_context or rpc_params.get("scope") != "app"
+                        or rpc_params.get("if_match") != "smoke-approval-etag"):
+                    send({"jsonrpc": "2.0", "id": msg["id"], "error": {
+                        "code": -32023, "message": "approval ETag mismatch"
+                    }})
+                else:
+                    send({"jsonrpc": "2.0", "id": msg["id"], "result": {"deleted": True}})
+            elif msg.get("id") == req_id:
+                return msg
+
     try:
+        # 0. Negotiate protocol v2 before using APS reverse RPC.
+        send({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}})
+        initialized = recv()
+        init_result = initialized.get("result", {})
+        if init_result.get("protocolVersion") != "2.0" or init_result.get("capabilities", {}).get("storage", {}).get("kv") is not True:
+            raise SystemExit(f"protocol-v2 APS initialization failed: {initialized}")
+        send({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+
         # 1. describe from a cold start: Anna allows 5 s.
         started = time.monotonic()
         send({"jsonrpc": "2.0", "id": 1, "method": "describe"})
@@ -121,27 +156,62 @@ def main() -> None:
         if summary.get("success") is not True or not summary.get("data", {}).get("payee_validation"):
             raise SystemExit(f"policy summary failed: {summary}")
 
-        # 3d. Exercise the actual packaged ExecutionRouter wallet hand-off.
-        send({"jsonrpc": "2.0", "id": 33, "method": "invoke", "params": {
+        # 3d. A direct chat/agent invocation has no App-scoped approval and must fail closed.
+        direct = invoke_with_storage(33, {
             "tool": "verigate_authorize_payment",
             "arguments": {
                 "agent_id": "anna-binary-wallet-smoke",
                 "payee": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
                 "asset": "USDC", "network": "base", "amount": 25,
-                "human_confirmed": True,
+                "confirmation_nonce": "d" * 48,
             },
-        }})
-        authorized = recv().get("result", {})
+            "context": {"invoke_id": "smoke-direct"},
+        }, None, False)
+        direct_result = direct.get("result", {})
+        if direct_result.get("success") is not False or direct_result.get("data", {}).get("execution_authorization"):
+            raise SystemExit(f"direct tool call bypassed App UI approval: {direct}")
+
+        # 3e. Simulate the App-context storage round-trip after a real UI click.
+        nonce = "a" * 48
+        now_ms = int(time.time() * 1000)
+        approval = {
+            "version": 1,
+            "nonce": nonce,
+            "agent_id": "anna-binary-wallet-smoke",
+            "payee": "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed",
+            "asset": "USDC",
+            "network": "base",
+            "amount": 25,
+            "resource": "invoice smoke",
+            "created_at_ms": now_ms,
+            "expires_at_ms": now_ms + 60_000,
+        }
+        authorized = invoke_with_storage(34, {
+            "tool": "verigate_authorize_payment",
+            "arguments": {
+                "agent_id": approval["agent_id"],
+                "payee": approval["payee"],
+                "asset": approval["asset"],
+                "network": approval["network"],
+                "amount": approval["amount"],
+                "resource": approval["resource"],
+                "confirmation_nonce": nonce,
+            },
+            "context": {"invoke_id": "smoke-app-context", "app_id": "verigate-test-app"},
+        }, approval, True).get("result", {})
         if authorized.get("success") is not True:
-            raise SystemExit(f"wallet authorization failed: {authorized}")
+            raise SystemExit(f"App-scoped wallet authorization failed: {authorized}")
         authorization = authorized.get("data", {}).get("execution_authorization")
         if not isinstance(authorization, dict):
             raise SystemExit(f"wallet authorization artifact missing: {authorized}")
 
-        send({"jsonrpc": "2.0", "id": 34, "method": "invoke", "params": {
-            "tool": "verigate_consume_execution_authorization",
-            "arguments": {"authorization_json": json.dumps(authorization)},
-        }})
+        consume = lambda req_id: {
+            "jsonrpc": "2.0", "id": req_id, "method": "invoke", "params": {
+                "tool": "verigate_consume_execution_authorization",
+                "arguments": {"authorization_json": json.dumps(authorization)},
+            }
+        }
+        send(consume(35))
         consumed = recv().get("result", {})
         handoff = consumed.get("data", {})
         tx = handoff.get("transaction", {})
@@ -153,10 +223,7 @@ def main() -> None:
             raise SystemExit(f"ExecutionRouter wallet hand-off failed: {consumed}")
 
         # The exact same signed authorization must not be consumable twice.
-        send({"jsonrpc": "2.0", "id": 35, "method": "invoke", "params": {
-            "tool": "verigate_consume_execution_authorization",
-            "arguments": {"authorization_json": json.dumps(authorization)},
-        }})
+        send(consume(36))
         replay = recv().get("result", {})
         if replay.get("success") is not False:
             raise SystemExit(f"one-time authorization replay was not rejected: {replay}")
@@ -181,7 +248,7 @@ def main() -> None:
 
     if proc.returncode != 0:
         raise SystemExit(f"binary exited with {proc.returncode}\nSTDERR:\n{proc.stderr.read()}")
-    print(f"binary smoke test passed: describe in {elapsed:.1f}s, decision={decision}, signed=yes, wallet_handoff=consumed_once")
+    print(f"binary smoke test passed: describe in {elapsed:.1f}s, decision={decision}, signed=yes, app_scope_approval=consumed_once, wallet_handoff=consumed_once")
 
 
 if __name__ == "__main__":
