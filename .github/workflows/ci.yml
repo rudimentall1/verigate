@@ -61,3 +61,9 @@ jobs:
 
       - name: Anna app end-to-end UI test (real app and plugin, scripted LLM)
         run: node scripts/test_anna_ui.mjs
+
+      - name: Build and smoke-test Linux Anna Executa binary
+        run: |
+          pip install pyinstaller
+          python anna/build_binary.py
+          python anna/smoke_binary.py anna/executas/verigate-authority/dist/verigate-authority "0.1.12"
