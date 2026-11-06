@@ -88,7 +88,7 @@ enforcement boundary.
 
 ## App-scoped confirmation gate
 
-Execution Authorization is not unlocked by a client-supplied `human_confirmed` boolean. The Anna UI writes a random, 60-second, one-time approval record to its private APS `app` scope only after the user confirms the exact payment. The bundled Executa negotiates protocol v2, reads that record in the owning App context, checks every payment field and its expiry, then deletes it with an ETag precondition before it runs persistent policy. A direct chat/agent tool invocation without the owning App context cannot read the App-scoped record and must fail closed.
+Execution Authorization is not unlocked by a client-supplied `human_confirmed` boolean. The Anna UI writes a random, 60-second, one-time approval record to its private APS `app` scope only after the user confirms the exact payment. The bundled Executa negotiates protocol v2, reads that record in the owning App context, checks every payment field and its expiry, then deletes it with an ETag precondition before it runs persistent policy. A separate wallet-send click writes a second one-time record bound to the exact authorization ID and transaction fields; Executa consumes it before ExecutionRouter. Direct chat/agent calls cannot read App-scoped records and must fail closed.
 
 The App declares `aps.scope.app.read` and `aps.scope.app.write` at the App and Executa capability layers; the iframe receives only `anna.storage.set`. The user must grant the bundled Executa's Persistent Storage permission in Anna. The approval record contains no wallet key and expires after 60 seconds.
 
