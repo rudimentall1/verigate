@@ -52,12 +52,16 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
           npm install --no-save --no-audit --no-fund jsdom
+
+      - name: Anna CLI strict manifest and Host API validation
+        working-directory: anna
+        run: npx --yes @anna-ai/cli@0.1.59 validate --manifest manifest.json --bundle bundle --strict
 
       - name: Anna app end-to-end UI test (real app and plugin, scripted LLM)
         run: node scripts/test_anna_ui.mjs
