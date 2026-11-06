@@ -41,6 +41,11 @@ class ExecutaManifestTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.smoke.check_manifest(broken)
 
+    def test_policy_summary_parameters_match_runtime_arguments(self):
+        tool = next(t for t in self.plugin.MANIFEST["tools"] if t["name"] == "verigate_policy_summary")
+        self.assertEqual([p["name"] for p in tool["parameters"]], ["agent_id", "payee", "asset"])
+        self.assertTrue(all(p["required"] is False for p in tool["parameters"]))
+
     def test_version_matches_executa_json(self):
         executa = json.loads((PLUGIN.parent / "executa.json").read_text(encoding="utf-8"))
         self.assertEqual(self.plugin.MANIFEST["version"], executa["version"])
