@@ -14,7 +14,7 @@ Do not treat ALLOW as a guarantee that the recipient is safe, that the transacti
 
 ## Fresh-install test matrix (Anna Cloud Agent)
 
-Run these on a fresh install. Expected results use the Anna preflight policy (500 per transaction, human review above 250, 50 recipient cap; every simulation assumes a first payment because no recipient history is stored; networks base/ethereum/solana, asset USDC):
+Run these on a fresh install. Expected results use the Anna policy (500 per transaction, human review above 250, 50 first-payment cap, 2,000 rolling 24-hour spend cap and 30 recorded attempts per minute; a fresh install has no recipient history, while later previews read persisted authorization history without recording a new attempt; networks base/ethereum/solana, asset USDC):
 
 | Request | Expected |
 |---|---|
