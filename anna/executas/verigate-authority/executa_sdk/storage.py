@@ -1,3 +1,4 @@
+# Portions derived from Anna's anna-executa-examples SDK (Copyright (c) 2026 Anna); MIT license in LICENSE.
 """Anna Executa Python SDK — Persistent Storage support
 
 `StorageClient` and `FilesClient` let an Executa plugin issue reverse
