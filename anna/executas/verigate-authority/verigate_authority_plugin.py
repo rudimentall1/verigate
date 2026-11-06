@@ -64,7 +64,11 @@ MANIFEST = {
             "name": "verigate_policy_summary",
             "description": "Return the active policy limits (networks, assets, caps, confirmation threshold) so a request can be compared with them. Read-only.",
             "timeout": 15,
-            "parameters": [],
+            "parameters": [
+                {"name": "agent_id", "type": "string", "description": "Optional agent identifier for read-only usage and spend context.", "required": False, "default": ""},
+                {"name": "payee", "type": "string", "description": "Optional recipient for first-payment context.", "required": False, "default": ""},
+                {"name": "asset", "type": "string", "description": "Optional asset for rolling spend context.", "required": False, "default": ""},
+            ],
         },
         {
             "name": "verigate_authorize_payment",
