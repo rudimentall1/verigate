@@ -112,7 +112,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, showModalThrows = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows) {
@@ -138,6 +138,11 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
     storage: {
       set: async ({ scope, key, value, ttl_seconds }) => {
         if (scope !== "app" || ttl_seconds !== 60) throw new Error("unexpected approval storage scope or TTL");
+        if (storageSetFails) {
+          const error = new Error("App-scope storage permission was not granted");
+          error.code = -32021;
+          throw error;
+        }
         const etag = "etag-" + String(appStorage.size + 1);
         appStorage.set(key, { value, etag, expiresAt: Date.now() + ttl_seconds * 1000 });
         calls.storage.push({ scope, key, value, ttl_seconds });
@@ -147,6 +152,11 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
     tools: {
       invoke: async ({ method, args }) => {
         calls.tools.push(method); calls.toolArgs[method] = args;
+        if (method === "verigate_authorize_payment" && authorizeInvokeFails) {
+          const error = new Error("401 Unauthorized while refreshing Anna session");
+          error.code = 401;
+          throw error;
+        }
         const result = await callPlugin(method, args, { appStorage, appContext: true });
         if (method === "verigate_check" && tamperSignature) {
           const data = result?.data;
@@ -275,6 +285,30 @@ await test("embedded webview showModal failure falls back to explicit non-modal 
   eq(ui.calls.storage.length, 1, "approval is stored only after user confirmation");
   ok(ui.text("execution-json").includes("authorization_id"), "verified one-time permission is returned");
   ok(!ui.shown("error"), "modal fallback does not surface a false failure");
+});
+
+await test("App Persistent Storage denial is reported with the host error and fails closed", async () => {
+  const ui = await launch({ storageSetFails: true });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  await ui.clickExecution();
+  ok(ui.shown("error"), "storage failure is visible");
+  ok(ui.text("error").includes("[-32021] App-scope storage permission was not granted"), "host storage code and message are preserved");
+  ok(ui.text("error").includes("No execution permission was issued"), "failure is explicit");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "authorization is never invoked without a stored approval");
+  eq(ui.calls.storage.length, 0, "failed storage write is not counted as a stored approval");
+});
+
+await test("Anna authorization invocation failure exposes the session error instead of a generic message", async () => {
+  const ui = await launch({ authorizeInvokeFails: true });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  await ui.clickExecution();
+  ok(ui.shown("error"), "authorization invocation failure is visible");
+  ok(ui.text("error").includes("[401] 401 Unauthorized while refreshing Anna session"), "HTTP/session failure is preserved");
+  ok(ui.text("error").includes("remaining usage quota"), "next diagnostic direction is actionable");
+  eq(ui.calls.storage.length, 1, "approval exists only as a short-lived record after explicit confirmation");
+  eq(ui.text("execution-json"), "", "no permission is presented");
 });
 
 await test("repeated permission clicks cannot create duplicate approvals", async () => {
