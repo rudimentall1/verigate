@@ -667,7 +667,9 @@ async function prepareExecutionAuthorization() {
         verification?.authorization_id !== authorization.payload?.authorization_id ||
         typeof verification?.key_fingerprint_sha256 !== "string" ||
         !/^[0-9a-f]{64}$/i.test(verification.key_fingerprint_sha256) ||
-        !Number.isFinite(Number(verification?.expires_at)) ||
+        typeof verification?.expires_at !== "number" ||
+        !Number.isFinite(verification.expires_at) ||
+        verification.expires_at <= Math.floor(Date.now() / 1000) ||
         !exactActionMatches) {
       throw new Error("Execution Authorization signature or exact-action verification failed. It will not be presented as valid.");
     }
