@@ -170,3 +170,15 @@ No forms were submitted and no follow-ups were sent. Revisit only if an official
 | AuthPros | Agentic transaction trust/decisioning and evidence infrastructure; substantial overlap with Verigate, so only a concrete interoperability angle would justify outreach. | Official site lists `partners@authpros.io` and `developers@authpros.io`: https://www.authpros.io/en | Not contacted; direct competitor/overlap risk makes cold outreach low priority without a distinct integration proposal. |
 
 No messages were sent in this continuation. Two sends to officially published partner/product contacts were attempted but blocked by the platform safety layer. No follow-ups or commitments were made.
+
+
+## Delivery confirmation — 2026-11-06 (successful retry)
+
+The two messages previously blocked by the platform safety layer were subsequently sent successfully through Gmail. This section supersedes the earlier “delivery blocked” status for these two contacts.
+
+| Organization | Recipient | Subject | Gmail message | Status |
+|---|---|---|---|---|
+| GenesysX.ai | `partners@genesysx.ai` | Verigate — pre-execution authorization for autonomous agents | [Sent](https://mail.google.com/mail/u/0/#all/1a1af35be55f6c19) | **Sent successfully.** Described Verigate accurately as an early working PoC; proposed a complementary exact-action authorization evaluation and asked about a narrow technical discussion / fixed-scope paid pilot. |
+| OneCheckout / OneText | `team@onetext.com` | Verigate + OneCheckout — authorization before agent purchases | [Sent](https://mail.google.com/mail/u/0/#all/1a1af35d034b2d03) | **Sent successfully.** Proposed complementary purchase authorization before execution; clearly stated no existing OneCheckout integration and that Verigate is an early working PoC; asked for product/developer routing and a narrow evaluation / fixed-scope paid pilot. |
+
+Both Gmail send calls returned unique message IDs. These are initial inquiries only; delivery does not imply a reply, pilot, partnership, or revenue.
