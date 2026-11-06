@@ -235,10 +235,10 @@ function showClarify(items, needConfirm) {
 
 function extractDecisionEnvelope(toolResponse) {
   const outer = unwrapToolResult(toolResponse);
-  if (outer?.error) {
-    throw new Error(outer.error.message || outer.error || "Verigate check failed.");
+  if (outer?.error || outer?.success === false) {
+    const failure = outer.error || outer;
+    throw new Error("Verigate check failed: " + errorDetail(failure));
   }
-  if (outer?.success === false) throw new Error(outer.error || "Verigate could not check this action.");
   const data = outer?.data ?? outer;
   const receipt = data?.decision_receipt ?? data?.receipt ?? null;
   if (!receipt?.payload) throw new Error("Verigate returned no signed decision receipt. Please retry; do not treat this as an approval.");
@@ -256,20 +256,34 @@ function extractDecisionEnvelope(toolResponse) {
 
 
 function unwrapToolResult(response) {
-  // Anna host/tool adapters may add more than one result/data envelope.
-  // Unwrap only recognizable transport wrappers; never alter the receipt.
+  // Anna host/tool adapters may wrap Executa output in result/data envelopes
+  // or MCP-style content text. Decode only valid JSON objects; leave receipts
+  // and unknown payloads untouched.
   let current = response;
-  for (let depth = 0; depth < 4; depth += 1) {
-    if (current && typeof current === "object" &&
-        current.result && typeof current.result === "object") {
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (!current || typeof current !== "object") break;
+    if (current.result && typeof current.result === "object") {
       current = current.result;
       continue;
     }
-    if (current && typeof current === "object" &&
-        current.data && typeof current.data === "object" &&
+    if (current.data && typeof current.data === "object" &&
         (typeof current.data.success === "boolean" || current.data.error)) {
       current = current.data;
       continue;
+    }
+    if (Array.isArray(current.content)) {
+      const textBlock = current.content.find((item) =>
+        item && typeof item.text === "string"
+      );
+      if (textBlock) {
+        try {
+          const parsed = JSON.parse(textBlock.text);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            current = parsed;
+            continue;
+          }
+        } catch { /* preserve non-JSON content for the caller */ }
+      }
     }
     break;
   }
@@ -349,9 +363,31 @@ async function loadLimits(values) {
       }
     });
     const outer = unwrapToolResult(response);
+    if (outer?.success === false || outer?.error) {
+      const failure = outer.error || outer;
+      const code = failure?.code ?? failure?.data?.code ?? failure?.status ??
+        failure?.response?.status ?? failure?.data?.status ??
+        outer?.code ?? outer?.status;
+      const authOrQuota = Number(code) === 401 || Number(code) === 403 ||
+        [-32001, -32002, -32006, -32007].includes(Number(code));
+      if (authOrQuota) {
+        throw new Error("Anna policy-summary request failed: " + errorDetail(failure) +
+          ". This is an Anna session, permission or quota error; Verigate cannot safely treat it as a missing policy summary.");
+      }
+      return null;
+    }
     const data = outer?.data;
     return outer?.success === true && data && typeof data === "object" ? data : null;
-  } catch {
+  } catch (error) {
+    // Preserve an auth/quota error already normalized from a returned tool envelope.
+    if (String(error?.message || "").startsWith("Anna policy-summary request failed:")) throw error;
+    const code = error?.code ?? error?.data?.code ?? error?.status ?? error?.response?.status ?? error?.data?.status;
+    const authOrQuota = Number(code) === 401 || Number(code) === 403 ||
+      [-32001, -32002, -32006, -32007].includes(Number(code));
+    if (authOrQuota) {
+      throw new Error("Anna policy-summary request failed: " + errorDetail(error) +
+        ". This is an Anna session, permission or quota error; Verigate cannot safely treat it as a missing policy summary.");
+    }
     return null;
   }
 }
@@ -661,20 +697,36 @@ function requestUserConfirmation({ title, message, confirmLabel = "Confirm" }) {
     cancel.addEventListener("click", onCancelClick);
     dialog.addEventListener("cancel", onCancel);
     try {
-      if (typeof dialog.showModal === "function") dialog.showModal();
-      else dialog.setAttribute("open", "");
+      if (typeof dialog.showModal === "function") {
+        try {
+          dialog.showModal();
+        } catch {
+          // Some embedded webviews expose showModal() but do not support modal
+          // dialogs. Keep the same explicit in-app confirmation, non-modally.
+          dialog.setAttribute("open", "");
+        }
+      } else {
+        dialog.setAttribute("open", "");
+      }
       cancel.focus();
     } catch (error) {
       finish(false);
-      showError("The in-app confirmation could not be opened. No permission was issued.");
+      showError("The in-app confirmation could not be opened. No permission was issued: " + (error?.message || String(error)));
     }
   });
 }
 
 
+function errorDetail(error) {
+  if (typeof error === "string") return error;
+  const code = error?.code ?? error?.data?.code ?? error?.status ?? error?.response?.status ?? error?.data?.status;
+  const message = error?.message || error?.data?.message || error?.response?.data?.message || String(error || "Unknown host error");
+  return (code !== undefined ? "[" + code + "] " : "") + message;
+}
+
 async function storeAppApproval(kind, fields) {
   if (!state.anna?.storage?.set) {
-    throw new Error("Anna App storage is unavailable. No execution permission was issued.");
+    throw new Error("Anna App Persistent Storage is unavailable (storage.set is not exposed). No execution permission was issued.");
   }
   const nonceBytes = new Uint8Array(24);
   window.crypto.getRandomValues(nonceBytes);
@@ -688,12 +740,17 @@ async function storeAppApproval(kind, fields) {
     created_at_ms: createdAtMs,
     expires_at_ms: createdAtMs + 60_000
   };
-  await state.anna.storage.set({
-    scope: "app",
-    key: "verigate/approvals/" + nonce,
-    value: approval,
-    ttl_seconds: 60
-  });
+  try {
+    await state.anna.storage.set({
+      scope: "app",
+      key: "verigate/approvals/" + nonce,
+      value: approval,
+      ttl_seconds: 60
+    });
+  } catch (error) {
+    throw new Error("Anna Persistent Storage could not save the one-time App approval: " + errorDetail(error) +
+      ". Check that App-scope storage access is granted and that storage quota is available. No execution permission was issued.");
+  }
   return { nonce, approval };
 }
 
@@ -751,14 +808,24 @@ async function prepareExecutionAuthorization() {
       confirmation_nonce: confirmationNonce
     };
     if (state.lastFlags.length) args.ai_flags_json = JSON.stringify(state.lastFlags);
-    const response = await state.anna.tools.invoke({
-      tool_id: TOOL_ID,
-      method: "verigate_authorize_payment",
-      args
-    });
+    let response;
+    try {
+      response = await state.anna.tools.invoke({
+        tool_id: TOOL_ID,
+        method: "verigate_authorize_payment",
+        args
+      });
+    } catch (error) {
+      throw new Error("Anna could not invoke Verigate's authorization tool: " + errorDetail(error) +
+        ". Check the Anna session, Executa availability and remaining usage quota. No execution permission was issued.");
+    }
     const outer = unwrapToolResult(response);
     if (outer?.success !== true || !outer?.data) {
-      throw new Error(outer?.error || "Verigate could not issue execution authority.");
+      const detail = outer?.error
+        ? errorDetail(outer.error)
+        : "Unexpected response envelope (" + (outer && typeof outer === "object" ? Object.keys(outer).join(", ") || "empty object" : typeof outer) + ")";
+      throw new Error("Verigate authorization tool did not return a successful result: " + detail +
+        ". No execution permission was issued.");
     }
     const data = outer.data;
     const receipt = data.decision_receipt;
@@ -784,6 +851,11 @@ async function prepareExecutionAuthorization() {
       args: { authorization_json: JSON.stringify(authorization) }
     });
     const verifiedOuter = unwrapToolResult(verificationResponse);
+    if (verifiedOuter?.success === false || verifiedOuter?.error) {
+      throw new Error("Anna could not verify the Execution Authorization: " +
+        errorDetail(verifiedOuter.error || verifiedOuter) +
+        ". No permission will be presented as valid.");
+    }
     const verification = verifiedOuter?.data;
     const authorizedAction = verification?.action;
     const exactActionMatches = Boolean(authorizedAction) &&
@@ -828,7 +900,7 @@ async function prepareExecutionAuthorization() {
   } catch (error) {
     if (state.lastExecutionAuthorization === null) $("execution-json").textContent = "";
     if (/signature verification failed|exact-action verification failed/i.test(error?.message || "")) clearResult();
-    showError(error?.message || String(error));
+    showError(errorDetail(error));
     setBusy(false, "No transaction was sent.");
   }
 }
@@ -978,16 +1050,8 @@ async function executeWithConnectedWallet() {
 
 
 async function main() {
-  try {
-    state.anna = await AnnaAppRuntime.connect();
-    await state.anna.window.set_title({ title: "Verigate Authority" });
-    if (state.anna.window.ready) await state.anna.window.ready();
-    setBusy(false, "Connected to Anna. Describe a payment to get started.");
-  } catch {
-    state.anna = null;
-    setBusy(false, "Standalone preview. Open inside Anna to use its LLM and the Verigate tool.");
-    buttons.forEach((button) => { button.disabled = true; });
-  }
+  // Bind UI events before the asynchronous host handshake. A slow or failed
+  // Anna connection must not leave the view with uninitialized controls.
   $("check-btn").addEventListener("click", checkAuthority);
   $("execution-btn").addEventListener("click", prepareExecutionAuthorization);
   $("wallet-execute-btn").addEventListener("click", executeWithConnectedWallet);
@@ -1002,6 +1066,20 @@ async function main() {
     input.addEventListener("input", () => { $("confirm-details").checked = false; invalidate(); });
     input.addEventListener("change", invalidate);
   });
+
+  setBusy(true, "Connecting to Anna…");
+  try {
+    state.anna = await AnnaAppRuntime.connect();
+    if (!state.anna) throw new Error("Anna runtime returned no session.");
+    await state.anna.window.set_title({ title: "Verigate Authority" });
+    if (state.anna.window.ready) await state.anna.window.ready();
+    setBusy(false, "Connected to Anna. Describe a payment to get started.");
+  } catch (error) {
+    state.anna = null;
+    setBusy(false, "Anna connection failed: " + errorDetail(error) +
+      ". Reopen the app from Anna and check the session. Standalone preview is unavailable for AI and Executa actions.");
+    buttons.forEach((button) => { button.disabled = true; });
+  }
 }
 
 main();

@@ -43,6 +43,8 @@ class AnnaAppBundleTest(unittest.TestCase):
         self.assertIn('method: "verigate_policy_summary"', self.js)
         self.assertIn('method: "verigate_verify_decision_receipt"', self.js)
         self.assertIn("function extractReceiptVerification(response)", self.js)
+        self.assertIn("current.content.find((item)", self.js)
+        self.assertIn("JSON.parse(textBlock.text)", self.js)
         self.assertIn('["result", "data", "structuredContent", "output"]', self.js)
         self.assertIn('if (!data || data.verified !== true)', self.js)
         self.assertNotIn("outer?.success !== true || !data || data.verified !== true", self.js)

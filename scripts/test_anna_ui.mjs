@@ -112,9 +112,14 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
+  if (showModalThrows) {
+    window.document.getElementById("approval-dialog").showModal = () => {
+      throw new Error("modal dialogs are unsupported in this embedded webview");
+    };
+  }
   const appStorage = new Map();
   const calls = { tools: [], llm: 0, toolArgs: {}, storage: [] };
   const anna = {
@@ -133,6 +138,11 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
     storage: {
       set: async ({ scope, key, value, ttl_seconds }) => {
         if (scope !== "app" || ttl_seconds !== 60) throw new Error("unexpected approval storage scope or TTL");
+        if (storageSetFails) {
+          const error = new Error("App-scope storage permission was not granted");
+          error.code = -32021;
+          throw error;
+        }
         const etag = "etag-" + String(appStorage.size + 1);
         appStorage.set(key, { value, etag, expiresAt: Date.now() + ttl_seconds * 1000 });
         calls.storage.push({ scope, key, value, ttl_seconds });
@@ -142,6 +152,27 @@ async function launch({ interpret, explain, connectFails = false, tamperSignatur
     tools: {
       invoke: async ({ method, args }) => {
         calls.tools.push(method); calls.toolArgs[method] = args;
+        if (method === "verigate_authorize_payment" && authorizeInvokeFails) {
+          const error = new Error("Unauthorized while refreshing Anna session");
+          error.status = 401;
+          throw error;
+        }
+        if (method === "verigate_verify_execution_authorization" && verifyAuthorizationInvokeFails) {
+          const error = new Error("Anna session expired during authorization verification");
+          error.status = 401;
+          throw error;
+        }
+        if (method === "verigate_verify_execution_authorization" && verifyAuthorizationReturnsError) {
+          return { result: { success: false, error: { code: 401, message: "Anna session refresh rejected during verification" } } };
+        }
+        if (method === "verigate_policy_summary" && policySummaryInvokeFails) {
+          const error = new Error("Anna session refresh rejected before policy summary");
+          error.status = 401;
+          throw error;
+        }
+        if (method === "verigate_policy_summary" && policySummaryReturnsError) {
+          return { result: { success: false, error: { code: 401, message: "Anna session refresh rejected in tool response" } } };
+        }
         const result = await callPlugin(method, args, { appStorage, appContext: true });
         if (method === "verigate_check" && tamperSignature) {
           const data = result?.data;
@@ -259,6 +290,81 @@ await test("one-time execution permission is issued only after a separate user c
   ok(ui.text("execution-json").includes("authorization_id"), "signed permission displayed; error=" + ui.text("error") + "; status=" + ui.text("execution-status") + "; tools=" + JSON.stringify(ui.calls.tools));
   ok(ui.text("execution-status").includes("Not consumed"), "permission is not represented as a sent transaction");
   ok(ui.text("status").includes("No funds were sent"), "status is explicit");
+});
+
+await test("embedded webview showModal failure falls back to explicit non-modal confirmation", async () => {
+  const ui = await launch({ showModalThrows: true });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  await ui.clickExecution();
+  ok(ui.calls.tools.includes("verigate_authorize_payment"), "explicit confirmation still reaches authorization");
+  eq(ui.calls.storage.length, 1, "approval is stored only after user confirmation");
+  ok(ui.text("execution-json").includes("authorization_id"), "verified one-time permission is returned");
+  ok(!ui.shown("error"), "modal fallback does not surface a false failure");
+});
+
+await test("App Persistent Storage denial is reported with the host error and fails closed", async () => {
+  const ui = await launch({ storageSetFails: true });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  await ui.clickExecution();
+  ok(ui.shown("error"), "storage failure is visible");
+  ok(ui.text("error").includes("[-32021] App-scope storage permission was not granted"), "host storage code and message are preserved");
+  ok(ui.text("error").includes("No execution permission was issued"), "failure is explicit");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "authorization is never invoked without a stored approval");
+  eq(ui.calls.storage.length, 0, "failed storage write is not counted as a stored approval");
+});
+
+await test("Anna policy-summary 401 is surfaced instead of silently ignored", async () => {
+  const ui = await launch({ policySummaryInvokeFails: true });
+  await ui.click();
+  ok(ui.shown("error"), "policy-summary session failure is visible");
+  ok(ui.text("error").includes("[401] Anna session refresh rejected before policy summary"), "HTTP status and source error are preserved");
+  ok(ui.text("error").includes("session, permission or quota error"), "failure is classified as a host authorization issue");
+  eq(ui.calls.tools.includes("verigate_check"), false, "policy evaluation does not proceed after host authorization failure");
+});
+
+await test("Anna policy-summary 401 returned in an error envelope is surfaced instead of ignored", async () => {
+  const ui = await launch({ policySummaryReturnsError: true });
+  await ui.click();
+  ok(ui.shown("error"), "tool response auth failure is visible");
+  ok(ui.text("error").includes("[401] Anna session refresh rejected in tool response"), "error envelope status and message are preserved");
+  ok(ui.text("error").includes("session, permission or quota error"), "failure is classified as an Anna host authorization issue");
+  eq(ui.calls.tools.includes("verigate_check"), false, "policy evaluation does not proceed after an auth error envelope");
+});
+
+await test("Anna authorization invocation failure exposes the session error instead of a generic message", async () => {
+  const ui = await launch({ authorizeInvokeFails: true });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  await ui.clickExecution();
+  ok(ui.shown("error"), "authorization invocation failure is visible");
+  ok(ui.text("error").includes("[401] Unauthorized while refreshing Anna session"), "HTTP/session failure is preserved");
+  ok(ui.text("error").includes("remaining usage quota"), "next diagnostic direction is actionable");
+  eq(ui.calls.storage.length, 1, "approval exists only as a short-lived record after explicit confirmation");
+  eq(ui.text("execution-json"), "", "no permission is presented");
+});
+
+await test("Anna authorization verification refresh failure exposes HTTP status and fails closed", async () => {
+  const ui = await launch({ verifyAuthorizationInvokeFails: true });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  await ui.clickExecution();
+  ok(ui.shown("error"), "authorization verification failure is visible");
+  ok(ui.text("error").includes("[401] Anna session expired during authorization verification"), "HTTP status and verification-stage error are preserved");
+  eq(ui.text("execution-json"), "", "unverified authorization is never presented");
+  ok(!ui.text("status").includes("permission created and verified"), "failed verification is not reported as success");
+});
+
+await test("Anna verification error envelope exposes HTTP status and fails closed", async () => {
+  const ui = await launch({ verifyAuthorizationReturnsError: true });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  await ui.clickExecution();
+  ok(ui.shown("error"), "verification error envelope is visible");
+  ok(ui.text("error").includes("[401] Anna session refresh rejected during verification"), "HTTP status and source message are preserved");
+  eq(ui.text("execution-json"), "", "unverified permission is never presented");
+  ok(!ui.text("status").includes("permission created and verified"), "failure is not reported as success");
 });
 
 await test("repeated permission clicks cannot create duplicate approvals", async () => {
@@ -573,9 +679,12 @@ await test("model text is rendered as text, never as HTML", async () => {
   ok(ui.text("result-summary").includes("<b>bold</b>"), "shown literally");
 });
 
-await test("standalone preview: button is disabled", async () => {
+await test("Anna connection failure is surfaced and app actions stay disabled", async () => {
   const ui = await launch({ connectFails: true });
-  ok(ui.$("check-btn").disabled, "disabled");
+  ok(ui.$("check-btn").disabled, "AI action stays disabled without a host session");
+  ok(ui.text("status").includes("Anna connection failed: no host"), "the original host connection error is visible");
+  ok(ui.text("status").includes("check the session"), "the user gets a concrete recovery direction");
+  eq(ui.calls.tools.length, 0, "no Executa call can run without a connected host");
 });
 
 const failed = results.filter(([, passed]) => !passed).length;
