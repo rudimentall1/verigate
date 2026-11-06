@@ -86,8 +86,8 @@ def main() -> None:
         version=version,
         description=(
             "Evaluates an agent action against Verigate's deterministic policy and returns "
-            "a signed ALLOW/WARN/BLOCK policy decision. It does not sign, submit, broadcast, "
-            "or execute a blockchain transaction."
+            "a signed ALLOW/WARN/BLOCK decision and capability-bound authorization. It does not "
+            "hold wallet keys, sign a wallet transaction, broadcast, or execute a blockchain transaction."
         ),
         entrypoint=entrypoint,
         windows=windows,
