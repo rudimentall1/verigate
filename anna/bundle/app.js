@@ -365,7 +365,14 @@ async function loadLimits(values) {
     const outer = unwrapToolResult(response);
     const data = outer?.data;
     return outer?.success === true && data && typeof data === "object" ? data : null;
-  } catch {
+  } catch (error) {
+    const code = error?.code ?? error?.data?.code ?? error?.status ?? error?.response?.status ?? error?.data?.status;
+    const authOrQuota = code === 401 || code === 403 ||
+      [-32001, -32002, -32006, -32007].includes(Number(code));
+    if (authOrQuota) {
+      throw new Error("Anna policy-summary request failed: " + errorDetail(error) +
+        ". This is an Anna session, permission or quota error; Verigate cannot safely treat it as a missing policy summary.");
+    }
     return null;
   }
 }
