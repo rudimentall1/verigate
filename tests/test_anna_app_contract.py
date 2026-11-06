@@ -48,6 +48,19 @@ class AnnaAppContractTest(unittest.TestCase):
         self.assertEqual(EXECUTA["version"], PLUGIN.VERSION)
         self.assertEqual(EXECUTA["version"], PLUGIN.MANIFEST["version"])
 
+    def test_binary_workflow_default_tracks_executa_version_and_entrypoint(self):
+        workflow = (ROOT / ".github" / "workflows" / "anna-executa-binaries.yml").read_text(encoding="utf-8")
+        match = re.search(r'default:\\s*["\']([^"\']+)["\']', workflow)
+        self.assertIsNotNone(match, "binary workflow must declare a version default")
+        self.assertEqual(match.group(1), EXECUTA["version"])
+        build = (ANNA / "build_binary.py").read_text(encoding="utf-8")
+        binary_name = re.search(r'"--name",\\s*"([^"]+)"', build)
+        self.assertIsNotNone(binary_name, "binary builder must name its output")
+        for platform, artifact in EXECUTA["distribution"]["profiles"]["binary"]["binary_artifacts"].items():
+            expected = binary_name.group(1) + (".exe" if platform == "windows-x86_64" else "")
+            with self.subTest(platform=platform):
+                self.assertEqual(artifact["entrypoint"], expected)
+
     def test_binary_distribution_has_cloud_agent_linux_target(self):
         distribution = EXECUTA.get("distribution", {})
         self.assertEqual(distribution.get("active"), "binary")
