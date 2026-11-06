@@ -54,8 +54,9 @@
       summary { cursor: pointer; color: #4d5f7c; font-size: 12px; font-weight: 700; }
       pre { background: #f6f8fc; border: 1px solid #e2e7f0; padding: 12px; border-radius: 9px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; line-height: 1.5; }
       .fineprint { color: #8490a3; font-size: 11px; text-align: center; line-height: 1.5; padding: 8px; }
-      .approval-dialog { width: min(520px, calc(100vw - 28px)); max-width: 520px; border: 1px solid #d7deea; border-radius: 14px; padding: 20px; color: #172033; box-shadow: 0 18px 60px rgba(10, 24, 48, .28); }
-      .approval-dialog::backdrop { background: rgba(13, 24, 42, .56); }
+      .approval-overlay { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 14px; background: rgba(13, 24, 42, .62); }
+      .approval-overlay[hidden] { display: none !important; }
+      .approval-dialog { width: min(520px, 100%); border: 1px solid #d7deea; border-radius: 14px; padding: 20px; color: #172033; background: #fff; box-shadow: 0 18px 60px rgba(10, 24, 48, .28); }
       .approval-dialog h2 { margin: 0 0 10px; font-size: 17px; }
       .approval-dialog p { margin: 0; white-space: pre-line; overflow-wrap: anywhere; color: #40516e; font-size: 13px; line-height: 1.6; }
       .approval-dialog .actions { justify-content: flex-end; }
@@ -163,14 +164,16 @@
           </details>
         </section>
       </section>
-      <dialog id="approval-dialog" class="approval-dialog" aria-labelledby="approval-title" aria-describedby="approval-message">
-        <h2 id="approval-title">Confirm action</h2>
-        <p id="approval-message"></p>
-        <div class="actions">
-          <button id="approval-cancel" class="secondary" type="button" autofocus>Cancel</button>
-          <button id="approval-accept" class="primary" type="button">Confirm</button>
-        </div>
-      </dialog>
+      <div id="approval-overlay" class="approval-overlay" hidden>
+        <section class="approval-dialog" role="dialog" aria-modal="true" aria-labelledby="approval-title" aria-describedby="approval-message">
+          <h2 id="approval-title">Confirm action</h2>
+          <p id="approval-message"></p>
+          <div class="actions">
+            <button id="approval-cancel" class="secondary" type="button">Cancel</button>
+            <button id="approval-accept" class="primary" type="button">Confirm</button>
+          </div>
+        </section>
+      </div>
       <p class="fineprint">The first check is a non-persistent preview. For native USDC on Base/Ethereum, the user can explicitly issue a one-time permission, consume it through ExecutionRouter and then sign the exact transfer in an injected wallet. Verigate never sees the wallet private key. Solana is not yet enabled for wallet submission. WARN and BLOCK never receive execution authority.</p>
     </main>
     <script src="anna-tool-ids.js"></script>
