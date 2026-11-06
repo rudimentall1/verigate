@@ -27,6 +27,10 @@ class ExecutaManifestTest(unittest.TestCase):
         cls.plugin = _load(PLUGIN, "verigate_authority_plugin_under_test")
         cls.smoke = _load(SMOKE, "anna_smoke_under_test")
 
+    def test_published_protocol_manifest_matches_runtime_describe(self):
+        protocol_manifest = json.loads((PLUGIN.parent / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(protocol_manifest, self.plugin.MANIFEST)
+
     def test_manifest_passes_protocol_check(self):
         self.smoke.check_manifest(self.plugin.MANIFEST)
 
