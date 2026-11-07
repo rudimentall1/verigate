@@ -160,7 +160,7 @@ The current payment intake uses one bounded `llm.complete` call per explicit che
 - [x] App UI writes only a short-lived unique approval record in the private `app` KV scope.
 - [x] The bundled Executa reads the approval, validates its nonce, exact action binding and 60-second expiry, then consumes it with ETag-conditional delete.
 - [x] The Executa negotiates protocol v2 and uses App-context reverse RPC for the short-lived approval record. Legacy `host_capabilities` strings in the Executa manifest are ignored by the current Anna runtime and are not an authorization grant.
-- [x] Host Upload is not used as a substitute for durable storage. This app currently creates no user-facing report/document files; APS Files is the appropriate Anna API to evaluate for durable Executa state. That separate database/key persistence integration has not yet been implemented and remains blocked below.
+- [x] Host Upload is not used as a substitute for durable storage. This app currently creates no user-facing report/document files. APS Files is for object/file storage; it does not supply the transactional database semantics required by Verigate's accounting/nonce ledger. No APS-based replacement for SQLite/key persistence is implemented.
 - [ ] Verify the real Cloud Agent invokes the Executa from the owning App context and completes App-write → Executa-read → ETag-delete. Current Anna docs describe protocol v2 + installed/enabled state + host-attested App context as the gate; do not assume a separate storage-permission toggle.
 
 ### Explicit data-directory safety — implemented, CI verified on merge commit d79d660e
@@ -193,7 +193,7 @@ Before calling the App Cloud-ready:
 2. Restart the Agent / Executa process without deleting its data.
 3. Confirm the issuer fingerprint is unchanged and the persisted policy/accounting record remains.
 4. Repeat after an Executa package update/reinstall if the platform supports that lifecycle.
-5. If state does not survive the supported lifecycle, implement durable storage for the private signing key and policy database using the appropriate private APS scope or another Anna-supported persistent store. Do not silently generate a new issuer key or reset spend history after a restart.
+5. If state does not survive the supported lifecycle, stop authorization issuance until a documented Anna-supported durable-storage design exists: a transactionally persistent DB/volume for policy/accounting and an appropriately protected durable key store for the issuer key. Do not assume APS Files/KV by itself is a drop-in SQLite database. Do not silently generate a new issuer key or reset spend history after a restart.
 
 Do not mark this gate passed based on local smoke tests or mocked APS responses.
 
