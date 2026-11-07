@@ -1,5 +1,6 @@
 import base64
 import tempfile
+from decimal import Decimal
 import unittest
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from core.authority_state import DynamicAuthorityService
 from core.policy import Policy
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.networks import NetworkRegistry, UnsupportedNetworkError
+from enforcement.local import ExecutionGate
 from enforcement.router import ExecutionRouter
 from enforcement.solana import SolanaExecutionAdapter
 
@@ -136,6 +138,35 @@ class ExecutionRouterTest(unittest.TestCase):
                 receipt.as_dict(),
                 {"state": "CONFIRMED", "transaction_ref": "0xattacker"},
             )
+
+
+    def test_portaldot_substrate_authorization_can_be_consumed_once_without_broadcast_adapter(self):
+        recipient = "5GrwvaEF5zXb26Fz9rcQpDWS7Q7f6B8e4pK5s7c8f9gH2j3k"
+        intent = ActionIntent(
+            agent_id="portalpilot-agent",
+            action_type="portaldot.substrate_transfer",
+            target=recipient,
+            amount=Decimal("100000000000000"),
+            amount_exact="100000000000000",
+            asset="POT",
+            network="portaldot-v3-substrate",
+            metadata={
+                "portaldot_substrate_v3": {
+                    "recipient_ss58": recipient,
+                    "amount_base_units": "100000000000000",
+                    "genesis_hash": "d4f9acbcf7f52388d8b095abe3c198d19fc510e0343e643e87cfbccb155283bd",
+                }
+            },
+        )
+        auth = self._authorization(intent)["execution_authorization"]
+        self.assertIsInstance(self.router._adapter(auth), ExecutionGate)
+
+        first_ok, first_reason = self.router.consume(auth)
+        second_ok, second_reason = self.router.consume(auth)
+        self.assertTrue(first_ok, first_reason)
+        self.assertIn("consumed", first_reason)
+        self.assertFalse(second_ok)
+        self.assertIn("already consumed", second_reason)
 
     def test_blocked_decision_does_not_create_execution_authorization(self):
         intent = ActionIntent(
