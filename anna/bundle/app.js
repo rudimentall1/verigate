@@ -107,14 +107,25 @@ function getTextFromCompletion(reply) {
 
 async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
   if (!state.anna?.llm?.complete) {
-    throw new Error("Anna's LLM is not available in this session. Open Verigate from the Anna app runtime and try again.");
+    const error = new Error("Anna's LLM is not available in this session. Open Verigate from the Anna app runtime and try again.");
+    error.annaLlmUnavailable = true;
+    throw error;
   }
-  const reply = await state.anna.llm.complete({
-    systemPrompt,
-    messages: [{ role: "user", content: { type: "text", text: userPrompt } }],
-    maxTokens,
-    temperature: 0.1
-  });
+  let reply;
+  try {
+    reply = await state.anna.llm.complete({
+      systemPrompt,
+      messages: [{ role: "user", content: { type: "text", text: userPrompt } }],
+      maxTokens,
+      temperature: 0.1
+    });
+  } catch (cause) {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
+    error.annaLlmUnavailable = true;
+    throw error;
+  }
+  // A malformed host response is not an outage: preserve the explicit error
+  // instead of silently converting an invalid response into manual mode.
   return getTextFromCompletion(reply);
 }
 
@@ -233,8 +244,9 @@ async function interpretRequest(description) {
     try {
       raw = await askAnna(system, user + reminder, 1000);
     } catch (error) {
-      // LLM transport, quota, or session errors must not prevent a policy-only
-      // preview. The caller keeps execution disabled when aiAvailable is false.
+      // Only a failed Host LLM request enables a policy-only preview. Invalid
+      // response envelopes and malformed model output remain explicit errors.
+      if (!error?.annaLlmUnavailable) throw error;
       return manualInterpretation();
     }
     try {
