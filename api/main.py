@@ -430,8 +430,10 @@ def authorize_arc_payment(req: ActionAuthorizationRequest) -> dict:
             amount=amount,
         )
         network_status = ArcMainnetIntegration().status()
-    except (ArcIntegrationError, EvmRpcError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400 if isinstance(exc, ArcIntegrationError) else 503, detail=str(exc)) from exc
+    except (ArcIntegrationError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except EvmRpcError as exc:
+        raise HTTPException(status_code=503, detail=f"Arc mainnet verification failed: {exc}") from exc
 
     action = ActionIntent(
         agent_id=req.agent_id,
