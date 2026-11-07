@@ -155,7 +155,7 @@ The current payment intake uses one bounded `llm.complete` call per explicit che
 - [ ] A future conversational intake upgrade may adopt Agent Session for follow-up context, streaming, cancellation and refresh recovery.
 - [ ] If adopted, create one Session per conversation, restore it by saved session UUID, and use `quotaCaps.allowed_tools: []` for the intake model. The LLM must never receive a path to privileged Verigate authorization or wallet-consumption methods; only explicit App UI buttons may invoke those methods.
 
-### APS — approval KV path passed by code review; actual Host grant/persistence pending
+### APS — code path present; Cloud invocation/persistence unverified
 
 - [x] App UI writes only a short-lived unique approval record in the private `app` KV scope.
 - [x] The bundled Executa reads the approval, validates its nonce, exact action binding and 60-second expiry, then consumes it with ETag-conditional delete.
@@ -184,7 +184,7 @@ Infrastructure check on 2026-11-06: the connected Render workspace has one free 
 
 ### Persistence durability — BLOCKED pending real Cloud Agent restart test
 
-The policy/accounting database (`verigate.db`) and Ed25519 issuer keypair (`issuer.key` / `issuer.pub`) are currently kept in a local data directory. The resolver tries the directory beside the Executa binary, then `~/.verigate-authority`, then the system temporary directory. They are not currently stored through APS.
+The policy/accounting database (`verigate.db`) and Ed25519 issuer keypair (`issuer.key` / `issuer.pub`) are currently kept in a local data directory. When `VERIGATE_ANNA_DATA_DIR` is set, that path is authoritative and failure to use it is fatal. Only when the override is unset does the resolver fall back to the Executa-adjacent `.data` directory, `~/.verigate-authority`, then the system temporary directory. No Anna Cloud persistence guarantee has been demonstrated; the database and key are not currently stored through APS.
 
 The binary smoke test uses a temporary data directory and verifies a single running process; it does not prove that the keypair and SQLite state survive a Cloud Agent process restart, tool reinstall, or replacement of the binary package.
 
