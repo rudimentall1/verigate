@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Install contract tooling
@@ -57,11 +57,11 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          npm install --no-save --no-audit --no-fund jsdom
+          npm ci --no-audit --no-fund
 
-      - name: Anna CLI strict manifest and Host API validation
+      - name: Anna CLI strict schema-4 manifest validation
         working-directory: anna
-        run: npx --yes @anna-ai/cli@0.1.59 validate --manifest manifest.json --bundle bundle --strict
+        run: npx --yes @anna-ai/cli@0.1.64 validate --strict
 
       - name: Anna app end-to-end UI test (real app and plugin, scripted LLM)
         run: node scripts/test_anna_ui.mjs
@@ -70,5 +70,5 @@ jobs:
         run: |
           pip install pyinstaller
           python anna/build_binary.py
-          python anna/smoke_binary.py anna/executas/verigate-authority/dist/verigate-authority "0.1.13"
-          python anna/package_binary.py linux-x86_64 "0.1.13"
+          python anna/smoke_binary.py anna/executas/verigate-authority/dist/verigate-authority "0.1.14"
+          python anna/package_binary.py linux-x86_64 "0.1.14"

@@ -1,9 +1,9 @@
 {
-  "schema": 3,
+  "schema": 4,
   "required_executas": [
     {
       "tool_id": "bundled:verigate-authority",
-      "min_version": "0.1.13",
+      "min_version": "0.1.14",
       "version": "latest"
     }
   ],
@@ -41,21 +41,6 @@
         "single_instance": true
       }
     ],
-    "host_api": {
-      "llm": [
-        "complete"
-      ],
-      "tools": [
-        "required:bundled:verigate-authority"
-      ],
-      "window": [
-        "set_title",
-        "ready"
-      ],
-      "storage": [
-        "set"
-      ]
-    },
     "csp_overrides": {
       "script-src": [
         "'self'"
@@ -69,9 +54,5 @@
     ],
     "seed_storage": {},
     "user_id": 1
-  },
-  "host_capabilities": [
-    "aps.scope.app.read",
-    "aps.scope.app.write"
-  ]
+  }
 }

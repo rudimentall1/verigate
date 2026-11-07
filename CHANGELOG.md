@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased — Anna 0.1.13 candidate / Executa 0.1.12
+## Unreleased — Anna 0.1.18 candidate / Executa 0.1.14
+
+### Anna platform integration and security
+
+- Migrated the App manifest to Anna schema 4 and removed retired `host_capabilities` / per-method `ui.host_api` ACL declarations. Strict validation uses the current Anna CLI 0.1.64 contract.
+- Moved payment interpretation and contextual risk review behind the bundled Verigate Python Executa. The App now invokes `verigate_ai_review`; the Executa calls Anna's host LLM through protocol-v2 reverse `sampling/createMessage` and returns the result. No model-provider API key is stored by Verigate.
+- Executa initialize now advertises both `client_capabilities.sampling` and `client_capabilities.storage`; the shared reverse-RPC router dispatches replies to the correct client. Legacy protocol 1.1 disables both features fail-closed.
+- AI review remains advisory. Deterministic Verigate policy owns ALLOW/WARN/BLOCK; findings can only raise scrutiny. Malformed Sampling envelopes fail closed, while genuine Sampling outages permit only the explicitly labelled non-authorizing policy preview.
+- Executa state now prefers Anna's `ANNA_WORKSPACE_DIR/verigate-authority` after an explicit `VERIGATE_ANNA_DATA_DIR` override; either selected path fails closed when unavailable. Lazy SQLite/issuer-key initialization is synchronized against concurrent first invokes.
+- Fixed evidence snapshot history so repeated identical graph captures remain separate immutable records; migrated existing SQLite databases that had a unique graph digest constraint.
+- Added local reverse-Sampling wire acceptance, concurrent cold-start, Cloud workspace path, and evidence-schema migration regressions. Updated UI E2E host fixtures and Anna listing screenshots to show ALLOW, WARN, BLOCK and missing-detail handling.
 
 - Restored and documented stateful Anna policy controls: preview checks remain non-persistent but read prior authorization history; the explicit authorization step records the new authorization and audit history. This supersedes the older 0.1.10 note below about omitting cumulative controls.
 - Restricted POSIX issuer private-key storage to mode 0600 inside a mode-0700 directory; legacy permissions are tightened and symlinked private-key paths are rejected.

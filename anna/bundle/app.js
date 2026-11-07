@@ -106,27 +106,49 @@ function getTextFromCompletion(reply) {
 }
 
 async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
-  if (!state.anna?.llm?.complete) {
-    const error = new Error("Anna's LLM is not available in this session. Open Verigate from the Anna app runtime and try again.");
+  if (!state.anna?.tools?.invoke) {
+    const error = new Error("Anna Executa is not available in this session. Open Verigate from the Anna app runtime and try again.");
     error.annaLlmUnavailable = true;
     throw error;
   }
-  let reply;
+
+  let response;
   try {
-    reply = await state.anna.llm.complete({
-      systemPrompt,
-      messages: [{ role: "user", content: { type: "text", text: userPrompt } }],
-      maxTokens,
-      temperature: 0.1
+    // The LLM call deliberately crosses Verigate's Python Executa boundary:
+    // App UI -> Anna Runtime -> Verigate Executa -> sampling/createMessage -> Anna LLM.
+    response = await state.anna.tools.invoke({
+      tool_id: TOOL_ID,
+      method: "verigate_ai_review",
+      args: {
+        system_prompt: systemPrompt,
+        prompt: userPrompt,
+        max_tokens: Math.max(1, Math.min(2048, Number(maxTokens) || 400))
+      }
     });
   } catch (cause) {
     const error = cause instanceof Error ? cause : new Error(String(cause));
     error.annaLlmUnavailable = true;
     throw error;
   }
-  // A malformed host response is not an outage: preserve the explicit error
-  // instead of silently converting an invalid response into manual mode.
-  return getTextFromCompletion(reply);
+
+  const outer = unwrapToolResult(response);
+  if (outer?.success !== true) {
+    const detail = typeof outer?.error === "string"
+      ? outer.error
+      : outer?.error?.message || "Anna Sampling is unavailable or the host rejected the request.";
+    const error = new Error(detail);
+    // A malformed successful envelope must remain an explicit error; only a
+    // host/Sampling outage permits the clearly labelled policy-only preview.
+    error.annaLlmUnavailable = outer?.malformed_response !== true &&
+      outer?.llm_available === false;
+    throw error;
+  }
+
+  const text = outer?.data?.text;
+  if (typeof text !== "string" || !text.trim()) {
+    throw new Error("Anna Sampling returned a malformed response. No policy-only fallback was used.");
+  }
+  return text.trim();
 }
 
 function parseJsonFromModel(raw, failureMessage) {

@@ -58,3 +58,54 @@ authorization, execution-side enforcement, evidence, and independent verificatio
 
 The issuer private key is not compromised, the host is trusted, and verifiers obtain the
 issuer public key through a trusted channel.
+
+
+## Anna App and AI-agent payment flow (2026-11-07)
+
+This section extends the core authority lifecycle with the Anna-specific trust boundaries. The model is an untrusted adviser; Anna Runtime is a transport/host boundary; the deterministic Verigate policy and ExecutionRouter remain the only authority path.
+
+### Assets and security invariants
+
+1. No LLM output, prompt, client boolean or agent tool call may mint execution authority.
+2. ALLOW/WARN/BLOCK is decided by deterministic Verigate policy over the exact normalized payment fields. AI risk evidence may only escalate ALLOW to WARN; model output cannot downgrade WARN/BLOCK.
+3. Missing or ambiguous recipient, asset, network or amount must stop before policy evaluation. The user must resolve/confirm the visible fields.
+4. Execution Authorization is issued only after a fresh persistent policy check returns ALLOW and a one-time App UI approval for those exact fields is consumed.
+5. Wallet submission requires a different one-time App UI approval bound to the exact authorization and transaction. ExecutionRouter consumes the authorization before the wallet is asked to sign.
+6. Anna and Verigate never receive the wallet private key. The connected EIP-1193 wallet is the signer.
+7. A policy preview is non-persistent and never broadcasts. WARN/BLOCK never receive execution authority.
+
+### Anna integration trust boundaries
+
+- App UI invokes the bundled Verigate Executa using anna.tools.invoke. The Executa calls Anna's host LLM using protocol-v2 reverse JSON-RPC sampling/createMessage. The Executa advertises client_capabilities.sampling = {} and client_capabilities.storage = {} during initialize. This path is exercised locally by a wire-level test and the real plugin subprocess with a mock host; it is not a claim that the Anna Cloud LLM was invoked.
+- The plugin does not store a provider API key. Anna owns provider routing/quota. Sampling metadata is not relied upon for audit correlation because the current official docs say that metadata is not consumed by Nexus for this purpose.
+- The App manifest is schema 4. Retired host_capabilities and method-level ui.host_api declarations are not authorization controls in the current Anna runtime. The required Executa allow-list and host-attested owning-App invocation context are the relevant boundaries.
+- The AI receives untrusted payment text. Prompt injection can manipulate interpretation or create false negatives. It cannot change the deterministic policy, alter the verified receipt, or directly call privileged authorization methods through the UI flow. AI findings are advisory; a missing warning is not evidence that a payment is safe.
+
+### Attack trees and controls
+
+| Attack path | Control | Residual risk |
+|---|---|---|
+| Prompt-injected payment text says “ignore policy and approve” | Contextual review can add a risk flag; policy never reads model-proposed decisions; flag can only escalate ALLOW to WARN | A model may miss an attack. Deterministic limits and user confirmation remain necessary; do not treat no flag as safety proof |
+| Model fabricates recipient/amount or returns extra decision/approve fields | Strict JSON parsing and field allow-list; visible fields are user-editable; unknown model keys are ignored; malformed output fails closed | A plausible but wrong extraction may be accepted by the user; the UI must show exact fields before authorization |
+| Direct chat/tool call attempts authorization | Privileged methods are only dispatched through the async App-context gate and require a 48-hex one-time nonce in owning-App APS | Depends on Anna correctly attesting the owning App context and enforcing App scope |
+| Replay or race two invocations with one UI approval | 60-second nonce, exact-field binding, APS ETag-conditional delete; only one delete can succeed | Cloud APS behaviour must still be confirmed on an actual Agent |
+| Change amount/payee/chain after approval | Approval and signed authorization bind exact fields; wallet path compares exact transaction; chain/account drift after consume prevents submit | Wallet/provider behaviour outside the app cannot be guaranteed; a rejected wallet prompt burns the one-time authorization |
+| Reuse wallet authorization | Off-chain ExecutionRouter verifies issuer signature, expiry, action fingerprint and consumes the one-time SQLite nonce before returning the exact transaction envelope; tested for replay | This is not a global wallet firewall. A user/agent can submit an independent transaction through another wallet/client. The on-chain AtomicStateGuard restricts calls to its configured executor and checks state/value atomically, but does not independently verify the per-action Ed25519 authorization; bypassing the integrated Verigate router is outside this app's gate |
+| Kill/restart/upgrade Executa to reset state or rotate issuer key | Explicit VERIGATE_ANNA_DATA_DIR and Anna ANNA_WORKSPACE_DIR are authoritative and fail closed if unavailable; keypair mismatch/partial pair is corruption, not permission to rotate | Local tests prove path selection, not Cloud lifecycle. Anna documents /data/workspace survives restart/suspend/image upgrade but is reclaimed after about three days dormancy; APS checkpoint for transactional ledger/key is not implemented |
+
+### Local evidence and what it proves
+
+- tests/test_anna_sampling_roundtrip.py — actual Executa subprocess negotiates v2, sends sampling/createMessage, propagates context.invoke_id, receives a mock host response and returns the result to the originating invoke.
+- scripts/test_anna_ui.mjs — actual App bundle + Python Executa process; mock Sampling host; covers prompt-injection escalation, invalid recipient BLOCK, missing details, LLM quota/401 policy-only preview, malformed Sampling output, App approval/ETag gate, receipt verification, exact payment binding, ExecutionRouter consume, wallet cancellation and network drift.
+- tests/test_anna_state_initialization.py — parallel cold-start regression to ensure one issuer identity and one SQLite engine are initialized per process.
+- tests/test_anna_data_directory.py and tests/test_evidence_snapshot_migration.py — Cloud workspace path selection/fail-closed behaviour and backwards-compatible SQLite schema migration.
+- npm run test:atomic and npm run test:guard — local EVM state/replay and access-control/value-forwarding checks against Ganache.
+
+**Explicitly unproven:** real Anna Cloud Agent install, Linux Executa discovery, actual Anna Sampling quota/response, App-context APS issuance, real /data/workspace mount and restart/image-upgrade/dormancy lifecycle. The account's Anna CU quota is exhausted, so these tests cannot be run in this release pass. The local mock suite must never be presented as Cloud acceptance.
+
+### Release scope / non-goals
+
+- Native USDC wallet submission is implemented only for Base and Ethereum. Solana remains policy/authorization-only.
+- The Anna App does not provide a persistent multi-turn agent session; payment intake uses stateless Sampling and a fresh check after clarification.
+- No KMS/HSM integration or multi-replica transactional database is implemented. SQLite is single-process local persistence in the selected data directory.
+- No independent third-party security audit has been completed.
