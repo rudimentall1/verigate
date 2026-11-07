@@ -24,14 +24,15 @@ else:
 sys.path.insert(0, str(_SOURCE_REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from executa_sdk import PROTOCOL_VERSION_V2, StorageClient, StorageError, bind_invoke, make_response_router
+from executa_sdk import (PROTOCOL_VERSION_V2, SamplingClient, SamplingError, StorageClient, StorageError, bind_invoke, get_current_invoke_id, make_response_router)
 from executa_sdk.sampling import _write_frame
 
+_sampling = SamplingClient()
 _storage = StorageClient()
-_route_response = make_response_router(_storage)
+_route_response = make_response_router(_sampling, _storage)
 _loop = None
 
-VERSION = "0.1.13"
+VERSION = "0.1.14"
 _POLICY_PATH = _BUNDLE_ROOT / "policies" / "anna.yaml"
 
 # Anna Executa protocol 2.0: negotiate APS support in `initialize`; keep
@@ -46,12 +47,25 @@ MANIFEST = {
         "keys or broadcast transactions; execution must pass through a Verigate enforcement adapter."
     ),
     "author": "rudimentall1",
-    "host_capabilities": ["aps.scope.app.read", "aps.scope.app.write"],
     "homepage": "https://github.com/rudimentall1/verigate",
     "icon": "\U0001f6e1\ufe0f",
     "category": "security",
     "license": "MIT",
     "tools": [
+        {
+            "name": "verigate_ai_review",
+            "description": (
+                "Ask the Anna host LLM to interpret a payment request or explain a Verigate decision. "
+                "The Executa calls Anna through protocol-v2 sampling/createMessage; no provider API key "
+                "is stored here. The response is advisory and never authorizes or executes an action."
+            ),
+            "timeout": 60,
+            "parameters": [
+                {"name": "system_prompt", "type": "string", "description": "Task-specific instruction for the advisory model call.", "required": True},
+                {"name": "prompt", "type": "string", "description": "Untrusted request or decision context to review.", "required": True},
+                {"name": "max_tokens", "type": "integer", "description": "Maximum response tokens (1-2048).", "required": False, "default": 1000}
+            ],
+        },
         {
             "name": "verigate_check",
             "description": (
@@ -138,8 +152,11 @@ MANIFEST = {
     ],
 }
 
+_CHECK_TOOL = next(tool for tool in MANIFEST["tools"] if tool["name"] == "verigate_check")
 _REQUIRED_ARGS = [
-    p["name"] for p in MANIFEST["tools"][0]["parameters"] if p["required"]
+    parameter["name"]
+    for parameter in _CHECK_TOOL["parameters"]
+    if parameter["required"]
 ]
 
 
@@ -151,22 +168,27 @@ class RpcError(Exception):
 
 
 def _resolve_data_dir() -> Path:
-    """Resolve local state storage without silently abandoning an explicit path.
+    """Resolve durable state storage, preferring Anna's persistent workspace.
 
-    When an operator sets VERIGATE_ANNA_DATA_DIR, that path is authoritative.
-    Falling back to a home or temporary directory after it fails would make
-    issuer-key rotation and accounting-history loss look like a successful
-    startup. In that case, fail closed instead.
+    VERIGATE_ANNA_DATA_DIR is an explicit operator override. On Anna Cloud
+    Agents, ANNA_WORKSPACE_DIR is the platform's durable per-user volume
+    contract; user data must not be stored beside the replaceable Executa
+    installation. Both paths are authoritative and fail closed when unusable.
+    Local-only fallbacks are evaluated lazily so a working default does not
+    depend on HOME being configured.
     """
     override = os.environ.get("VERIGATE_ANNA_DATA_DIR")
+    workspace = os.environ.get("ANNA_WORKSPACE_DIR")
+
     if override:
         candidates = [Path(override)]
+        authoritative = True
+    elif workspace:
+        candidates = [Path(workspace) / "verigate-authority"]
+        authoritative = True
     else:
-        candidates = [
-            _DEFAULT_DATA_DIR,
-            Path.home() / ".verigate-authority",
-            Path(tempfile.gettempdir()) / "verigate-authority",
-        ]
+        candidates = [_DEFAULT_DATA_DIR]
+        authoritative = False
 
     errors = []
     for candidate in candidates:
@@ -178,32 +200,55 @@ def _resolve_data_dir() -> Path:
             return candidate
         except OSError as exc:
             errors.append(f"{candidate}: {exc}")
-            if override:
+            if authoritative:
                 break
+
+    # These fallbacks are for local development only. Never use them when
+    # Anna provides its durable workspace, because that would silently move
+    # issuer identity and accounting history onto an ephemeral filesystem.
+    if not authoritative:
+        try:
+            candidates = [Path.home() / ".verigate-authority"]
+        except RuntimeError:
+            candidates = []
+        candidates.append(Path(tempfile.gettempdir()) / "verigate-authority")
+        for candidate in candidates:
+            try:
+                candidate.mkdir(parents=True, exist_ok=True)
+                probe = candidate / ".write-test"
+                probe.write_text("ok", encoding="utf-8")
+                probe.unlink()
+                return candidate
+            except OSError as exc:
+                errors.append(f"{candidate}: {exc}")
 
     detail = "; ".join(errors) or "no candidate paths configured"
     raise RuntimeError(f"no writable Verigate data directory available: {detail}")
 
 
 _state = None
+_state_lock = threading.Lock()
 
 
 def _get_state():
+    """Initialize one issuer identity and SQLite engine exactly once per process."""
     global _state
     if _state is None:
-        from attest.keys import ensure_keypair
-        from core.engine import GuardrailEngine
-        from core.policy import Policy
-        from core.storage import Storage
+        with _state_lock:
+            if _state is None:
+                from attest.keys import ensure_keypair
+                from core.engine import GuardrailEngine
+                from core.policy import Policy
+                from core.storage import Storage
 
-        data_dir = _resolve_data_dir()
-        private_path = data_dir / "issuer.key"
-        public_path = data_dir / "issuer.pub"
-        private_key = ensure_keypair(private_path, public_path)
-        engine = GuardrailEngine(
-            Policy.load(str(_POLICY_PATH)), Storage(str(data_dir / "verigate.db"))
-        )
-        _state = (engine, private_key)
+                data_dir = _resolve_data_dir()
+                private_path = data_dir / "issuer.key"
+                public_path = data_dir / "issuer.pub"
+                private_key = ensure_keypair(private_path, public_path)
+                engine = GuardrailEngine(
+                    Policy.load(str(_POLICY_PATH)), Storage(str(data_dir / "verigate.db"))
+                )
+                _state = (engine, private_key)
     return _state
 
 
@@ -233,6 +278,65 @@ def _parse_ai_flags(raw: object) -> list:
             continue
         flags.append(RuleMatch("ai_risk_flag", Severity.WARN, f"AI review ({code or 'other'}): {message}".strip()))
     return flags
+
+
+async def _verigate_ai_review(args: dict) -> dict:
+    """Call the Anna host LLM through Executa reverse-RPC Sampling (v2)."""
+    system_prompt = args.get("system_prompt")
+    prompt = args.get("prompt")
+    max_tokens = args.get("max_tokens", 1000)
+    if not isinstance(system_prompt, str) or not system_prompt.strip() or len(system_prompt) > 8_000:
+        return {"success": False, "error": "system_prompt must be a non-empty string no longer than 8000 characters"}
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 24_000:
+        return {"success": False, "error": "prompt must be a non-empty string no longer than 24000 characters"}
+    if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 1 <= max_tokens <= 2048:
+        return {"success": False, "error": "max_tokens must be an integer from 1 to 2048"}
+
+    try:
+        response = await _sampling.create_message(
+            messages=[{
+                "role": "user",
+                "content": {"type": "text", "text": prompt},
+            }],
+            max_tokens=max_tokens,
+            system_prompt=system_prompt,
+            temperature=0.1,
+            include_context="none",
+            metadata={"executa_invoke_id": get_current_invoke_id(), "tool": "verigate_ai_review"},
+            timeout=45.0,
+        )
+    except SamplingError as exc:
+        return {
+            "success": False,
+            "error": {"code": exc.code, "message": exc.message},
+            "llm_available": False,
+        }
+
+    content = response.get("content")
+    if not isinstance(content, dict) or content.get("type") != "text" or not isinstance(content.get("text"), str):
+        return {
+            "success": False,
+            "error": "Anna AI returned an unexpected response format from Anna Sampling",
+            "llm_available": False,
+            "malformed_response": True,
+        }
+    text = content["text"].strip()
+    if not text:
+        return {
+            "success": False,
+            "error": "Anna Sampling returned an empty response",
+            "llm_available": False,
+            "malformed_response": True,
+        }
+    return {
+        "success": True,
+        "data": {
+            "text": text,
+            "model": response.get("model"),
+            "stop_reason": response.get("stopReason"),
+            "usage": response.get("usage"),
+        },
+    }
 
 
 def _verigate_check(args: dict) -> dict:
@@ -770,15 +874,30 @@ def _verigate_verify_decision_receipt(args: dict) -> dict:
     }
 
 
+def _initialize_result(params: dict | None = None) -> dict:
+    """Negotiate protocol v2 and explicitly advertise reverse-RPC clients."""
+    params = params if isinstance(params, dict) else {}
+    offered = params.get("protocolVersion") or PROTOCOL_VERSION_V2
+    protocol = offered if offered in ("1.1", PROTOCOL_VERSION_V2) else PROTOCOL_VERSION_V2
+    if protocol != PROTOCOL_VERSION_V2:
+        reason = "Anna host did not negotiate Executa protocol 2.0; APS and Sampling are unavailable"
+        _storage.disable(reason)
+        _sampling.disable(reason)
+    return {
+        "protocolVersion": protocol,
+        "serverInfo": {"name": MANIFEST["display_name"], "version": MANIFEST["version"]},
+        "client_capabilities": (
+            {"storage": {}, "sampling": {}} if protocol == PROTOCOL_VERSION_V2 else {}
+        ),
+        "capabilities": {},
+    }
+
+
 def handle(request: dict):
     method = request.get("method")
     params = request.get("params") or {}
     if method == "initialize":
-        return {
-            "protocolVersion": PROTOCOL_VERSION_V2,
-            "serverInfo": {"name": MANIFEST["display_name"], "version": MANIFEST["version"]},
-            "capabilities": {"storage": {"kv": True}},
-        }
+        return _initialize_result(params)
     if method == "describe":
         return MANIFEST
     if method == "health":
@@ -793,7 +912,10 @@ def handle(request: dict):
 def invoke(tool: str, args: dict) -> dict:
     if tool in ("verigate_authorize_payment", "verigate_consume_execution_authorization"):
         raise RpcError(-32603, "privileged execution methods must run through the async App-context approval gate")
+    if tool == "verigate_ai_review":
+        raise RpcError(-32603, "Anna AI review must use the async reverse-Sampling path")
     if tool not in (
+        "verigate_ai_review",
         "verigate_check",
         "verigate_verify_execution_authorization",
         "verigate_consume_execution_authorization",
@@ -834,7 +956,9 @@ async def _handle_invoke(req_id, params: dict) -> None:
     args = params.get("arguments") or {}
     try:
         with bind_invoke(params):
-            if tool == "verigate_authorize_payment":
+            if tool == "verigate_ai_review":
+                result = await _verigate_ai_review(args)
+            elif tool == "verigate_authorize_payment":
                 result = await _verigate_authorize_payment(args)
             elif tool == "verigate_consume_execution_authorization":
                 result = await _verigate_consume_execution_authorization(args)
@@ -849,12 +973,8 @@ async def _handle_invoke(req_id, params: dict) -> None:
         _err(req_id, -32603, f"Internal error: {exc}")
 
 
-def _handle_initialize(req_id, _params: dict) -> None:
-    _ok(req_id, {
-        "protocolVersion": PROTOCOL_VERSION_V2,
-        "serverInfo": {"name": MANIFEST["display_name"], "version": MANIFEST["version"]},
-        "capabilities": {"storage": {"kv": True}},
-    })
+def _handle_initialize(req_id, params: dict) -> None:
+    _ok(req_id, _initialize_result(params))
 
 
 def _stdin_loop() -> None:

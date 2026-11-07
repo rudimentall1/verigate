@@ -324,7 +324,7 @@ CREATE TABLE IF NOT EXISTS outcome_attestations (
 CREATE TABLE IF NOT EXISTS evidence_graph_snapshots (
     snapshot_id TEXT PRIMARY KEY,
     authorization_id TEXT NOT NULL,
-    graph_sha256 TEXT NOT NULL UNIQUE,
+    graph_sha256 TEXT NOT NULL,
     graph_version INTEGER NOT NULL,
     graph_json TEXT NOT NULL,
     created_at REAL NOT NULL
@@ -358,6 +358,67 @@ class Storage:
         self._conn.execute("PRAGMA busy_timeout=30000")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(_SCHEMA)
+
+        # Older releases made graph_sha256 UNIQUE. That incorrectly conflates
+        # repeated point-in-time captures when the graph content is identical.
+        # Keep each snapshot addressable by snapshot_id and preserve the digest
+        # as an integrity check, while migrating existing databases in place.
+        has_unique_graph_digest = False
+        for index in self._conn.execute(
+            "PRAGMA index_list(evidence_graph_snapshots)"
+        ).fetchall():
+            if not index[2]:
+                continue
+            index_name = index[1]
+            indexed_columns = [
+                row[2]
+                for row in self._conn.execute(
+                    f'PRAGMA index_info("{index_name}")'
+                ).fetchall()
+            ]
+            if indexed_columns == ["graph_sha256"]:
+                has_unique_graph_digest = True
+                break
+
+        if has_unique_graph_digest:
+            # DDL and row-copy must be one transaction. A crash or disk error
+            # midway through migration must leave the old table usable rather
+            # than a renamed legacy table with no active replacement.
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                self._conn.execute(
+                    "ALTER TABLE evidence_graph_snapshots "
+                    "RENAME TO evidence_graph_snapshots_legacy"
+                )
+                self._conn.execute(
+                    "CREATE TABLE evidence_graph_snapshots ("
+                    "snapshot_id TEXT PRIMARY KEY, "
+                    "authorization_id TEXT NOT NULL, "
+                    "graph_sha256 TEXT NOT NULL, "
+                    "graph_version INTEGER NOT NULL, "
+                    "graph_json TEXT NOT NULL, "
+                    "created_at REAL NOT NULL)"
+                )
+                self._conn.execute(
+                    "INSERT INTO evidence_graph_snapshots "
+                    "(snapshot_id, authorization_id, graph_sha256, "
+                    "graph_version, graph_json, created_at) "
+                    "SELECT snapshot_id, authorization_id, graph_sha256, "
+                    "graph_version, graph_json, created_at "
+                    "FROM evidence_graph_snapshots_legacy"
+                )
+                self._conn.execute("DROP TABLE evidence_graph_snapshots_legacy")
+                self._conn.execute(
+                    "CREATE INDEX IF NOT EXISTS "
+                    "idx_evidence_graph_snapshots_authorization "
+                    "ON evidence_graph_snapshots(authorization_id, created_at)"
+                )
+            except Exception:
+                self._conn.rollback()
+                raise
+            else:
+                self._conn.commit()
+
         columns = {
             row[1] for row in self._conn.execute("PRAGMA table_info(authorization_artifacts)")
         }

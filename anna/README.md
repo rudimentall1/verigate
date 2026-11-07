@@ -1,6 +1,18 @@
 # Verigate Authority (Anna App)
 
-Verigate Authority lets a user describe a payment in plain language. Anna AI extracts the request, resolves missing or ambiguous details, and performs a separate contextual risk review for recipient/purpose mismatches, changed payment details, urgency, prompt injection and attempts to bypass controls. Verigate then evaluates the exact fields against deterministic policy rules and returns a signed Decision Receipt.
+Verigate Authority lets a user describe a payment in plain language. The bundled Verigate Executa asks Anna's host LLM to interpret the request and perform a separate contextual risk review through Executa protocol-v2 `sampling/createMessage`; no provider API key is stored by the app or plugin. The UI invokes the bundled Executa through Anna Runtime, and the Executa returns the model response to the UI. Verigate then evaluates the exact fields against deterministic policy rules and returns a signed Decision Receipt.
+
+The integration path is real and explicit:
+
+```text
+Anna App UI
+    -> Anna Runtime (tools.invoke)
+    -> bundled Verigate Python Executa
+    -> reverse JSON-RPC sampling/createMessage
+    -> Anna host LLM
+    -> Executa result
+    -> App UI
+```
 
 The AI performs payment-context analysis in addition to field extraction, but it cannot grant authority. AI input is advisory and can only make a result stricter (a risk flag raises ALLOW to WARN; an advisory BLOCK is ignored). The final ALLOW, WARN or BLOCK always comes from the policy engine, which also validates the recipient address for the network. A preview check is non-persistent: it does not record a new attempt or execute anything, but it reads existing persisted history when evaluating first-payee, rolling 24-hour spend and per-minute controls. The separate user-confirmed authorization step re-runs the policy with persistent accounting; only that step records the authorization and its audit history. Before showing a result, the app verifies the Ed25519 signature against the installation's local issuer key and displays that public key and its fingerprint. This confirms receipt integrity for that issuer key; external consumers must obtain and pin the key through a trusted channel.
 
@@ -34,7 +46,9 @@ Run these on a fresh install. Expected results use the Anna policy (500 per tran
 
 The App uses Anna's Bundled Executa model. The stable handle is `verigate-authority`; Anna resolves it to the platform-assigned production `tool_id` when publishing. Local development keeps `tool-dev-verigate-authority`.
 
-The app manifest explicitly requests the Anna host LLM completion surface (`host_api.llm: ["complete"]`) and the bundled Verigate tool. The LLM is used for request interpretation (including asking for missing details and flagging risks) and for explaining the result. Policy evaluation and the final decision stay inside Verigate.
+The App uses manifest schema 4. Its `required_executas` allow-list references the bundled handle `bundled:verigate-authority`; the retired per-method `ui.host_api.llm/tools/storage/window` ACLs and legacy `host_capabilities` are not used. The Executa negotiates protocol v2 and advertises both `client_capabilities.sampling` and `client_capabilities.storage`. Anna mints the corresponding short-lived reverse-RPC tokens per invocation for an installed and enabled Executa. App-scope approval storage is available only to invocations attested as originating from the owning App context.
+
+The AI is advisory: interpretation and contextual risk analysis run through Verigate Executa -> Anna Sampling; the policy engine owns ALLOW/WARN/BLOCK. AI risk findings can only escalate ALLOW to WARN. The AI cannot invoke privileged authorization or wallet-consumption actions as a substitute for explicit App UI confirmation.
 
 The Executa is distributed as four platform binaries:
 
@@ -53,14 +67,19 @@ From this directory:
 anna-app validate --strict
 ```
 
-From the repository root, run the Anna Executa protocol tests and the regular Verigate test suite:
+From the repository root, run the complete local release suite:
 
 ```bash
-python -m unittest tests.test_anna_executa_manifest -v
-python -m unittest discover -s tests -v
+python -m pytest -q
+npm run test:anna-ui
+npm run test:atomic
+npm run test:guard
+cd anna && npx --yes @anna-ai/cli@0.1.64 validate --strict
 ```
 
-Before resubmitting, publish the app bundle, install it as a fresh Anna Cloud Agent, and test at least these independent inputs:
+The Anna UI E2E harness runs the real App bundle and real Python Executa subprocess. Its host-side Sampling fixture simulates the Anna reverse-RPC response without calling Anna's paid LLM service or consuming Anna CU quota. The wire-level `tests/test_anna_sampling_roundtrip.py` independently verifies the v2 Sampling handshake, `sampling/createMessage` frame and invoke-context propagation. These tests prove the local integration path; they do **not** prove Cloud Agent install or platform-side LLM availability.
+
+Before any Marketplace-ready claim, a real Anna Cloud Agent install would need to test at least these independent inputs (currently unavailable because the account's Anna CU quota is exhausted; local mocks are not a substitute):
 
 - a small payment to a new recipient (expected policy result based on the default policy);
 - an amount exceeding the configured per-transaction cap (BLOCK);
@@ -91,9 +110,13 @@ enforcement boundary.
 
 Execution Authorization is not unlocked by a client-supplied `human_confirmed` boolean. The Anna UI writes a random, 60-second, one-time approval record to its private APS `app` scope only after the user confirms the exact payment. The bundled Executa negotiates protocol v2, reads that record in the owning App context, checks every payment field and its expiry, then deletes it with an ETag precondition before it runs persistent policy. A separate wallet-send click writes a second one-time record bound to the exact authorization ID and transaction fields; Executa consumes it before ExecutionRouter. Direct chat/agent calls without a UI-created App-scoped record must fail closed, even if they inherit App context.
 
-The App declares `aps.scope.app.read` and `aps.scope.app.write` at the App and Executa capability layers; the iframe receives only `anna.storage.set`. The user must grant the bundled Executa's Persistent Storage permission in Anna. The approval record contains no wallet key and expires after 60 seconds.
+The App UI writes the confirmation in its own App-scoped APS KV bucket. The Executa can read and consume it only when the invocation is host-attested as originating from that owning App context. There is no separate legacy Executa `host_capabilities` grant to request; schema-4 own-App storage is not controlled by the retired per-method `ui.host_api.storage` ACL. Protocol v2 `initialize` advertises both `client_capabilities.storage` and `client_capabilities.sampling`. The approval record contains no wallet key and expires after 60 seconds.
 
-## Connected-wallet execution (App 0.1.13 candidate / Executa 0.1.12)
+## Cloud Agent state location
+
+The Executa resolves durable working state in this order: explicit `VERIGATE_ANNA_DATA_DIR` override; otherwise `ANNA_WORKSPACE_DIR/verigate-authority` when Anna injects its workspace; only for a local process without either override does it use local fallback paths. An explicitly selected path fails closed when it cannot be written. On Cloud Agent, `ANNA_WORKSPACE_DIR` maps to the persistent `/data/workspace` volume and survives process restarts, suspend/wake and image upgrades. It is not eternal: Anna documents that a fully dormant Cloud Agent and its volume can be reclaimed after about three days. The local tests prove path selection and fail-closed behavior, not the real Cloud mount. A production durability claim still requires the account to verify that authoritative accounting and issuer-key state survive the supported Cloud lifecycle, and long-lived authoritative records must be checkpointed to APS.
+
+## Connected-wallet execution (current source candidate; versions are pinned in `anna/app.json` and `executa.json`)
 
 For native USDC on Base and Ethereum, the Executa constructs the ERC-20 transfer(address,uint256)
 calldata from the policy-checked recipient and amount and places that transaction envelope inside

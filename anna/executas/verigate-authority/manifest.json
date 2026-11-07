@@ -1,18 +1,40 @@
 {
   "name": "verigate-authority",
   "display_name": "Verigate Authority",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Checks agent payment authority and can issue a capability-bound, one-time signed Execution Authorization for an external wallet or executor. Anna does not hold wallet keys or broadcast transactions; execution must pass through a Verigate enforcement adapter.",
   "author": "rudimentall1",
-  "host_capabilities": [
-    "aps.scope.app.read",
-    "aps.scope.app.write"
-  ],
   "homepage": "https://github.com/rudimentall1/verigate",
   "icon": "🛡️",
   "category": "security",
   "license": "MIT",
   "tools": [
+    {
+      "name": "verigate_ai_review",
+      "description": "Ask the Anna host LLM to interpret a payment request or explain a Verigate decision. The Executa calls Anna through protocol-v2 sampling/createMessage; no provider API key is stored here. The response is advisory and never authorizes or executes an action.",
+      "timeout": 60,
+      "parameters": [
+        {
+          "name": "system_prompt",
+          "type": "string",
+          "description": "Task-specific instruction for the advisory model call.",
+          "required": true
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "description": "Untrusted request or decision context to review.",
+          "required": true
+        },
+        {
+          "name": "max_tokens",
+          "type": "integer",
+          "description": "Maximum response tokens (1-2048).",
+          "required": false,
+          "default": 1000
+        }
+      ]
+    },
     {
       "name": "verigate_check",
       "description": "Simulate a payment-shaped action against Verigate policy and return the signed ALLOW/WARN/BLOCK decision. This checks authority only; it does not submit, broadcast, or execute a payment, and it does not record anything.",

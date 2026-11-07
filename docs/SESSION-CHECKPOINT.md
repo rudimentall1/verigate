@@ -1,46 +1,69 @@
-# Verigate Authority — session checkpoint
+# Verigate Authority — release candidate checkpoint
 
-**As of:** 2026-11-07  
-**Repository branch:** `integrate/anna-0.1.9-mainline`  
-**Verified source commit:** `d79d660e08314a4e75aba23319967047f7e80dcb`
+Date: 2026-11-07
+Repository: rudimentall1/verigate
+Branch at baseline: integrate/anna-0.1.9-mainline
+Baseline SHA before hardening: 5520c894313340eb47acc9e0164d5010c3ab1bb9
+Current source: intentionally modified, not yet committed or pushed.
 
-## Confirmed completed
+## Release identity
 
-- PR #22 is merged: https://github.com/rudimentall1/verigate/pull/22.
-- Local Windows checkout `C:\Users\User\Desktop\Work\verigate-anna-0.1.13` was clean and fast-forwarded from detached parent `addef3a` to the merge commit above. Final local worktree was clean and tracking the remote branch.
-- Node.js 22.23.4 + Anna CLI 0.1.59 + app-schema dispatcher 0.27.0 are active in the validation command.
-- `anna-app validate --strict` passed locally (exit 0).
-- CI on the exact merge SHA passed: `anna-ui`, `test`, `contracts`.
-- Executa binary workflow on the exact merge SHA passed for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel x86_64, including archive extraction and smoke tests.
-- PR #22 adds a manual policy-only preview only when the Host LLM invocation itself fails. It consumes explicitly entered values, discloses that AI contextual review did not run, never issues execution permission in this mode, and rejects malformed responses instead of falling back.
-- Existing README user-flow description was updated in PR #22; no further README change was needed in this checkpoint.
+- Anna App candidate: 0.1.18. Server currently has 0.1.17 (ID 1981) pinned in PENDING_REVIEW; 0.1.18 has not been uploaded.
+- Executa candidate: 0.1.14. Production identity cache: tool-rinat-verigate-authority-2um8gwhw; Executa identity ID 1164.
+- Candidate versions are aligned in app.json, root App manifest min_version, Executa runtime VERSION, executa.json, Executa manifest, pyproject.toml, uv.lock, and binary workflow defaults.
+- No Anna upload/cut/review resubmission/release or GitHub release has been performed for this candidate.
 
-## Current Anna state (authenticated CLI)
+## What changed
 
-- App `Verigate Authority`, slug `verigate-authority`, ID `382`.
-- Status: `PENDING_REVIEW`.
-- Pinned review candidate: App `0.1.17`, version ID `1981`.
-- 16 immutable versions are listed; no Marketplace-published version was shown by `apps versions`.
-- Existing App candidate `0.1.17` predates PR #22 and does not contain that UI fix.
-- Local `anna/app.json` version is still `0.1.15`. The next planned SemVer cut is `0.1.18`.
-- Executa source version is `0.1.13`; production tool identity is `tool-rinat-verigate-authority-2um8gwhw`. The dev tool ID in the source manifest is a local fallback.
-- `apps push --dry-run` and `apps cut 0.1.18 --dry-run` were run successfully; they did not mutate Anna or create a version. The push dry-run reported a content hash prefix `5db07bb44e6d`.
-- No `apps push`, `apps cut`, `apps submit-review` or `apps release` was executed in this session.
+1. Migrated Anna App manifest to schema 4; removed retired host_capabilities and method-level ui.host_api.llm/tools/storage/window declarations.
+2. Added bundled verigate_ai_review. App UI -> Anna Runtime tools.invoke -> Verigate Python Executa -> protocol-v2 reverse sampling/createMessage -> Anna host LLM -> Executa result -> UI. The plugin stores no model-provider key.
+3. Executa initialize advertises client_capabilities.sampling and client_capabilities.storage. One response router dispatches replies to both clients; protocol 1.1 disables both capabilities fail-closed.
+4. AI remains advisory: Verigate deterministic policy owns ALLOW/WARN/BLOCK. AI can escalate ALLOW to WARN but cannot grant execution authority. Malformed responses fail closed; actual LLM outage can produce only an explicitly labelled non-authorizing policy preview.
+5. Executa state path: explicit VERIGATE_ANNA_DATA_DIR, else ANNA_WORKSPACE_DIR/verigate-authority when supplied by Anna, else local-only fallback. Authoritative paths fail closed. Issuer key / SQLite cold-start initialization is locked against concurrent invokes.
+6. Evidence Graph history now permits identical graph digests as distinct snapshots. Legacy SQLite UNIQUE-index migration is atomic with BEGIN IMMEDIATE and rollback; both success and injected failure rollback are tested.
+7. Updated listing, README, release gate and Anna-specific threat model. Listing explicitly states this is an execution gate for the integrated Verigate App/ExecutionRouter path, not a global wallet firewall.
 
-## Security/runtime blockers
+## Final local verification
 
-1. **Real Cloud Agent acceptance is not done.** Install, tool discovery, repeated invocation and App-context APS approval consumption have not been verified in a real Anna Cloud Agent.
-2. **Session refresh 401 is not fixed/proven.** PR #22 tests fail-safe handling of an LLM-side 401 in scripted runtime; it does not prove that a real invalid Anna session can still call the Host tool API.
-3. **Persistence is not proven.** SQLite policy/accounting state and the Ed25519 issuer keypair still live in the Executa local data directory. `VERIGATE_ANNA_DATA_DIR` fails closed when an explicit path is unavailable, and its tests are included in CI; this does not establish cloud restart/reinstall persistence.
-4. **APS is only the approval-record path.** The plugin negotiates v2 and stores one-time UI approvals in the owning App's KV scope. Current Anna docs state that App-scope access depends on a host-attested invocation from that App context; legacy Executa `host_capabilities` values are ignored. APS KV/object storage does not provide the SQLite transaction semantics required for spend accounting and replay protection.
-5. **App version alignment.** Local app.json is at 0.1.15 while Anna has 0.1.17 under review. Reconcile the manifest to 0.1.18 before staging a new immutable candidate.
+- Full Python suite: 551 passed, 4 skipped, 3 upstream deprecation warnings (117.21s), after all source/schema migration changes.
+- Post-alignment contracts/protocol/binary/workspace/migration subset: 46 passed. Evidence Graph migration tests: 2 passed, including a simulated mid-migration DDL failure that proves rollback preserves the old table and data.
+- Clean npm ci from package-lock.json installed 383 packages.
+- Final Anna UI E2E: 38/38 passed after clean install and after final listing/security-scope edits. The real App bundle and actual Python Executa subprocess are run; only the Anna host Sampling response is mocked. No Anna CU is consumed.
+- EVM atomic tests passed: stale authorization reverted with zero side effect; fresh authorization produced one side effect.
+- EVM guard access-control tests passed: zero executor, attacker, stale executor state and value mismatch rejected; exact value forwarded.
+- Anna CLI 0.1.64 / dispatcher 0.33.0 `validate --strict`: passed without warnings after final version and listing edits.
+- `git diff --check`: passed; Git emitted only LF/CRLF normalization warnings.
 
-## Program context
+## Frozen Windows artifact
 
-DoraHacks hackathon 2349 is Anna AI App Builder Program. The official program rules run the initial qualification window through 2026-11-30 and require an approved, Marketplace-published functional App plus at least 200 Qualified App MAU in one calendar month. October/November first qualification is on the standard grant schedule (Tier E: $50/month at 200 MAU). Internal QA, bot traffic, failures and incentivized meaningless runs are excluded. Official rules: https://forum.anna.partners/t/turn-your-ai-agents-apps-into-recurring-monthly-grants-join-the-anna-ai-os-founding-builder-program-up-to-80k-month-pool/205. A public BUIDL/submission for Verigate was not independently confirmed. The separate PortalDot deadline of 2026-11-06 is not this program.
+- Executa 0.1.14 built with PyInstaller 6.22.3, packaged, extracted and passed anna/smoke_package.py after the SQLite migration change.
+- Smoke covered describe, deterministic ALLOW, signed receipt, mock reverse-Sampling handshake, one-time App approval and wallet hand-off.
+- File: anna/executas/verigate-authority/dist/verigate-authority-0.1.14-windows-x86_64.zip
+- SHA-256: f3c7c32930a00f25b7e31d9c5371d0e1167fa307a671b133240839acaa34c779 (confirmed independently with Get-FileHash).
+- Linux x86_64, macOS ARM64, macOS Intel 0.1.14 artifacts and exact-SHA GitHub CI are still pending. Historical CI/artifacts for 0.1.13 are not evidence for this candidate.
 
-## Immediate next step
+## Anna and hackathon limitations
 
-Complete one real Anna Cloud Agent install/acceptance pass against the PR #22-containing candidate, without submitting or releasing it blindly. Record exact App/Executa versions, tool ID resolution, ALLOW/WARN/BLOCK results, signed receipt fingerprint, approval KV flow and any refresh/API errors. Then run the restart/reinstall test with a persisted audit/accounting record and verify the same issuer fingerprint and state. Marketplace review/publication remains a separate explicit decision.
+- Authenticated Anna CLI last showed App ID 382, status PENDING_REVIEW, pinned App 0.1.17 / version ID 1981. The in-review version predates PR #22 and this hardening.
+- Anna CU quota is exhausted. No live LLM, Cloud Agent, or APS cloud acceptance was run. Local mock tests are not Cloud acceptance.
+- Real Cloud install, Linux Executa discovery, server-side Sampling, host-attested App-scope APS, actual /data/workspace injection and restart/image-upgrade persistence remain unverified.
+- Anna docs say ANNA_WORKSPACE_DIR maps to /data/workspace on Cloud Agents, surviving process restart, suspend/wake and image upgrades; an idle Agent/volume can be reclaimed after roughly three days. SQLite/key state is not backed up transactionally to APS yet. Do not claim indefinite durability.
+- Session refresh POST /api/v1/auth/refresh -> 401 is not proven fixed.
+- Native USDC wallet hand-off supports Base and Ethereum only. Solana remains policy/authorization-only.
+- Security scope: this is a pre-execution gate for transactions submitted through the integrated Verigate App/ExecutionRouter. It does not intercept independent transactions sent through other wallets/clients. The current on-chain AtomicStateGuard enforces an immutable executor + atomic state/value condition, but does not independently verify the per-action Ed25519 authorization. No external independent audit or KMS/HSM integration is complete.
 
-See [ANNA-RELEASE-GATE.md](./ANNA-RELEASE-GATE.md) for the detailed acceptance matrix and release discipline.
+## Next release steps
+
+1. Review the entire source diff and explicitly stage only source/docs/tests; never stage .anna, node_modules, .pyinstaller or dist.
+2. Commit and push a feature branch; open PR against integrate/anna-0.1.9-mainline. Require green CI on the exact commit.
+3. Build and smoke all four Executa 0.1.14 platform artifacts; verify archive checksums, especially Linux x86_64 required for Anna Cloud.
+4. Only after exact-SHA CI and all four artifacts pass, perform one Anna apps publish (push + immutable cut) for App 0.1.18 / Executa 0.1.14. This does not publish to Marketplace.
+5. Inspect the created immutable App version and submit that exact version for Anna review / DoraHacks BUIDL. Do not call apps release until Anna approval.
+
+Program context: DoraHacks 2349 is Anna AI App Builder Program (not PortalDot). Official qualification window ends 2026-11-30; requires approved + Marketplace-published functional App and 200 Qualified App MAU in one calendar month. The public BUIDL ID/status for Verigate has not been confirmed. The user's Anna CU quota is exhausted, so live Cloud testing is not available.
+
+Official references:
+- Build on Anna 101: https://forum.anna.partners/t/build-on-anna-101/228
+- Anna 1.1.0 / CLI 0.1.64 changelog: https://forum.anna.partners/t/anna-1-1-0-beta-211-beta-220-anna-ai-cli-0-1-64-permission-gates-are-gone-manifest-schema-4-shared-node-22-chrome-runtime-for-executas-async-invoke-reliability-overhaul-faster-app-opens-harness-tools-fixed/542
+- Anna review timeline: https://forum.anna.partners/t/app-review-timeline-process/318
+- Anna program rules: https://forum.anna.partners/t/turn-your-ai-agents-apps-into-recurring-monthly-grants-join-the-anna-ai-os-founding-builder-program-up-to-80k-month-pool/205

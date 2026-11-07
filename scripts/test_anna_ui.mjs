@@ -21,7 +21,7 @@ const VALID = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-ui-"));
 
-function callPlugin(method, args, { appStorage = new Map(), appContext = true } = {}) {
+function callPlugin(method, args, { appStorage = new Map(), appContext = true, samplingHandler = {} } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(PY, [PLUGIN], {
       env: { ...process.env, VERIGATE_ANNA_DATA_DIR: dataDir, PYTHONPATH: root },
@@ -39,6 +39,37 @@ function callPlugin(method, args, { appStorage = new Map(), appContext = true } 
     };
     const respondToHostRequest = (msg) => {
       const params = msg.params || {};
+      if (msg.method === "sampling/createMessage") {
+        const systemPrompt = params.systemPrompt || "";
+        const isInterpret = systemPrompt.includes("intake assistant");
+        const handler = isInterpret ? samplingHandler.interpret : samplingHandler.explain;
+        let out = typeof handler === "function"
+          ? handler({ systemPrompt, prompt: params.messages?.[0]?.content?.text || "" })
+          : handler;
+        if (out === undefined) {
+          out = isInterpret
+            ? interpretJson(GOOD)
+            : JSON.stringify({ explanation: "Plain explanation.", what_could_change: null });
+        }
+        if (out instanceof Error) {
+          send({ jsonrpc: "2.0", id: msg.id, error: { code: -32003, message: out.message } });
+        } else if (typeof out === "string") {
+          send({
+            jsonrpc: "2.0", id: msg.id,
+            result: {
+              role: "assistant",
+              content: { type: "text", text: out },
+              model: "mock-anna-sampling",
+              stopReason: "endTurn",
+              usage: { inputTokens: 12, outputTokens: 24, totalTokens: 36 }
+            }
+          });
+        } else {
+          // Deliberately malformed host envelope for negative-path tests.
+          send({ jsonrpc: "2.0", id: msg.id, result: out });
+        }
+        return;
+      }
       const key = params.key;
       if (params.scope !== "app" || !appContext) {
         send({ jsonrpc: "2.0", id: msg.id, error: { code: -32021, message: "app-scoped storage is unavailable outside the owning App context" } });
@@ -76,12 +107,16 @@ function callPlugin(method, args, { appStorage = new Map(), appContext = true } 
         let msg;
         try { msg = JSON.parse(line); }
         catch (e) { reject(new Error("plugin emitted invalid JSON: " + line)); child.kill(); return; }
-        if (msg.method && msg.method.startsWith("storage/")) {
+        if (msg.method && (msg.method.startsWith("storage/") || msg.method === "sampling/createMessage")) {
           respondToHostRequest(msg);
         } else if (msg.id === 1) {
           finish(msg.error ? { success: false, error: msg.error.message } : msg.result);
-        } else if (msg.id === 0 && msg.result?.protocolVersion !== "2.0") {
-          reject(new Error("plugin did not negotiate Executa protocol v2"));
+        } else if (msg.id === 0 && (
+          msg.result?.protocolVersion !== "2.0" ||
+          !msg.result?.client_capabilities?.storage ||
+          !msg.result?.client_capabilities?.sampling
+        )) {
+          reject(new Error("plugin did not negotiate protocol v2 storage + Sampling capabilities"));
           child.kill();
           return;
         }
@@ -121,20 +156,9 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
     };
   }
   const appStorage = new Map();
-  const calls = { tools: [], llm: 0, toolArgs: {}, storage: [] };
+  const calls = { tools: [], llm: 0, sampling: [], toolArgs: {}, storage: [] };
   const anna = {
     window: { set_title: async () => {}, ready: async () => {} },
-    llm: {
-      complete: async (req) => {
-        calls.llm += 1;
-        const isInterpret = req.systemPrompt.includes("intake assistant");
-        const handler = isInterpret ? interpret : explain;
-        const out = typeof handler === "function" ? handler(req) : handler;
-        if (out === undefined) return { content: isInterpret ? interpretJson(GOOD) : JSON.stringify({ explanation: "Plain explanation.", what_could_change: null }) };
-        if (out instanceof Error) throw out;
-        return { content: out };
-      },
-    },
     storage: {
       set: async ({ scope, key, value, ttl_seconds }) => {
         if (scope !== "app" || ttl_seconds !== 60) throw new Error("unexpected approval storage scope or TTL");
@@ -151,7 +175,13 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
     },
     tools: {
       invoke: async ({ method, args }) => {
-        calls.tools.push(method); calls.toolArgs[method] = args;
+        if (method === "verigate_ai_review") {
+          calls.llm += 1;
+          calls.sampling.push(args);
+        } else {
+          calls.tools.push(method);
+        }
+        calls.toolArgs[method] = args;
         if (method === "verigate_authorize_payment" && authorizeInvokeFails) {
           const error = new Error("Unauthorized while refreshing Anna session");
           error.status = 401;
@@ -173,7 +203,11 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
         if (method === "verigate_policy_summary" && policySummaryReturnsError) {
           return { result: { success: false, error: { code: 401, message: "Anna session refresh rejected in tool response" } } };
         }
-        const result = await callPlugin(method, args, { appStorage, appContext: true });
+        const result = await callPlugin(method, args, {
+          appStorage,
+          appContext: true,
+          samplingHandler: { interpret, explain }
+        });
         if (method === "verigate_check" && tamperSignature) {
           const data = result?.data;
           const receipt = data?.decision_receipt ?? data?.receipt;
@@ -260,6 +294,8 @@ await test("valid request: AI reads it, Verigate allows, limits table is shown",
   await ui.click();
   eq(ui.text("decision"), "ALLOW");
   eq(JSON.stringify(ui.calls.tools), JSON.stringify(["verigate_policy_summary", "verigate_check", "verigate_verify_decision_receipt"]));
+  eq(ui.calls.llm, 2, "both interpretation and explanation must traverse Executa reverse Sampling");
+  ok(ui.calls.sampling[0].prompt.includes("Request text (untrusted)"), "request context is sent through Executa Sampling");
   ok(ui.$("limits-table").querySelectorAll("tr").length >= 6, "limits table rows");
   ok(ui.shown("ai-review"), "contextual AI review is visible without a risk flag");
   ok(ui.text("ai-review-summary").includes("Anna AI contextual review"), "contextual AI assessment is shown");

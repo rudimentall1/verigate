@@ -14,16 +14,27 @@ ALLOWED_TYPES = {"string", "integer", "number", "boolean", "array", "object"}
 
 
 def check_manifest(manifest: dict) -> None:
-    """Mirror Anna Executa protocol-v2 describe and APS capability requirements."""
+    """Check the current Executa describe contract; v2 capabilities are negotiated at initialize."""
     for field in ("name", "version", "description"):
         if not isinstance(manifest.get(field), str) or not manifest[field]:
             raise SystemExit(f"describe: missing or empty required field '{field}'")
-    capabilities = set(manifest.get("host_capabilities") or [])
-    if not {"aps.scope.app.read", "aps.scope.app.write"}.issubset(capabilities):
-        raise SystemExit("describe: App-scoped APS read/write capabilities are required")
+    if "host_capabilities" in manifest:
+        raise SystemExit("describe: retired host_capabilities must not be used as a v2 grant")
     tools = manifest.get("tools")
     if not isinstance(tools, list) or not tools:
         raise SystemExit("describe: 'tools' must be a non-empty list")
+    ai_review = next((item for item in tools if item.get("name") == "verigate_ai_review"), None)
+    if ai_review is None:
+        raise SystemExit("describe: verigate_ai_review is required for Anna Sampling integration")
+    if not isinstance(ai_review.get("parameters", []), list):
+        raise SystemExit("describe: verigate_ai_review parameters must be a LIST of parameter objects")
+    ai_params = {
+        item.get("name"): item
+        for item in ai_review.get("parameters", [])
+        if isinstance(item, dict)
+    }
+    if not {"system_prompt", "prompt"}.issubset(ai_params):
+        raise SystemExit("describe: verigate_ai_review must expose system_prompt and prompt for Anna Sampling")
     for tool in tools:
         for field in ("name", "description"):
             if not isinstance(tool.get(field), str) or not tool[field]:
@@ -118,9 +129,42 @@ def main() -> None:
         send({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}})
         initialized = recv()
         init_result = initialized.get("result", {})
-        if init_result.get("protocolVersion") != "2.0" or init_result.get("capabilities", {}).get("storage", {}).get("kv") is not True:
-            raise SystemExit(f"protocol-v2 APS initialization failed: {initialized}")
+        client_capabilities = init_result.get("client_capabilities", {})
+        if (init_result.get("protocolVersion") != "2.0"
+                or not isinstance(client_capabilities.get("storage"), dict)
+                or not isinstance(client_capabilities.get("sampling"), dict)):
+            raise SystemExit(f"protocol-v2 APS + Sampling initialization failed: {initialized}")
         send({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+
+        # 0b. Exercise the complete Executa -> Anna Sampling reverse-RPC path
+        # with a local host fixture. This must not consume Anna CU quota.
+        send({"jsonrpc": "2.0", "id": 100, "method": "invoke", "params": {
+            "tool": "verigate_ai_review",
+            "arguments": {
+                "system_prompt": "Return the requested fixture exactly.",
+                "prompt": "Return the word VERIGATE_SAMPLING_OK.",
+                "max_tokens": 32,
+            },
+            "context": {"invoke_id": "binary-smoke-sampling"},
+        }})
+        while True:
+            sample_frame = recv()
+            if sample_frame.get("method") == "sampling/createMessage":
+                sample_params = sample_frame.get("params") or {}
+                if sample_params.get("context", {}).get("invoke_id") != "binary-smoke-sampling":
+                    raise SystemExit(f"Sampling invoke context was not propagated: {sample_frame}")
+                send({"jsonrpc": "2.0", "id": sample_frame["id"], "result": {
+                    "role": "assistant",
+                    "content": {"type": "text", "text": "VERIGATE_SAMPLING_OK"},
+                    "model": "mock-anna-host",
+                    "stopReason": "endTurn",
+                    "usage": {"inputTokens": 4, "outputTokens": 2, "totalTokens": 6},
+                }})
+            elif sample_frame.get("id") == 100:
+                sample_result = sample_frame.get("result", {})
+                if sample_result.get("success") is not True or sample_result.get("data", {}).get("text") != "VERIGATE_SAMPLING_OK":
+                    raise SystemExit(f"Verigate -> Anna Sampling round-trip failed: {sample_frame}")
+                break
 
         # 1. describe from a cold start: Anna allows 5 s.
         started = time.monotonic()
