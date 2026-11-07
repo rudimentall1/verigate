@@ -12,7 +12,6 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from fastapi.testclient import TestClient
 
 from api import main
-from attest.keys import load_public_key
 from attest.receipt import verify_execution_authorization, verify_receipt
 from core.identity import sign_action_intent
 from core.models import ActionIntent, AgentIdentity, Capability
