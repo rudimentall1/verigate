@@ -647,6 +647,13 @@ await test("malformed model output: clear error, no check is run", async () => {
   eq(ui.calls.tools.length, 0);
 });
 
+await test("malformed LLM response envelope: explicit error, no manual fallback", async () => {
+  const ui = await launch({ interpret: () => ({ unexpected: "shape" }) });
+  await ui.click();
+  ok(ui.shown("error") && ui.text("error").includes("unexpected response format"), "response format error is explicit");
+  eq(ui.calls.tools.length, 0, "no policy call is made for a malformed host response");
+});
+
 await test("unreadable model output is retried once, then the check runs", async () => {
   let n = 0;
   const ui = await launch({ interpret: () => (++n === 1 ? "Sure! Here is the analysis you asked for." : undefined) });
