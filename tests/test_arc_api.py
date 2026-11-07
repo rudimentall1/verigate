@@ -90,7 +90,7 @@ class ArcApiTest(unittest.TestCase):
             allowed_targets=(RECIPIENT,),
             allowed_networks=("arc",),
             allowed_assets=("USDC",),
-            max_per_action={"USDC": 10.0},
+            max_per_action={"USDC": 50.0},
         )
         metadata = arc_payment_metadata(SENDER, RECIPIENT, "1.25")
         intent = ActionIntent(
