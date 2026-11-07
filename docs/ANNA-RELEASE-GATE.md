@@ -1,27 +1,69 @@
 # Verigate Authority — Anna release gate
 
-## Candidate checkpoint — 2026-11-06
+## Verified checkpoint — 2026-11-07
 
-- Candidate: Anna App **0.1.13**, bundled Executa **0.1.12**.
-- Branch: `integrate/anna-0.1.9-mainline`; PR #16 remains open. No merge to `main`.
-- Current PR head: `a325e74a8f79b3bf8e1882196f7b2a2755d3f3d8`; PR #16 remains open and unmerged. This latest commit updates release-gate documentation only.
-- Latest code CI run **#589** passed on code head `65109b45a5b654b1ad2cfb53d2b32166fc71de4a`: 509 Python tests, contract/ExecutionRouter tests, Anna UI E2E, and official Anna CLI strict manifest/Host API validation.
-- Multi-platform binary workflow run **#17** (run ID `42186375291`, binary source commit `cd768515c1b178333a0d4bfbefd8f2154e988951`) completed successfully on all four targets: Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel x86_64. Each target packaged the binary, verified the SHA-256 sidecar and archive manifest/entrypoint, extracted the binary from the final archive, ran the protocol/security smoke suite, and uploaded the archive plus checksum.
-- I downloaded all four run #17 artifacts and independently verified the outer Actions artifact digests, archive-sidecar SHA-256, archive-root manifest, platform entrypoint, and Unix executable bit. The resulting package SHA-256 values are:
-  - Linux x86_64: `c8bd06566bd22b76f06b2e6fb1e35c780b661b69906b85b09ba245c649abed0d`
-  - Windows x86_64: `39c5a268d9c2773917df78bdce191dec55cb3ea058302ce7117353aab742371d`
-  - macOS ARM64: `b6ace24d9be7607ddbd2952fc7dfd26fe1ffefa512faca34746d7e6a24b5a0cc`
-  - macOS Intel x86_64: `fc6cf585bc816243327a67f408d53cbe3ff928cb5ab61cce956634f9e136fdbc`
-- The release job completed successfully and created a **draft** GitHub Release with the four archives and four checksum sidecars. Draft URL reported by GitHub CLI: https://github.com/rudimentall1/verigate/releases/tag/untagged-8d1c909e607f189c17ed. GitHub's draft-release flow uses an untagged URL until the draft is published; this is not the public version/tag. The draft has not been published.
-- A ready-to-copy package bundle has been assembled outside the repository, with all eight files under `anna/executas/verigate-authority/dist/`: `anna-executa-dist-0.1.12.zip` (SHA-256 `f3b573a0835f85705bebee9dec16797500b659307f72f893b36f4e039e67e318`).
-- `app.json`, `manifest.json`, `bundle/index.html`, `bundle/app.js`, and `executa.json` follow Anna's Bundled Executa guidance: stable handle `verigate-authority`, `bundled:verigate-authority`, `required:bundled:verigate-authority`, generated `window.__ANNA_TOOL_IDS__` mapping with local dev fallback, and the local development tool_id in `executa.json`.
-- No Anna candidate version has been uploaded. No Marketplace review/public release or wallet transaction has occurred.
+This checkpoint replaces the stale 2026-11-06 candidate header. It records source, CI, local CLI and authenticated Anna lifecycle state. A green source build is not the same as a successful Anna Cloud Agent install, Marketplace approval, or publication.
 
-Next: put the verified `dist/` bundle into the local project checkout, then run the Anna CLI publish step once to create an immutable candidate version (not a Marketplace submission). Install that candidate and perform one consolidated local + real Anna Cloud Agent acceptance. The key/database persistence gate below remains blocking until the Cloud restart test is passed. Do not publish the draft GitHub Release, submit for Marketplace review, or merge PR #16 as part of this gate.
+### Source and local checkout
 
-Reference: [Anna Forum — Build on Anna 101](https://forum.anna.partners/t/build-on-anna-101/228).
+- Repository: [rudimentall1/verigate](https://github.com/rudimentall1/verigate).
+- Working branch: `integrate/anna-0.1.9-mainline`.
+- Verified HEAD: `d79d660e08314a4e75aba23319967047f7e80dcb` (signed merge commit, 2026-11-07 12:54:10 UTC+5).
+- PR [#22](https://github.com/rudimentall1/verigate/pull/22) is merged. It adds policy-only preview after an actual Host LLM invocation failure, uses only explicit form values, discloses that contextual AI review did not run, keeps execution permission disabled, and rejects malformed LLM response data rather than treating it as an outage.
+- The Windows checkout at `C:\Users\User\Desktop\Work\verigate-anna-0.1.13` was initially detached at `addef3a`. Its worktree was clean; it was switched to `integrate/anna-0.1.9-mainline` and fast-forwarded to the verified merge commit. Final status was clean and matched `origin/integrate/anna-0.1.9-mainline`.
+- Local toolchain: Node.js `v22.23.4`, `@anna-ai/cli` `0.1.59`, app-schema dispatcher `0.27.0`.
+- `anna-app validate --strict` passed on this checkout (exit code 0).
+- No source-code changes were made during this checkpoint update.
 
-This gate prevents incremental Marketplace uploads. A candidate is not ready merely because the Python unit suite or the UI mock passes.
+### CI and Executa artifacts
+
+- CI run [42353190020](https://github.com/rudimentall1/verigate/actions/runs/42353190020) passed on the exact merge commit. Jobs: `anna-ui`, `test`, and `contracts`.
+- Binary workflow [42353190033](https://github.com/rudimentall1/verigate/actions/runs/42353190033) passed on the exact merge commit. Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel x86_64 all built, packaged, extracted and smoke-tested successfully. The workflow's draft-release job also completed successfully.
+- The GitHub Executa release is a **draft**, not a public app release. The current release listing showed `anna-verigate-authority-v0.1.13` as draft and `0.1.12` as the published Executa release. Do not equate either state with Anna Marketplace publication.
+- Local Executa source/manifest version is `0.1.13`. The production identity is cached in `anna/.anna/executas.lock.json` as `tool-rinat-verigate-authority-2um8gwhw`; the Executa identity cache records ID `1164`. The local `tool-dev-verigate-authority` value is only the development fallback.
+- The four `0.1.13` platform archives and checksum sidecars are present under `anna/executas/verigate-authority/dist/`.
+
+### Authenticated Anna Developer state
+
+Read through the locally authenticated `anna-app` CLI (host `https://anna.partners`):
+
+- App: `Verigate Authority`, slug `verigate-authority`, ID `382`.
+- App status: `PENDING_REVIEW`.
+- Latest immutable App version: `0.1.17`, ID `1981`; this exact version is pinned as the current review candidate.
+- CLI reports 16 immutable versions. The versions listing reports `published=—` for all listed versions; no Marketplace-published version was shown.
+- The checked-out `anna/app.json` still says `0.1.15`. It is behind the server's latest cut (`0.1.17`).
+- App `0.1.17` predates merge commit `d79d660e` and therefore does **not** contain the PR #22 UI fallback changes. Do not describe the in-review version as containing those changes.
+- `anna-app apps push --dry-run --skip-executa-publish` completed without mutation and reported a prospective working-bundle content hash beginning `5db07bb44e6d`.
+- `anna-app apps cut 0.1.18 --dry-run` completed without mutation and reported that it would upload the declared Executa binary artifacts and cut App version `0.1.18`. No push, cut, review submission, or release was performed by this checkpoint.
+- CLI help confirms: `apps publish` is the composite `push + cut`; it does **not** publish to the Marketplace. `apps submit-review` pins a review candidate; `apps release <version>` is the later go-live operation after approval. A new cut during an active review does not replace the pinned review candidate until review is explicitly re-submitted.
+- The CLI's `apps grants` command returned “no grants endpoint data available”; this is not evidence of a grant or of MAU performance.
+
+### Outstanding Anna runtime and durability gates
+
+- A real Anna Cloud Agent install, Executa discovery and repeated invocation have not been demonstrated.
+- The real browser/session refresh failure `POST /api/v1/auth/refresh → 401` has not been proven fixed. PR #22 tests safe fallback behavior in scripted runtime; it does not prove that a genuinely expired Anna session still permits Host tool invocation.
+- The plugin negotiates Executa protocol v2 and advertises storage capability. Its one-time approval path uses App-scoped APS KV via App-context invocation and ETag-conditional deletion.
+- Current Anna APS documentation says protocol v2 is the access gate: the host mints a storage token for each invocation of an installed, enabled Executa, and App scope is available only for a host-attested invocation originating from the owning App context. Legacy Executa `host_capabilities` entries such as `aps.scope.app.read/write` are ignored; they must not be represented as the actual grant mechanism. Do not assume a separate storage-permission toggle without observing the current runtime.
+- APS KV/object storage is not a transactional relational database. The policy/accounting SQLite database and Ed25519 issuer keypair still resolve to a local data directory. The explicit `VERIGATE_ANNA_DATA_DIR` override now fails closed if unavailable; the data-directory tests are included in the passing full CI run. This prevents silent fallback, but does **not** prove that Anna Cloud preserves that directory across process restart, agent replacement or Executa reinstall.
+- Do not mirror a live SQLite file to APS Files and call it transactional durability. Durable accounting requires a transactional persistent store or a platform-backed persistent volume with documented single-writer/atomicity guarantees; signing-key identity and replay/accounting state must survive the supported lifecycle.
+- Cloud acceptance and persistence remain blocking. Do not mark this App Anna-ready based on local tests or CI.
+
+### Program context — keep separate from PortalDot
+
+DoraHacks hackathon **2349** is the **Anna AI App Builder Program**, not the separate PortalDot hackathon. The official Anna Founding Builder rules set the initial qualification window to 2026-09-01 through 2026-11-30. Qualification requires an approved and Marketplace-published functional App plus at least 200 Qualified App MAU in one calendar month during that window. For October/November first qualification, the standard Tier E grant at 200 MAU is $50/month; September-only launch-boost amounts no longer apply. Developer/internal QA, bots, failed/cancelled/incomplete runs and meaningless incentivized traffic do not count. See the [official Anna program rules](https://forum.anna.partners/t/turn-your-ai-agents-apps-into-recurring-monthly-grants-join-the-anna-ai-os-founding-builder-program-up-to-80k-month-pool/205).
+The user's public DoraHacks submission ID/status for this program has not been independently confirmed. The separate PortalDot deadline described in the prior checkpoint was 2026-11-06 and must not be conflated with hackathon 2349.
+
+### Next release discipline
+
+1. Do not modify the currently pinned review candidate or submit another review until a new candidate is ready and the exact candidate version is understood.
+2. Reconcile `anna/app.json` (currently `0.1.15`) with the server's next valid SemVer (`0.1.18`) before staging. The CLI dry-runs above were read-only.
+3. Build/install one candidate and complete the consolidated Anna acceptance matrix below on a real test Cloud Agent, including the policy-only path, receipt verification, execution boundary, tool discovery and repeated invocation.
+4. Run the restart/reinstall durability test with a recorded issuer fingerprint and persisted accounting/audit record. If state is lost, stop; do not issue execution permissions with a silently rotated key or reset history.
+5. Only after the above, decide whether to switch the review candidate. Marketplace release is a separate approval/release action and is not authorized by a green CI run.
+
+Reference: [Anna Forum — Build on Anna 101](https://forum.anna.partners/t/build-on-anna-101/228), [Anna developer docs](https://github.com/Anna-Partners/anna-developer-docs).
+
+This gate prevents incremental Marketplace uploads. A candidate is not Anna-ready merely because the Python suite, UI mock, local strict validation or CI passes.
 
 ## 1. Source and protocol consistency
 
@@ -113,15 +155,15 @@ The current payment intake uses one bounded `llm.complete` call per explicit che
 - [ ] A future conversational intake upgrade may adopt Agent Session for follow-up context, streaming, cancellation and refresh recovery.
 - [ ] If adopted, create one Session per conversation, restore it by saved session UUID, and use `quotaCaps.allowed_tools: []` for the intake model. The LLM must never receive a path to privileged Verigate authorization or wallet-consumption methods; only explicit App UI buttons may invoke those methods.
 
-### APS — approval KV path passed by code review; actual Host grant/persistence pending
+### APS — code path present; Cloud invocation/persistence unverified
 
 - [x] App UI writes only a short-lived unique approval record in the private `app` KV scope.
 - [x] The bundled Executa reads the approval, validates its nonce, exact action binding and 60-second expiry, then consumes it with ETag-conditional delete.
-- [x] App manifest permits the UI's `storage.set`; Executa declares `aps.scope.app.read` and `aps.scope.app.write` and negotiates KV in `initialize`.
-- [x] Host Upload is not used as a substitute for durable storage. This app currently creates no user-facing report/document files; APS Files is the appropriate Anna API to evaluate for durable Executa state. That separate database/key persistence integration has not yet been implemented and remains blocked below.
-- [ ] Verify the user's real APS storage grant and the full App-write → Executa-read → ETag-delete flow on Anna Cloud Agent.
+- [x] The Executa negotiates protocol v2 and uses App-context reverse RPC for the short-lived approval record. Legacy `host_capabilities` strings in the Executa manifest are ignored by the current Anna runtime and are not an authorization grant.
+- [x] Host Upload is not used as a substitute for durable storage. This app currently creates no user-facing report/document files. APS Files is for object/file storage; it does not supply the transactional database semantics required by Verigate's accounting/nonce ledger. No APS-based replacement for SQLite/key persistence is implemented.
+- [ ] Verify the real Cloud Agent invokes the Executa from the owning App context and completes App-write → Executa-read → ETag-delete. Current Anna docs describe protocol v2 + installed/enabled state + host-attested App context as the gate; do not assume a separate storage-permission toggle.
 
-### Explicit data-directory safety — implemented, CI pending
+### Explicit data-directory safety — implemented, CI verified on merge commit d79d660e
 
 - `VERIGATE_ANNA_DATA_DIR` is now authoritative when set. If that exact directory cannot be created or written, Executa fails closed instead of silently falling back to the install directory, home directory, or system temp.
 - This prevents a misconfigured persistent path from appearing healthy while silently creating a new issuer key and empty accounting database elsewhere.
@@ -136,13 +178,13 @@ Therefore:
 - Do not mirror the live SQLite file to APS Files after each tool call and call that durable accounting.
 - Do not put the SQLite database or issuer private key into the App's shared scope merely to make a persistence test pass.
 - APS KV may hold small private metadata; APS Files may hold immutable snapshots or exports, but neither is currently an adequate replacement for the atomic transaction semantics used by `core.storage.Storage`.
-- The safe production path is a durable transactional database with per-user/tool isolation and atomic nonce/accounting operations, or an Anna-supported persistent transactional volume with documented single-writer guarantees. The adapter must commit the database transaction before returning a signed authorization, and must preserve replay records and issuer-key identity across restarts.
+- The safe production path is a durable transactional database with per-user/tool isolation and atomic nonce/accounting operations, or an Anna-supported persistent transactional volume with documented single-writer guarantees. APS KV/object storage alone is not a substitute for those transaction semantics. The adapter must commit the database transaction before returning a signed authorization, and must preserve replay records and issuer-key identity across restarts.
 
 Infrastructure check on 2026-11-06: the connected Render workspace has one free web service (`verigate-portaldot-explorer`) and no Postgres instances. No database or paid resource was created. Do not provision paid infrastructure without the user's explicit approval.
 
 ### Persistence durability — BLOCKED pending real Cloud Agent restart test
 
-The policy/accounting database (`verigate.db`) and Ed25519 issuer keypair (`issuer.key` / `issuer.pub`) are currently kept in a local data directory. The resolver tries the directory beside the Executa binary, then `~/.verigate-authority`, then the system temporary directory. They are not currently stored through APS.
+The policy/accounting database (`verigate.db`) and Ed25519 issuer keypair (`issuer.key` / `issuer.pub`) are currently kept in a local data directory. When `VERIGATE_ANNA_DATA_DIR` is set, that path is authoritative and failure to use it is fatal. Only when the override is unset does the resolver fall back to the Executa-adjacent `.data` directory, `~/.verigate-authority`, then the system temporary directory. No Anna Cloud persistence guarantee has been demonstrated; the database and key are not currently stored through APS.
 
 The binary smoke test uses a temporary data directory and verifies a single running process; it does not prove that the keypair and SQLite state survive a Cloud Agent process restart, tool reinstall, or replacement of the binary package.
 
@@ -151,7 +193,7 @@ Before calling the App Cloud-ready:
 2. Restart the Agent / Executa process without deleting its data.
 3. Confirm the issuer fingerprint is unchanged and the persisted policy/accounting record remains.
 4. Repeat after an Executa package update/reinstall if the platform supports that lifecycle.
-5. If state does not survive the supported lifecycle, implement durable storage for the private signing key and policy database using the appropriate private APS scope or another Anna-supported persistent store. Do not silently generate a new issuer key or reset spend history after a restart.
+5. If state does not survive the supported lifecycle, stop authorization issuance until a documented Anna-supported durable-storage design exists: a transactionally persistent DB/volume for policy/accounting and an appropriately protected durable key store for the issuer key. Do not assume APS Files/KV by itself is a drop-in SQLite database. Do not silently generate a new issuer key or reset spend history after a restart.
 
 Do not mark this gate passed based on local smoke tests or mocked APS responses.
 
