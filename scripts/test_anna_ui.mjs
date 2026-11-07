@@ -631,6 +631,21 @@ await test("LLM unavailable: explicit fields still get a policy-only preview, ne
   eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no authorization is issued");
 });
 
+await test("Anna LLM refresh 401: policy-only preview works but execution stays disabled", async () => {
+  const authError = new Error("HTTP 401 while refreshing Anna session");
+  authError.status = 401;
+  const ui = await launch({ interpret: authError });
+  ui.set("target", VALID);
+  ui.set("asset", "USDC");
+  ui.set("network", "base");
+  ui.set("amount", "25");
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  ok(ui.text("ai-review-summary").includes("was not performed"), "401 does not pretend AI review succeeded");
+  eq(ui.$("execution-btn").disabled, true, "401 never unlocks execution authority");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no authorization is issued");
+});
+
 await test("LLM unavailable with missing explicit fields asks for details and does not guess", async () => {
   const ui = await launch({ interpret: new Error("LLM quota exhausted") });
   await ui.click();
