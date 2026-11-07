@@ -574,7 +574,7 @@ await test("missing amount: Anna asks a question and no check is run", async () 
   const ui = await launch({ description: "Pay my usual merchant on Base", interpret: interpretJson({ payee: VALID, network: "base", asset: "USDC", questions: ["How much should be paid?"] }) });
   await ui.click();
   ok(ui.shown("clarify"), "clarify panel visible");
-  ok(ui.text("clarify-list").includes("How much"), "question shown");
+  ok(ui.text("clarify-list").toLowerCase().includes("amount"), "missing amount is requested explicitly");
   eq(ui.calls.tools.length, 0, "no tool calls");
   eq(ui.$("result").style.display, "none");
 });
@@ -616,11 +616,43 @@ await test("zero amount is rejected without crashing", async () => {
   eq(ui.calls.tools.length, 0);
 });
 
-await test("LLM unavailable: clear error, no check is run", async () => {
+await test("LLM unavailable: explicit fields still get a policy-only preview, never execution authority", async () => {
   const ui = await launch({ interpret: new Error("LLM down") });
+  ui.set("target", VALID);
+  ui.set("asset", "USDC");
+  ui.set("network", "base");
+  ui.set("amount", "25");
   await ui.click();
-  ok(ui.shown("error") && ui.text("error").length > 0, "error visible");
-  eq(ui.calls.tools.length, 0);
+  eq(ui.text("decision"), "ALLOW");
+  ok(ui.text("ai-review-summary").includes("was not performed"), "missing AI review is disclosed");
+  ok(ui.text("ai-flags").includes("No AI contextual risk assessment"), "no AI safety claim is made");
+  eq(ui.calls.tools.includes("verigate_check"), true, "deterministic Verigate policy still runs");
+  eq(ui.$("execution-btn").disabled, true, "execution permission stays disabled without AI review");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no authorization is issued");
+});
+
+await test("Anna LLM refresh 401: policy-only preview works but execution stays disabled", async () => {
+  const authError = new Error("HTTP 401 while refreshing Anna session");
+  authError.status = 401;
+  const ui = await launch({ interpret: authError });
+  ui.set("target", VALID);
+  ui.set("asset", "USDC");
+  ui.set("network", "base");
+  ui.set("amount", "25");
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  ok(ui.text("ai-review-summary").includes("was not performed"), "401 does not pretend AI review succeeded");
+  eq(ui.$("execution-btn").disabled, true, "401 never unlocks execution authority");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no authorization is issued");
+});
+
+await test("LLM unavailable with missing explicit fields asks for details and does not guess", async () => {
+  const ui = await launch({ interpret: new Error("LLM quota exhausted") });
+  await ui.click();
+  ok(ui.shown("clarify"), "missing fields are requested");
+  ok(ui.text("clarify-list").includes("recipient"), "recipient is requested");
+  ok(ui.text("clarify-list").includes("amount"), "amount is requested");
+  eq(ui.calls.tools.length, 0, "no policy call is made with incomplete values");
 });
 
 await test("malformed model output: clear error, no check is run", async () => {
@@ -628,6 +660,13 @@ await test("malformed model output: clear error, no check is run", async () => {
   await ui.click();
   ok(ui.shown("error"), "error visible");
   eq(ui.calls.tools.length, 0);
+});
+
+await test("malformed LLM response envelope: explicit error, no manual fallback", async () => {
+  const ui = await launch({ interpret: () => ({ unexpected: "shape" }) });
+  await ui.click();
+  ok(ui.shown("error") && ui.text("error").includes("unexpected response format"), "response format error is explicit");
+  eq(ui.calls.tools.length, 0, "no policy call is made for a malformed host response");
 });
 
 await test("unreadable model output is retried once, then the check runs", async () => {

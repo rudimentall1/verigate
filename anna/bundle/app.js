@@ -7,7 +7,7 @@ const TOOL_ID =
   DEV_FALLBACK_TOOL_ID;
 
 const $ = (id) => document.getElementById(id);
-const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], lastExecutionAuthorization: null, busy: false, lastInterpretedDescription: "", requestId: 0 };
+const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], lastAiAvailable: null, lastExecutionAuthorization: null, busy: false, lastInterpretedDescription: "", requestId: 0 };
 const buttons = [$("check-btn"), $("execution-btn"), $("wallet-execute-btn")];
 const inputs = ["action-description", "agent-id", "target", "asset", "network", "amount", "resource", "confirm-details"].map($);
 const FIELD_IDS = ["target", "asset", "network", "amount"];
@@ -16,7 +16,7 @@ const DEFAULT_QUESTIONS = {
   target: "Which recipient address should receive the payment?",
   asset: "Which asset should be paid (for example USDC)?",
   network: "On which network should the payment run (for example Base)?",
-  amount: "How much should be paid?"
+  amount: "What amount should be paid?"
 };
 const FLAG_CODES = new Set(["prompt_injection", "urgency_pressure", "recipient_mismatch", "unusual_instruction", "other"]);
 
@@ -25,6 +25,7 @@ function setBusy(busy, message) {
   buttons.forEach((button) => { button.disabled = busy || !state.anna; });
   const canPrepareExecution =
     String(state.lastReceipt?.payload?.decision?.decision || "").toUpperCase() === "ALLOW" &&
+    state.lastAiAvailable !== false &&
     state.lastExecutionAuthorization === null;
   $("execution-btn").disabled = busy || !state.anna || !canPrepareExecution;
   inputs.forEach((input) => { input.disabled = busy; });
@@ -58,6 +59,7 @@ function clearResult() {
   state.lastReceipt = null;
   state.lastValues = null;
   state.lastFlags = [];
+  state.lastAiAvailable = null;
   state.lastExecutionAuthorization = null;
   $("result").style.display = "none";
   $("execution-panel").style.display = "none";
@@ -105,14 +107,25 @@ function getTextFromCompletion(reply) {
 
 async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
   if (!state.anna?.llm?.complete) {
-    throw new Error("Anna's LLM is not available in this session. Open Verigate from the Anna app runtime and try again.");
+    const error = new Error("Anna's LLM is not available in this session. Open Verigate from the Anna app runtime and try again.");
+    error.annaLlmUnavailable = true;
+    throw error;
   }
-  const reply = await state.anna.llm.complete({
-    systemPrompt,
-    messages: [{ role: "user", content: { type: "text", text: userPrompt } }],
-    maxTokens,
-    temperature: 0.1
-  });
+  let reply;
+  try {
+    reply = await state.anna.llm.complete({
+      systemPrompt,
+      messages: [{ role: "user", content: { type: "text", text: userPrompt } }],
+      maxTokens,
+      temperature: 0.1
+    });
+  } catch (cause) {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
+    error.annaLlmUnavailable = true;
+    throw error;
+  }
+  // A malformed host response is not an outage: preserve the explicit error
+  // instead of silently converting an invalid response into manual mode.
   return getTextFromCompletion(reply);
 }
 
@@ -187,6 +200,23 @@ function prettyRule(rule) {
 
 const READ_FAILURE = "Anna AI's answer could not be read (this happens occasionally). Press \"Check with Anna AI\" again, or rephrase the request with the recipient, asset, network and amount.";
 
+function manualInterpretation() {
+  // LLM is optional for a policy preview. In manual mode we use only explicit
+  // form values; we never infer payment fields from free text or claim an AI review.
+  const fields = {
+    payee: fieldValue("target") || null,
+    asset: fieldValue("asset") ? clip(fieldValue("asset"), 12).toUpperCase() : null,
+    network: fieldValue("network") ? clip(fieldValue("network"), 24).toLowerCase() : null,
+    amount: fieldValue("amount") && Number.isFinite(Number(fieldValue("amount"))) && Number(fieldValue("amount")) > 0
+      ? Number(fieldValue("amount")) : null,
+    resource: fieldValue("resource") || null
+  };
+  return {
+    fields, questions: [], ambiguities: [], flags: [], aiAvailable: false,
+    summary: "Anna AI is unavailable. Verigate will check only the values entered explicitly below; no AI contextual risk review was performed."
+  };
+}
+
 async function interpretRequest(description) {
   const known = {
     agent_id: fieldValue("agent-id"),
@@ -210,15 +240,25 @@ async function interpretRequest(description) {
   let lastError = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const reminder = attempt === 0 ? "" : "\nYour previous answer was not valid JSON. Reply with ONLY one valid JSON object and nothing else.";
+    let raw;
     try {
-      const raw = await askAnna(system, user + reminder, 1000);
+      raw = await askAnna(system, user + reminder, 1000);
+    } catch (error) {
+      // Only a failed Host LLM request enables a policy-only preview. Invalid
+      // response envelopes and malformed model output remain explicit errors.
+      if (!error?.annaLlmUnavailable) throw error;
+      return manualInterpretation();
+    }
+    try {
       return sanitizeInterpretation(parseJsonFromModel(raw, READ_FAILURE));
     } catch (error) {
       lastError = error;
-      if (error?.message !== READ_FAILURE) throw error; // only unreadable output is retried
+      if (error?.message !== READ_FAILURE) throw error;
     }
   }
-  throw lastError;
+  // An unreadable model response is not the same as an unavailable LLM.
+  // Keep the explicit error after the retry rather than silently bypassing it.
+  throw lastError || new Error(READ_FAILURE);
 }
 
 function showClarify(items, needConfirm) {
@@ -464,10 +504,16 @@ function renderRules(matchedRules, aiAssessment) {
   const all = Array.isArray(matchedRules) ? matchedRules : [];
   const ai = all.filter((r) => (r?.rule || r?.rule_id) === "ai_risk_flag");
   const rules = all.filter((r) => (r?.rule || r?.rule_id) !== "ai_risk_flag");
-  $("ai-review-summary").textContent = aiAssessment?.summary
-    ? "Anna AI contextual review: " + aiAssessment.summary
-    : "Anna AI reviewed the payment context, recipient and stated purpose.";
-  if (ai.length) {
+  $("ai-review-summary").textContent = aiAssessment?.aiAvailable === false
+    ? "Anna AI contextual review was not performed. This result is based only on explicit form values and Verigate policy."
+    : aiAssessment?.summary
+      ? "Anna AI contextual review: " + aiAssessment.summary
+      : "Anna AI reviewed the payment context, recipient and stated purpose.";
+  if (aiAssessment?.aiAvailable === false) {
+    const li = document.createElement("li");
+    li.textContent = "No AI contextual risk assessment is available for this check. Do not treat the preview as an AI-reviewed payment.";
+    aiList.appendChild(li);
+  } else if (ai.length) {
     for (const rule of ai) {
       const li = document.createElement("li");
       li.textContent = String(rule?.message || prettyRule(rule));
@@ -500,6 +546,9 @@ function baseExplanation(decision, rules) {
 }
 
 async function explainDecision(envelope, values, limits, flags) {
+  if (state.lastAiAvailable === false) {
+    return { explanation: baseExplanation(envelope.decision, envelope.matchedRules), next: "" };
+  }
   const details = {
     decision: envelope.decision,
     agent_id: values.agent_id,
@@ -625,12 +674,16 @@ async function checkAuthority() {
     state.lastReceipt = envelope.receipt;
     state.lastValues = { ...values };
     state.lastFlags = [...review.flags];
+    state.lastAiAvailable = review.aiAvailable !== false;
     state.lastExecutionAuthorization = null;
+    const canIssuePermission = envelope.decision === "ALLOW" && state.lastAiAvailable;
     $("execution-panel").style.display = envelope.decision === "ALLOW" ? "block" : "none";
-    $("execution-btn").disabled = envelope.decision !== "ALLOW";
-    $("execution-summary").textContent = envelope.decision === "ALLOW"
+    $("execution-btn").disabled = !canIssuePermission;
+    $("execution-summary").textContent = canIssuePermission
       ? "Verigate can now issue a one-time permission bound to this exact payment request. Nothing will be sent from this app."
-      : "Only ALLOW can receive execution authority.";
+      : envelope.decision === "ALLOW" && !state.lastAiAvailable
+        ? "Policy preview only. Anna AI contextual review is unavailable, so execution permission is disabled."
+        : "Only ALLOW can receive execution authority.";
 
     const pill = $("decision");
     pill.textContent = envelope.decision;
@@ -762,6 +815,10 @@ async function prepareExecutionAuthorization() {
     return;
   }
   const currentDecision = String(state.lastReceipt?.payload?.decision?.decision || "").toUpperCase();
+  if (state.lastAiAvailable === false) {
+    showError("Anna AI contextual review is unavailable. This is a policy preview only; execution permission remains disabled.");
+    return;
+  }
   if (currentDecision !== "ALLOW") {
     showError("Only an ALLOW decision can receive execution authority.");
     return;
