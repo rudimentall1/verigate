@@ -8,6 +8,8 @@ Endpoints:
   POST /v1/authorize/identity
   POST /v1/actions/authorize
   POST /v1/authorize/x402
+  GET  /v1/integrations/arc/status
+  POST /v1/integrations/arc/authorize
   POST /v1/execution/consume
   POST /v1/outcomes/attest
   GET  /v1/evidence/outcome/{authorization_id}
@@ -85,6 +87,15 @@ from adapters.valta import (
 )
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
+from enforcement.evm_rpc import EvmRpcError
+from integrations.arc import (
+    ARC_CHAIN,
+    ARC_CHAIN_ID,
+    ARC_USDC_ADDRESS,
+    ArcIntegrationError,
+    ArcMainnetIntegration,
+    validate_arc_usdc_transfer,
+)
 from x402.parser import X402ParseError, offer_to_intent, parse_payment_required_header
 
 from .schemas import (
@@ -372,6 +383,111 @@ def check_x402(req: X402HeaderRequest) -> dict:
     except X402ParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _decide_and_maybe_sign(intent, req.sign)
+
+
+@app.get("/v1/integrations/arc/status")
+def arc_mainnet_status() -> dict:
+    """Verify the live Arc mainnet RPC and canonical USDC ERC-20 interface."""
+    try:
+        return ArcMainnetIntegration().status()
+    except (ArcIntegrationError, EvmRpcError) as exc:
+        raise HTTPException(status_code=503, detail=f"Arc mainnet verification failed: {exc}") from exc
+
+
+@app.post("/v1/integrations/arc/authorize")
+def authorize_arc_payment(req: ActionAuthorizationRequest) -> dict:
+    """Authorize an exact Arc USDC transfer through Verigate's identity/capability plane."""
+    assert _engine is not None
+
+    if req.network != ARC_CHAIN or req.asset != "USDC" or req.action_type != "payment":
+        raise HTTPException(
+            status_code=400,
+            detail="Arc integration requires action_type=payment, network=arc and asset=USDC",
+        )
+    if req.amount is None and req.amount_exact is None:
+        raise HTTPException(status_code=400, detail="Arc payment requires amount or amount_exact")
+
+    try:
+        amount = Decimal(req.amount_exact) if req.amount_exact is not None else Decimal(str(req.amount))
+        metadata = req.metadata
+        if metadata.get("network_family") != "evm":
+            raise ArcIntegrationError("Arc payment metadata must declare network_family=evm")
+        arc_metadata = metadata.get("arc")
+        if not isinstance(arc_metadata, dict) or (
+            arc_metadata.get("chain_id") != ARC_CHAIN_ID
+            or arc_metadata.get("asset") != "USDC"
+            or str(arc_metadata.get("token_address", "")).lower() != ARC_USDC_ADDRESS.lower()
+            or arc_metadata.get("token_decimals") != 6
+        ):
+            raise ArcIntegrationError("Arc network/token metadata does not match canonical mainnet USDC")
+        transaction = metadata.get("evm_transaction")
+        if not isinstance(transaction, dict):
+            raise ArcIntegrationError("metadata.evm_transaction is required")
+        validate_arc_usdc_transfer(
+            transaction,
+            sender=transaction.get("from"),
+            recipient=req.target,
+            amount=amount,
+        )
+        network_status = ArcMainnetIntegration().status()
+    except (ArcIntegrationError, EvmRpcError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400 if isinstance(exc, ArcIntegrationError) else 503, detail=str(exc)) from exc
+
+    action = ActionIntent(
+        agent_id=req.agent_id,
+        action_type=req.action_type,
+        target=req.target,
+        resource=req.resource,
+        amount=amount,
+        amount_exact=req.amount_exact,
+        asset=req.asset,
+        network=req.network,
+        purpose=req.purpose,
+        declared_context=req.declared_context,
+        parent_intent_id=req.parent_intent_id,
+        requested_capability=req.requested_capability,
+        constraints=req.constraints,
+        metadata=req.metadata,
+        intent_id=req.intent_id,
+        timestamp=req.timestamp,
+    )
+    try:
+        artifacts = _engine.authorize_action(
+            action,
+            req.capability_id,
+            req.identity_id,
+            req.agent_signature,
+            issuer_private_key(PRIVATE_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    authorization = artifacts.get("execution_authorization")
+    wallet_transaction = None
+    if authorization is not None:
+        tx = transaction
+        wallet_transaction = {
+            "chainId": hex(ARC_CHAIN_ID),
+            "from": tx["from"],
+            "to": tx["to"],
+            "data": tx["data"],
+            "value": hex(tx["value_wei"]),
+        }
+
+    return {
+        **artifacts,
+        "arc_network": network_status,
+        "wallet_transaction": wallet_transaction,
+        "execution_consume_endpoint": "/v1/execution/consume",
+        "execution_order": [
+            "consume the exact execution_authorization at /v1/execution/consume",
+            "only if execute=true, ask the connected wallet to sign and broadcast wallet_transaction on Arc mainnet",
+        ],
+    }
 
 
 @app.post("/v1/authorize", response_model=AuthorizationResponse)
