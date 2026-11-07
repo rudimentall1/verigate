@@ -27,6 +27,7 @@ blocked_payees: []
 allowed_networks:
   - base
   - ethereum
+  - arc
   - solana
 allowed_assets:
   - USDC
