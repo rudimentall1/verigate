@@ -11,6 +11,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
 from api import main
+from attest.keys import load_public_key
+from attest.receipt import verify_execution_authorization
 from core.identity import sign_action_intent
 from core.models import ActionIntent, AgentIdentity, Capability
 from integrations.arc import (
@@ -130,6 +132,10 @@ class ArcApiTest(unittest.TestCase):
                 body = response.json()
                 authorization = body["execution_authorization"]
                 self.assertIsNotNone(authorization)
+                valid, reason = verify_execution_authorization(
+                    authorization, load_public_key(main.PUBLIC_KEY_PATH)
+                )
+                self.assertTrue(valid, reason)
                 self.assertEqual(body["arc_network"]["chain_id"], ARC_CHAIN_ID)
                 self.assertEqual(body["wallet_transaction"]["to"], ARC_USDC_ADDRESS)
                 self.assertEqual(body["wallet_transaction"]["from"], SENDER)
