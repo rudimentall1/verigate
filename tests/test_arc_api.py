@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from fastapi.testclient import TestClient
 
 from api import main
@@ -132,8 +133,11 @@ class ArcApiTest(unittest.TestCase):
                 body = response.json()
                 authorization = body["execution_authorization"]
                 self.assertIsNotNone(authorization)
+                server_key_response = client.get("/v1/public-key")
+                self.assertEqual(server_key_response.status_code, 200)
+                server_public_key = load_pem_public_key(server_key_response.content)
                 valid, reason = verify_execution_authorization(
-                    authorization, load_public_key(main.PUBLIC_KEY_PATH)
+                    authorization, server_public_key
                 )
                 self.assertTrue(valid, reason)
                 self.assertEqual(body["arc_network"]["chain_id"], ARC_CHAIN_ID)
