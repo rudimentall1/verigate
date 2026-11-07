@@ -77,6 +77,30 @@ class EvmRpcClient:
         except ValueError as exc:
             raise EvmRpcError("eth_chainId returned invalid hex") from exc
 
+    def gas_price_wei(self) -> int:
+        result = self._request("eth_gasPrice", [])
+        if not isinstance(result, str) or not result.startswith("0x"):
+            raise EvmRpcError("eth_gasPrice returned invalid result")
+        try:
+            return int(result, 16)
+        except ValueError as exc:
+            raise EvmRpcError("eth_gasPrice returned invalid hex") from exc
+
+    def eth_call(self, to: str, data: str, block_tag: str = "latest") -> str:
+        if not isinstance(to, str) or not to.startswith("0x") or len(to) != 42:
+            raise ValueError("eth_call target must be a 20-byte EVM address")
+        if (
+            not isinstance(data, str)
+            or not data.startswith("0x")
+            or len(data[2:]) % 2
+            or any(char not in "0123456789abcdefABCDEF" for char in data[2:])
+        ):
+            raise ValueError("eth_call data must be 0x-prefixed even-length hex")
+        result = self._request("eth_call", [{"to": to, "data": data}, block_tag])
+        if not isinstance(result, str) or not result.startswith("0x"):
+            raise EvmRpcError("eth_call returned invalid result")
+        return result
+
     def send_raw_transaction(self, signed_raw_transaction: str) -> str:
         if (
             not isinstance(signed_raw_transaction, str)
