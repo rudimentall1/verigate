@@ -121,3 +121,14 @@ Append a dated entry below after each work session:
 - Created branch `feat/evm-wallet-identity-arc`.
 - No implementation files changed; no tests run; no server changes; no live transactions.
 - Next action: inspect full identity/storage/API/engine flow on the new branch, then implement wallet challenge + binding with tests.
+
+### 2026-11-07 — checkpoint synchronization and repository-state inspection
+- Created the checkpoint on the isolated server at `/opt/verigate-arc-test/docs/SESSION_CHECKPOINT.md` and on the Windows workstation at `C:\\Users\\User\\Desktop\\Work\\verigate\\verigate\\docs\\SESSION_CHECKPOINT.md`.
+- SHA256 verified identical on both machines: `563968bbab4f9e3086517488e6448d9450256f94471c652935d343cfda15329d`.
+- Server `/opt/verigate-arc-test`: detached HEAD at `2957038` (`origin/main`); untracked `docs/SESSION_CHECKPOINT.md` and `runtime/`; isolated API on `127.0.0.1:8005` returned `{"status":"ok"}`; primary API remains on `127.0.0.1:8004`. No server files other than the checkpoint were changed.
+- Workstation repo is on `fix/authority-ceiling-decimal-strings`, local HEAD `15f3dc5`, tracking branch reports 6 commits behind; checkpoint is untracked.
+- GitHub `feat/evm-wallet-identity-arc` is exactly one commit ahead of `main` (checkpoint-only); no implementation changes exist on it.
+- The workstation branch and the checkpoint branch have diverged histories (comparison from local HEAD `15f3dc5`: feature branch 62 commits ahead and 10 behind; merge base `d8453033ea9842b3431a640e553605a5e4f7e5c4`). Do not merge, reset, rebase, or switch branches until the workstation-only commits and required code are reviewed.
+- Source review on the checkpoint branch confirms existing Ed25519 identity/action signatures, Arc transaction envelope construction, and Arc API tests that register an identity/capability directly; no EVM ownership proof is present in the inspected files.
+- Tests run in this session: none. Code changes: none. Server deployment: none. Live transactions: none.
+- Next action: inspect the workstation's 10 commits not on the feature branch and compare the complete local diff; choose a safe integration base before editing wallet-binding implementation.
