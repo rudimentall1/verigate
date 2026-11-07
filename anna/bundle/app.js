@@ -229,17 +229,24 @@ async function interpretRequest(description) {
   let lastError = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const reminder = attempt === 0 ? "" : "\nYour previous answer was not valid JSON. Reply with ONLY one valid JSON object and nothing else.";
+    let raw;
     try {
-      const raw = await askAnna(system, user + reminder, 1000);
+      raw = await askAnna(system, user + reminder, 1000);
+    } catch (error) {
+      // LLM transport, quota, or session errors must not prevent a policy-only
+      // preview. The caller keeps execution disabled when aiAvailable is false.
+      return manualInterpretation();
+    }
+    try {
       return sanitizeInterpretation(parseJsonFromModel(raw, READ_FAILURE));
     } catch (error) {
       lastError = error;
-      if (error?.message !== READ_FAILURE) throw error; // only unreadable output is retried
+      if (error?.message !== READ_FAILURE) throw error;
     }
   }
-  // If Anna LLM is out of quota or unavailable, retain the deterministic
-  // policy preview using explicit fields only. Execution stays disabled below.
-  return manualInterpretation();
+  // An unreadable model response is not the same as an unavailable LLM.
+  // Keep the explicit error after the retry rather than silently bypassing it.
+  throw lastError || new Error(READ_FAILURE);
 }
 
 function showClarify(items, needConfirm) {
