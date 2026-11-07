@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+from decimal import Decimal, InvalidOperation
 
 from .authority_state import AuthoritySnapshot
 from .models import ActionIntent, Capability
@@ -61,8 +62,18 @@ def verify_effective_action(action: dict[str, Any], authority: dict[str, Any]) -
     limits = authority.get("per_action_limits", {})
     asset = action.get("asset")
     amount = action.get("amount")
-    if asset in limits and (amount is None or amount > limits[asset]):
-        return False, "execution amount exceeds effective authority"
+    if asset in limits:
+        if amount is None or isinstance(amount, bool):
+            return False, "execution amount exceeds effective authority"
+        try:
+            amount_value = Decimal(str(amount))
+            limit_value = Decimal(str(limits[asset]))
+        except (InvalidOperation, TypeError, ValueError):
+            return False, "execution amount or effective authority limit is invalid"
+        if not amount_value.is_finite() or not limit_value.is_finite():
+            return False, "execution amount or effective authority limit is not finite"
+        if amount_value > limit_value:
+            return False, "execution amount exceeds effective authority"
     return True, "execution action is within effective authority"
 
 
