@@ -103,6 +103,7 @@ This repository contains a runnable Genesis 2.0 authority lifecycle and its veri
 | Policy engine (caps, allowlists, rate limits, new-payee/daily limits) | **Real.** Deterministic rules, no statistical "risk scores." Covered by the full automated suite. |
 | Ed25519 signing + independent verification | **Real.** Standard `cryptography` library primitives, not a custom crypto scheme. Tampering is detected, not just claimed. |
 | x402 header parsing | **Real**, for the `exact` scheme with `extra.name` asset identification. Refuses to guess decimals for an unrecognized asset/network pair rather than silently misjudging an amount — extend `x402/parser.py:_KNOWN_DECIMALS` as you verify more pairs. |
+| Arc Mainnet / USDC | **Implemented as a first-party integration.** Chain ID 5042, read-only RPC verification, canonical USDC ERC-20 validation, exact 6-decimal transfer encoding and a signed identity/capability authorization endpoint. The connected wallet remains the signer; Verigate does not custody funds. **The Verigate service is not deployed on Arc by this code change.** See `docs/arc-mainnet-integration.md`. |
 | Audit log / rate limiting / daily-spend tracking | **Real**, SQLite-backed, single-process. For multiple replicas, point every process at shared storage or swap in a real database — the `Storage` interface is small. |
 | FastAPI HTTP layer | **Real, with access control**: API-key auth (default-deny once `VERIGATE_API_KEYS` is set), tenant-scoped credentials (`VERIGATE_TENANT_API_KEYS`) and optional mandatory signed intents (`VERIGATE_REQUIRE_SIGNED_INTENT`). **Not yet load-tested or deployed as a hosted service.** Runs with `uvicorn api.main:app`; see `docs/security-configuration.md`. |
 | AP2 / other payment-rail adapters | **Not built.** The architecture reserves the seam (`core.models.PaymentIntent` is rail-agnostic) but only x402 has a working parser today. |
@@ -335,6 +336,8 @@ attest/
 x402/
     parser.py       Parses a real x402 PAYMENT-REQUIRED header into a
                        normalized PaymentIntent
+integrations/
+    arc.py          Arc mainnet RPC verification and exact USDC ERC-20 transfer preparation
 api/
     main.py         FastAPI app: check, capability-bound authorization,
                        identity-bound authorization, execution and verification endpoints
@@ -437,5 +440,9 @@ The **Evidence Graph** exposes this provenance as a deterministic subgraph. `/v1
 The outcome plane is exposed through `POST /v1/outcomes/attest` and `GET /v1/evidence/outcome/{authorization_id}`. Trusted attestors are durable registry entries rather than arbitrary public keys supplied in an attestation. Deployments can seed them with `VERIGATE_OUTCOME_ATTESTORS` as a JSON array of `attestor_id`, `public_key_b64` and `attestor_type` objects. `EXECUTOR` keys may self-report, but only `EXTERNAL_VERIFIER` or `CHAIN_VERIFIER` attestations can change dynamic authority automatically. Chain verifiers must supply `CHAIN_RECEIPT` evidence.
 
 `POST /v1/authorize/x402` provides the compatibility contract for an x402 `PAYMENT-REQUIRED` header.
+
+`GET /v1/integrations/arc/status` performs a read-only Arc mainnet/USDC check. `POST /v1/integrations/arc/authorize` authorizes an exact, agent-signed Arc USDC transfer and returns a wallet-signable transaction only when an execution authorization exists. The caller must consume that exact authorization at `POST /v1/execution/consume` before asking the connected wallet to sign. This is a client-mediated execution boundary, not an on-chain wallet interceptor; a wallet user can still bypass the client and submit unrelated transactions directly.
+
+See [Arc mainnet integration guide](docs/arc-mainnet-integration.md).
 
 The existing `/v1/check` endpoints remain available for compatibility.
