@@ -574,7 +574,7 @@ await test("missing amount: Anna asks a question and no check is run", async () 
   const ui = await launch({ description: "Pay my usual merchant on Base", interpret: interpretJson({ payee: VALID, network: "base", asset: "USDC", questions: ["How much should be paid?"] }) });
   await ui.click();
   ok(ui.shown("clarify"), "clarify panel visible");
-  ok(ui.text("clarify-list").includes("How much"), "question shown");
+  ok(ui.text("clarify-list").toLowerCase().includes("amount"), "missing amount is requested explicitly");
   eq(ui.calls.tools.length, 0, "no tool calls");
   eq(ui.$("result").style.display, "none");
 });
