@@ -16,7 +16,7 @@ const DEFAULT_QUESTIONS = {
   target: "Which recipient address should receive the payment?",
   asset: "Which asset should be paid (for example USDC)?",
   network: "On which network should the payment run (for example Base)?",
-  amount: "How much should be paid?"
+  amount: "What amount should be paid?"
 };
 const FLAG_CODES = new Set(["prompt_injection", "urgency_pressure", "recipient_mismatch", "unusual_instruction", "other"]);
 
