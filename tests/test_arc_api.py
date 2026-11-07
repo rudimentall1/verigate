@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from api import main
 from attest.keys import load_public_key
-from attest.receipt import verify_execution_authorization
+from attest.receipt import verify_execution_authorization, verify_receipt
 from core.identity import sign_action_intent
 from core.models import ActionIntent, AgentIdentity, Capability
 from integrations.arc import (
@@ -136,6 +136,10 @@ class ArcApiTest(unittest.TestCase):
                 server_key_response = client.get("/v1/public-key")
                 self.assertEqual(server_key_response.status_code, 200)
                 server_public_key = load_pem_public_key(server_key_response.content)
+                receipt_valid, receipt_reason = verify_receipt(
+                    body["decision_receipt"], server_public_key
+                )
+                self.assertTrue(receipt_valid, f"decision receipt: {receipt_reason}")
                 valid, reason = verify_execution_authorization(
                     authorization, server_public_key
                 )
