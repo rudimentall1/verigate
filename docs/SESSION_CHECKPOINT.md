@@ -132,3 +132,13 @@ Append a dated entry below after each work session:
 - Source review on the checkpoint branch confirms existing Ed25519 identity/action signatures, Arc transaction envelope construction, and Arc API tests that register an identity/capability directly; no EVM ownership proof is present in the inspected files.
 - Tests run in this session: none. Code changes: none. Server deployment: none. Live transactions: none.
 - Next action: inspect the workstation's 10 commits not on the feature branch and compare the complete local diff; choose a safe integration base before editing wallet-binding implementation.
+
+
+### 2026-11-07 — corrected branch discovery
+- GitHub API confirms `feat/evm-wallet-identity-arc` contains only the checkpoint document relative to `main` (2 commits ahead, 0 behind); no Arc implementation is present on this branch.
+- The existing Arc implementation is on `integration/arc-mainnet`, which is 17 commits ahead and 2 commits behind `main`. It contains Arc changes in `api/main.py`, `integrations/arc.py`, `enforcement/evm_rpc.py`, Arc tests and related docs. This is the likely correct implementation base, subject to inspecting its two mainline-only commits and running tests.
+- The Windows checkout is on `fix/authority-ceiling-decimal-strings`; its comparison with `feat/evm-wallet-identity-arc` shows local-only Anna/authority-protocol file changes. Preserve them; do not reset, clean, merge or switch blindly.
+- The local checkout reports `origin/fix/authority-ceiling-decimal-strings` is 6 commits ahead of local HEAD, so fetch updated the remote-tracking ref but did not change the working branch.
+- Raw GitHub download on server/workstation still returned the previous checkpoint hash `563968...`, while GitHub API reports the updated checkpoint content SHA `b1a4e9099d109c1772923da2dba1b05397fb491d`; likely raw-content cache. Use a cache-busting query or verify via GitHub API before assuming synchronization.
+- No source code changed; no tests run; no server changes beyond the checkpoint file; no live transactions.
+- Next action: inspect the exact two commits on `main` absent from `integration/arc-mainnet`, compare the Arc integration branch tree with the workstation, then create a dedicated wallet-binding branch from the correct Arc base without discarding local work.
