@@ -7,8 +7,9 @@ The AI performs payment-context analysis in addition to field extraction, but it
 ## User flow
 
 1. Describe the payment in natural language and select **Check with Anna AI**.
-2. If a detail is missing or unclear, Anna AI asks for it and the check does not run until it is provided (or, for unclear details, confirmed).
-3. Review the result: the decision, Anna AI's explanation and suggestion, any AI risk flags, a table comparing the request with the policy limits, and the matched rules. The verified receipt, issuer public key and key fingerprint are available in the details panel.
+2. When Anna LLM is available, it extracts the request and performs contextual risk review. If the LLM is unavailable (for example, quota exhaustion), the App offers a policy-only preview using only the recipient, asset, network and amount explicitly entered in the form; it never infers missing values from free text.
+3. If a required detail is missing or unclear, the App asks for it and does not run the policy check until it is provided (or, for unclear details, confirmed).
+4. Review the result: the deterministic ALLOW/WARN/BLOCK decision, explanation, any AI risk flags (when AI review ran), a table comparing the request with policy limits, and matched rules. The verified receipt, issuer public key and key fingerprint are available in the details panel. A policy-only preview clearly states that no AI contextual review was performed and cannot create execution permission.
 
 Do not treat ALLOW as a guarantee that the recipient is safe, that the transaction will execute, or that it has executed.
 
