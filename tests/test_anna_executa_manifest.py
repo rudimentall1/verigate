@@ -34,6 +34,12 @@ class ExecutaManifestTest(unittest.TestCase):
     def test_manifest_passes_protocol_check(self):
         self.smoke.check_manifest(self.plugin.MANIFEST)
 
+    def test_sampling_tool_is_rejected_without_llm_sample_capability(self):
+        manifest = json.loads(json.dumps(self.plugin.MANIFEST))
+        manifest.pop("host_capabilities", None)
+        with self.assertRaises(SystemExit):
+            self.smoke.check_manifest(manifest)
+
     def test_parameters_is_a_list_and_description_present(self):
         manifest = self.plugin.MANIFEST
         self.assertTrue(manifest["description"])
@@ -50,9 +56,9 @@ class ExecutaManifestTest(unittest.TestCase):
         self.assertEqual([p["name"] for p in tool["parameters"]], ["agent_id", "payee", "asset"])
         self.assertTrue(all(p["required"] is False for p in tool["parameters"]))
 
-    def test_legacy_host_capabilities_are_not_used_and_nonce_approval_is_required(self):
+    def test_sampling_host_capability_is_declared_and_nonce_approval_is_required(self):
         manifest = self.plugin.MANIFEST
-        self.assertNotIn("host_capabilities", manifest)
+        self.assertIn("llm.sample", manifest["host_capabilities"])
         tool = next(t for t in manifest["tools"] if t["name"] == "verigate_authorize_payment")
         params = {p["name"]: p for p in tool["parameters"]}
         self.assertTrue(params["confirmation_nonce"]["required"])
@@ -72,6 +78,7 @@ class ExecutaManifestTest(unittest.TestCase):
         self.assertEqual(result["protocolVersion"], "2.0")
         self.assertIn("sampling", result["client_capabilities"])
         self.assertIn("storage", result["client_capabilities"])
+        self.assertIn("llm.sample", self.plugin.MANIFEST["host_capabilities"])
         self.assertNotIn("storage", result["capabilities"])
 
     def test_protocol_v1_disables_sampling_and_storage(self):

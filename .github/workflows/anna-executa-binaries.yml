@@ -13,7 +13,7 @@ on:
       version:
         description: "Executa version to build"
         required: true
-        default: "0.1.14"
+        default: "0.1.15"
         type: string
       publish_release:
         description: "Create a GitHub Release after all platform builds pass"
@@ -64,17 +64,17 @@ jobs:
         run: python anna/build_binary.py
 
       - name: Package binary
-        run: python anna/package_binary.py "${{ matrix.target }}" "${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.14' }}"
+        run: python anna/package_binary.py "${{ matrix.target }}" "${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.15' }}"
 
       - name: Smoke-test extracted release package
-        run: python anna/smoke_package.py "${{ matrix.target }}" "${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.14' }}"
+        run: python anna/smoke_package.py "${{ matrix.target }}" "${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.15' }}"
 
       - name: Upload release package
         uses: actions/upload-artifact@v4
         with:
           name: verigate-authority-${{ matrix.target }}
           path: |
-            anna/executas/verigate-authority/dist/verigate-authority-${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.14' }}-${{ matrix.target }}.*
+            anna/executas/verigate-authority/dist/verigate-authority-${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.15' }}-${{ matrix.target }}.*
           if-no-files-found: error
 
   release:
@@ -99,7 +99,7 @@ jobs:
       - name: Create or refresh candidate GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.14' }}
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.15' }}
           EVENT_NAME: ${{ github.event_name }}
           PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release || false }}
         run: |

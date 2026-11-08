@@ -1,6 +1,16 @@
 # Verigate Authority ? Anna release gate
 
 ## Current candidate status — 2026-11-08 (authoritative)
+### Sampling regression correction ? new local candidate, not uploaded
+
+- The archived Desktop file anna-0.1.9-files.zip confirms the older UI called state.anna.llm.complete(...) directly. The current Git history confirms that commit 99f502c replaced this with Executa reverse Sampling. Root cause found in that same commit: the migration from direct state.anna.llm.complete(...) to Executa reverse sampling/createMessage removed host_capabilities entirely, while the new Executa now requires llm.sample. The binary smoke validator and regression test then incorrectly prohibited that declaration, masking the missing platform permission in CI.
+- Anna's Executa examples require host_capabilities: [llm.sample] for a tool that calls the host LLM. Declaring the capability makes it available for user authorization; it does not grant it automatically. A separate Agent/Executa LLM Sampling grant is required.
+- Corrected local source: Executa 0.1.15, Anna App 0.1.19. The existing Anna App 0.1.18 / Executa 0.1.14 review candidate remains immutable and untouched. No new Anna upload/cut/review submission has been performed.
+- Verification on Windows: focused Anna tests 31 passed; full Python suite 621 passed, 4 skipped, 3 upstream deprecation warnings; Anna UI E2E 44/44 passed; Anna CLI 0.1.64 strict validation passed; Windows PyInstaller build and packaged-artifact smoke passed (decision=ALLOW, signed receipt, App-scope approval consumed once, wallet hand-off consumed once, submitted receipt persisted and verified).
+- The local Sampling roundtrip uses a mock host. It proves framing and response routing only; it does not prove Anna Cloud has granted Sampling or that its LLM provider will answer. Cloud acceptance remains pending a single test after upload and explicit grant.
+- First PR CI run 42484525622 passed the Python, contracts, strict schema validation and 44/44 Anna UI jobs, but the Linux Executa smoke step still expected 0.1.14 while the rebuilt binary correctly reported 0.1.15. Updated the CI workflow's smoke/package version and added an assertion tying those CI expectations to the Executa version; the exact updated SHA must pass CI before merge.
+- Distinguish two unrelated things: retired App-level host_capabilities / aps.scope.* declarations are not to be restored in the schema-4 App manifest; the bundled Executa describe manifest must declare llm.sample because that is the capability the Executa itself invokes.
+
 
 This block is the source of truth for the current candidate. Everything after `## Historical baseline` is retained as historical context and must not override this section.
 

@@ -70,5 +70,5 @@ jobs:
         run: |
           pip install pyinstaller
           python anna/build_binary.py
-          python anna/smoke_binary.py anna/executas/verigate-authority/dist/verigate-authority "0.1.14"
-          python anna/package_binary.py linux-x86_64 "0.1.14"
+          python anna/smoke_binary.py anna/executas/verigate-authority/dist/verigate-authority "0.1.15"
+          python anna/package_binary.py linux-x86_64 "0.1.15"
