@@ -297,7 +297,7 @@ def check_daily_cap(
     ):
         return RuleMatch(
             "daily_cap_exceeded",
-            Severity.WARN,
+            Severity.BLOCK,
             f"would bring today's total to {total(spent_today, intent.amount):.2f} {intent.asset}, "
             f"exceeding daily cap {cap}",
         )

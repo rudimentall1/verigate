@@ -12,6 +12,8 @@ from pathlib import Path
 from decimal import Decimal, InvalidOperation
 import re
 
+from cryptography.hazmat.primitives import serialization
+
 if getattr(sys, "frozen", False):
     _BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
     _SOURCE_REPO_ROOT = _BUNDLE_ROOT
@@ -24,14 +26,15 @@ else:
 sys.path.insert(0, str(_SOURCE_REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from executa_sdk import PROTOCOL_VERSION_V2, StorageClient, StorageError, bind_invoke, make_response_router
+from executa_sdk import (PROTOCOL_VERSION_V2, SamplingClient, SamplingError, StorageClient, StorageError, bind_invoke, get_current_invoke_id, make_response_router)
 from executa_sdk.sampling import _write_frame
 
+_sampling = SamplingClient()
 _storage = StorageClient()
-_route_response = make_response_router(_storage)
+_route_response = make_response_router(_sampling, _storage)
 _loop = None
 
-VERSION = "0.1.13"
+VERSION = "0.1.14"
 _POLICY_PATH = _BUNDLE_ROOT / "policies" / "anna.yaml"
 
 # Anna Executa protocol 2.0: negotiate APS support in `initialize`; keep
@@ -46,12 +49,25 @@ MANIFEST = {
         "keys or broadcast transactions; execution must pass through a Verigate enforcement adapter."
     ),
     "author": "rudimentall1",
-    "host_capabilities": ["aps.scope.app.read", "aps.scope.app.write"],
     "homepage": "https://github.com/rudimentall1/verigate",
     "icon": "\U0001f6e1\ufe0f",
     "category": "security",
     "license": "MIT",
     "tools": [
+        {
+            "name": "verigate_ai_review",
+            "description": (
+                "Ask the Anna host LLM to interpret a payment request or explain a Verigate decision. "
+                "The Executa calls Anna through protocol-v2 sampling/createMessage; no provider API key "
+                "is stored here. The response is advisory and never authorizes or executes an action."
+            ),
+            "timeout": 60,
+            "parameters": [
+                {"name": "system_prompt", "type": "string", "description": "Task-specific instruction for the advisory model call.", "required": True},
+                {"name": "prompt", "type": "string", "description": "Untrusted request or decision context to review.", "required": True},
+                {"name": "max_tokens", "type": "integer", "description": "Maximum response tokens (1-2048).", "required": False, "default": 1000}
+            ],
+        },
         {
             "name": "verigate_check",
             "description": (
@@ -61,7 +77,7 @@ MANIFEST = {
             ),
             "timeout": 30,
             "parameters": [
-                {"name": "agent_id", "type": "string", "description": "Identifier of the agent requesting the action.", "required": True},
+                {"name": "agent_id", "type": "string", "description": "User-facing agent label only. It does not control identity, spend accounting or dynamic authority; those are bound to this installation issuer key.", "required": True},
                 {"name": "payee", "type": "string", "description": "Recipient of the payment or action.", "required": True},
                 {"name": "asset", "type": "string", "description": "Asset being moved, e.g. USDC.", "required": True},
                 {"name": "network", "type": "string", "description": "Network the action runs on, e.g. base.", "required": True},
@@ -72,10 +88,10 @@ MANIFEST = {
         },
         {
             "name": "verigate_policy_summary",
-            "description": "Return the active policy limits (networks, assets, caps, confirmation threshold) so a request can be compared with them. Read-only.",
+            "description": "Return active policy limits and this installation accounting principal. The optional agent_id is a display label only and never selects or resets accounting state. Read-only.",
             "timeout": 15,
             "parameters": [
-                {"name": "agent_id", "type": "string", "description": "Optional agent identifier for read-only usage and spend context.", "required": False, "default": ""},
+                {"name": "agent_id", "type": "string", "description": "Optional display label; it does not select the accounting principal.", "required": False, "default": ""},
                 {"name": "payee", "type": "string", "description": "Optional recipient for first-payment context.", "required": False, "default": ""},
                 {"name": "asset", "type": "string", "description": "Optional asset for rolling spend context.", "required": False, "default": ""},
             ],
@@ -85,20 +101,23 @@ MANIFEST = {
             "description": (
                 "After the user explicitly confirms the exact payment in the Anna UI, evaluate it "
                 "with persistent Verigate policy and issue a capability-bound, one-time signed "
-                "Execution Authorization only when the result is ALLOW. WARN and BLOCK never receive "
-                "execution authority. This does not send funds. A wallet/executor must enforce the "
-                "authorization through Verigate ExecutionRouter before any side effect."
+                "Execution Authorization for ALLOW. A WARN may be converted to ALLOW only after "
+                "a separate, exact, one-time App UI warning review; BLOCK can never be overridden. "
+                "The fresh policy result and dynamic authority are rechecked before issuance. This does "
+                "not send funds. A wallet/executor must enforce the authorization through Verigate "
+                "ExecutionRouter before any side effect."
             ),
             "timeout": 30,
             "parameters": [
-                {"name": "agent_id", "type": "string", "description": "Identifier of the agent requesting the payment.", "required": True},
+                {"name": "agent_id", "type": "string", "description": "User-facing agent label only. Identity and limits are bound to this installation issuer key, not to this caller-supplied string.", "required": True},
                 {"name": "payee", "type": "string", "description": "Exact payment recipient.", "required": True},
                 {"name": "asset", "type": "string", "description": "Payment asset, e.g. USDC.", "required": True},
                 {"name": "network", "type": "string", "description": "Exact network, e.g. base.", "required": True},
                 {"name": "amount", "type": "number", "description": "Exact payment amount.", "required": True},
                 {"name": "resource", "type": "string", "description": "Payment purpose or invoice reference.", "required": False, "default": ""},
                 {"name": "ai_flags_json", "type": "string", "description": "Advisory AI risk flags. They may only escalate ALLOW to WARN.", "required": False, "default": ""},
-                {"name": "confirmation_nonce", "type": "string", "description": "One-time nonce created by the Anna App UI after explicit user confirmation. Direct chat invocation has no app-scoped approval record and fails closed.", "required": True}
+                {"name": "confirmation_nonce", "type": "string", "description": "One-time nonce created by the Anna App UI after explicit user confirmation. Direct chat invocation has no app-scoped approval record and fails closed.", "required": True},
+                {"name": "approval_kind", "type": "string", "description": "Use payment_authorization for ALLOW or payment_warning_review for a separate explicit review of the exact WARN rules.", "required": False, "default": "payment_authorization"}
             ]
         },
         {
@@ -124,6 +143,22 @@ MANIFEST = {
             ],
         },
         {
+            "name": "verigate_record_wallet_submission_receipt",
+            "description": (
+                "After the connected EIP-1193 wallet returns a transaction hash, persist a signed "
+                "SUBMITTED ExecutionReceipt for the already-consumed authorization. Requires a "
+                "separate one-time Anna App-scope approval bound to the exact wallet hash and "
+                "transaction. This is executor self-report only, not on-chain confirmation."
+            ),
+            "timeout": 30,
+            "parameters": [
+                {"name": "authorization_id", "type": "string", "description": "ID of the previously issued and consumed Execution Authorization.", "required": True},
+                {"name": "transaction_hash", "type": "string", "description": "Exact 32-byte transaction hash returned by the connected wallet.", "required": True},
+                {"name": "sender", "type": "string", "description": "Connected wallet address used for this submission.", "required": True},
+                {"name": "confirmation_nonce", "type": "string", "description": "One-time App UI approval created after the wallet returned the transaction hash.", "required": True}
+            ],
+        },
+        {
             "name": "verigate_verify_decision_receipt",
             "description": (
                 "Cryptographically verify a Verigate Decision Receipt using this installation's "
@@ -138,8 +173,11 @@ MANIFEST = {
     ],
 }
 
+_CHECK_TOOL = next(tool for tool in MANIFEST["tools"] if tool["name"] == "verigate_check")
 _REQUIRED_ARGS = [
-    p["name"] for p in MANIFEST["tools"][0]["parameters"] if p["required"]
+    parameter["name"]
+    for parameter in _CHECK_TOOL["parameters"]
+    if parameter["required"]
 ]
 
 
@@ -151,22 +189,27 @@ class RpcError(Exception):
 
 
 def _resolve_data_dir() -> Path:
-    """Resolve local state storage without silently abandoning an explicit path.
+    """Resolve durable state storage, preferring Anna's persistent workspace.
 
-    When an operator sets VERIGATE_ANNA_DATA_DIR, that path is authoritative.
-    Falling back to a home or temporary directory after it fails would make
-    issuer-key rotation and accounting-history loss look like a successful
-    startup. In that case, fail closed instead.
+    VERIGATE_ANNA_DATA_DIR is an explicit operator override. On Anna Cloud
+    Agents, ANNA_WORKSPACE_DIR is the platform's durable per-user volume
+    contract; user data must not be stored beside the replaceable Executa
+    installation. Both paths are authoritative and fail closed when unusable.
+    Local-only fallbacks are evaluated lazily so a working default does not
+    depend on HOME being configured.
     """
     override = os.environ.get("VERIGATE_ANNA_DATA_DIR")
+    workspace = os.environ.get("ANNA_WORKSPACE_DIR")
+
     if override:
         candidates = [Path(override)]
+        authoritative = True
+    elif workspace:
+        candidates = [Path(workspace) / "verigate-authority"]
+        authoritative = True
     else:
-        candidates = [
-            _DEFAULT_DATA_DIR,
-            Path.home() / ".verigate-authority",
-            Path(tempfile.gettempdir()) / "verigate-authority",
-        ]
+        candidates = [_DEFAULT_DATA_DIR]
+        authoritative = False
 
     errors = []
     for candidate in candidates:
@@ -178,32 +221,55 @@ def _resolve_data_dir() -> Path:
             return candidate
         except OSError as exc:
             errors.append(f"{candidate}: {exc}")
-            if override:
+            if authoritative:
                 break
+
+    # These fallbacks are for local development only. Never use them when
+    # Anna provides its durable workspace, because that would silently move
+    # issuer identity and accounting history onto an ephemeral filesystem.
+    if not authoritative:
+        try:
+            candidates = [Path.home() / ".verigate-authority"]
+        except RuntimeError:
+            candidates = []
+        candidates.append(Path(tempfile.gettempdir()) / "verigate-authority")
+        for candidate in candidates:
+            try:
+                candidate.mkdir(parents=True, exist_ok=True)
+                probe = candidate / ".write-test"
+                probe.write_text("ok", encoding="utf-8")
+                probe.unlink()
+                return candidate
+            except OSError as exc:
+                errors.append(f"{candidate}: {exc}")
 
     detail = "; ".join(errors) or "no candidate paths configured"
     raise RuntimeError(f"no writable Verigate data directory available: {detail}")
 
 
 _state = None
+_state_lock = threading.Lock()
 
 
 def _get_state():
+    """Initialize one issuer identity and SQLite engine exactly once per process."""
     global _state
     if _state is None:
-        from attest.keys import ensure_keypair
-        from core.engine import GuardrailEngine
-        from core.policy import Policy
-        from core.storage import Storage
+        with _state_lock:
+            if _state is None:
+                from attest.keys import ensure_keypair
+                from core.engine import GuardrailEngine
+                from core.policy import Policy
+                from core.storage import Storage
 
-        data_dir = _resolve_data_dir()
-        private_path = data_dir / "issuer.key"
-        public_path = data_dir / "issuer.pub"
-        private_key = ensure_keypair(private_path, public_path)
-        engine = GuardrailEngine(
-            Policy.load(str(_POLICY_PATH)), Storage(str(data_dir / "verigate.db"))
-        )
-        _state = (engine, private_key)
+                data_dir = _resolve_data_dir()
+                private_path = data_dir / "issuer.key"
+                public_path = data_dir / "issuer.pub"
+                private_key = ensure_keypair(private_path, public_path)
+                engine = GuardrailEngine(
+                    Policy.load(str(_POLICY_PATH)), Storage(str(data_dir / "verigate.db"))
+                )
+                _state = (engine, private_key)
     return _state
 
 
@@ -235,6 +301,74 @@ def _parse_ai_flags(raw: object) -> list:
     return flags
 
 
+async def _verigate_ai_review(args: dict) -> dict:
+    """Call the Anna host LLM through Executa reverse-RPC Sampling (v2)."""
+    system_prompt = args.get("system_prompt")
+    prompt = args.get("prompt")
+    max_tokens = args.get("max_tokens", 1000)
+    if not isinstance(system_prompt, str) or not system_prompt.strip() or len(system_prompt) > 8_000:
+        return {"success": False, "error": "system_prompt must be a non-empty string no longer than 8000 characters"}
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 24_000:
+        return {"success": False, "error": "prompt must be a non-empty string no longer than 24000 characters"}
+    if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 1 <= max_tokens <= 2048:
+        return {"success": False, "error": "max_tokens must be an integer from 1 to 2048"}
+
+    try:
+        response = await _sampling.create_message(
+            messages=[{
+                "role": "user",
+                "content": {"type": "text", "text": prompt},
+            }],
+            max_tokens=max_tokens,
+            system_prompt=system_prompt,
+            temperature=0.1,
+            include_context="none",
+            metadata={"executa_invoke_id": get_current_invoke_id(), "tool": "verigate_ai_review"},
+            timeout=45.0,
+        )
+    except SamplingError as exc:
+        return {
+            "success": False,
+            "error": {"code": exc.code, "message": exc.message},
+            "llm_available": False,
+        }
+
+    content = response.get("content")
+    if not isinstance(content, dict) or content.get("type") != "text" or not isinstance(content.get("text"), str):
+        return {
+            "success": False,
+            "error": "Anna AI returned an unexpected response format from Anna Sampling",
+            "llm_available": False,
+            "malformed_response": True,
+        }
+    text = content["text"].strip()
+    if not text:
+        return {
+            "success": False,
+            "error": "Anna Sampling returned an empty response",
+            "llm_available": False,
+            "malformed_response": True,
+        }
+    return {
+        "success": True,
+        "data": {
+            "text": text,
+            "model": response.get("model"),
+            "stop_reason": response.get("stopReason"),
+            "usage": response.get("usage"),
+        },
+    }
+
+
+def _anna_installation_principal(private_key) -> str:
+    """Return the stable, non-secret accounting principal for this issuer installation."""
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    return "anna-installation:" + hashlib.sha256(public_key).hexdigest()
+
+
 def _verigate_check(args: dict) -> dict:
     for name in _REQUIRED_ARGS:
         if name not in args:
@@ -243,21 +377,27 @@ def _verigate_check(args: dict) -> dict:
         from core.models import PaymentIntent
 
         for name in ("agent_id", "payee", "asset", "network"):
-            if not isinstance(args[name], str):
-                raise TypeError(f"{name} must be a string")
+            if not isinstance(args[name], str) or not args[name].strip():
+                raise TypeError(f"{name} must be a non-empty string")
         amount = float(args["amount"])
         if not math.isfinite(amount):
             raise ValueError("amount must be a finite number")
+        agent_label = _clean(args["agent_id"], 128)
+        engine, private_key = _get_state()
+        principal_id = _anna_installation_principal(private_key)
         intent = PaymentIntent(
-            agent_id=args["agent_id"].strip(),
+            agent_id=principal_id,
             payee=args["payee"].strip(),
             asset=args["asset"].strip(),
             network=args["network"].strip(),
             amount=amount,
             resource=_clean(args.get("resource", ""), 200),
+            metadata={
+                "anna_agent_label": agent_label,
+                "anna_accounting_scope": "issuer_installation",
+            },
         )
         advisory = _parse_ai_flags(args.get("ai_flags_json"))
-        engine, private_key = _get_state()
         # A check is a simulation: nothing is recorded, so the same request always
         # gets the same answer and repeated tests do not consume any budget.
         attestation = engine.authorize(intent, private_key, advisory=advisory, persist=False)
@@ -266,9 +406,31 @@ def _verigate_check(args: dict) -> dict:
     return {"success": True, "data": attestation}
 
 
+def _anna_payment_capability_id(agent_id: str, policy) -> str:
+    return "anna-payment-" + hashlib.sha256(
+        f"{agent_id}:{policy.digest}".encode("utf-8")
+    ).hexdigest()[:24]
+
+
 def _verigate_policy_summary(args: dict) -> dict:
-    engine, _ = _get_state()
+    engine, private_key = _get_state()
     p = engine.policy
+    principal_id = _anna_installation_principal(private_key)
+    capability_id = _anna_payment_capability_id(principal_id, p)
+    authority = engine.authority_service.snapshot(
+        principal_id,
+        capability_id,
+        persist=False,
+    )
+    dynamic_limits = {
+        str(name).upper(): float(
+            min(
+                Decimal(str(limit)),
+                Decimal(str(limit)) * Decimal(str(authority.multiplier)),
+            )
+        )
+        for name, limit in (p.per_tx_cap or {}).items()
+    }
     data = {
         "allowed_networks": p.allowed_networks,
         "allowed_assets": p.allowed_assets,
@@ -283,18 +445,27 @@ def _verigate_policy_summary(args: dict) -> dict:
         "history_recorded_for_preview": False,
         "history_used_for_limits": True,
         "authorization_records_history": True,
+        "accounting_scope": "issuer_installation",
+        "accounting_principal_id": principal_id,
+        "dynamic_authority": {
+            "state": authority.state.value,
+            "multiplier": authority.multiplier,
+            "per_action_limits": dynamic_limits,
+            "successes": authority.successes,
+            "adverse_events": authority.adverse_events,
+            "critical_events": authority.critical_events,
+            "reason": authority.reason,
+        },
+        "calls_last_minute": engine.storage.calls_last_minute(principal_id),
     }
-    agent_id = args.get("agent_id")
-    payee = args.get("payee")
     asset = args.get("asset")
-    if isinstance(agent_id, str) and agent_id.strip():
-        data["calls_last_minute"] = engine.storage.calls_last_minute(agent_id.strip())
-        if isinstance(asset, str) and asset.strip():
-            data["rolling_24h_spend"] = engine.storage.spent_today(agent_id.strip(), asset.strip().upper())
-        if isinstance(payee, str) and payee.strip():
-            data["recipient_seen_before"] = engine.storage.payee_seen_before(
-                agent_id.strip(), payee.strip(), "__anna_policy_summary__"
-            )
+    payee = args.get("payee")
+    if isinstance(asset, str) and asset.strip():
+        data["rolling_24h_spend"] = engine.storage.spent_today(principal_id, asset.strip().upper())
+    if isinstance(payee, str) and payee.strip():
+        data["recipient_seen_before"] = engine.storage.payee_seen_before(
+            principal_id, payee.strip(), "__anna_policy_summary__"
+        )
     return {"success": True, "data": data}
 
 
@@ -420,8 +591,15 @@ async def _consume_app_approval(nonce: object, expected: dict) -> dict:
     return approval
 
 
-async def _consume_app_confirmation(args: dict, normalized: dict) -> dict:
-    expected = {"kind": "payment_authorization", **normalized}
+async def _consume_app_confirmation(
+    args: dict,
+    normalized: dict,
+    *,
+    approval_kind: str = "payment_authorization",
+) -> dict:
+    if approval_kind not in {"payment_authorization", "payment_warning_review"}:
+        raise PermissionError("unsupported App UI approval kind")
+    expected = {"kind": approval_kind, **normalized}
     return await _consume_app_approval(args.get("confirmation_nonce"), expected)
 
 
@@ -471,20 +649,29 @@ async def _verigate_authorize_payment(args: dict) -> dict:
         # This is the security boundary: a client boolean is not proof of
         # human approval. The app-scoped, one-time record must be present and
         # atomically consumed before any persistent authorization is issued.
-        approval = await _consume_app_confirmation(args, normalized)
+        approval_kind = args.get("approval_kind", "payment_authorization")
+        if not isinstance(approval_kind, str):
+            raise ValueError("approval_kind must be a string")
+        approval = await _consume_app_confirmation(
+            args,
+            normalized,
+            approval_kind=approval_kind,
+        )
         advisory = _parse_ai_flags(args.get("ai_flags_json"))
 
-        agent_id = normalized["agent_id"]
+        agent_label = normalized["agent_id"]
         asset = normalized["asset"]
         network = normalized["network"]
         payee = normalized["payee"]
         resource = normalized["resource"]
 
         engine, private_key = _get_state()
+        # The editable App field is a display label, never an authorization
+        # principal. Bind accounting, capability and dynamic authority to the
+        # persistent issuer key so rotating labels cannot reset policy history.
+        agent_id = _anna_installation_principal(private_key)
         policy = engine.policy
-        capability_id = "anna-payment-" + hashlib.sha256(
-            f"{agent_id}:{policy.digest}".encode("utf-8")
-        ).hexdigest()[:24]
+        capability_id = _anna_payment_capability_id(agent_id, policy)
         registry = CapabilityRegistry(engine.storage)
         existing = engine.storage.capability(capability_id)
         if existing is None:
@@ -508,6 +695,8 @@ async def _verigate_authorize_payment(args: dict) -> dict:
             registry.resolve(capability_id)  # revoked/inactive authority fails closed
 
         intent_metadata = {
+            "anna_agent_label": agent_label,
+            "anna_accounting_scope": "issuer_installation",
             "anna_user_confirmation": {
                 "confirmed": True,
                 "source": "anna-app-scoped-one-time-approval",
@@ -527,9 +716,34 @@ async def _verigate_authorize_payment(args: dict) -> dict:
             resource=resource,
             metadata=intent_metadata,
         )
-        artifacts = engine.authorize_with_capability(
-            intent, capability_id, private_key, advisory=advisory
-        )
+        if approval_kind == "payment_warning_review":
+            reviewed_rule_ids = approval.get("reviewed_rule_ids")
+            if (
+                not isinstance(reviewed_rule_ids, list)
+                or not reviewed_rule_ids
+                or any(not isinstance(rule_id, str) or not rule_id for rule_id in reviewed_rule_ids)
+                or len(set(reviewed_rule_ids)) != len(reviewed_rule_ids)
+            ):
+                raise PermissionError("App warning review does not contain a valid reviewed_rule_ids list")
+            review_evidence = {
+                "source": "anna-app-scoped-one-time-warning-review",
+                "reviewed_rule_ids": sorted(reviewed_rule_ids),
+                "confirmed_at": approval["created_at_ms"] / 1000.0,
+                "approval_nonce_sha256": hashlib.sha256(
+                    args["confirmation_nonce"].encode("ascii")
+                ).hexdigest(),
+            }
+            artifacts = engine.authorize_with_capability_after_warning_review(
+                intent,
+                capability_id,
+                private_key,
+                review_evidence=review_evidence,
+                advisory=advisory,
+            )
+        else:
+            artifacts = engine.authorize_with_capability(
+                intent, capability_id, private_key, advisory=advisory
+            )
         decision = artifacts["decision_receipt"]["payload"]["decision"]["decision"]
         execution = artifacts.get("execution_authorization")
         if decision != "ALLOW" or execution is None:
@@ -701,6 +915,198 @@ async def _verigate_consume_execution_authorization(args: dict) -> dict:
         return {"success": False, "error": f"wallet execution was not authorized: {exc}"}
 
 
+async def _verigate_record_wallet_submission_receipt(args: dict) -> dict:
+    """Persist a signed executor receipt after the Anna wallet returns a tx hash."""
+    authorization_id = args.get("authorization_id")
+    transaction_hash = args.get("transaction_hash")
+    sender = args.get("sender")
+    if not isinstance(authorization_id, str) or re.fullmatch(r"[0-9a-fA-F]{64}", authorization_id) is None:
+        return {"success": False, "error": "authorization_id must be a 32-byte hex identifier"}
+    if not isinstance(transaction_hash, str) or re.fullmatch(r"0x[0-9a-fA-F]{64}", transaction_hash) is None:
+        return {"success": False, "error": "transaction_hash must be a 32-byte EVM transaction hash"}
+    if not isinstance(sender, str) or re.fullmatch(r"0x[0-9a-fA-F]{40}", sender) is None:
+        return {"success": False, "error": "sender must be a 20-byte EVM wallet address"}
+
+    authorization_id = authorization_id.lower()
+    transaction_hash = transaction_hash.lower()
+    sender = sender.lower()
+    try:
+        from attest.keys import load_public_key
+        from attest.receipt import (
+            sign_execution_receipt,
+            verify_execution_authorization,
+            verify_execution_receipt,
+        )
+        from enforcement.evm import EVMExecutionAdapter
+
+        engine, private_key = _get_state()
+        stored = engine.storage.authorization_by_id(authorization_id)
+        if not isinstance(stored, dict) or not isinstance(stored.get("execution_authorization"), dict):
+            raise LookupError("stored Execution Authorization was not found")
+        authorization = stored["execution_authorization"]
+        payload = authorization.get("payload")
+        if not isinstance(payload, dict) or payload.get("authorization_id") != authorization_id:
+            raise PermissionError("stored Execution Authorization identity mismatch")
+
+        # Receipt creation is allowed only after the real ExecutionRouter
+        # consumed this exact one-time nonce. A caller-supplied authorization
+        # or tx hash is never enough to establish that boundary.
+        nonce_record = engine.storage.execution_nonce_by_authorization(
+            authorization_id, payload.get("nonce", "")
+        )
+        if nonce_record is None:
+            raise PermissionError("ExecutionRouter has not consumed this authorization")
+        if (
+            nonce_record.get("intent_id") != payload.get("intent_id")
+            or nonce_record.get("agent_id") != payload.get("agent_id")
+        ):
+            raise PermissionError("consumed execution nonce does not match the stored authorization")
+        consumed_at = nonce_record.get("consumed_at")
+        if isinstance(consumed_at, bool) or not isinstance(consumed_at, (int, float)):
+            raise PermissionError("consumed execution nonce has no valid timestamp")
+        verification_time = int(consumed_at)
+        issued_at = payload.get("issued_at")
+        expires_at = payload.get("expires_at")
+        if (
+            isinstance(issued_at, bool) or not isinstance(issued_at, int)
+            or isinstance(expires_at, bool) or not isinstance(expires_at, int)
+            or verification_time < issued_at or verification_time > expires_at
+        ):
+            raise PermissionError("authorization was not consumed within its signed validity window")
+
+        public_key = load_public_key(_resolve_data_dir() / "issuer.pub")
+        valid, reason = verify_execution_authorization(
+            authorization, public_key, verification_time=verification_time
+        )
+        if not valid:
+            raise PermissionError(f"stored Execution Authorization is invalid: {reason}")
+
+        action = payload.get("action")
+        if not isinstance(action, dict):
+            raise ValueError("stored authorization has no action")
+        network = str(action.get("network") or "").lower()
+        asset = str(action.get("asset") or "").upper()
+        if network not in _EVM_USDC_NETWORKS or asset != "USDC":
+            raise ValueError("wallet submission receipts are supported only for native USDC on Base and Ethereum")
+
+        transaction = EVMExecutionAdapter._transaction(action)
+        expected_transaction = _build_anna_evm_transaction(
+            network, asset, action.get("target"), action.get("amount")
+        )
+        if expected_transaction is None or transaction != expected_transaction:
+            raise ValueError("stored EVM transaction does not match the authorized USDC payment")
+        if transaction.get("chain_id") != _EVM_USDC_NETWORKS[network]["chain_id"]:
+            raise ValueError("stored EVM chain does not match the selected network")
+
+        submission_data = {
+            "source": "anna_eip1193_wallet",
+            "sender": sender,
+            "chain_id": transaction["chain_id"],
+            "to": str(transaction["to"]).lower(),
+            "value_wei": transaction["value_wei"],
+            "calldata_sha256": hashlib.sha256(
+                str(transaction["data"]).lower().encode("ascii")
+            ).hexdigest(),
+        }
+
+        # Every call, including an idempotent receipt lookup, must originate
+        # from a fresh App-scoped approval. This keeps the receipt tool out of
+        # direct chat/agent context while allowing safe UI retries.
+        approval = {
+            "kind": "wallet_submission_receipt",
+            "authorization_id": authorization_id,
+            "transaction_hash": transaction_hash,
+            "sender": sender,
+            "network": network,
+            "chain_id": transaction["chain_id"],
+            "to": str(transaction["to"]).lower(),
+            "value_wei": transaction["value_wei"],
+            "data": str(transaction["data"]).lower(),
+        }
+        await _consume_app_approval(args.get("confirmation_nonce"), approval)
+
+        # Idempotent retries return the already-signed receipt only when every
+        # wallet-submission identifier matches. A different hash cannot replace it.
+        existing = engine.storage.execution_receipt_by_authorization(authorization_id)
+        if existing is not None:
+            existing_valid, existing_reason = verify_execution_receipt(
+                existing, public_key, authorization
+            )
+            if not existing_valid:
+                raise PermissionError(f"stored execution receipt is invalid: {existing_reason}")
+            if (
+                existing.get("payload", {}).get("transaction_ref") != transaction_hash
+                or existing.get("payload", {}).get("submission_data") != submission_data
+            ):
+                raise PermissionError("a different execution receipt is already recorded for this authorization")
+            return {
+                "success": True,
+                "data": {
+                    "authorization_id": authorization_id,
+                    "execution_status": existing["payload"]["status"],
+                    "transaction_submitted": True,
+                    "transaction_hash": transaction_hash,
+                    "execution_receipt": existing,
+                    "receipt_verified": True,
+                    "receipt_trust_scope": "executor_self_report",
+                    "independent_chain_confirmation": False,
+                    "idempotent": True,
+                },
+            }
+
+        receipt = sign_execution_receipt(
+            authorization,
+            status="SUBMITTED",
+            transaction_ref=transaction_hash,
+            executor="anna-eip1193-wallet",
+            private_key=private_key,
+            submission_data=submission_data,
+        ).as_dict()
+        try:
+            engine.storage.record_execution_receipt(receipt)
+        except ValueError:
+            # Another invocation may have won the unique authorization race.
+            raced = engine.storage.execution_receipt_by_authorization(authorization_id)
+            if raced is None:
+                raise
+            raced_valid, raced_reason = verify_execution_receipt(
+                raced, public_key, authorization
+            )
+            if (
+                not raced_valid
+                or raced.get("payload", {}).get("transaction_ref") != transaction_hash
+                or raced.get("payload", {}).get("submission_data") != submission_data
+            ):
+                raise PermissionError(
+                    f"conflicting execution receipt won the persistence race: {raced_reason}"
+                )
+            receipt = raced
+
+        receipt_valid, receipt_reason = verify_execution_receipt(
+            receipt, public_key, authorization
+        )
+        if not receipt_valid:
+            raise PermissionError(f"new execution receipt failed verification: {receipt_reason}")
+        return {
+            "success": True,
+            "data": {
+                "authorization_id": authorization_id,
+                "execution_status": "SUBMITTED",
+                "transaction_submitted": True,
+                "transaction_hash": transaction_hash,
+                "execution_receipt": receipt,
+                "receipt_verified": True,
+                "receipt_trust_scope": "executor_self_report",
+                "independent_chain_confirmation": False,
+                "idempotent": False,
+            },
+        }
+    except StorageError as exc:
+        return {"success": False, "error": f"execution receipt storage unavailable: {exc.message}"}
+    except (OSError, KeyError, TypeError, ValueError, RuntimeError, PermissionError, LookupError) as exc:
+        return {"success": False, "error": f"wallet submission receipt not recorded: {exc}"}
+
+
 def _verigate_verify_decision_receipt(args: dict) -> dict:
     raw = args.get("receipt_json")
     if not isinstance(raw, str) or not raw.strip():
@@ -770,15 +1176,30 @@ def _verigate_verify_decision_receipt(args: dict) -> dict:
     }
 
 
+def _initialize_result(params: dict | None = None) -> dict:
+    """Negotiate protocol v2 and explicitly advertise reverse-RPC clients."""
+    params = params if isinstance(params, dict) else {}
+    offered = params.get("protocolVersion") or PROTOCOL_VERSION_V2
+    protocol = offered if offered in ("1.1", PROTOCOL_VERSION_V2) else PROTOCOL_VERSION_V2
+    if protocol != PROTOCOL_VERSION_V2:
+        reason = "Anna host did not negotiate Executa protocol 2.0; APS and Sampling are unavailable"
+        _storage.disable(reason)
+        _sampling.disable(reason)
+    return {
+        "protocolVersion": protocol,
+        "serverInfo": {"name": MANIFEST["display_name"], "version": MANIFEST["version"]},
+        "client_capabilities": (
+            {"storage": {}, "sampling": {}} if protocol == PROTOCOL_VERSION_V2 else {}
+        ),
+        "capabilities": {},
+    }
+
+
 def handle(request: dict):
     method = request.get("method")
     params = request.get("params") or {}
     if method == "initialize":
-        return {
-            "protocolVersion": PROTOCOL_VERSION_V2,
-            "serverInfo": {"name": MANIFEST["display_name"], "version": MANIFEST["version"]},
-            "capabilities": {"storage": {"kv": True}},
-        }
+        return _initialize_result(params)
     if method == "describe":
         return MANIFEST
     if method == "health":
@@ -791,12 +1212,20 @@ def handle(request: dict):
 
 
 def invoke(tool: str, args: dict) -> dict:
-    if tool in ("verigate_authorize_payment", "verigate_consume_execution_authorization"):
+    if tool in (
+        "verigate_authorize_payment",
+        "verigate_consume_execution_authorization",
+        "verigate_record_wallet_submission_receipt",
+    ):
         raise RpcError(-32603, "privileged execution methods must run through the async App-context approval gate")
+    if tool == "verigate_ai_review":
+        raise RpcError(-32603, "Anna AI review must use the async reverse-Sampling path")
     if tool not in (
+        "verigate_ai_review",
         "verigate_check",
         "verigate_verify_execution_authorization",
         "verigate_consume_execution_authorization",
+        "verigate_record_wallet_submission_receipt",
         "verigate_policy_summary",
         "verigate_verify_decision_receipt",
     ):
@@ -809,6 +1238,8 @@ def invoke(tool: str, args: dict) -> dict:
         return _verigate_verify_execution_authorization(args)
     if tool == "verigate_consume_execution_authorization":
         raise RpcError(-32603, "wallet submission must run through the async App-context approval gate")
+    if tool == "verigate_record_wallet_submission_receipt":
+        raise RpcError(-32603, "wallet submission receipts must run through the async App-context approval gate")
     if tool == "verigate_policy_summary":
         return _verigate_policy_summary(args)
     return _verigate_verify_decision_receipt(args)
@@ -834,10 +1265,14 @@ async def _handle_invoke(req_id, params: dict) -> None:
     args = params.get("arguments") or {}
     try:
         with bind_invoke(params):
-            if tool == "verigate_authorize_payment":
+            if tool == "verigate_ai_review":
+                result = await _verigate_ai_review(args)
+            elif tool == "verigate_authorize_payment":
                 result = await _verigate_authorize_payment(args)
             elif tool == "verigate_consume_execution_authorization":
                 result = await _verigate_consume_execution_authorization(args)
+            elif tool == "verigate_record_wallet_submission_receipt":
+                result = await _verigate_record_wallet_submission_receipt(args)
             else:
                 result = await asyncio.to_thread(invoke, tool, args)
         _ok(req_id, result)
@@ -849,12 +1284,8 @@ async def _handle_invoke(req_id, params: dict) -> None:
         _err(req_id, -32603, f"Internal error: {exc}")
 
 
-def _handle_initialize(req_id, _params: dict) -> None:
-    _ok(req_id, {
-        "protocolVersion": PROTOCOL_VERSION_V2,
-        "serverInfo": {"name": MANIFEST["display_name"], "version": MANIFEST["version"]},
-        "capabilities": {"storage": {"kv": True}},
-    })
+def _handle_initialize(req_id, params: dict) -> None:
+    _ok(req_id, _initialize_result(params))
 
 
 def _stdin_loop() -> None:

@@ -460,8 +460,11 @@ def execution_receipt_payload(
     confirmation_data: dict[str, Any] | None = None,
     execution_external_state_scope: str | None = None,
     authorization_sha256: str | None = None,
+    submission_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     auth_payload = authorization["payload"]
+    if submission_data is not None and not isinstance(submission_data, dict):
+        raise ValueError("submission_data must be an object")
     action = auth_payload["action"]
     if status not in {"SUBMITTED", "CONFIRMED", "FAILED"}:
         raise ValueError("invalid execution receipt status")
@@ -494,6 +497,9 @@ def execution_receipt_payload(
         "status": status,
         "transaction_ref": transaction_ref,
         "executor": executor,
+        # Optional executor self-report metadata (for example, an EIP-1193
+        # wallet handoff). This is signed evidence, not independent chain proof.
+        "submission_data": submission_data,
         "error": error,
         "previous_receipt_sha256": previous_receipt_sha256,
         "confirmation_ref": confirmation_ref,
@@ -517,6 +523,7 @@ def sign_execution_receipt(
     confirmation_data: dict[str, Any] | None = None,
     execution_external_state_scope: str | None = None,
     authorization_sha256: str | None = None,
+    submission_data: dict[str, Any] | None = None,
 ) -> ExecutionReceipt:
     payload = execution_receipt_payload(
         authorization,
@@ -530,6 +537,7 @@ def sign_execution_receipt(
         confirmation_data=confirmation_data,
         execution_external_state_scope=execution_external_state_scope,
         authorization_sha256=authorization_sha256,
+        submission_data=submission_data,
     )
     return ExecutionReceipt(payload, _sign(payload, private_key))
 

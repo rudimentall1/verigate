@@ -64,5 +64,56 @@ class MoneyTest(unittest.TestCase):
         self.assertEqual(store.spent_today("a1", "USDC"), 1.0)
 
 
+    def test_usdc_amounts_are_arbitrary_values_with_separate_policy_thresholds(self):
+        policy = Policy(
+            per_tx_cap={"USDC": Decimal("500")},
+            new_payee_cap={"USDC": Decimal("50")},
+            confirmation_required_over={"USDC": Decimal("250")},
+        )
+        ordinary_amounts = (
+            Decimal("0.01"),
+            Decimal("37.42"),
+            Decimal("49.99"),
+            Decimal("50"),
+            Decimal("50.01"),
+            Decimal("123.456789"),
+            Decimal("249.99"),
+            Decimal("250"),
+            Decimal("250.01"),
+            Decimal("499.999999"),
+            Decimal("500"),
+        )
+        for amount in ordinary_amounts:
+            with self.subTest(amount=str(amount)):
+                self.assertTrue(is_valid_amount(amount))
+                self.assertIsNone(R.check_per_tx_cap(intent(amount), policy))
+
+        # Thresholds change the decision, not which numeric values can be entered.
+        self.assertIsNone(
+            R.check_new_payee_cap(intent(Decimal("50")), policy, payee_seen_before=False)
+        )
+        new_payee_warning = R.check_new_payee_cap(
+            intent(Decimal("50.000001")), policy, payee_seen_before=False
+        )
+        self.assertIsNotNone(new_payee_warning)
+        self.assertEqual(new_payee_warning.rule_id, "new_payee_cap_exceeded")
+        self.assertEqual(new_payee_warning.severity.value, "WARN")
+
+        self.assertIsNone(
+            R.check_confirmation_threshold(intent(Decimal("250")), policy)
+        )
+        confirmation_warning = R.check_confirmation_threshold(
+            intent(Decimal("250.000001")), policy
+        )
+        self.assertIsNotNone(confirmation_warning)
+        self.assertEqual(confirmation_warning.rule_id, "confirmation_required")
+        self.assertEqual(confirmation_warning.severity.value, "WARN")
+
+        over_cap = R.check_per_tx_cap(intent(Decimal("500.000001")), policy)
+        self.assertIsNotNone(over_cap)
+        self.assertEqual(over_cap.rule_id, "per_tx_cap_exceeded")
+        self.assertEqual(over_cap.severity.value, "BLOCK")
+
+
 if __name__ == "__main__":
     unittest.main()

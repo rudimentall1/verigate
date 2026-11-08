@@ -21,7 +21,7 @@ const VALID = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-ui-"));
 
-function callPlugin(method, args, { appStorage = new Map(), appContext = true } = {}) {
+function callPlugin(method, args, { appStorage = new Map(), appContext = true, samplingHandler = {} } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(PY, [PLUGIN], {
       env: { ...process.env, VERIGATE_ANNA_DATA_DIR: dataDir, PYTHONPATH: root },
@@ -39,6 +39,37 @@ function callPlugin(method, args, { appStorage = new Map(), appContext = true } 
     };
     const respondToHostRequest = (msg) => {
       const params = msg.params || {};
+      if (msg.method === "sampling/createMessage") {
+        const systemPrompt = params.systemPrompt || "";
+        const isInterpret = systemPrompt.includes("intake assistant");
+        const handler = isInterpret ? samplingHandler.interpret : samplingHandler.explain;
+        let out = typeof handler === "function"
+          ? handler({ systemPrompt, prompt: params.messages?.[0]?.content?.text || "" })
+          : handler;
+        if (out === undefined) {
+          out = isInterpret
+            ? interpretJson(GOOD)
+            : JSON.stringify({ explanation: "Plain explanation.", what_could_change: null });
+        }
+        if (out instanceof Error) {
+          send({ jsonrpc: "2.0", id: msg.id, error: { code: -32003, message: out.message } });
+        } else if (typeof out === "string") {
+          send({
+            jsonrpc: "2.0", id: msg.id,
+            result: {
+              role: "assistant",
+              content: { type: "text", text: out },
+              model: "mock-anna-sampling",
+              stopReason: "endTurn",
+              usage: { inputTokens: 12, outputTokens: 24, totalTokens: 36 }
+            }
+          });
+        } else {
+          // Deliberately malformed host envelope for negative-path tests.
+          send({ jsonrpc: "2.0", id: msg.id, result: out });
+        }
+        return;
+      }
       const key = params.key;
       if (params.scope !== "app" || !appContext) {
         send({ jsonrpc: "2.0", id: msg.id, error: { code: -32021, message: "app-scoped storage is unavailable outside the owning App context" } });
@@ -76,12 +107,16 @@ function callPlugin(method, args, { appStorage = new Map(), appContext = true } 
         let msg;
         try { msg = JSON.parse(line); }
         catch (e) { reject(new Error("plugin emitted invalid JSON: " + line)); child.kill(); return; }
-        if (msg.method && msg.method.startsWith("storage/")) {
+        if (msg.method && (msg.method.startsWith("storage/") || msg.method === "sampling/createMessage")) {
           respondToHostRequest(msg);
         } else if (msg.id === 1) {
           finish(msg.error ? { success: false, error: msg.error.message } : msg.result);
-        } else if (msg.id === 0 && msg.result?.protocolVersion !== "2.0") {
-          reject(new Error("plugin did not negotiate Executa protocol v2"));
+        } else if (msg.id === 0 && (
+          msg.result?.protocolVersion !== "2.0" ||
+          !msg.result?.client_capabilities?.storage ||
+          !msg.result?.client_capabilities?.sampling
+        )) {
+          reject(new Error("plugin did not negotiate protocol v2 storage + Sampling capabilities"));
           child.kill();
           return;
         }
@@ -112,7 +147,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows) {
@@ -121,20 +156,9 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
     };
   }
   const appStorage = new Map();
-  const calls = { tools: [], llm: 0, toolArgs: {}, storage: [] };
+  const calls = { tools: [], llm: 0, sampling: [], toolArgs: {}, storage: [] };
   const anna = {
     window: { set_title: async () => {}, ready: async () => {} },
-    llm: {
-      complete: async (req) => {
-        calls.llm += 1;
-        const isInterpret = req.systemPrompt.includes("intake assistant");
-        const handler = isInterpret ? interpret : explain;
-        const out = typeof handler === "function" ? handler(req) : handler;
-        if (out === undefined) return { content: isInterpret ? interpretJson(GOOD) : JSON.stringify({ explanation: "Plain explanation.", what_could_change: null }) };
-        if (out instanceof Error) throw out;
-        return { content: out };
-      },
-    },
     storage: {
       set: async ({ scope, key, value, ttl_seconds }) => {
         if (scope !== "app" || ttl_seconds !== 60) throw new Error("unexpected approval storage scope or TTL");
@@ -151,7 +175,13 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
     },
     tools: {
       invoke: async ({ method, args }) => {
-        calls.tools.push(method); calls.toolArgs[method] = args;
+        if (method === "verigate_ai_review") {
+          calls.llm += 1;
+          calls.sampling.push(args);
+        } else {
+          calls.tools.push(method);
+        }
+        calls.toolArgs[method] = args;
         if (method === "verigate_authorize_payment" && authorizeInvokeFails) {
           const error = new Error("Unauthorized while refreshing Anna session");
           error.status = 401;
@@ -173,7 +203,14 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
         if (method === "verigate_policy_summary" && policySummaryReturnsError) {
           return { result: { success: false, error: { code: 401, message: "Anna session refresh rejected in tool response" } } };
         }
-        const result = await callPlugin(method, args, { appStorage, appContext: true });
+        const result = await callPlugin(method, args, {
+          appStorage,
+          appContext: true,
+          samplingHandler: { interpret, explain }
+        });
+        if (method === "verigate_policy_summary" && tamperPolicySummaryPrincipal) {
+          if (result?.data) result.data.accounting_principal_id = "anna-installation:" + "f".repeat(64);
+        }
         if (method === "verigate_check" && tamperSignature) {
           const data = result?.data;
           const receipt = data?.decision_receipt ?? data?.receipt;
@@ -237,7 +274,7 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
       $("approval-accept").click();
       for (let i = 0; i < 400; i++) {
         await sleep(25);
-        if (/Transaction hash|consumed, but wallet/i.test($("execution-status").textContent)) break;
+        if (/ExecutionReceipt|transaction hash|consumed, but wallet/i.test($("execution-status").textContent)) break;
       }
       await sleep(30);
     },
@@ -248,7 +285,9 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
 }
 
 const results = [];
+const testFilter = process.env.TEST_FILTER?.toLowerCase() || "";
 async function test(name, fn) {
+  if (testFilter && !name.toLowerCase().includes(testFilter)) return;
   try { await fn(); results.push([name, true]); console.log("ok   " + name); }
   catch (e) { results.push([name, false]); console.log("FAIL " + name + "\n     " + (e.stack || e).split("\n").slice(0, 3).join("\n     ")); }
 }
@@ -260,6 +299,8 @@ await test("valid request: AI reads it, Verigate allows, limits table is shown",
   await ui.click();
   eq(ui.text("decision"), "ALLOW");
   eq(JSON.stringify(ui.calls.tools), JSON.stringify(["verigate_policy_summary", "verigate_check", "verigate_verify_decision_receipt"]));
+  eq(ui.calls.llm, 2, "both interpretation and explanation must traverse Executa reverse Sampling");
+  ok(ui.calls.sampling[0].prompt.includes("Request text (untrusted)"), "request context is sent through Executa Sampling");
   ok(ui.$("limits-table").querySelectorAll("tr").length >= 6, "limits table rows");
   ok(ui.shown("ai-review"), "contextual AI review is visible without a risk flag");
   ok(ui.text("ai-review-summary").includes("Anna AI contextual review"), "contextual AI assessment is shown");
@@ -270,6 +311,80 @@ await test("valid request: AI reads it, Verigate allows, limits table is shown",
   ok(ui.text("receipt-json").includes("signature"), "signed receipt shown");
 });
 
+
+await test("agent label is normalized identically before preview and signed comparison", async () => {
+  const ui = await launch({});
+  ui.set("agent-id", "  agent   alpha\tbeta  ");
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  eq(ui.calls.toolArgs.verigate_check.agent_id, "agent alpha beta");
+  ok(ui.text("proof").includes("Ed25519 signature verified"), "signed preview accepted the normalized label");
+});
+
+await test("policy-summary installation principal mismatch fails closed", async () => {
+  const ui = await launch({ tamperPolicySummaryPrincipal: true });
+  await ui.click();
+  ok(ui.shown("error"), "identity mismatch is surfaced");
+  ok(ui.text("error").includes("policy summary and signed preview disagree"), "precise principal mismatch is reported");
+  eq(ui.shown("result"), false, "no decision is displayed after principal mismatch");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "mismatched principal cannot mint execution authority");
+});
+
+await test("dynamic authority ceiling disables permission before an otherwise-ALLOW payment", async () => {
+  const agentId = "ui-dynamic-limit-agent";
+  const appStorage = new Map();
+  const nonce = "d".repeat(48);
+  const now = Date.now();
+  const seed = {
+    agent_id: agentId,
+    payee: VALID,
+    asset: "USDC",
+    network: "base",
+    amount: 10,
+    resource: "initial payment"
+  };
+  appStorage.set("verigate/approvals/" + nonce, {
+    value: {
+      version: 1,
+      kind: "payment_authorization",
+      nonce,
+      ...seed,
+      created_at_ms: now,
+      expires_at_ms: now + 60_000
+    },
+    etag: "etag-seed",
+    expiresAt: now + 60_000
+  });
+  const seeded = await callPlugin("verigate_authorize_payment", {
+    ...seed,
+    confirmation_nonce: nonce
+  }, { appStorage });
+  ok(seeded?.success === true, "seed authorization failed: " + JSON.stringify(seeded));
+
+  const ui = await launch({
+    description: "Pay 123.456789 USDC on Base to " + VALID + " for a repeat invoice",
+    interpret: () => interpretJson({
+      payee: VALID,
+      asset: "USDC",
+      network: "base",
+      amount: 123.456789,
+      resource: "repeat invoice"
+    })
+  });
+  ui.set("agent-id", agentId);
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW", "static policy decision for returning payee");
+  eq(
+    ui.$("execution-btn").disabled,
+    true,
+    "dynamic authority must disable execution; summary=" + ui.text("execution-summary") +
+      "; limits=" + ui.$("limits-table").textContent +
+      "; summaryArgs=" + JSON.stringify(ui.calls.toolArgs.verigate_policy_summary)
+  );
+  ok(ui.text("execution-summary").includes("permits at most 50 USDC"), "dynamic authority explanation");
+  ok(ui.$("limits-table") && ui.$("limits-table").textContent.includes("Dynamic agent authority (PROBATION)"), "dynamic limit is visible");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no authorization call is made");
+});
 
 await test("one-time execution permission is issued only after a separate user click", async () => {
   const ui = await launch({});
@@ -290,6 +405,41 @@ await test("one-time execution permission is issued only after a separate user c
   ok(ui.text("execution-json").includes("authorization_id"), "signed permission displayed; error=" + ui.text("error") + "; status=" + ui.text("execution-status") + "; tools=" + JSON.stringify(ui.calls.tools));
   ok(ui.text("execution-status").includes("Not consumed"), "permission is not represented as a sent transaction");
   ok(ui.text("status").includes("No funds were sent"), "status is explicit");
+});
+
+await test("WARN shows exact warning rules and requires a separate App-scope review before permission", async () => {
+  const flag = { code: "urgency_pressure", message: "Urgency pressure requires manual review" };
+  const ui = await launch({ interpret: interpretJson({ ...GOOD, risk_flags: [flag] }) });
+  await ui.click();
+  eq(ui.text("decision"), "WARN");
+  ok(ui.shown("execution-panel"), "warning review action is offered");
+  ok(!ui.$("execution-btn").disabled, "dynamic authority allows the exact amount");
+  ok(ui.text("execution-summary").includes("explicitly approve"), "explicit warning review is explained");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no permission before human review");
+  await ui.clickExecution();
+  eq(ui.calls.storage[0].value.kind, "payment_warning_review", "review uses a distinct App-scope approval kind");
+  eq(JSON.stringify(ui.calls.storage[0].value.reviewed_rule_ids), JSON.stringify(["ai_risk_flag"]), "approval binds the exact warning rule ID");
+  eq(ui.calls.toolArgs.verigate_authorize_payment.approval_kind, "payment_warning_review", "tool call selects the review path");
+  eq(ui.appStorage.size, 0, "review approval is consumed exactly once");
+  ok(ui.text("execution-json").includes("anna_warning_review"), "review evidence is included in the signed permission");
+  ok(ui.calls.tools.includes("verigate_verify_execution_authorization"), "reviewed permission is cryptographically verified");
+  ok(!ui.shown("error"), "reviewed WARN flow succeeds");
+});
+
+await test("WARN above the dynamic authority ceiling remains non-executable", async () => {
+  const ui = await launch({
+    interpret: interpretJson({
+      ...GOOD,
+      payee: "0x" + "2".repeat(40),
+      amount: 75,
+      summary: "Pay 75 USDC on Base."
+    })
+  });
+  await ui.click();
+  eq(ui.text("decision"), "WARN");
+  eq(ui.$("execution-btn").disabled, true, "dynamic authority cap remains enforced");
+  ok(ui.text("execution-summary").includes("permits at most 50 USDC"), "dynamic ceiling is shown");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no review or authorization call can bypass the ceiling");
 });
 
 await test("embedded webview showModal failure falls back to explicit non-modal confirmation", async () => {
@@ -481,16 +631,21 @@ await test("wallet hand-off consumes through ExecutionRouter before exact USDC s
   ok(ui.shown("wallet-execute-btn"), "wallet action is available for signed Base USDC transfer");
   await ui.clickWallet();
   ok(ui.calls.tools.includes("verigate_consume_execution_authorization"), "permission consumed by Verigate tool");
-  eq(ui.calls.storage.length, 2, "separate App UI approval is stored for wallet submission");
-  eq(ui.calls.storage[1].value.kind, "wallet_submission", "wallet approval is distinct from authorization approval");
+  eq(ui.calls.tools.includes("verigate_record_wallet_submission_receipt"), true, "signed wallet submission receipt is recorded");
+  eq(ui.calls.storage.length, 3, "authorization, wallet hand-off and returned-hash approvals are separately stored");
+  eq(ui.calls.storage[1].value.kind, "wallet_submission", "wallet hand-off approval is distinct from authorization approval");
   eq(ui.calls.storage[1].value.authorization_id, ui.calls.toolArgs.verigate_consume_execution_authorization.authorization_json ? JSON.parse(ui.calls.toolArgs.verigate_consume_execution_authorization.authorization_json).payload.authorization_id : null, "wallet approval binds the signed authorization");
-  eq(ui.appStorage.size, 0, "wallet approval is consumed exactly once");
+  eq(ui.calls.storage[2].value.kind, "wallet_submission_receipt", "returned-hash approval uses a separate operation");
+  eq(ui.calls.storage[2].value.transaction_hash, "0x" + "a".repeat(64), "receipt approval binds the actual wallet hash");
+  eq(ui.calls.storage[2].value.sender, VALID.toLowerCase(), "receipt approval binds the connected sender");
+  eq(ui.appStorage.size, 0, "both wallet approvals are consumed exactly once");
   eq(walletCalls.map(x => x.method).join(","), "eth_chainId,eth_requestAccounts,eth_chainId,eth_accounts,eth_sendTransaction");
   const send = walletCalls.find(x => x.method === "eth_sendTransaction");
   eq(send.params[0].to.toLowerCase(), "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
   ok(send.params[0].data.includes(VALID.slice(2).toLowerCase()), "wallet receives the signed recipient");
-  ok(ui.text("execution-status").includes("transaction hash"), "submitted hash is displayed");
+  ok(ui.text("execution-status").includes("0x" + "a".repeat(64)), "wallet-returned hash is displayed in the receipt status");
   ok(ui.text("execution-status").includes("SUBMITTED"), "submission is not misrepresented as confirmation");
+  ok(ui.text("execution-status").includes("self-report"), "executor self-report is distinguished from independent chain confirmation");
 });
 
 await test("canceling wallet confirmation leaves the permission unused", async () => {

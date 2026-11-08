@@ -69,20 +69,21 @@
         <div class="mark" aria-hidden="true">V</div>
         <div>
           <h1>Verigate Authority</h1>
-          <p class="subtitle">Describe a payment in plain language. Anna AI reads it, asks about anything unclear, flags risks and explains the result. Verigate's policy engine makes the ALLOW / WARN / BLOCK decision.</p>
+          <p class="subtitle">AI interpretation and contextual risk review run through Verigate's bundled Executa → Anna host LLM (protocol-v2 reverse Sampling). Verigate's deterministic policy engine — not the model — makes the ALLOW / WARN / BLOCK decision.</p>
         </div>
       </header>
 
       <section class="card">
         <h2>1. Describe the payment</h2>
-        <p class="helper">For example: “Pay 25 USDC on Base to 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed for invoice 1042.” Anna AI reads your text, asks for anything missing or unclear, and flags risks. It can only add scrutiny: it can never approve a payment or lower a decision.</p>
+        <p class="helper">For example: “Pay 25 USDC on Base to 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed for invoice 1042.” The App calls its bundled Verigate Executa; the Executa calls Anna's host LLM through reverse Sampling and returns its interpretation and risk flags. The model can only add scrutiny: it can never approve a payment or lower a policy decision.</p>
         <label for="action-description">What do you want the agent to do?</label>
         <textarea id="action-description" placeholder="Describe the payment: recipient address, network, asset and amount…" required></textarea>
         <p class="helper" style="margin:14px 0 0">Details Anna AI extracted. Check them and edit if needed.</p>
         <div class="grid">
           <div>
-            <label for="agent-id">Agent identifier</label>
+            <label for="agent-id">Agent label (display only)</label>
             <input id="agent-id" value="my-agent" autocomplete="off" />
+            <p class="helper">This label is for display only. Policy limits and spend history are bound to this Verigate installation; changing the label does not reset them.</p>
           </div>
           <div>
             <label for="target">Recipient / payee</label>
@@ -131,6 +132,7 @@
         <p id="suggestion" class="suggestion"></p>
         <div id="ai-review">
           <h2>Anna AI contextual risk review (advisory)</h2>
+          <p class="helper">Source: bundled Verigate Executa → Anna protocol-v2 reverse Sampling. Findings are advisory; policy authority stays in Verigate.</p>
           <p id="ai-review-summary" class="helper"></p>
           <ul id="ai-flags" class="rules"></ul>
         </div>

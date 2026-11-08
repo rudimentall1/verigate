@@ -1,18 +1,40 @@
 {
   "name": "verigate-authority",
   "display_name": "Verigate Authority",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Checks agent payment authority and can issue a capability-bound, one-time signed Execution Authorization for an external wallet or executor. Anna does not hold wallet keys or broadcast transactions; execution must pass through a Verigate enforcement adapter.",
   "author": "rudimentall1",
-  "host_capabilities": [
-    "aps.scope.app.read",
-    "aps.scope.app.write"
-  ],
   "homepage": "https://github.com/rudimentall1/verigate",
   "icon": "🛡️",
   "category": "security",
   "license": "MIT",
   "tools": [
+    {
+      "name": "verigate_ai_review",
+      "description": "Ask the Anna host LLM to interpret a payment request or explain a Verigate decision. The Executa calls Anna through protocol-v2 sampling/createMessage; no provider API key is stored here. The response is advisory and never authorizes or executes an action.",
+      "timeout": 60,
+      "parameters": [
+        {
+          "name": "system_prompt",
+          "type": "string",
+          "description": "Task-specific instruction for the advisory model call.",
+          "required": true
+        },
+        {
+          "name": "prompt",
+          "type": "string",
+          "description": "Untrusted request or decision context to review.",
+          "required": true
+        },
+        {
+          "name": "max_tokens",
+          "type": "integer",
+          "description": "Maximum response tokens (1-2048).",
+          "required": false,
+          "default": 1000
+        }
+      ]
+    },
     {
       "name": "verigate_check",
       "description": "Simulate a payment-shaped action against Verigate policy and return the signed ALLOW/WARN/BLOCK decision. This checks authority only; it does not submit, broadcast, or execute a payment, and it does not record anything.",
@@ -21,7 +43,7 @@
         {
           "name": "agent_id",
           "type": "string",
-          "description": "Identifier of the agent requesting the action.",
+          "description": "User-facing agent label only. It does not control identity, spend accounting or dynamic authority; those are bound to this installation issuer key.",
           "required": true
         },
         {
@@ -66,13 +88,13 @@
     },
     {
       "name": "verigate_policy_summary",
-      "description": "Return the active policy limits (networks, assets, caps, confirmation threshold) so a request can be compared with them. Read-only.",
+      "description": "Return active policy limits and this installation accounting principal. The optional agent_id is a display label only and never selects or resets accounting state. Read-only.",
       "timeout": 15,
       "parameters": [
         {
           "name": "agent_id",
           "type": "string",
-          "description": "Optional agent identifier for read-only usage and spend context.",
+          "description": "Optional display label; it does not select the accounting principal.",
           "required": false,
           "default": ""
         },
@@ -94,13 +116,13 @@
     },
     {
       "name": "verigate_authorize_payment",
-      "description": "After the user explicitly confirms the exact payment in the Anna UI, evaluate it with persistent Verigate policy and issue a capability-bound, one-time signed Execution Authorization only when the result is ALLOW. WARN and BLOCK never receive execution authority. This does not send funds. A wallet/executor must enforce the authorization through Verigate ExecutionRouter before any side effect.",
+      "description": "After the user explicitly confirms the exact payment in the Anna UI, evaluate it with persistent Verigate policy and issue a capability-bound, one-time signed Execution Authorization for ALLOW. A WARN may be converted to ALLOW only after a separate, exact, one-time App UI warning review; BLOCK can never be overridden. The fresh policy result and dynamic authority are rechecked before issuance. This does not send funds. A wallet/executor must enforce the authorization through Verigate ExecutionRouter before any side effect.",
       "timeout": 30,
       "parameters": [
         {
           "name": "agent_id",
           "type": "string",
-          "description": "Identifier of the agent requesting the payment.",
+          "description": "User-facing agent label only. Identity and limits are bound to this installation issuer key, not to this caller-supplied string.",
           "required": true
         },
         {
@@ -146,6 +168,13 @@
           "type": "string",
           "description": "One-time nonce created by the Anna App UI after explicit user confirmation. Direct chat invocation has no app-scoped approval record and fails closed.",
           "required": true
+        },
+        {
+          "name": "approval_kind",
+          "type": "string",
+          "description": "Use payment_authorization for ALLOW or payment_warning_review for a separate explicit review of the exact WARN rules.",
+          "required": false,
+          "default": "payment_authorization"
         }
       ]
     },
@@ -177,6 +206,37 @@
           "name": "confirmation_nonce",
           "type": "string",
           "description": "One-time nonce created by the Anna UI after the user confirms wallet submission.",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "verigate_record_wallet_submission_receipt",
+      "description": "After the connected EIP-1193 wallet returns a transaction hash, persist a signed SUBMITTED ExecutionReceipt for the already-consumed authorization. Requires a separate one-time Anna App-scope approval bound to the exact wallet hash and transaction. This is executor self-report only, not on-chain confirmation.",
+      "timeout": 30,
+      "parameters": [
+        {
+          "name": "authorization_id",
+          "type": "string",
+          "description": "ID of the previously issued and consumed Execution Authorization.",
+          "required": true
+        },
+        {
+          "name": "transaction_hash",
+          "type": "string",
+          "description": "Exact 32-byte transaction hash returned by the connected wallet.",
+          "required": true
+        },
+        {
+          "name": "sender",
+          "type": "string",
+          "description": "Connected wallet address used for this submission.",
+          "required": true
+        },
+        {
+          "name": "confirmation_nonce",
+          "type": "string",
+          "description": "One-time App UI approval created after the wallet returned the transaction hash.",
           "required": true
         }
       ]

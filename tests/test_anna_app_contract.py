@@ -28,11 +28,13 @@ class AnnaAppContractTest(unittest.TestCase):
         required = next(item for item in APP_MANIFEST["required_executas"] if item.get("tool_id") == "bundled:verigate-authority")
         self.assertEqual(required.get("min_version"), EXECUTA["version"])
 
-    def test_app_manifest_declares_the_bundled_executa_and_ui_entry(self):
+    def test_app_manifest_schema4_declares_bundled_executa_and_ui_entry(self):
+        self.assertEqual(APP_MANIFEST.get("schema"), 4)
+        self.assertNotIn("host_capabilities", APP_MANIFEST)
+        host_api = APP_MANIFEST.get("ui", {}).get("host_api", {})
+        self.assertFalse(set(host_api) - {"credentials", "agent"})
         required = {item.get("tool_id") for item in APP_MANIFEST.get("required_executas", [])}
         self.assertIn("bundled:verigate-authority", required)
-        allowed = APP_MANIFEST.get("ui", {}).get("host_api", {}).get("tools", [])
-        self.assertIn("required:bundled:verigate-authority", allowed)
         entry = APP_MANIFEST.get("ui", {}).get("bundle", {}).get("entry")
         self.assertTrue(entry)
         self.assertTrue((ANNA / "bundle" / entry).is_file())
@@ -43,12 +45,26 @@ class AnnaAppContractTest(unittest.TestCase):
         described = {tool["name"] for tool in PLUGIN.MANIFEST.get("tools", [])}
         self.assertTrue(invoked, "frontend must invoke at least one Verigate tool")
         self.assertEqual(invoked - described, set(), "frontend invokes methods absent from Executa describe")
+        self.assertEqual(
+            PLUGIN._REQUIRED_ARGS,
+            ["agent_id", "payee", "asset", "network", "amount"],
+            "payment check must derive required fields from verigate_check, not manifest position",
+        )
 
-    def test_app_scoped_confirmation_storage_is_declared_end_to_end(self):
-        expected = {"aps.scope.app.read", "aps.scope.app.write"}
-        self.assertTrue(expected.issubset(set(APP_MANIFEST.get("host_capabilities", []))))
-        self.assertTrue(expected.issubset(set(PLUGIN.MANIFEST.get("host_capabilities", []))))
-        self.assertEqual(APP_MANIFEST.get("ui", {}).get("host_api", {}).get("storage"), ["set"])
+    def test_cloud_workspace_is_authoritative_for_executa_state(self):
+        source = PLUGIN_PATH.read_text(encoding="utf-8")
+        self.assertIn('os.environ.get("ANNA_WORKSPACE_DIR")', source)
+        self.assertIn('Path(workspace) / "verigate-authority"', source)
+        self.assertIn("if authoritative:", source)
+        self.assertIn("with _state_lock:", source)
+        self.assertIn("if _state is None:", source)
+
+    def test_app_scoped_confirmation_uses_schema4_and_v2_storage_handshake(self):
+        self.assertNotIn("host_capabilities", APP_MANIFEST)
+        self.assertNotIn("host_capabilities", PLUGIN.MANIFEST)
+        handshake = PLUGIN.handle({"method": "initialize", "params": {"protocolVersion": "2.0"}})
+        self.assertIn("storage", handshake["client_capabilities"])
+        self.assertIn("sampling", handshake["client_capabilities"])
         source = (ANNA / "bundle" / "app.js").read_text(encoding="utf-8")
         self.assertIn("state.anna.storage.set", source)
         self.assertIn("confirmation_nonce", source)

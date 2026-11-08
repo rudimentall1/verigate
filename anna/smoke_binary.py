@@ -14,16 +14,27 @@ ALLOWED_TYPES = {"string", "integer", "number", "boolean", "array", "object"}
 
 
 def check_manifest(manifest: dict) -> None:
-    """Mirror Anna Executa protocol-v2 describe and APS capability requirements."""
+    """Check the current Executa describe contract; v2 capabilities are negotiated at initialize."""
     for field in ("name", "version", "description"):
         if not isinstance(manifest.get(field), str) or not manifest[field]:
             raise SystemExit(f"describe: missing or empty required field '{field}'")
-    capabilities = set(manifest.get("host_capabilities") or [])
-    if not {"aps.scope.app.read", "aps.scope.app.write"}.issubset(capabilities):
-        raise SystemExit("describe: App-scoped APS read/write capabilities are required")
+    if "host_capabilities" in manifest:
+        raise SystemExit("describe: retired host_capabilities must not be used as a v2 grant")
     tools = manifest.get("tools")
     if not isinstance(tools, list) or not tools:
         raise SystemExit("describe: 'tools' must be a non-empty list")
+    ai_review = next((item for item in tools if item.get("name") == "verigate_ai_review"), None)
+    if ai_review is None:
+        raise SystemExit("describe: verigate_ai_review is required for Anna Sampling integration")
+    if not isinstance(ai_review.get("parameters", []), list):
+        raise SystemExit("describe: verigate_ai_review parameters must be a LIST of parameter objects")
+    ai_params = {
+        item.get("name"): item
+        for item in ai_review.get("parameters", [])
+        if isinstance(item, dict)
+    }
+    if not {"system_prompt", "prompt"}.issubset(ai_params):
+        raise SystemExit("describe: verigate_ai_review must expose system_prompt and prompt for Anna Sampling")
     for tool in tools:
         for field in ("name", "description"):
             if not isinstance(tool.get(field), str) or not tool[field]:
@@ -40,7 +51,11 @@ def check_manifest(manifest: dict) -> None:
             if "required" in param and not isinstance(param["required"], bool):
                 raise SystemExit(f"describe: 'required' must be boolean: {param}")
 
-    for privileged in ("verigate_authorize_payment", "verigate_consume_execution_authorization"):
+    for privileged in (
+        "verigate_authorize_payment",
+        "verigate_consume_execution_authorization",
+        "verigate_record_wallet_submission_receipt",
+    ):
         tool = next((item for item in tools if item.get("name") == privileged), None)
         names = {item.get("name"): item for item in (tool or {}).get("parameters", [])}
         if tool is None or not names.get("confirmation_nonce", {}).get("required"):
@@ -118,9 +133,42 @@ def main() -> None:
         send({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {}})
         initialized = recv()
         init_result = initialized.get("result", {})
-        if init_result.get("protocolVersion") != "2.0" or init_result.get("capabilities", {}).get("storage", {}).get("kv") is not True:
-            raise SystemExit(f"protocol-v2 APS initialization failed: {initialized}")
+        client_capabilities = init_result.get("client_capabilities", {})
+        if (init_result.get("protocolVersion") != "2.0"
+                or not isinstance(client_capabilities.get("storage"), dict)
+                or not isinstance(client_capabilities.get("sampling"), dict)):
+            raise SystemExit(f"protocol-v2 APS + Sampling initialization failed: {initialized}")
         send({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+
+        # 0b. Exercise the complete Executa -> Anna Sampling reverse-RPC path
+        # with a local host fixture. This must not consume Anna CU quota.
+        send({"jsonrpc": "2.0", "id": 100, "method": "invoke", "params": {
+            "tool": "verigate_ai_review",
+            "arguments": {
+                "system_prompt": "Return the requested fixture exactly.",
+                "prompt": "Return the word VERIGATE_SAMPLING_OK.",
+                "max_tokens": 32,
+            },
+            "context": {"invoke_id": "binary-smoke-sampling"},
+        }})
+        while True:
+            sample_frame = recv()
+            if sample_frame.get("method") == "sampling/createMessage":
+                sample_params = sample_frame.get("params") or {}
+                if sample_params.get("context", {}).get("invoke_id") != "binary-smoke-sampling":
+                    raise SystemExit(f"Sampling invoke context was not propagated: {sample_frame}")
+                send({"jsonrpc": "2.0", "id": sample_frame["id"], "result": {
+                    "role": "assistant",
+                    "content": {"type": "text", "text": "VERIGATE_SAMPLING_OK"},
+                    "model": "mock-anna-host",
+                    "stopReason": "endTurn",
+                    "usage": {"inputTokens": 4, "outputTokens": 2, "totalTokens": 6},
+                }})
+            elif sample_frame.get("id") == 100:
+                sample_result = sample_frame.get("result", {})
+                if sample_result.get("success") is not True or sample_result.get("data", {}).get("text") != "VERIGATE_SAMPLING_OK":
+                    raise SystemExit(f"Verigate -> Anna Sampling round-trip failed: {sample_frame}")
+                break
 
         # 1. describe from a cold start: Anna allows 5 s.
         started = time.monotonic()
@@ -307,6 +355,80 @@ def main() -> None:
         if replay.get("success") is not False:
             raise SystemExit(f"one-time authorization replay was not rejected: {replay}")
 
+        # 3f. A consumed wallet hand-off can only record SUBMITTED after the
+        # Anna App returns a hash and supplies a separate App-scoped approval.
+        tx_hash = "0x" + "c" * 64
+        sender = "0x" + "1" * 40
+        receipt_nonce = "f" * 48
+        receipt_now_ms = int(time.time() * 1000)
+        receipt_approval = {
+            "version": 1,
+            "kind": "wallet_submission_receipt",
+            "nonce": receipt_nonce,
+            "authorization_id": authorization["payload"]["authorization_id"],
+            "transaction_hash": tx_hash,
+            "sender": sender,
+            "network": action["network"],
+            "chain_id": tx_approval["chain_id"],
+            "to": tx_approval["to"].lower(),
+            "value_wei": tx_approval["value_wei"],
+            "data": tx_approval["data"].lower(),
+            "created_at_ms": receipt_now_ms,
+            "expires_at_ms": receipt_now_ms + 60_000,
+        }
+        receipt_args = {
+            "authorization_id": authorization["payload"]["authorization_id"],
+            "transaction_hash": tx_hash,
+            "sender": sender,
+            "confirmation_nonce": receipt_nonce,
+        }
+        direct_record = invoke_with_storage(38, {
+            "tool": "verigate_record_wallet_submission_receipt",
+            "arguments": receipt_args,
+            "context": {"invoke_id": "smoke-direct-record"},
+        }, None, False).get("result", {})
+        if direct_record.get("success") is not False:
+            raise SystemExit(f"direct receipt call bypassed the App UI: {direct_record}")
+
+        submitted = invoke_with_storage(39, {
+            "tool": "verigate_record_wallet_submission_receipt",
+            "arguments": receipt_args,
+            "context": {"invoke_id": "smoke-record-submission", "app_id": "verigate-test-app"},
+        }, receipt_approval, True).get("result", {})
+        submission_data = submitted.get("data", {})
+        execution_receipt = submission_data.get("execution_receipt", {})
+        execution_payload = execution_receipt.get("payload", {})
+        if (submitted.get("success") is not True
+                or submission_data.get("execution_status") != "SUBMITTED"
+                or submission_data.get("transaction_submitted") is not True
+                or submission_data.get("receipt_verified") is not True
+                or submission_data.get("receipt_trust_scope") != "executor_self_report"
+                or submission_data.get("independent_chain_confirmation") is not False
+                or execution_payload.get("status") != "SUBMITTED"
+                or execution_payload.get("transaction_ref") != tx_hash
+                or execution_payload.get("submission_data", {}).get("sender") != sender):
+            raise SystemExit(f"signed SUBMITTED execution receipt failed: {submitted}")
+
+        # An idempotent lookup also requires a fresh App approval and cannot be
+        # used as a direct-chat data retrieval path.
+        retry_nonce = "9" * 48
+        retry_now_ms = int(time.time() * 1000)
+        retry_approval = {
+            **receipt_approval,
+            "nonce": retry_nonce,
+            "created_at_ms": retry_now_ms,
+            "expires_at_ms": retry_now_ms + 60_000,
+        }
+        retry = invoke_with_storage(40, {
+            "tool": "verigate_record_wallet_submission_receipt",
+            "arguments": {**receipt_args, "confirmation_nonce": retry_nonce},
+            "context": {"invoke_id": "smoke-idempotent-retry", "app_id": "verigate-test-app"},
+        }, retry_approval, True).get("result", {})
+        if (retry.get("success") is not True
+                or retry.get("data", {}).get("idempotent") is not True
+                or retry.get("data", {}).get("execution_receipt") != execution_receipt):
+            raise SystemExit(f"idempotent SUBMITTED receipt retry failed: {retry}")
+
         # 4. error handling must not kill the process
         send("this is not json")
         if recv().get("error", {}).get("code") != -32700:
@@ -334,7 +456,7 @@ def main() -> None:
 
     if proc.returncode != 0:
         raise SystemExit(f"binary exited with {proc.returncode}\nSTDERR:\n{proc.stderr.read()}")
-    print(f"binary smoke test passed: describe in {elapsed:.1f}s, decision={decision}, signed=yes, app_scope_approval=consumed_once, wallet_handoff=consumed_once")
+    print(f"binary smoke test passed: describe in {elapsed:.1f}s, decision={decision}, signed=yes, app_scope_approval=consumed_once, wallet_handoff=consumed_once, submitted_receipt=persisted_and_verified")
 
 
 if __name__ == "__main__":

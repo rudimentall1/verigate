@@ -15,10 +15,12 @@ class AnnaAppBundleTest(unittest.TestCase):
         cls.html = (ANNA / "bundle" / "index.html").read_text(encoding="utf-8")
         cls.js = (ANNA / "bundle" / "app.js").read_text(encoding="utf-8")
 
-    def test_manifest_declares_anna_llm_and_verigate_tool(self):
-        host_api = self.manifest["ui"]["host_api"]
-        self.assertIn("complete", host_api["llm"])
-        self.assertIn("required:bundled:verigate-authority", host_api["tools"])
+    def test_manifest_uses_current_schema4_and_bundled_tool_allowlist(self):
+        self.assertEqual(self.manifest.get("schema"), 4)
+        self.assertNotIn("host_capabilities", self.manifest)
+        self.assertNotIn("host_api", self.manifest["ui"])
+        required = {item.get("tool_id") for item in self.manifest.get("required_executas", [])}
+        self.assertIn("bundled:verigate-authority", required)
 
     def test_app_has_editable_user_action_fields(self):
         for element_id in (
@@ -38,7 +40,9 @@ class AnnaAppBundleTest(unittest.TestCase):
         self.assertIn('id="clarify-list"', self.html)
         self.assertIn('id="check-btn"', self.html)
         self.assertIn("AnnaAppRuntime.connect()", self.js)
-        self.assertIn("state.anna.llm.complete", self.js)
+        self.assertIn('method: "verigate_ai_review"', self.js)
+        self.assertIn("sampling/createMessage", (ANNA / "executas" / "verigate-authority" / "verigate_authority_plugin.py").read_text(encoding="utf-8"))
+        self.assertNotIn("state.anna.llm.complete", self.js)
         self.assertIn('method: "verigate_check"', self.js)
         self.assertIn('method: "verigate_policy_summary"', self.js)
         self.assertIn('method: "verigate_verify_decision_receipt"', self.js)
@@ -49,6 +53,8 @@ class AnnaAppBundleTest(unittest.TestCase):
         self.assertIn('if (!data || data.verified !== true)', self.js)
         self.assertNotIn("outer?.success !== true || !data || data.verified !== true", self.js)
         self.assertIn('method: "verigate_consume_execution_authorization"', self.js)
+        self.assertIn('method: "verigate_record_wallet_submission_receipt"', self.js)
+        self.assertIn('wallet_submission_receipt', self.js)
         self.assertIn('id="wallet-execute-btn"', self.html)
         self.assertIn("eth_sendTransaction", self.js)
         self.assertIn("await verifyDecisionReceipt(envelope.receipt)", self.js)

@@ -52,6 +52,30 @@ class AnnaDataDirectoryTest(unittest.TestCase):
                         self.plugin._resolve_data_dir()
             self.assertFalse(fallback.exists())
 
+    def test_anna_workspace_is_used_for_cloud_durable_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "anna-workspace"
+            with patch.dict(os.environ, {"ANNA_WORKSPACE_DIR": str(workspace)}, clear=True):
+                self.assertEqual(
+                    self.plugin._resolve_data_dir(),
+                    workspace / "verigate-authority",
+                )
+
+    def test_unwritable_anna_workspace_fails_without_ephemeral_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            blocker = root / "not-a-directory"
+            blocker.write_text("occupied", encoding="utf-8")
+            workspace = blocker / "workspace"
+            fallback = root / "local-fallback"
+            with patch.dict(os.environ, {"ANNA_WORKSPACE_DIR": str(workspace)}, clear=True):
+                with patch.object(self.plugin, "_DEFAULT_DATA_DIR", fallback):
+                    with self.assertRaisesRegex(
+                        RuntimeError, "no writable Verigate data directory"
+                    ):
+                        self.plugin._resolve_data_dir()
+            self.assertFalse(fallback.exists())
+
     def test_legacy_resolution_still_uses_default_when_no_override(self):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "default-state"

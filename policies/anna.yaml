@@ -1,10 +1,8 @@
 # Verigate policy used by the Anna app (Verigate Authority).
-# This non-persistent preflight policy contains only checks that can be
-# evaluated from a single request plus deterministic address validation.
-# Stateful history controls from the default policy are intentionally omitted.
+# Preview evaluation does not write an audit record, but it reads persisted
+# history to evaluate daily-spend, rate-limit, and returning-payee rules.
+# A payee is considered new until an earlier authorized payment is recorded.
 # A well-formed address does not prove the recipient is safe.
-# The app is a non-persistent preflight: each run treats the payee as new.
-# Cumulative daily-spend and per-minute call limits are intentionally omitted.
 payee_validation: true
 require_positive_amount: true
 
@@ -57,7 +55,8 @@ new_payee_cap:
 confirmation_required_over:
   USDC: 250
 
-# Rolling 24-hour spend cap per asset, shared across all recipients.
+# Hard rolling 24-hour spend cap per asset, shared across all recipients.
+# Exceeding it is BLOCK and cannot be overridden by a human WARN review.
 # The preview reads persisted history; user-confirmed authorization records it.
 daily_cap:
   USDC: 2000

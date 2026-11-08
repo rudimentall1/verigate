@@ -337,20 +337,28 @@ class OutcomeAttestationService:
             raise ValueError("outcome agent mismatch")
         if claim["action_sha256"] != receipt_payload["action_sha256"]:
             raise ValueError("outcome action fingerprint mismatch")
-        if claim["status"] == "SUCCEEDED" and receipt_payload["status"] != "CONFIRMED":
-            raise ValueError("successful outcome requires a CONFIRMED execution receipt")
-        if claim["status"] == "FAILED" and receipt_payload["status"] != "FAILED":
-            raise ValueError("failed outcome requires a FAILED execution receipt")
-        if claim["status"] == "UNKNOWN" and receipt_payload["status"] not in {
-            "SUBMITTED",
-            "CONFIRMED",
-            "FAILED",
-        }:
-            raise ValueError("unknown outcome has invalid execution receipt state")
 
         attestation_type = "EXECUTOR_SELF_REPORT" if (
             registered_attestor["attestor_type"] == "EXECUTOR"
         ) else registered_attestor["attestor_type"]
+
+        if attestation_type == "CHAIN_VERIFIER":
+            # A chain verifier observes the transaction independently after the
+            # wallet hand-off. It must not rely on an issuer-signed CONFIRMED
+            # status that was derived from caller-supplied confirmation data.
+            if receipt_payload["status"] != "SUBMITTED":
+                raise ValueError("CHAIN_VERIFIER requires the original SUBMITTED wallet receipt")
+        else:
+            if claim["status"] == "SUCCEEDED" and receipt_payload["status"] != "CONFIRMED":
+                raise ValueError("successful outcome requires a CONFIRMED execution receipt")
+            if claim["status"] == "FAILED" and receipt_payload["status"] != "FAILED":
+                raise ValueError("failed outcome requires a FAILED execution receipt")
+            if claim["status"] == "UNKNOWN" and receipt_payload["status"] not in {
+                "SUBMITTED",
+                "CONFIRMED",
+                "FAILED",
+            }:
+                raise ValueError("unknown outcome has invalid execution receipt state")
         observed_effect = claim.get("observed_effect")
         if observed_effect is not None:
             canonical_fields = {
@@ -381,6 +389,174 @@ class OutcomeAttestationService:
         elif attestation_type == "CHAIN_VERIFIER":
             if claim["evidence_kind"] != "CHAIN_RECEIPT":
                 raise ValueError("chain verifier requires CHAIN_RECEIPT evidence")
+            if not isinstance(observed_effect, dict):
+                raise ValueError("CHAIN_VERIFIER requires a signed ObservedEffect")
+            if observed_effect.get("verifier_type") != "CHAIN_VERIFIER_EVM":
+                raise ValueError("CHAIN_VERIFIER requires the supported CHAIN_VERIFIER_EVM evidence type")
+            if observed_effect.get("effect_status") != claim["status"]:
+                raise ValueError("chain observed effect status does not match outcome claim")
+            if observed_effect.get("evidence_kind") != "CHAIN_RECEIPT":
+                raise ValueError("chain observed effect must use CHAIN_RECEIPT evidence")
+            observation = observed_effect.get("observation")
+            if not isinstance(observation, dict) or observation.get("network") != "EVM":
+                raise ValueError("CHAIN_VERIFIER EVM observation is missing its network binding")
+
+            # Bind the chain observation to the *original signed authorization*,
+            # not merely to fields copied into an executor's receipt metadata.
+            artifacts = self.storage.authorization_by_id(claim["authorization_id"])
+            authorization = artifacts.get("execution_authorization") if artifacts else None
+            if not isinstance(authorization, dict):
+                raise LookupError("stored signed execution authorization not found")
+            auth_valid, auth_reason = verify_execution_receipt(
+                receipt, self.issuer_public_key, authorization
+            )
+            if not auth_valid:
+                raise ValueError(f"execution receipt is not bound to stored authorization: {auth_reason}")
+            action = authorization["payload"].get("action")
+            metadata = action.get("metadata") if isinstance(action, dict) else None
+            expected_tx = metadata.get("evm_transaction") if isinstance(metadata, dict) else None
+            if (
+                not isinstance(action, dict)
+                or not isinstance(action.get("network"), str)
+                or not action["network"].strip()
+            ):
+                raise ValueError("CHAIN_VERIFIER authorization must identify an EVM network")
+            if not isinstance(expected_tx, dict):
+                raise ValueError("CHAIN_VERIFIER authorization has no signed EVM transaction")
+            expected_chain_id = expected_tx.get("chain_id")
+            expected_to = expected_tx.get("to")
+            expected_value = expected_tx.get("value_wei")
+            expected_data = expected_tx.get("data")
+            if (
+                isinstance(expected_chain_id, bool) or not isinstance(expected_chain_id, int)
+                or expected_chain_id <= 0
+                or not isinstance(expected_to, str) or len(expected_to) != 42
+                or not expected_to.startswith("0x")
+                or any(char not in "0123456789abcdefABCDEF" for char in expected_to[2:])
+                or isinstance(expected_value, bool) or not isinstance(expected_value, int)
+                or expected_value < 0
+                or not isinstance(expected_data, str) or not expected_data.startswith("0x")
+                or len(expected_data[2:]) % 2
+                or any(char not in "0123456789abcdefABCDEF" for char in expected_data[2:])
+            ):
+                raise ValueError("signed EVM transaction envelope is malformed")
+
+            import hashlib
+            expected_calldata_sha256 = hashlib.sha256(
+                expected_data.lower().encode("utf-8")
+            ).hexdigest()
+            submission = receipt_payload.get("submission_data")
+            if not isinstance(submission, dict):
+                raise ValueError("CHAIN_VERIFIER requires signed wallet submission metadata")
+            if (
+                submission.get("source") != "anna_eip1193_wallet"
+                or receipt_payload.get("executor") != "anna-eip1193-wallet"
+            ):
+                raise ValueError("CHAIN_VERIFIER requires the signed Anna EIP-1193 wallet submission path")
+            for field in ("sender", "chain_id", "to", "value_wei", "calldata_sha256"):
+                if field not in submission:
+                    raise ValueError(f"signed wallet submission metadata is missing {field}")
+            sender = submission["sender"]
+            if (
+                not isinstance(sender, str) or len(sender) != 42
+                or not sender.startswith("0x")
+                or any(char not in "0123456789abcdefABCDEF" for char in sender[2:])
+            ):
+                raise ValueError("signed wallet submission sender is malformed")
+            if (
+                isinstance(submission["chain_id"], bool)
+                or not isinstance(submission["chain_id"], int)
+                or submission["chain_id"] != expected_chain_id
+            ):
+                raise ValueError("wallet submission chain ID does not match signed authorization")
+            if not isinstance(submission["to"], str) or submission["to"].lower() != expected_to.lower():
+                raise ValueError("wallet submission destination does not match signed authorization")
+            if (
+                isinstance(submission["value_wei"], bool)
+                or not isinstance(submission["value_wei"], int)
+                or submission["value_wei"] != expected_value
+            ):
+                raise ValueError("wallet submission value does not match signed authorization")
+            if (
+                not isinstance(submission["calldata_sha256"], str)
+                or submission["calldata_sha256"] != expected_calldata_sha256
+            ):
+                raise ValueError("wallet submission calldata does not match signed authorization")
+            expected_network = str(action.get("network") or "").lower()
+            if str(receipt_payload.get("network") or "").lower() != expected_network:
+                raise ValueError("execution receipt network does not match signed authorization")
+
+            transaction_hash = receipt_payload.get("transaction_ref")
+            if (
+                not isinstance(transaction_hash, str) or len(transaction_hash) != 66
+                or not transaction_hash.startswith("0x")
+                or any(char not in "0123456789abcdefABCDEF" for char in transaction_hash[2:])
+            ):
+                raise ValueError("SUBMITTED receipt has no valid EVM transaction hash")
+            observed_hash = observation.get("transaction_hash")
+            if not isinstance(observed_hash, str) or observed_hash.lower() != transaction_hash.lower():
+                raise ValueError("chain observation transaction hash does not match SUBMITTED receipt")
+            if (
+                isinstance(observation.get("chain_id"), bool)
+                or not isinstance(observation.get("chain_id"), int)
+                or observation["chain_id"] != expected_chain_id
+            ):
+                raise ValueError("chain observation ID does not match signed authorization")
+
+            # When the RPC has returned the transaction object, bind every
+            # observed field even while the receipt is still below finality.
+            observed_sender = observation.get("transaction_from")
+            observed_to = observation.get("transaction_to")
+            observed_value = observation.get("transaction_value_wei")
+            observed_calldata = observation.get("transaction_calldata_sha256")
+            if observed_sender is not None and (
+                not isinstance(observed_sender, str) or observed_sender.lower() != sender.lower()
+            ):
+                raise ValueError("observed chain sender does not match signed wallet submission")
+            if observed_to is not None and (
+                not isinstance(observed_to, str) or observed_to.lower() != expected_to.lower()
+            ):
+                raise ValueError("observed chain destination does not match signed authorization")
+            if observed_value is not None and observed_value != str(expected_value):
+                raise ValueError("observed chain value does not match signed authorization")
+            if observed_calldata is not None and observed_calldata != expected_calldata_sha256:
+                raise ValueError("observed chain calldata does not match signed authorization")
+
+            if observed_effect["effect_status"] == "UNKNOWN":
+                if observation.get("state") != "PENDING":
+                    raise ValueError("UNKNOWN chain outcome requires PENDING chain evidence")
+            else:
+                expected_state = "CONFIRMED" if observed_effect["effect_status"] == "SUCCEEDED" else "FAILED"
+                if observation.get("state") != expected_state:
+                    raise ValueError("terminal chain outcome does not match observed chain state")
+                confirmations = observation.get("confirmations")
+                required_confirmations = observation.get("required_confirmations")
+                if (
+                    isinstance(confirmations, bool) or not isinstance(confirmations, int)
+                    or isinstance(required_confirmations, bool) or not isinstance(required_confirmations, int)
+                    or required_confirmations < 1 or confirmations < required_confirmations
+                ):
+                    raise ValueError("terminal chain outcome has insufficient confirmation evidence")
+                canonical_hash = observation.get("canonical_block_hash")
+                block_hash = observation.get("block_hash")
+                receipt_hash = observation.get("receipt_sha256")
+                block_number = observation.get("receipt_block_number")
+                if (
+                    not isinstance(canonical_hash, str) or len(canonical_hash) != 66
+                    or not canonical_hash.startswith("0x")
+                    or any(char not in "0123456789abcdefABCDEF" for char in canonical_hash[2:])
+                    or not isinstance(block_hash, str) or block_hash.lower() != canonical_hash.lower()
+                ):
+                    raise ValueError("terminal chain outcome is missing canonical block hash binding")
+                if (
+                    not isinstance(receipt_hash, str) or len(receipt_hash) != 64
+                    or any(char not in "0123456789abcdef" for char in receipt_hash)
+                    or isinstance(block_number, bool) or not isinstance(block_number, int)
+                    or block_number < 0
+                ):
+                    raise ValueError("terminal chain outcome is missing canonical receipt evidence")
+                if observed_sender is None or observed_to is None or observed_value is None or observed_calldata is None:
+                    raise ValueError("terminal chain outcome is missing transaction binding evidence")
         else:
             raise PermissionError("attestor type is inconsistent")
         return {
