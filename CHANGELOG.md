@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased ? Anna App 0.1.19 / Executa 0.1.15
+
+### Fixed: Anna host LLM Sampling permission declaration
+
+- Restored host_capabilities: [llm.sample] in the Executa describe manifest. This declaration exposes the correct host-capability permission for reverse sampling/createMessage; it is not itself a user grant.
+- Kept the schema-4 App manifest free of retired App-level host_capabilities and old aps.scope.* declarations. Executa LLM Sampling and App-scoped APS are separate capability paths.
+- Updated the binary manifest validator and regression tests so a Sampling-powered Executa cannot pass validation without declaring llm.sample.
+- Real Anna Cloud acceptance still requires the user to grant LLM Sampling to this Executa in the Agent/Executa permissions UI. Local tests do not grant or prove that platform permission.
+
 ## Unreleased — Anna 0.1.18 candidate / Executa 0.1.14
 
 ### Anna platform integration and security

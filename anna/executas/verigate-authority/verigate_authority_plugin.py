@@ -34,7 +34,7 @@ _storage = StorageClient()
 _route_response = make_response_router(_sampling, _storage)
 _loop = None
 
-VERSION = "0.1.14"
+VERSION = "0.1.15"
 _POLICY_PATH = _BUNDLE_ROOT / "policies" / "anna.yaml"
 
 # Anna Executa protocol 2.0: negotiate APS support in `initialize`; keep
@@ -53,6 +53,8 @@ MANIFEST = {
     "icon": "\U0001f6e1\ufe0f",
     "category": "security",
     "license": "MIT",
+    # Required declaration for reverse host LLM Sampling; user grant is separate.
+    "host_capabilities": ["llm.sample"],
     "tools": [
         {
             "name": "verigate_ai_review",

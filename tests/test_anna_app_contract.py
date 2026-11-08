@@ -61,7 +61,9 @@ class AnnaAppContractTest(unittest.TestCase):
 
     def test_app_scoped_confirmation_uses_schema4_and_v2_storage_handshake(self):
         self.assertNotIn("host_capabilities", APP_MANIFEST)
-        self.assertNotIn("host_capabilities", PLUGIN.MANIFEST)
+        # Executa's reverse Sampling capability must be declared here; the
+        # declaration exposes the permission toggle, but does not grant it.
+        self.assertIn("llm.sample", PLUGIN.MANIFEST["host_capabilities"])
         handshake = PLUGIN.handle({"method": "initialize", "params": {"protocolVersion": "2.0"}})
         self.assertIn("storage", handshake["client_capabilities"])
         self.assertIn("sampling", handshake["client_capabilities"])
@@ -91,6 +93,12 @@ class AnnaAppContractTest(unittest.TestCase):
         match = re.search(r'default:\s*["\']([^"\']+)["\']', workflow)
         self.assertIsNotNone(match, "binary workflow must declare a version default")
         self.assertEqual(match.group(1), EXECUTA["version"])
+        ci_workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        for command in ("smoke_binary.py", "package_binary.py"):
+            version_lines = [line for line in ci_workflow.splitlines() if command in line]
+            with self.subTest(command=command):
+                self.assertTrue(version_lines, f"CI must declare a version for {command}")
+                self.assertTrue(all(f'"{EXECUTA["version"]}"' in line for line in version_lines))
         self.assertRegex(workflow, r"publish_release:\s*[\s\S]*?default:\s*false[\s\S]*?type:\s*boolean")
         self.assertIn("push:\n    branches:\n      - integrate/anna-0.1.9-mainline", workflow)
         self.assertIn("github.event_name == 'workflow_dispatch' && inputs.publish_release", workflow)

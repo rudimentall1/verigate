@@ -18,9 +18,13 @@ def check_manifest(manifest: dict) -> None:
     for field in ("name", "version", "description"):
         if not isinstance(manifest.get(field), str) or not manifest[field]:
             raise SystemExit(f"describe: missing or empty required field '{field}'")
-    if "host_capabilities" in manifest:
-        raise SystemExit("describe: retired host_capabilities must not be used as a v2 grant")
     tools = manifest.get("tools")
+    host_capabilities = manifest.get("host_capabilities", [])
+    if not isinstance(host_capabilities, list) or any(not isinstance(item, str) for item in host_capabilities):
+        raise SystemExit("describe: host_capabilities must be a list of capability names")
+    tool_names = {item.get("name") for item in tools if isinstance(item, dict)} if isinstance(tools, list) else set()
+    if "verigate_ai_review" in tool_names and "llm.sample" not in host_capabilities:
+        raise SystemExit("describe: verigate_ai_review requires declared host capability 'llm.sample'")
     if not isinstance(tools, list) or not tools:
         raise SystemExit("describe: 'tools' must be a non-empty list")
     ai_review = next((item for item in tools if item.get("name") == "verigate_ai_review"), None)
