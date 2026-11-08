@@ -19,7 +19,7 @@ The AI performs payment-context analysis in addition to field extraction, but it
 ## User flow
 
 1. Describe the payment in natural language and select **Check with Anna AI**.
-2. When Anna LLM is available, it extracts the request and performs contextual risk review. If the LLM is unavailable (for example, quota exhaustion), the App offers a policy-only preview using only the recipient, asset, network and amount explicitly entered in the form; it never infers missing values from free text.
+2. When Anna LLM is available, it interprets the complete request and performs contextual risk review. If Sampling is unavailable (for example, quota exhaustion), the App uses a conservative local extractor for explicit recipient addresses, supported token symbols, known networks and unambiguous amounts stated in the request or form. Multiple or conflicting values and ambiguous numeric separators require clarification. This degraded path is a clearly labelled policy-only preview: it performs no AI contextual review and can never issue execution authority. It does not pretend to understand arbitrary natural language without the host model.
 3. If a required detail is missing or unclear, the App asks for it and does not run the policy check until it is provided (or, for unclear details, confirmed).
 4. Review the result: the deterministic ALLOW/WARN/BLOCK decision, explanation, any AI risk flags (when AI review ran), a table comparing the request with policy limits, and matched rules. The verified receipt, issuer public key and key fingerprint are available in the details panel. A policy-only preview clearly states that no AI contextual review was performed and cannot create execution permission.
 
@@ -83,7 +83,7 @@ npm run test:guard
 cd anna && npx --yes @anna-ai/cli@0.1.64 validate --strict
 ```
 
-The Anna UI E2E harness runs the real App bundle and real Python Executa subprocess. Its host-side Sampling fixture simulates the Anna reverse-RPC response without calling Anna's paid LLM service or consuming Anna CU quota. The wire-level `tests/test_anna_sampling_roundtrip.py` independently verifies the v2 Sampling handshake, `sampling/createMessage` frame and invoke-context propagation. These tests prove the local integration path; they do **not** prove Cloud Agent install or platform-side LLM availability.
+The Anna UI E2E harness runs the real App bundle and real Python Executa subprocess. Its host-side Sampling fixture simulates the Anna reverse-RPC response without calling Anna's paid LLM service or consuming Anna CU quota. UI coverage includes quota-exhausted fallback, Russian and English free text, decimal-dot and decimal-comma amounts, ambiguous thousands separators, conflicting form/request values, and the rule that degraded previews cannot issue execution authority. The wire-level `tests/test_anna_sampling_roundtrip.py` independently verifies the v2 Sampling handshake, `sampling/createMessage` frame and invoke-context propagation. These tests prove the local integration path; they do **not** prove Cloud Agent install or platform-side LLM availability.
 
 Before any Marketplace-ready claim, a real Anna Cloud Agent install would need to test at least these independent inputs (currently unavailable because the account's Anna CU quota is exhausted; local mocks are not a substitute):
 

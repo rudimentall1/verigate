@@ -13,6 +13,16 @@ const inputs = ["action-description", "agent-id", "target", "asset", "network", 
 const FIELD_IDS = ["target", "asset", "network", "amount"];
 const FIELD_LABELS = { target: "recipient", asset: "asset", network: "network", amount: "amount" };
 const normalizeAgentLabel = (value) => Array.from(String(value ?? "").trim().replace(/\s+/g, " ")).slice(0, 128).join("");
+
+function nativeUsdcPrecisionSupported(values) {
+  const asset = String(values?.asset || "").toUpperCase();
+  const network = String(values?.network || "").toLowerCase();
+  if (asset !== "USDC" || !["base", "ethereum"].includes(network)) return true;
+  const raw = String(values?.rawAmount ?? values?.amount ?? "").trim().toLowerCase();
+  const [mantissa, exponentText = "0"] = raw.split("e");
+  const fractionalDigits = (mantissa.split(".")[1] || "").length - Number(exponentText);
+  return Number.isFinite(fractionalDigits) && fractionalDigits <= 6;
+}
 const DEFAULT_QUESTIONS = {
   target: "Which recipient address should receive the payment?",
   asset: "Which asset should be paid (for example USDC)?",
@@ -30,11 +40,13 @@ function setBusy(busy, message) {
   const dynamicAuthorityAllows = !!state.lastDynamicAuthority &&
     typeof dynamicLimit === "number" && Number.isFinite(dynamicLimit) &&
     Number.isFinite(currentAmount) && currentAmount > 0 && currentAmount <= dynamicLimit;
+  const executionPrecisionAllows = nativeUsdcPrecisionSupported(state.lastValues);
   const decision = String(state.lastReceipt?.payload?.decision?.decision || "").toUpperCase();
   const canPrepareExecution =
     ["ALLOW", "WARN"].includes(decision) &&
     state.lastAiAvailable !== false &&
     dynamicAuthorityAllows &&
+    executionPrecisionAllows &&
     state.lastExecutionAuthorization === null;
   $("execution-btn").disabled = busy || !state.anna || !canPrepareExecution;
   inputs.forEach((input) => { input.disabled = busy; });
@@ -239,20 +251,111 @@ function prettyRule(rule) {
 
 const READ_FAILURE = "Anna AI's answer could not be read (this happens occasionally). Press \"Check with Anna AI\" again, or rephrase the request with the recipient, asset, network and amount.";
 
+const LOCAL_NETWORKS = new Map([
+  ["base", "base"], ["ethereum", "ethereum"], ["ethereum mainnet", "ethereum"],
+  ["eth mainnet", "ethereum"], ["solana", "solana"]
+]);
+
+function parseExplicitAmount(raw) {
+  let value = String(raw || "").trim().replace(/[\s\u00a0'’]/g, "");
+  if (!value) return { value: null, ambiguous: false };
+  const comma = value.lastIndexOf(",");
+  const dot = value.lastIndexOf(".");
+  if (comma >= 0 && dot >= 0) {
+    const decimal = comma > dot ? "," : ".";
+    const grouping = decimal === "," ? /\./g : /,/g;
+    value = value.replace(grouping, "").replace(decimal, ".");
+  } else if (comma >= 0) {
+    const decimals = value.length - comma - 1;
+    if (decimals === 3) return { value: null, ambiguous: true };
+    value = value.replace(",", ".");
+  }
+  if (!/^\d+(?:\.\d+)?$/.test(value)) return { value: null, ambiguous: false };
+  const amount = Number(value);
+  return { value: Number.isFinite(amount) && amount > 0 ? amount : null, ambiguous: false };
+}
+
+function extractExplicitPaymentFields(description) {
+  const text = String(description || "").normalize("NFC");
+  const ambiguities = [];
+  const extracted = { payee: null, asset: null, network: null, amount: null, resource: null };
+
+  const evmAddresses = [...new Set(text.match(/\b0x[a-fA-F0-9]{40}\b/g) || [])];
+  const solanaAddresses = [...new Set(text.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g) || [])];
+  const addresses = [...new Set([...evmAddresses, ...solanaAddresses])];
+  if (addresses.length === 1) extracted.payee = addresses[0];
+  else if (addresses.length > 1) ambiguities.push({ field: "recipient", issue: "The request contains more than one possible recipient address." });
+
+  const assetPattern = new RegExp("(?<![\\p{L}\\p{N}])(?:" +
+    "(\\d[\\d\\s\\u00a0.,'’]*?)\\s*(USDC|USDT|WETH|DAI|ETH|BTC|SOL)" +
+    "|" +
+    "(USDC|USDT|WETH|DAI|ETH|BTC|SOL)\\s*([\\d][\\d\\s\\u00a0.,'’]*)" +
+    ")(?![\\p{L}\\p{N}])", "giu");
+  const amountMatches = [];
+  const mentionedAssets = new Set();
+  for (const match of text.matchAll(assetPattern)) {
+    const rawAmount = match[2] ? match[1] : match[4];
+    const asset = (match[2] || match[3] || "").toUpperCase();
+    mentionedAssets.add(asset);
+    const parsed = parseExplicitAmount(rawAmount);
+    if (parsed.ambiguous) {
+      ambiguities.push({ field: "amount", issue: "The amount uses a separator that could mean either a decimal or a thousands grouping." });
+      continue;
+    }
+    if (parsed.value !== null) amountMatches.push({ amount: parsed.value, asset });
+  }
+  if (mentionedAssets.size === 1) extracted.asset = [...mentionedAssets][0];
+  else if (mentionedAssets.size > 1) ambiguities.push({ field: "asset", issue: "The request names more than one asset." });
+  const uniqueAmounts = [...new Map(amountMatches.map((item) => [item.amount + ":" + item.asset, item])).values()];
+  if (uniqueAmounts.length === 1) {
+    extracted.amount = uniqueAmounts[0].amount;
+    extracted.asset = uniqueAmounts[0].asset;
+  } else if (uniqueAmounts.length > 1) {
+    ambiguities.push({ field: "amount", issue: "The request contains multiple different amount or asset combinations." });
+  }
+
+  const networkMatches = [...new Set(
+    [...text.matchAll(/(?:\bon\s+|(?:^|[^\p{L}\p{N}])на\s+|(?:^|[^\p{L}\p{N}])в\s+сети\s+)(base|ethereum(?:\s+mainnet)?|eth\s+mainnet|solana)\b/giu)]
+      .map((match) => LOCAL_NETWORKS.get(match[1].toLowerCase()))
+  )];
+  if (networkMatches.length === 1) extracted.network = networkMatches[0];
+  else if (networkMatches.length > 1) ambiguities.push({ field: "network", issue: "The request names more than one network." });
+
+  const purpose = text.match(/(?:\bfor\s+|\bpurpose\s*[:=]\s*|(?:^|[^\p{L}\p{N}])за\s+|(?:^|[^\p{L}\p{N}])назначение\s*[:=]\s*)([^\n;]{2,120})/iu);
+  if (purpose) extracted.resource = clip(purpose[1], 120).replace(/[.,;]+$/, "");
+
+  return { fields: extracted, ambiguities };
+}
+
 function manualInterpretation(reason = "") {
-  // LLM is optional for a policy preview. In manual mode we use only explicit
-  // form values; we never infer payment fields from free text or claim an AI review.
+  // Quota/host outage fallback is deliberately deterministic: extract only
+  // unambiguous values explicitly present in the user's text or form. It is a
+  // policy preview, never an AI contextual review and never execution authority.
+  const parsed = extractExplicitPaymentFields(fieldValue("action-description"));
   const fields = {
-    payee: fieldValue("target") || null,
-    asset: fieldValue("asset") ? clip(fieldValue("asset"), 12).toUpperCase() : null,
-    network: fieldValue("network") ? clip(fieldValue("network"), 24).toLowerCase() : null,
+    payee: fieldValue("target") || parsed.fields.payee,
+    asset: fieldValue("asset") ? clip(fieldValue("asset"), 12).toUpperCase() : parsed.fields.asset,
+    network: fieldValue("network") ? clip(fieldValue("network"), 24).toLowerCase() : parsed.fields.network,
     amount: fieldValue("amount") && Number.isFinite(Number(fieldValue("amount"))) && Number(fieldValue("amount")) > 0
-      ? Number(fieldValue("amount")) : null,
-    resource: fieldValue("resource") || null
+      ? Number(fieldValue("amount")) : parsed.fields.amount,
+    resource: fieldValue("resource") || parsed.fields.resource
   };
+  const ambiguities = [...parsed.ambiguities];
+  const conflicts = [
+    ["recipient", fieldValue("target"), parsed.fields.payee, (a, b) => a.toLowerCase() === b.toLowerCase()],
+    ["asset", fieldValue("asset"), parsed.fields.asset, (a, b) => a.toUpperCase() === b.toUpperCase()],
+    ["network", fieldValue("network"), parsed.fields.network, (a, b) => a.toLowerCase() === b.toLowerCase()],
+    ["amount", fieldValue("amount"), parsed.fields.amount === null ? "" : String(parsed.fields.amount), (a, b) => Number(a) === Number(b)]
+  ];
+  for (const [field, entered, inferred, equal] of conflicts) {
+    if (entered && inferred !== null && inferred !== "" && !equal(String(entered).trim(), String(inferred).trim())) {
+      ambiguities.push({ field, issue: "The form value conflicts with a different value stated in the request." });
+    }
+  }
   return {
-    fields, questions: [], ambiguities: [], flags: [], aiAvailable: false,
-    summary: "Anna AI is unavailable" + (reason ? ": " + clip(reason, 180) : "") + ". Verigate will check only the values entered explicitly below; no AI contextual risk review was performed."
+    fields, questions: [], ambiguities, flags: [], aiAvailable: false,
+    summary: "Anna AI is unavailable" + (reason ? ": " + clip(reason, 180) : "") +
+      ". Verigate extracted only explicit, unambiguous values from the request and form. Any policy result is a policy-only preview; no AI contextual risk review was performed."
   };
 }
 
@@ -664,19 +767,19 @@ async function checkAuthority() {
     const questions = missing.map((id) => DEFAULT_QUESTIONS[id]);
     if (badAmount) questions.push("The amount must be a number greater than zero. How much should be paid?");
     showClarify(questions.slice(0, 5), false);
-    $("interpretation").textContent = "Anna AI: " + (review.summary || "Some details are missing.") + " Add them to the description or the fields, then check again.";
+    $("interpretation").textContent = (review.aiAvailable === false ? "Policy-only extraction: " : "Anna AI: ") + (review.summary || "Some details are missing.") + " Add them to the description or the fields, then check again.";
     setBusy(false, "Waiting for the missing details. No check was run.");
     return;
   }
-  if (review.ambiguities.length && !$("confirm-details").checked) {
+  if ((review.ambiguities.length || review.questions.length) && !$("confirm-details").checked) {
     const items = review.ambiguities.map((a) => a.field + ": " + a.issue);
     review.questions.forEach((q) => { if (!items.includes(q)) items.push(q); });
     showClarify(items.slice(0, 5), true);
-    $("interpretation").textContent = "Anna AI: " + (review.summary || "Some details are unclear.") + " Fix them or confirm they are what you mean, then check again.";
+    $("interpretation").textContent = (review.aiAvailable === false ? "Policy-only extraction: " : "Anna AI: ") + (review.summary || "Some details are unclear.") + " Fix them or confirm they are what you mean, then check again.";
     setBusy(false, "Confirm the details to continue. No check was run.");
     return;
   }
-  $("interpretation").textContent = "Anna AI: " + (review.summary || "The request is clear.") + (review.flags.length ? " Risk flags raised: " + review.flags.length + "." : "");
+  $("interpretation").textContent = (review.aiAvailable === false ? "Policy-only extraction: " : "Anna AI: ") + (review.summary || "The request is clear.") + (review.flags.length ? " Risk flags raised: " + review.flags.length + "." : "");
 
   setBusy(true, "Verigate is evaluating the request against its policy…");
   try {
@@ -729,9 +832,11 @@ async function checkAuthority() {
     const dynamicAuthorityAvailable = !!dynamicAuthority &&
       typeof dynamicLimit === "number" && Number.isFinite(dynamicLimit);
     const exceedsDynamicAuthority = dynamicAuthorityAvailable && values.amount > dynamicLimit;
+    const executionPrecisionSupported = nativeUsdcPrecisionSupported(values);
     const reviewableDecision = ["ALLOW", "WARN"].includes(envelope.decision);
     const canIssuePermission = reviewableDecision &&
-      state.lastAiAvailable && dynamicAuthorityAvailable && !exceedsDynamicAuthority;
+      state.lastAiAvailable && dynamicAuthorityAvailable && !exceedsDynamicAuthority &&
+      executionPrecisionSupported;
     $("execution-panel").style.display = reviewableDecision ? "block" : "none";
     $("execution-btn").textContent = envelope.decision === "WARN"
       ? "Review warnings & approve"
@@ -745,18 +850,20 @@ async function checkAuthority() {
         ? "BLOCK is not overridable and cannot receive execution authority."
         : !state.lastAiAvailable
           ? "Policy preview only. Anna AI contextual review is unavailable, so execution permission is disabled."
-          : !dynamicAuthorityAvailable
-            ? "Policy " + envelope.decision + ", but the current dynamic authority could not be verified. Execution permission is disabled."
-            : "Policy " + envelope.decision + ", but current " + dynamicAuthority.state + " authority permits at most " +
-              dynamicLimit + " " + values.asset.toUpperCase() +
-              " per action. Reduce the amount or complete the verified authority progression before requesting permission.";
+          : !executionPrecisionSupported
+            ? "The policy decision is valid, but native USDC transfers on Base/Ethereum support at most 6 decimal places. No execution permission can be issued for this amount."
+            : !dynamicAuthorityAvailable
+              ? "Policy " + envelope.decision + ", but the current dynamic authority could not be verified. Execution permission is disabled."
+              : "Policy " + envelope.decision + ", but current " + dynamicAuthority.state + " authority permits at most " +
+                dynamicLimit + " " + values.asset.toUpperCase() +
+                " per action. Reduce the amount or complete the verified authority progression before requesting permission.";
 
     const pill = $("decision");
     pill.textContent = envelope.decision;
     pill.className = "decision " + envelope.decision.toLowerCase();
     $("result-title").textContent = { ALLOW: "Allowed by policy", WARN: "Human review required", BLOCK: "Blocked by policy" }[envelope.decision];
     $("result-meta").textContent = values.agent_id + " · " + values.amount + " " + values.asset.toUpperCase() + " · " + values.network;
-    $("result-summary").textContent = "Anna AI is explaining Verigate's signed decision…";
+    $("result-summary").textContent = "Preparing the verified policy explanation…";
     renderRules(envelope.matchedRules, review);
     const ruleIds = new Set((envelope.matchedRules || []).map((r) => r?.rule || r?.rule_id));
     renderLimits(buildLimitRows(limits, values, ruleIds));
@@ -770,7 +877,9 @@ async function checkAuthority() {
     if (requestId !== state.requestId) return;
     $("result-summary").textContent = explained.explanation;
     $("suggestion").textContent = explained.next ? "What could change this: " + explained.next : "";
-    setBusy(false, "Preview complete. No payment was sent. A one-time execution permission is available only when policy and current dynamic authority both allow this amount.");
+    setBusy(false, state.lastAiAvailable === false
+      ? "Policy-only preview complete. No AI contextual review was performed; execution permission is disabled. No payment was sent."
+      : "Preview complete. No payment was sent. A one-time execution permission is available only when policy and current dynamic authority both allow this amount.");
   } catch (error) {
     if (requestId !== state.requestId) return;
     clearResult();
@@ -890,6 +999,10 @@ async function prepareExecutionAuthorization() {
     return;
   }
   const v = state.lastValues;
+  if (!nativeUsdcPrecisionSupported(v)) {
+    showError("Native USDC transfers on Base/Ethereum support at most 6 decimal places. No execution permission was issued.");
+    return;
+  }
   const dynamicLimit = state.lastDynamicAuthority?.per_action_limits?.[String(v.asset).toUpperCase()];
   if (typeof dynamicLimit !== "number" || !Number.isFinite(dynamicLimit) ||
       !Number.isFinite(Number(v.amount)) || Number(v.amount) <= 0 || Number(v.amount) > dynamicLimit) {
