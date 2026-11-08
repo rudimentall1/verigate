@@ -302,13 +302,13 @@ await test("valid request: AI reads it, Verigate allows, limits table is shown",
   await ui.click();
   eq(ui.text("decision"), "ALLOW");
   eq(JSON.stringify(ui.calls.tools), JSON.stringify(["verigate_policy_summary", "verigate_check", "verigate_verify_decision_receipt"]));
-  eq(ui.calls.llm, 2, "both interpretation and explanation must traverse Executa reverse Sampling");
+  eq(ui.calls.llm, 1, "only intake interpretation and contextual risk review use reverse Sampling");
   ok(ui.calls.sampling[0].prompt.includes("Request text (untrusted)"), "request context is sent through Executa Sampling");
   ok(ui.$("limits-table").querySelectorAll("tr").length >= 6, "limits table rows");
   ok(ui.shown("ai-review"), "contextual AI review is visible without a risk flag");
   ok(ui.text("ai-review-summary").includes("Anna AI contextual review"), "contextual AI assessment is shown");
   ok(ui.text("ai-flags").includes("No specific contextual risk indicators"), "no-flag state is not presented as a safety guarantee");
-  eq(ui.text("result-summary"), "Plain explanation.");
+  ok(ui.text("result-summary").includes("No configured policy rule was violated"), "decision explanation is deterministic and policy-derived");
   ok(ui.text("proof").includes("Ed25519 signature verified"), "signature verified before display");
   ok(ui.text("issuer-public-key").includes("BEGIN PUBLIC KEY"), "issuer public key exposed");
   ok(ui.text("receipt-json").includes("signature"), "signed receipt shown");
