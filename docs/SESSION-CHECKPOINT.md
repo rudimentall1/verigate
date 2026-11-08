@@ -4,11 +4,10 @@
 **Repository:** https://github.com/rudimentall1/verigate
 **Local working copy:** `C:\Users\User\Desktop\Work\verigate-anna-0.1.13`
 **Current branch:** `feat/anna-0.1.18-executa-0.1.14-hardening`
-**Current branch HEAD:** `c793f301105d439eb1724b7979c1c5b47830968f`
-**Latest commit:** `fix: align live chain E2E with submitted receipt verification`
+**Latest verified code/artifact commit:** `0d36419af8365d6e171d0a3a92d5259148078405`
 **PR:** https://github.com/rudimentall1/verigate/pull/24 — OPEN, mergeable, NOT merged.
 
-> Current status: branch HEAD is `c793f30` and the worktree is clean. PR #24 merged `98d4c230` into `integrate/anna-0.1.9-mainline`; `c793f30` is a post-merge harness/docs follow-up and is not in that merge. CI run `42466074557` is running on `c793f30`. The four-platform packages in workflow `42465587818` were built on `98d4c230`; rerun the binary workflow on the final follow-up commit before release. `docs/ANNA-RELEASE-GATE.md` is the authoritative detailed release record. All older status statements below are historical and must not be used as current evidence.
+> Current status: branch HEAD is `0d36419`; worktree was clean before this checkpoint refresh. PR #24 merged product/runtime commit `98d4c230` into `integrate/anna-0.1.9-mainline`. PR #26 contains the post-merge E2E harness/docs follow-up. Push CI `42466153268` and PR CI `42466167865` passed on `0d36419`; four-platform binary workflow `42466174769` also passed on `0d36419`, with release skipped. Package hashes and blockers are recorded in `docs/ANNA-RELEASE-GATE.md`, the authoritative detailed release record. All older status statements below are historical and must not be used as current evidence.
 
 ## 1. User requirements that must not be lost
 

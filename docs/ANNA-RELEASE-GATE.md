@@ -5,32 +5,28 @@
 This block is the source of truth for the current candidate. Everything after `## Historical baseline` is retained as historical context and must not override this section.
 
 - Repository: `rudimentall1/verigate`; branch: `feat/anna-0.1.18-executa-0.1.14-hardening`.
-- Latest product/runtime commit: `98d4c23062fd53e58636793623a537efae3ae592` (`fix: bind chain attestations to submitted wallet receipts`).
-- PR #24 was merged by `rudimentall1` at 2026-11-08 09:09:51 UTC as merge commit `eb53d1927f16c76ac6cb96cfa93d861fc30c2ff4`; it included `98d4c230`.
-- Follow-up commit `c793f301105d439eb1724b7979c1c5b47830968f` is pushed to the same feature branch after PR #24 merged. It fixes the Arbitrum Sepolia E2E harness and updates release/security docs; it is not included in merge commit `eb53d19` and needs a separate follow-up PR.
-- Exact-SHA CI for `c793f30` is running as [42466074557](https://github.com/rudimentall1/verigate/actions/runs/42466074557); `contracts` has passed, `test` and `anna-ui` were still running at the last check.
-- The four-platform artifacts listed below were built from parent runtime commit `98d4c230`, not follow-up commit `c793f30`. The follow-up changes do not modify bundled Anna Executa runtime sources, but the binary workflow must still be rerun against the final follow-up commit before release claims are frozen.
+- Product/runtime implementation commit: `98d4c23062fd53e58636793623a537efae3ae592` (`fix: bind chain attestations to submitted wallet receipts`).
+- PR #24 was merged by `rudimentall1` at 2026-11-08 09:09:51 UTC as `eb53d1927f16c76ac6cb96cfa93d861fc30c2ff4`; it includes `98d4c230`.
+- Follow-up PR #26 is OPEN and mergeable: https://github.com/rudimentall1/verigate/pull/26. It contains the live Arbitrum Sepolia E2E harness correction and release/security checkpoint updates. The code/artifact verification commit is `0d36419af8365d6e171d0a3a92d5259148078405`; later changes in this PR are documentation-only.
 - Candidate versions: Anna App `0.1.18`; Executa `0.1.14`. No Anna upload/cut/review submission/Marketplace release and no GitHub Release has been made.
 
-### Verified source and runtime checks on `98d4c230`
+### Verified source and runtime checks
 
-- Full Python suite: **581 passed, 4 skipped**, 3 upstream deprecation warnings.
-- Anna UI E2E: **43/43 passed**.
-- `npm run test:atomic`: passed; stale authorization reverted with zero side effects, fresh authorization produced one side effect.
-- `npm run test:guard`: passed; unauthorized executor/oracle access, stale state and value mismatch rejected; exact value forwarding passed.
-- Anna schema-4 validation with `@anna-ai/cli@0.1.64 validate --strict`: passed.
-- GitHub CI run [42465006187](https://github.com/rudimentall1/verigate/actions/runs/42465006187): `test`, `contracts`, and `anna-ui` all passed on exact SHA `98d4c230`.
+- Merged product/runtime SHA `98d4c230`: full Python suite **581 passed, 4 skipped**, 3 upstream deprecation warnings; Anna UI E2E **43/43**; `npm run test:atomic`, `npm run test:guard`, and Anna schema-4 `@anna-ai/cli@0.1.64 validate --strict` passed.
+- Exact-SHA CI on `98d4c230`: [42465006187](https://github.com/rudimentall1/verigate/actions/runs/42465006187), jobs `test`, `contracts`, `anna-ui` all passed.
+- Follow-up harness/docs commit `0d36419`: push CI [42466153268](https://github.com/rudimentall1/verigate/actions/runs/42466153268) and PR CI [42466167865](https://github.com/rudimentall1/verigate/actions/runs/42466167865) both completed successfully; jobs `test`, `contracts`, `anna-ui` all passed.
+- The harness fix was locally checked with `python -m py_compile`, direct `--help`, and focused chain-verification/outcome-attestation/dynamic-authority/lifecycle tests (**31 passed**). No Arbitrum Sepolia transaction was broadcast.
 
-### Four-platform Executa artifacts ? build SHA `98d4c230` (parent of follow-up harness/docs commit)
+### Four-platform Executa artifacts ? build SHA `0d36419`
 
-Workflow [42465587818](https://github.com/rudimentall1/verigate/actions/runs/42465587818) completed successfully on `98d4c230`. All four platform jobs built, packaged, extracted and smoke-tested; the `release` job was **skipped** because `publish_release=false`. These hashes are valid for that build SHA, not proof of a package workflow on `c793f30`.
+Workflow [42466174769](https://github.com/rudimentall1/verigate/actions/runs/42466174769) completed successfully on `0d36419`. All four platform jobs built, packaged, extracted and smoke-tested; the `release` job was **skipped** because `publish_release=false`.
 
 | Platform | Package SHA-256 | GitHub artifact ID |
 |---|---|---:|
-| Linux x86_64 | `e942408429069d8a6d5fbcbd73c8c6a4329349647269bed9340d73bd40b182bf` | `13610904691` |
-| Windows x86_64 | `6d794fa52dec8e70738738fba2ddda2a44d0ef2298f59ce6440ff0c01c917dbe` | `13612015074` |
-| macOS ARM64 | `238482e11b3f52b7e524c37b2f372c7acd04ae60acb7b88c5f9d6ac7b5f8729c` | `13611681089` |
-| macOS Intel x86_64 | `cf4a0f74256f07440bc7e252e5c17566acce6178ee92e847e0c9a5260b5e1056` | `13611697039` |
+| Linux x86_64 | `cb7e6891e5074307af2dfb23f29d07f74826ce6c136f77d8af9ea3dddd19624a` | `13611324508` |
+| Windows x86_64 | `81ca1acc3c76b2a93c2ca49a0537745da2a4a3866b2ae29acb2eb553eee34fa4` | `13612185260` |
+| macOS ARM64 | `9b29b09bf9ef4e6eee81e09c956ddc7fa703a85503b07ef60b104a28f1c20b8b` | `13611986266` |
+| macOS Intel x86_64 | `a705e80970dbb5630d36433a30f9d9b8036922a0fea70c837a2987f949db300a` | `13611339820` |
 
 Downloaded package archives were independently checked on the Windows workstation: each archive SHA-256 matched its `.sha256` sidecar; each archive contained only the expected platform entrypoint plus `manifest.json`; every manifest reported version `0.1.14` and production tool ID `tool-rinat-verigate-authority-2um8gwhw`. CI smoke tests on each native runner also passed. These are workflow artifacts, not a published GitHub Release.
 
@@ -38,9 +34,9 @@ Downloaded package archives were independently checked on the Windows workstatio
 
 - The current Anna UI sends the exact transaction through the connected EIP-1193 wallet. After the wallet returns a valid `txHash`, the UI creates a separate App-scope approval bound to authorization ID, hash, sender, chain, destination, value and calldata.
 - Executa consumes that approval, validates the stored signed authorization and the already-consumed one-time authorization, signs and persists an `ExecutionReceipt(status=SUBMITTED)`, and returns the verified receipt. This is executor self-report that the wallet returned a hash; it is **not** proof of on-chain inclusion, success, finality or transfer.
-- `OutcomeAttestationService` now requires a `CHAIN_VERIFIER` claim to reference the original signed `SUBMITTED` receipt and binds the observed chain transaction to the stored signed authorization and wallet-submission metadata. The EVM verifier checks the actual transaction, receipt, chain ID, sender pinned by trusted configuration, destination, calldata, value, canonical block and configured confirmation depth; ERC-20 transfers require the exact Transfer event.
+- `OutcomeAttestationService` requires a `CHAIN_VERIFIER` claim to reference the original signed `SUBMITTED` receipt and binds the observed chain transaction to the stored signed authorization and wallet-submission metadata. The EVM verifier checks the actual transaction, receipt, chain ID, sender pinned by trusted configuration, destination, calldata, value, canonical block and configured confirmation depth; ERC-20 transfers require the exact Transfer event.
 - The generic EVM verifier and outcome-attestation service are **not integrated into the normal Anna UI flow**. There is no governed wallet-enrollment registry, separate deployed CHAIN_VERIFIER service/key lifecycle, or post-attestation reorg monitoring/reversal. Do not claim independent chain verification is active in the Anna product.
-- The live Arbitrum Sepolia E2E harness had become stale after the verifier constructor and receipt contract were hardened. A local uncommitted fix now pins the sender from the trusted testnet broadcaster result, requires an explicit positive `--min-confirmations`, verifies the original `SUBMITTED` receipt and no longer mutates it to issuer-signed `CONFIRMED` before CHAIN_VERIFIER verification. `py_compile`, direct `--help`, and the targeted chain/outcome/dynamic-authority/lifecycle tests (**31 passed**) pass. The actual testnet script has **not** been run; it would broadcast a testnet transaction and needs operator-provided deployment addresses and `.env` signer/RPC configuration. Its in-process test attestor is not a production independent governance boundary.
+- The live Arbitrum Sepolia E2E harness was repaired in follow-up PR #26: it resolves repo imports on direct invocation, pins the sender from the trusted testnet broadcaster result, requires explicit positive `--min-confirmations`, waits up to a bounded timeout, verifies the original `SUBMITTED` receipt and does not mutate it to issuer-signed `CONFIRMED` before CHAIN_VERIFIER verification. It has not been run against the live testnet; it requires operator-provided deployment addresses and `.env` signer/RPC configuration. Its in-process test attestor is not a production independent-governance boundary.
 
 ### Remaining product and release blockers
 
@@ -51,7 +47,7 @@ Downloaded package archives were independently checked on the Windows workstatio
 - No multi-process/Cloud Executa load test proves support for thousands of users. The product is a pre-execution gate for the integrated Verigate App/ExecutionRouter path, not a universal wallet firewall; independent transactions through other clients can bypass this app-level path.
 - Payment input and EVM construction accept arbitrary positive USDC values up to six decimals. `50` and `250` USDC are policy thresholds, not allowed denominations. Configured per-transaction and rolling daily caps still apply; arbitrary precision does not mean unlimited authorization.
 
-**Release decision: do not upload App `0.1.18` yet.** Local source tests and exact-SHA CI/package builds are strong evidence, but Anna Cloud acceptance and the independent chain-outcome production path remain unverified/incomplete. Do not use the exhausted upload attempt as a debugging tool.
+**Release decision: do not upload App `0.1.18` yet.** Local source tests, exact-SHA CI and all four package builds are green, but Anna Cloud acceptance and the independent chain-outcome production path remain unverified/incomplete. Do not use the exhausted upload attempt as a debugging tool.
 
 ## Historical baseline - 2026-11-07
 
