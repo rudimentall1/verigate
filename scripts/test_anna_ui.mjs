@@ -887,11 +887,11 @@ await test("explanation failure falls back to a deterministic explanation", asyn
   ok(ui.text("result-summary").includes("not a guarantee"), "fallback text");
 });
 
-await test("model text is rendered as text, never as HTML", async () => {
+await test("model risk text is rendered as text, never as HTML", async () => {
   const ui = await launch({ interpret: interpretJson({ ...GOOD, risk_flags: [{ code: "other", message: "<img src=x onerror=alert(1)>" }] }), explain: JSON.stringify({ explanation: "<b>bold</b>", what_could_change: "<script>1</script>" }) });
   await ui.click();
   eq(ui.window.document.querySelectorAll("img, script b, b").length, 0, "no injected elements");
-  ok(ui.text("result-summary").includes("<b>bold</b>"), "shown literally");
+  ok(ui.text("ai-flags").includes("<img src=x onerror=alert(1)>"), "risk text shown literally");
 });
 
 await test("Anna connection failure is surfaced and app actions stay disabled", async () => {
