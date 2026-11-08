@@ -373,3 +373,26 @@ This section supersedes the older status notes above. Older sections are retaine
 - Final focused regression set: **74 passed**. Full Python suite: **626 passed, 4 skipped, 3 upstream deprecation warnings**.
 - This cross-platform gate is now in the workflow source but is not yet validated by GitHub Actions. CI must run on Windows, Linux, macOS ARM64 and macOS Intel after push.
 - Local Windows two-build equality remains: SHA-256 `91d17be5a61d4a7206bb7fdada5bf3c87be1cec70e25526255ff6b57ec148191`; fresh executable smoke passed.
+
+
+## Four-platform reproducibility CI — final result 2026-11-08
+
+<badge>CI SUCCESS</badge> Run [42504828571](https://github.com/rudimentall1/verigate/actions/runs/42504828571), commit `9182b06431d33e5dac8fd666b98db6248cfeffa4`, branch `fix/anna-sampling-capability`.
+
+All four native platform jobs completed success. Each runner executed the full PyInstaller build twice with identical environment, compared binary SHA-256, then packaged, extracted and smoke-tested the archive.
+
+| Platform | Binary SHA-256 (build 1 = build 2) | Job result |
+|---|---|---|
+| Windows x86_64 | `316edcfade757c29161b6882f6c2479740bbc6df8f719355e9bbf5df6e878938` | PASS |
+| Linux x86_64 | `9d4d4b26cbe05b8a2e81eb8def0413c82253d9df1c6879495895ce9c55b3f7b6` | PASS |
+| macOS ARM64 | `ea0917c6f9900f5fcde46c943a4e97bb42ca70d71a34144b7e67e06919ef37bc` | PASS |
+| macOS Intel x86_64 | `2e2551a56583ecf59e6b23098fc1d3cad8d89d253550083bba10a351e218f09b` | PASS |
+
+- Four non-expired workflow artifacts are present: `verigate-authority-windows-x86_64`, `verigate-authority-linux-x86_64`, `verigate-authority-darwin-arm64`, `verigate-authority-darwin-x86_64`.
+- Workflow overall conclusion: **success**. The separate GitHub `release` job is **skipped** because `publish_release=false`.
+- These are CI artifacts only. No GitHub Release, no Executa publish/update, no Anna App cut, no review resubmission and no Marketplace release occurred.
+- Do not upload the new artifacts over immutable Executa 0.1.15. Anna has the exact previously-published 0.1.15 artifacts cached; the new workflow outputs have not been compared against each of those four immutable artifact hashes in this final run. The review App 0.1.21 remains frozen to production Executa 0.1.15.
+- Final local full Python suite on this source: **626 passed, 4 skipped, 3 upstream deprecation warnings**. Focused reproducibility/package/auth set: **74 passed**. Anna strict manifest validation and workflow YAML parsing passed before push.
+- Pushed commit: `9182b06431d33e5dac8fd666b98db6248cfeffa4`, message `build: enforce reproducible Executa artifacts`. Branch is pushed; local untracked `_tools/` and `_anna-screen.png` remain excluded.
+
+**Decision:** the reproducible-build fix is verified on all four target platforms. Executa 0.1.15 remains immutable. No new version is needed merely to apply this build-system fix; use a new Executa version only if a separately tested runtime change is required.
