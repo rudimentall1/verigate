@@ -587,37 +587,13 @@ function baseExplanation(decision, rules) {
   return "Verigate blocked this request under the configured policy. Do not proceed with the action as described." + (text.length ? " " + text.join(" ") : "");
 }
 
-async function explainDecision(envelope, values, limits, flags) {
-  if (state.lastAiAvailable === false) {
-    return { explanation: baseExplanation(envelope.decision, envelope.matchedRules), next: "" };
-  }
-  const details = {
-    decision: envelope.decision,
-    agent_id: values.agent_id,
-    payee: values.payee,
-    asset: values.asset,
-    network: values.network,
-    amount: values.amount,
-    resource: values.resource || null,
-    matched_rules: envelope.matchedRules,
-    ai_risk_flags: flags,
-    policy_limits: limits
+function explainDecision(envelope, values, limits, flags) {
+  // Keep user-facing explanations deterministic. The single reverse-Sampling
+  // call is reserved for intake interpretation and contextual risk review.
+  return {
+    explanation: baseExplanation(envelope.decision, envelope.matchedRules),
+    next: ""
   };
-  try {
-    const raw = await askAnna(
-      "You explain a Verigate policy decision to a non-technical user. The decision, matched rules and limits are authoritative and final: never change ALLOW, WARN or BLOCK, never say a payment was executed, never say the recipient is safe. " +
-      "Return ONE JSON object with keys explanation (1-3 short plain sentences) and what_could_change (one short sentence suggesting what the user could change to get a better result, such as a smaller amount or a corrected address; null when the decision is ALLOW or nothing would help; it must say the new request will be checked again). Use only the supplied data. Output JSON only.",
-      "Explain this decision.\n" + JSON.stringify(details),
-      600
-    );
-    const parsed = parseJsonFromModel(raw, "unparseable");
-    const explanation = clip(parsed.explanation, 500);
-    const next = nonEmptyString(parsed.what_could_change) ? clip(parsed.what_could_change, 260) : "";
-    if (!explanation) throw new Error("empty");
-    return { explanation, next };
-  } catch {
-    return { explanation: baseExplanation(envelope.decision, envelope.matchedRules), next: "" };
-  }
 }
 
 function collectValues() {
