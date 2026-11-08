@@ -4,12 +4,13 @@
 
 This block is the source of truth for the current candidate. Everything after `## Historical baseline` is retained as historical context and must not override this section.
 
-- Repository: `rudimentall1/verigate`; production base branch: `main` at `471a9f634f6e57d6d84adeddd6646fb9cd277388`.
-- Current hardening PR: [#27](https://github.com/rudimentall1/verigate/pull/27), branch `fix/anna-receipt-copy-and-intent-binding`, head `5f6135ae5da8f38fdaed60169e9a8c8d9453b6fd`. It adds exact signed-intent/form binding, honest WARN/SUBMITTED/wallet-availability copy, one reverse-Sampling call per check, immutable listing asset URLs, and regression coverage.
-- PR #24 is merged; follow-up PR #26 is also merged as `3a170fe0f085204d74c64f503bcc9942b3527e15`. Do not describe PR #26 as open.
-- Candidate versions remain Anna App `0.1.18` and bundled Executa `0.1.14`. The PR does not bump either version.
-- CI on PR #27 head `5f6135a`: [42477587362](https://github.com/rudimentall1/verigate/actions/runs/42477587362) completed successfully. Python suite: **597 passed**; contract jobs passed; Anna UI E2E passed (**44/44**); schema-4 strict validation passed; Linux Executa build and packaged-binary smoke passed.
+- Repository: `rudimentall1/verigate`; production branch: `main` at `2daecb7abe3e8c278cc470790afa127995ee0cdd`.
+- PR #27 ([fix: bind Anna decisions to exact signed payment intent](https://github.com/rudimentall1/verigate/pull/27)) was merged with squash commit `2daecb7`. It adds exact signed-intent/form binding, honest WARN/SUBMITTED/wallet-availability copy, one reverse-Sampling call per check, immutable listing asset URLs, and regression coverage.
+- PR #24 and follow-up PR #26 are merged. PR #26 merge commit: `3a170fe0f085204d74c64f503bcc9942b3527e15`.
+- Candidate versions remain Anna App `0.1.18` and bundled Executa `0.1.14`; no version bump was made.
+- CI on PR #27 head `7768a351`: [42477712451](https://github.com/rudimentall1/verigate/actions/runs/42477712451) completed successfully. Python suite: **597 passed**; contract jobs passed; Anna UI E2E passed (**44/44**); schema-4 strict validation passed; Linux Executa build and packaged-binary smoke passed.
 - Four-platform build on base `471a9f6`: [42476979298](https://github.com/rudimentall1/verigate/actions/runs/42476979298) completed successfully for macOS ARM64, macOS Intel x86_64, Linux x86_64 and Windows x86_64. Each native runner built, packaged, extracted and smoke-tested its archive. Artifacts were uploaded; the release job was skipped.
+- Main-branch CI after the squash merge is running separately; do not call the merged SHA fully revalidated until that run completes.
 - No Anna upload/cut/review submission/Marketplace release and no GitHub Release has been made. Real Anna Cloud Agent acceptance remains unverified because the Anna CU quota is exhausted.
 
 ### Verified source and runtime checks
