@@ -147,7 +147,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows) {
@@ -203,7 +203,10 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
         if (method === "verigate_policy_summary" && policySummaryReturnsError) {
           return { result: { success: false, error: { code: 401, message: "Anna session refresh rejected in tool response" } } };
         }
-        const result = await callPlugin(method, args, {
+        const pluginArgs = method === "verigate_check" && decisionIntentOverride
+          ? { ...args, ...decisionIntentOverride }
+          : args;
+        const result = await callPlugin(method, pluginArgs, {
           appStorage,
           appContext: true,
           samplingHandler: { interpret, explain }
@@ -319,6 +322,24 @@ await test("agent label is normalized identically before preview and signed comp
   eq(ui.text("decision"), "ALLOW");
   eq(ui.calls.toolArgs.verigate_check.agent_id, "agent alpha beta");
   ok(ui.text("proof").includes("Ed25519 signature verified"), "signed preview accepted the normalized label");
+});
+
+await test("signed Decision Receipt must match every payment field in the form", async () => {
+  const mismatches = [
+    ["payee", { payee: "0x" + "1".repeat(40) }],
+    ["asset", { asset: "DAI" }],
+    ["network", { network: "ethereum" }],
+    ["amount", { amount: 24.999 }],
+    ["resource", { resource: "different invoice" }],
+  ];
+  for (const [field, decisionIntentOverride] of mismatches) {
+    const ui = await launch({ decisionIntentOverride });
+    await ui.click();
+    ok(ui.shown("error"), field + " mismatch must be rejected");
+    ok(ui.text("error").includes("does not match the current"), field + " mismatch should explain the receipt/form binding failure");
+    eq(ui.shown("result"), false, field + " mismatch must not display a decision");
+    eq(ui.calls.tools.includes("verigate_authorize_payment"), false, field + " mismatch must never mint execution authority");
+  }
 });
 
 await test("policy-summary installation principal mismatch fails closed", async () => {
