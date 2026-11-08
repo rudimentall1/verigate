@@ -4,11 +4,11 @@
 **Repository:** https://github.com/rudimentall1/verigate
 **Local working copy:** `C:\Users\User\Desktop\Work\verigate-anna-0.1.13`
 **Current branch:** `feat/anna-0.1.18-executa-0.1.14-hardening`
-**Current verified source commit:** `98d4c23062fd53e58636793623a537efae3ae592`
-**Latest verified commit:** `fix: bind chain attestations to submitted wallet receipts`
+**Current branch HEAD:** `c793f301105d439eb1724b7979c1c5b47830968f`
+**Latest commit:** `fix: align live chain E2E with submitted receipt verification`
 **PR:** https://github.com/rudimentall1/verigate/pull/24 — OPEN, mergeable, NOT merged.
 
-> Current status: the worktree was clean at commit `98d4c230` before the follow-up E2E harness repair. Four local follow-up files are uncommitted: the Arbitrum Sepolia E2E harness, release gate, session checkpoint and threat model. Exact-SHA CI and all four platform artifacts passed on `98d4c230`; artifact hashes and release blockers are recorded in `docs/ANNA-RELEASE-GATE.md`, which is the authoritative detailed release record. All older status statements below are historical and must not be used as current evidence.
+> Current status: branch HEAD is `c793f30` and the worktree is clean. PR #24 merged `98d4c230` into `integrate/anna-0.1.9-mainline`; `c793f30` is a post-merge harness/docs follow-up and is not in that merge. CI run `42466074557` is running on `c793f30`. The four-platform packages in workflow `42465587818` were built on `98d4c230`; rerun the binary workflow on the final follow-up commit before release. `docs/ANNA-RELEASE-GATE.md` is the authoritative detailed release record. All older status statements below are historical and must not be used as current evidence.
 
 ## 1. User requirements that must not be lost
 

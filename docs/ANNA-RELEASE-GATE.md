@@ -5,9 +5,11 @@
 This block is the source of truth for the current candidate. Everything after `## Historical baseline` is retained as historical context and must not override this section.
 
 - Repository: `rudimentall1/verigate`; branch: `feat/anna-0.1.18-executa-0.1.14-hardening`.
-- Source commit used for the latest green CI and four-platform package build: `98d4c23062fd53e58636793623a537efae3ae592` (`fix: bind chain attestations to submitted wallet receipts`).
-- PR #24: OPEN, not merged. Base branch is `integrate/anna-0.1.9-mainline`; do not merge blindly because mainline history diverges substantially.
-- Current local worktree contains four uncommitted follow-up files: the Arbitrum Sepolia E2E harness plus this release gate, the session checkpoint and threat model. The harness fix uses the current verifier constructor, pins the test signer address, waits for explicit confirmation depth and preserves the original signed `SUBMITTED` receipt. These follow-ups are not part of commit `98d4c230` or its artifacts yet.
+- Latest product/runtime commit: `98d4c23062fd53e58636793623a537efae3ae592` (`fix: bind chain attestations to submitted wallet receipts`).
+- PR #24 was merged by `rudimentall1` at 2026-11-08 09:09:51 UTC as merge commit `eb53d1927f16c76ac6cb96cfa93d861fc30c2ff4`; it included `98d4c230`.
+- Follow-up commit `c793f301105d439eb1724b7979c1c5b47830968f` is pushed to the same feature branch after PR #24 merged. It fixes the Arbitrum Sepolia E2E harness and updates release/security docs; it is not included in merge commit `eb53d19` and needs a separate follow-up PR.
+- Exact-SHA CI for `c793f30` is running as [42466074557](https://github.com/rudimentall1/verigate/actions/runs/42466074557); `contracts` has passed, `test` and `anna-ui` were still running at the last check.
+- The four-platform artifacts listed below were built from parent runtime commit `98d4c230`, not follow-up commit `c793f30`. The follow-up changes do not modify bundled Anna Executa runtime sources, but the binary workflow must still be rerun against the final follow-up commit before release claims are frozen.
 - Candidate versions: Anna App `0.1.18`; Executa `0.1.14`. No Anna upload/cut/review submission/Marketplace release and no GitHub Release has been made.
 
 ### Verified source and runtime checks on `98d4c230`
@@ -19,9 +21,9 @@ This block is the source of truth for the current candidate. Everything after `#
 - Anna schema-4 validation with `@anna-ai/cli@0.1.64 validate --strict`: passed.
 - GitHub CI run [42465006187](https://github.com/rudimentall1/verigate/actions/runs/42465006187): `test`, `contracts`, and `anna-ui` all passed on exact SHA `98d4c230`.
 
-### Four-platform Executa artifacts ? exact SHA `98d4c230`
+### Four-platform Executa artifacts ? build SHA `98d4c230` (parent of follow-up harness/docs commit)
 
-Workflow [42465587818](https://github.com/rudimentall1/verigate/actions/runs/42465587818) completed successfully. All four platform jobs built, packaged, extracted and smoke-tested; the `release` job was **skipped** because `publish_release=false`.
+Workflow [42465587818](https://github.com/rudimentall1/verigate/actions/runs/42465587818) completed successfully on `98d4c230`. All four platform jobs built, packaged, extracted and smoke-tested; the `release` job was **skipped** because `publish_release=false`. These hashes are valid for that build SHA, not proof of a package workflow on `c793f30`.
 
 | Platform | Package SHA-256 | GitHub artifact ID |
 |---|---|---:|
