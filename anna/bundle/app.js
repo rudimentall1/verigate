@@ -714,6 +714,16 @@ async function checkAuthority() {
     envelope.verification = await verifyDecisionReceipt(envelope.receipt);
     const previewIntent = envelope.receipt?.payload?.intent;
     const expectedAgentLabel = normalizeAgentLabel(values.agent_id);
+    const signedIntentMatchesForm = Boolean(previewIntent) &&
+      previewIntent.action_type === "payment" &&
+      previewIntent.target === values.payee &&
+      String(previewIntent.asset || "").toUpperCase() === values.asset.toUpperCase() &&
+      String(previewIntent.network || "").toLowerCase() === values.network.toLowerCase() &&
+      Number(previewIntent.amount) === values.amount &&
+      String(previewIntent.resource || "") === String(values.resource || "");
+    if (!signedIntentMatchesForm) {
+      throw new Error("The signed Decision Receipt does not match the current recipient, asset, network, amount and resource fields. No decision or execution permission will be shown.");
+    }
     if (previewIntent?.metadata?.anna_agent_label !== expectedAgentLabel ||
         previewIntent?.metadata?.anna_accounting_scope !== "issuer_installation" ||
         typeof previewIntent?.agent_id !== "string" ||
@@ -1236,7 +1246,7 @@ async function executeWithConnectedWallet() {
     $("execution-status").textContent =
       "Verigate stored a signed SUBMITTED ExecutionReceipt for " + submittedTxHash +
       ". This is executor self-report, not on-chain confirmation. Explorer: " + networkConfig.explorer + submittedTxHash;
-    setBusy(false, "Wallet submission and signed executor receipt recorded. Waiting for independent on-chain verification.");
+    setBusy(false, "Wallet submission recorded as SUBMITTED. This app has not independently verified on-chain inclusion or finality.");
   } catch (error) {
     if (consumed) {
       state.lastExecutionAuthorization = null;
