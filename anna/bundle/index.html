@@ -173,7 +173,7 @@
           <button id="approval-accept" class="primary" type="button">Confirm</button>
         </div>
       </dialog>
-      <p class="fineprint">The first check is a non-persistent preview. For native USDC on Base/Ethereum, the user can explicitly issue a one-time permission, consume it through ExecutionRouter and then sign the exact transfer in an injected wallet. Verigate never sees the wallet private key. Solana is not yet enabled for wallet submission. WARN and BLOCK never receive execution authority.</p>
+      <p class="fineprint">The first check is a non-persistent preview. For native USDC on Base/Ethereum, the user can explicitly issue a one-time permission, consume it through ExecutionRouter and then sign the exact transfer in an injected wallet. Verigate never sees the wallet private key. Solana is not yet enabled for wallet submission. BLOCK never receives execution authority. WARN may receive a one-time permission only after separate confirmation of the exact warning rules and only within the current dynamic authority limit.</p>
     </main>
     <script src="anna-tool-ids.js"></script>
     <script type="module" src="app.js"></script>
