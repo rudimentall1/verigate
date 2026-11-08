@@ -159,19 +159,30 @@ def canonical_digest(payload: dict[str, Any]) -> str:
 
 
 def authority_ceiling_allows(
-    static_limit: float | Decimal | str,
-    multiplier: float | Decimal | str,
-    requested_amount: float | Decimal | str,
+    static_limit: object,
+    multiplier: object,
+    requested_amount: object,
 ) -> bool:
-    """Enforce the Genesis invariant without rounding exact monetary inputs."""
-    try:
-        limit = Decimal(str(static_limit))
-        factor = Decimal(str(multiplier))
-        requested = Decimal(str(requested_amount))
-    except (InvalidOperation, ValueError, TypeError):
+    """Enforce that dynamic authority never widens scope.
+
+    JSON may carry monetary values as decimal strings. Normalize with Decimal
+    rather than binary-float arithmetic. Invalid, boolean, null and non-finite
+    values fail closed.
+    """
+    def finite_decimal(value: object) -> Decimal | None:
+        if isinstance(value, bool) or value is None:
+            return None
+        try:
+            number = value if isinstance(value, Decimal) else Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+        return number if number.is_finite() else None
+
+    limit = finite_decimal(static_limit)
+    factor = finite_decimal(multiplier)
+    amount = finite_decimal(requested_amount)
+    if limit is None or factor is None or amount is None:
         return False
-    if not all(value.is_finite() for value in (limit, factor, requested)):
+    if limit < 0 or factor < 0 or factor > 1 or amount < 0:
         return False
-    if limit < 0 or factor < 0 or factor > 1 or requested < 0:
-        return False
-    return requested <= limit * factor
+    return amount <= limit * factor

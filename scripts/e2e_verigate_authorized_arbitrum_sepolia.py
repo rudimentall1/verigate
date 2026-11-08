@@ -1,6 +1,10 @@
 from __future__ import annotations
-import argparse, base64, hashlib, json, os, subprocess, tempfile
+import argparse, base64, hashlib, json, os, subprocess, tempfile, sys, time
 from pathlib import Path
+
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
 from cryptography.hazmat.primitives import serialization
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.engine import GuardrailEngine
@@ -17,7 +21,6 @@ from enforcement.external_state import EVMExternalStateVerifier
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
 
-ROOT=Path(__file__).resolve().parents[1]
 def env(name):
     if os.environ.get(name): return os.environ[name]
     for line in (ROOT/".env").read_text(encoding="utf-8").splitlines():
@@ -35,7 +38,11 @@ def node(script,payload):
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--guard",required=True); ap.add_argument("--oracle",required=True); ap.add_argument("--target",required=True)
+    ap.add_argument("--min-confirmations", type=int, required=True, help="Explicit Arbitrum Sepolia confirmation threshold")
+    ap.add_argument("--confirmation-timeout", type=int, default=300, help="Seconds to wait for the configured confirmation threshold")
     a=ap.parse_args()
+    if a.min_confirmations < 1: raise RuntimeError("--min-confirmations must be positive")
+    if a.confirmation_timeout < 1: raise RuntimeError("--confirmation-timeout must be positive")
     rpc=EvmRpcClient(env("ARB_SEPOLIA_RPC"))
     if rpc.chain_id()!=421614: raise RuntimeError("RPC is not Arbitrum Sepolia")
     slot="0x"+"00"*32; state_value=rpc.get_storage_at(a.oracle,slot).lower()
@@ -79,23 +86,35 @@ external_state_requirements:
             if auth is None: raise RuntimeError("ExecutionAuthorization was not issued")
             reg=ExternalStateVerifierRegistry({"evm.state":EVMExternalStateVerifier(rpc)})
             router=ExecutionRouter(NetworkRegistry(),st,pub,private_key=priv,external_state_registry=reg)
-            submitted=router.execute_with_receipt(auth,lambda t:node("broadcast_evm.mjs",{"tx":t}),
-                                                   executor="verigate-evm-signer")
+            broadcast_result={}
+            def broadcast(transaction):
+                result=node("broadcast_evm.mjs",{"tx":transaction})
+                if not isinstance(result,dict) or not isinstance(result.get("from"),str):
+                    raise RuntimeError("trusted testnet broadcaster returned no signer address")
+                broadcast_result.update(result)
+                return result
+            submitted=router.execute_with_receipt(auth,broadcast,executor="verigate-evm-signer")
             if submitted.payload["status"]!="SUBMITTED": raise RuntimeError(submitted.payload.get("error"))
-            txh=submitted.payload["transaction_ref"]; confirmation=rpc.confirm_transaction(txh)
-            if confirmation["state"]!="CONFIRMED": raise RuntimeError(str(confirmation))
-            confirmed=router.confirm_execution_receipt(submitted.as_dict(),confirmation,executor="verigate-evm-signer")
-            if confirmed is None or confirmed.payload["status"]!="CONFIRMED": raise RuntimeError("receipt confirmation failed")
-            st.update_execution_receipt(confirmed.as_dict())
-            observed=EVMChainVerifier().verify_receipt(auth,rpc,transaction_hash=txh,
-                                                       evidence_ref=f"arbitrum-sepolia:{txh}")
+            txh=submitted.payload["transaction_ref"]
+            if broadcast_result.get("transaction_hash", "").lower()!=txh.lower():
+                raise RuntimeError("broadcaster hash does not match signed SUBMITTED receipt")
+            sender=broadcast_result["from"]
+            verifier=EVMChainVerifier(expected_sender=sender,min_confirmations=a.min_confirmations)
+            deadline=time.monotonic()+a.confirmation_timeout
+            while True:
+                observed=verifier.verify_receipt(auth,rpc,transaction_hash=txh,
+                                                  evidence_ref=f"arbitrum-sepolia:{txh}")
+                if observed.effect_status!="UNKNOWN": break
+                if time.monotonic()>=deadline:
+                    raise TimeoutError("transaction did not reach the configured confirmation threshold before timeout")
+                time.sleep(2)
             if observed.effect_status!="SUCCEEDED": raise RuntimeError(str(observed.as_dict()))
             attp=root/"attestor.key"; atpub=root/"attestor.pub"; generate_keypair(attp,atpub)
             atpriv,atpubkey=load_private_key(attp),load_public_key(atpub)
             atb64=base64.b64encode(atpubkey.public_bytes(serialization.Encoding.Raw,serialization.PublicFormat.Raw)).decode()
             svc=OutcomeAttestationService(st,pub)
             svc.register_attestor(attestor_id="live-arbitrum-chain-verifier",public_key_b64=atb64,attestor_type="CHAIN_VERIFIER")
-            claim=build_outcome_claim(confirmed.as_dict(),status="SUCCEEDED",executor_id="verigate-evm-signer",
+            claim=build_outcome_claim(submitted.as_dict(),status="SUCCEEDED",executor_id="verigate-evm-signer",
                 evidence_kind=observed.evidence_kind,evidence_ref=observed.evidence_ref,result_sha256=observed.result_sha256,observed_effect=observed.as_dict(),
                 observed_at=observed.observed_at,metadata={"chain_observation":observed.as_dict()})
             att=build_outcome_attestation(claim,attestor_id="live-arbitrum-chain-verifier",
@@ -108,7 +127,7 @@ external_state_requirements:
             print(json.dumps({"ok":True,"chain_id":421614,"authorization_id":auth["payload"]["authorization_id"],
                 "intent_id":auth["payload"]["intent_id"],"execution_authorization_issued":True,
                 "external_state_verified":True,"execution_boundary":"ExecutionRouter -> EVMExecutionAdapter.execute_bound -> VerigateAtomicStateGuard",
-                "transaction_hash":txh,"execution_receipt_status":confirmed.payload["status"],
+                "transaction_hash":txh,"execution_receipt_status":submitted.payload["status"],
                 "chain_effect_status":observed.effect_status,"chain_evidence_kind":observed.evidence_kind,
                 "outcome_attestation_id":out["attestation_id"],"authority_event":out["authority_event"]["event_type"],
                 "evidence_nodes":len(graph["nodes"]),"evidence_edges":len(graph["edges"]),

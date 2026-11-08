@@ -6,6 +6,11 @@ The engine is the single owner of the evaluate -> persist flow.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import replace
+import math
+import time
+
 from . import rules as R
 from .models import ActionIntent, Decision, GuardrailDecision, PaymentIntent, RuleMatch, Severity
 from .policy import Policy
@@ -104,92 +109,111 @@ class GuardrailEngine:
         )
         return artifacts
 
-    def evaluate(self, intent: PaymentIntent) -> GuardrailDecision:
-        """Evaluate and persist one payment atomically.
-
-        The transaction covers:
-        1. state reads used by policy rules;
-        2. final decision calculation;
-        3. audit recording.
-
-        BLOCK attempts are recorded for rate limiting but are excluded from
-        spend and first-seen-payee accounting by Storage.
-        """
+    def evaluate(
+        self,
+        intent: PaymentIntent,
+        *,
+        advisory: Sequence[RuleMatch] = (),
+        persist: bool = True,
+    ) -> GuardrailDecision:
+        """Evaluate and persist one payment atomically."""
         with self.storage.transaction():
-            matches: list[RuleMatch] = []
-
-            for check in (
-                R.check_blocked_payee,
-                R.check_payee_allowlist,
-                R.check_network_allowed,
-                R.check_asset_allowed,
-                R.check_per_tx_cap,
-            ):
-                match = check(intent, self.policy)
-                if match:
-                    matches.append(match)
-
-            payee_seen = self.storage.payee_seen_before(
-                intent.agent_id,
-                intent.payee,
-                intent.intent_id,
-            )
-
-            match = R.check_new_payee_cap(
+            return self._evaluate_in_transaction(
                 intent,
-                self.policy,
-                payee_seen,
+                advisory=advisory,
+                persist=persist,
             )
+
+    def _evaluate_in_transaction(
+        self,
+        intent: PaymentIntent,
+        *,
+        advisory: Sequence[RuleMatch] = (),
+        persist: bool = True,
+    ) -> GuardrailDecision:
+        """Evaluate while the caller owns Storage.transaction().
+
+        State reads, decision calculation and optional audit recording must share
+        one BEGIN IMMEDIATE transaction. This helper never commits on its own.
+        """
+        matches: list[RuleMatch] = []
+
+        for check in (
+            R.check_payee_format,
+            R.check_positive_amount,
+            R.check_blocked_payee,
+            R.check_payee_allowlist,
+            R.check_network_allowed,
+            R.check_asset_allowed,
+            R.check_per_tx_cap,
+        ):
+            match = check(intent, self.policy)
             if match:
                 matches.append(match)
 
-            spent_today = self.storage.spent_today(
-                intent.agent_id,
-                intent.asset,
-            )
+        payee_seen = self.storage.payee_seen_before(
+            intent.agent_id,
+            intent.payee,
+            intent.intent_id,
+        )
 
-            match = R.check_daily_cap(
-                intent,
-                self.policy,
-                spent_today,
-            )
-            if match:
-                matches.append(match)
+        match = R.check_new_payee_cap(
+            intent,
+            self.policy,
+            payee_seen,
+        )
+        if match:
+            matches.append(match)
 
-            match = R.check_confirmation_threshold(
-                intent,
-                self.policy,
-            )
-            if match:
-                matches.append(match)
+        spent_today = self.storage.spent_today(
+            intent.agent_id,
+            intent.asset,
+        )
 
-            calls = self.storage.calls_last_minute(intent.agent_id)
+        match = R.check_daily_cap(
+            intent,
+            self.policy,
+            spent_today,
+        )
+        if match:
+            matches.append(match)
 
-            match = R.check_rate_limit(
-                self.policy,
-                calls,
-            )
-            if match:
-                matches.append(match)
+        match = R.check_confirmation_threshold(
+            intent,
+            self.policy,
+        )
+        if match:
+            matches.append(match)
 
-            if any(match.severity == Severity.BLOCK for match in matches):
-                final = Decision.BLOCK
-            elif any(match.severity == Severity.WARN for match in matches):
-                final = Decision.WARN
-            else:
-                final = Decision.ALLOW
+        calls = self.storage.calls_last_minute(intent.agent_id)
 
-            decision = GuardrailDecision(
-                intent_id=intent.intent_id,
-                agent_id=intent.agent_id,
-                decision=final,
-                matched_rules=tuple(matches),
-                context_digest=intent.context_digest,
-            )
+        match = R.check_rate_limit(
+            self.policy,
+            calls,
+        )
+        if match:
+            matches.append(match)
 
-            # IMPORTANT:
-            # evaluate() is now responsible for exactly one audit record.
-            # Callers must NOT call storage.record() again.
+        # Advisory input can add scrutiny only. It cannot grant authority.
+        matches.extend(m for m in advisory if m.severity == Severity.WARN)
+
+        if any(match.severity == Severity.BLOCK for match in matches):
+            final = Decision.BLOCK
+        elif any(match.severity == Severity.WARN for match in matches):
+            final = Decision.WARN
+        else:
+            final = Decision.ALLOW
+
+        decision = GuardrailDecision(
+            intent_id=intent.intent_id,
+            agent_id=intent.agent_id,
+            decision=final,
+            matched_rules=tuple(matches),
+            context_digest=intent.context_digest,
+        )
+
+        # This method writes at most one audit row and only when persist=True.
+        if persist:
             self.storage.record(
                 intent,
                 decision,
@@ -197,7 +221,7 @@ class GuardrailEngine:
                 commit=False,
             )
 
-            return decision
+        return decision
 
 
     def evaluate_action(self, action: ActionIntent) -> GuardrailDecision:
@@ -370,14 +394,21 @@ class GuardrailEngine:
             agent_signature=agent_signature,
         )
 
-    def authorize(self, intent: PaymentIntent, private_key) -> dict:
+    def authorize(
+        self,
+        intent: PaymentIntent,
+        private_key,
+        *,
+        advisory: Sequence[RuleMatch] = (),
+        persist: bool = True,
+    ) -> dict:
         """Legacy payment decision endpoint; never mints execution authority.
 
         Executable authorization requires an explicit capability-bound control
         plane path via ``authorize_with_capability`` or ``authorize_with_identity``.
         """
         action = intent.as_action_intent()
-        decision = self.evaluate(intent)
+        decision = self.evaluate(intent, advisory=advisory, persist=persist)
         artifacts = AuthorizationService().issue_decision_receipt(
             action,
             decision,
@@ -385,6 +416,9 @@ class GuardrailEngine:
             private_key,
             signed_policy=self.signed_policy_version(private_key),
         )
+        if not persist:
+            # Simulation: the signed receipt is returned but nothing is recorded.
+            return artifacts
         return self._persist_authorization(artifacts, intent.intent_id)
 
     def authorize_with_capability(
@@ -392,13 +426,115 @@ class GuardrailEngine:
         intent: PaymentIntent,
         capability_id: str,
         private_key,
+        *,
+        advisory: Sequence[RuleMatch] = (),
     ) -> dict:
         """Payment adapter with explicit static/dynamic authority binding."""
         return self._authorize_control_plane(
             intent.as_action_intent(),
             private_key,
             capability_id=capability_id,
-            decision=self.evaluate(intent),
+            decision=self.evaluate(intent, advisory=advisory),
+        )
+
+    def authorize_with_capability_after_warning_review(
+        self,
+        intent: PaymentIntent,
+        capability_id: str,
+        private_key,
+        *,
+        review_evidence: dict,
+        advisory: Sequence[RuleMatch] = (),
+    ) -> dict:
+        """Convert a fresh WARN into ALLOW only after exact, short-lived UI review.
+
+        The integration layer must first consume an app-scoped one-time approval.
+        This method independently verifies the approval evidence shape, freshness,
+        and exact set of warning rule IDs against a fresh policy evaluation.
+        BLOCK is never overridable; capability and dynamic authority checks remain
+        in the normal authorization control plane.
+        """
+        if not isinstance(review_evidence, dict):
+            raise PermissionError("warning review evidence is required")
+        if review_evidence.get("source") != "anna-app-scoped-one-time-warning-review":
+            raise PermissionError("warning review source is not trusted")
+        reviewed_rule_ids = review_evidence.get("reviewed_rule_ids")
+        if (
+            not isinstance(reviewed_rule_ids, list)
+            or not reviewed_rule_ids
+            or any(not isinstance(item, str) or not item for item in reviewed_rule_ids)
+            or len(set(reviewed_rule_ids)) != len(reviewed_rule_ids)
+        ):
+            raise PermissionError("warning review must identify unique reviewed rule IDs")
+
+        nonce_digest = review_evidence.get("approval_nonce_sha256")
+        if (
+            not isinstance(nonce_digest, str)
+            or len(nonce_digest) != 64
+            or any(c not in "0123456789abcdef" for c in nonce_digest)
+        ):
+            raise PermissionError("warning review nonce fingerprint is invalid")
+        confirmed_at = review_evidence.get("confirmed_at")
+        if (
+            isinstance(confirmed_at, bool)
+            or not isinstance(confirmed_at, (int, float))
+            or not math.isfinite(float(confirmed_at))
+        ):
+            raise PermissionError("warning review timestamp is invalid")
+        age = time.time() - float(confirmed_at)
+        if age < -5.0 or age > 60.0:
+            raise PermissionError("warning review is expired or outside its 60-second validity window")
+
+        metadata = dict(intent.metadata or {})
+        metadata["anna_warning_review"] = dict(review_evidence)
+        reviewed_intent = replace(intent, metadata=metadata)
+
+        expected_rule_ids = sorted(reviewed_rule_ids)
+        # Fresh policy reads, WARN/BLOCK evaluation and the resolved ALLOW audit
+        # write share one BEGIN IMMEDIATE transaction. Parallel reviews cannot
+        # observe the same pre-cap spend before either records its approved amount.
+        with self.storage.transaction():
+            age = time.time() - float(confirmed_at)
+            if age < -5.0 or age > 60.0:
+                raise PermissionError("warning review expired while waiting for the policy transaction")
+            fresh = self._evaluate_in_transaction(
+                reviewed_intent,
+                advisory=advisory,
+                persist=False,
+            )
+            if fresh.decision != Decision.WARN:
+                raise PermissionError(
+                    f"fresh policy decision is {fresh.decision.value}; no warning override is applicable"
+                )
+            current_rule_ids = sorted({
+                match.rule_id for match in fresh.matched_rules
+                if match.severity == Severity.WARN
+            })
+            if current_rule_ids != expected_rule_ids:
+                raise PermissionError(
+                    "reviewed warning rules do not match the fresh policy result; run the check again"
+                )
+
+            approved = GuardrailDecision(
+                intent_id=fresh.intent_id,
+                agent_id=fresh.agent_id,
+                decision=Decision.ALLOW,
+                matched_rules=fresh.matched_rules,
+                context_digest=fresh.context_digest,
+                evaluated_at=fresh.evaluated_at,
+            )
+            self.storage.record(
+                reviewed_intent,
+                approved,
+                signature=None,
+                commit=False,
+            )
+
+        return self._authorize_control_plane(
+            reviewed_intent.as_action_intent(),
+            private_key,
+            capability_id=capability_id,
+            decision=approved,
         )
 
     def authorize_with_identity(

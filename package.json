@@ -2,6 +2,7 @@
   "name": "verigate-contract-tooling",
   "private": true,
   "scripts": {
+    "test:anna-ui": "node scripts/test_anna_ui.mjs",
     "test:atomic": "node scripts/e2e_atomic_state.mjs",
     "test:atomic:arb": "node scripts/e2e_atomic_state_arbitrum_sepolia.mjs",
     "test:guard": "node scripts/test_guard_access_control.mjs"
@@ -9,6 +10,7 @@
   "devDependencies": {
     "ethers": "^6.17.0",
     "ganache": "^7.9.2",
+    "jsdom": "^26.1.0",
     "solc": "^0.8.37"
   }
 }

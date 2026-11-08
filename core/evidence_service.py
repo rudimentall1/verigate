@@ -1,7 +1,8 @@
 """Persistent Evidence Graph service.
 
-Graph snapshots are immutable, content-addressed records of the provenance
-view at a point in time. Rebuilding a graph does not mutate an older snapshot.
+Graph snapshots are immutable, digest-verified records of the provenance
+view at a point in time. Repeated captures remain separate history entries,
+even when the underlying graph content has not changed.
 """
 from __future__ import annotations
 

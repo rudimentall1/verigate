@@ -139,7 +139,7 @@ class ActionIntent:
             "target": self.target,
             "resource": self.resource,
             "amount": (format(self.amount, "f") if isinstance(self.amount, Decimal) else self.amount),
-            "amount_exact": self.amount_exact,
+            "amount_exact": (format(self.exact_amount, "f") if self.exact_amount is not None else None),
             "asset": self.asset,
             "network": self.network,
             "purpose": self.purpose,
