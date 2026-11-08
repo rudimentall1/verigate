@@ -1,13 +1,15 @@
-# Verigate Authority ? current session checkpoint
+# Verigate Authority — latest checkpoint 2026-11-08
+
+> The older notes below are historical. The authoritative App/review/Executa state is in the latest update appended at the end of this file.
 
 **Updated:** 2026-11-08
 **Repository:** https://github.com/rudimentall1/verigate
 **Active worktree:** `C:\Users\User\verigate-anna-release` (original checkout `C:\Users\User\verigate` untouched)
-**Branch / verified code commit:** `fix/anna-sampling-capability` at `1cc9b64e584b59c15150c550de2eb13b24db8a50` (pushed; GitHub CI run `42492077034` SUCCESS).
-**Current source metadata:** Anna App `anna/app.json` synchronized to `0.1.20`; bundled Executa stays at `0.1.15`.
+**Branch / base commit:** `fix/anna-sampling-capability` at `408a3010b31e138f627dd679ab586d7d0f79d394`. Build reproducibility edits and checkpoint updates described at the end are local-only and uncommitted.
+**Current source metadata:** Anna App `anna/app.json` synchronized locally to `0.1.21`; bundled Executa remains at `0.1.15`.
 **Untracked local tooling:** `_tools/` and `_anna-screen.png`; do not stage them.
 
-## Current Anna platform state (verified using Anna CLI 0.1.64)
+## Prior Anna platform snapshot — superseded by the authoritative update at the end
 
 - App `verigate-authority`, ID `382`: immutable App `0.1.20`, version ID `2047`, now the latest version. Overall app status remains `PENDING_REVIEW` because `0.1.19` / ID `2044` is still pinned in review. App `0.1.20` is NOT submitted for review and NOT Marketplace-released.
 - Bundled Executa `tool-rinat-verigate-authority-2um8gwhw`: version `0.1.15`, version ID `1029`. App `0.1.20` froze this exact Executa version. Four binary artifacts were verified as identical to the previously published content; platform response: `0 uploaded, 4 cached`.
@@ -300,3 +302,74 @@ New/changed surfaces currently present in the worktree:
 - No GitHub Release or PR merge is authorized by this work.
 - Do not stage build outputs, `.anna`, `node_modules`, `.pyinstaller`, or `dist`.
 - Keep all unrelated repositories, services, and workloads untouched.
+
+## Latest authoritative update — 2026-11-08
+
+This section supersedes the older status notes above. Older sections are retained as historical evidence only.
+
+**Current repository state:** branch fix/anna-sampling-capability, HEAD 408a3010b31e138f627dd679ab586d7d0f79d394. Local-only edits now include anna/app.json version synchronization and these two documentation updates. No upload, immutable cut, review resubmission, App release, Executa publish, GitHub Release or PR merge occurred. Keep _tools/ and _anna-screen.png untracked.
+
+### Anna platform
+
+- App verigate-authority, App ID 382: immutable version 0.1.21, version ID 2048. Authenticated CLI confirms pending_review and that 0.1.21 is the pinned review candidate.
+- Bundle ID 1871; 3 files; 82,794 bytes; SHA-256 manifest c54014169c50439bc7331c3d51493bf5dff8de10b67383920626b1c3b03c61fe.
+- published_at is null. The App is not Marketplace-published. No apps release was run.
+- Frozen dependency is production Executa tool-rinat-verigate-authority-2um8gwhw, Executa ID 1164, version 0.1.15, version ID 1029.
+- Local anna/app.json was still 0.1.20 because the last bump used --no-write. It is now synchronized locally to 0.1.21 so a future patch bump starts at 0.1.22. This local metadata change does not mutate the immutable bundle or review pointer.
+- CLI status and versions expose no reviewer comments. Last observed server state remains pending_review; no approval or rejection has been observed.
+
+### Executa 0.1.15 validation
+
+- Focused tests: 59 passed in 11.80s across test_anna_executa_manifest.py, test_anna_execution_authorization.py, test_anna_sampling_roundtrip.py and test_payee_validation.py.
+- The original Windows 0.1.15 artifact cached by Anna was extracted and passed anna/smoke_package.py windows-x86_64 0.1.15. Smoke covered describe, signed ALLOW, direct privileged-call denial, one-time App approval, one-time wallet hand-off and signed SUBMITTED receipt persistence/verification.
+- Original immutable Windows archive SHA-256: 57ee73192da1a75f3abae2a92ddad5bb0073a2722d19bfe5e71607d2ca22cfd6.
+- Four-platform workflow 42501436184 on HEAD 408a3010 completed success. Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel each built, packaged, extracted and passed smoke. Release job skipped because publish_release=false.
+- Important: the newly rebuilt CI packages are not byte-identical to the four existing immutable 0.1.15 artifacts. Do not upload these new files over 0.1.15.
+
+| Platform | Existing immutable 0.1.15 SHA-256 | New CI 42501436184 SHA-256 |
+|---|---|---|
+| Windows x86_64 | 57ee73192da1a75f3abae2a92ddad5bb0073a2722d19bfe5e71607d2ca22cfd6 | eda0e70aa477936125404566617cc3ee0bef989ced2964d22e8ccf9d621e3998 |
+| Linux x86_64 | b029606e0b73d5677b277bb6ee5ca3fa6ab1f5cd42155a12559eca10e272ef8e | 2284cf1a4e68c0bf0f9b8feec65f93a4e34bd4903a70bdab0f698bb437d08b18 |
+| macOS ARM64 | 08a4d3229c9ce467114abebf8f9609c459a1c6789056ee0a7e6a4c36a3bf0904 | 5dbd0abce88361219647eec87ac415266627124d8ac21dd7234a54aa35071366 |
+| macOS Intel x86_64 | c9811701b250f7b95eca5c43af3325c4295564918bfc4ec881f65adfa42f8231 | 227a4209ba5c25c864a888d3374151599b2a6cfde76dc126522584fd4b56c5c8 |
+
+- Executable payloads inside all four new packages also differ; this is not only an outer archive metadata difference. On Windows the PE timestamp differs. The audited plugin/build inputs and Windows build dependency versions (Python 3.11.9, PyInstaller 6.22.3, cryptography 50.0.2) were the same in both workflow runs. This proves a reproducible-build gap, not a source regression.
+- For a future Executa release, set deterministic PyInstaller inputs (PYTHONHASHSEED and SOURCE_DATE_EPOCH), normalize archive metadata, and compare repeated builds from the same commit for all four targets. PyInstaller guidance: https://pyinstaller.org/en/v6.12.0/advanced-topics.html. Do not spend a new immutable version just to fix hashes.
+- Keep the new downloaded CI packages in %TEMP%\verigate-ci-42501436184, not in the repository. The original immutable 0.1.15 packages remain the artifacts frozen by Anna App 0.1.21.
+
+### App verification and limits
+
+- Previously verified local full Python suite after App hardening: 621 passed, 4 skipped. Anna UI E2E: 53/53 passed. These are local tests, not Cloud acceptance.
+- Main CI run 42499285025 passed contracts, test and anna-ui.
+- Sampling round-trip used a fixture-backed host response. It does not prove a real Anna Cloud LLM response.
+- Real Anna Cloud Sampling, platform permission grant, APS persistence/restart and Cloud Agent installation remain unverified because Anna CU quota is exhausted. Do not call Anna Cloud LLM/Sampling or claim live end-to-end AI acceptance.
+- Wallet submission receipt is a signed SUBMITTED executor self-report after a wallet hash return; it is not on-chain confirmation. Governed CHAIN_VERIFIER finality/outcome/reorg handling is not integrated into the standard Anna UI path.
+
+### Next actions
+
+1. Preserve App 0.1.21 as the pinned review candidate. No new App cut or release while review is pending and no reviewer feedback is available.
+2. Do not modify or overwrite Executa 0.1.15 with the mismatching new CI artifacts.
+3. Before a future Executa version, fix reproducibility and compare two builds of the same commit on all four targets.
+4. If reviewers return actionable feedback, patch once, run full Python and UI E2E, inspect the diff, then create one App 0.1.22 and submit that exact version. Keep Cloud limitations explicit.
+
+## Build reproducibility hardening — local changes, not yet in CI
+
+- Updated `anna/package_binary.py` to write deterministic ZIP and TAR.GZ archives: stable entry order, fixed timestamps derived from `SOURCE_DATE_EPOCH`, fixed owner/group IDs and names, normalized modes, no ZIP extra/comment fields, fixed gzip timestamp, and stable compression settings.
+- Updated `.github/workflows/anna-executa-binaries.yml` to export `PYTHONHASHSEED=0` and `SOURCE_DATE_EPOCH` from the checked-out commit timestamp. Added `anna/verify_reproducible_binary.py`: every native CI runner now runs two complete PyInstaller builds and compares SHA-256 before packaging/smoke. A mismatch fails the job. PyInstaller documents these deterministic build controls: https://pyinstaller.org/en/latest/advanced-topics.html.
+- Added reproducibility tests for ZIP and TAR.GZ packaging. The tests change source file mtimes between package runs and assert the resulting archive bytes are identical and member metadata is normalized.
+- Packaging tests + reproducibility-gate tests + smoke-package parser + Executa manifest/auth/Sampling/payee regression set: **74 passed**. Workflow YAML parse: PASS.
+- Full Python suite on the final modified worktree: **626 passed, 4 skipped, 3 upstream deprecation warnings**.
+- Local Windows full PyInstaller build was run twice with the same environment: Python 3.10.11, PyInstaller 6.22.3, `PYTHONHASHSEED=0`, `SOURCE_DATE_EPOCH=1794154754`. Both EXE files had identical SHA-256: `91d17be5a61d4a7206bb7fdada5bf3c87be1cec70e25526255ff6b57ec148191`.
+- A fresh Windows deterministic build then passed `anna/smoke_binary.py <exe> 0.1.15`: describe, signed ALLOW, App-scope approval once, wallet hand-off once, and SUBMITTED receipt persisted/verified.
+- Scope limitation: this is local Windows reproducibility evidence. The new workflow changes have **not** been pushed or run on Linux/macOS yet. Repeat-build equality on Linux x86_64, macOS ARM64 and macOS Intel remains unverified.
+- Existing immutable 0.1.15 platform artifacts and Anna's frozen dependency were not overwritten. The old published hashes remain authoritative; new rebuilds must not be uploaded over version 0.1.15.
+- Local modifications remain uncommitted/unpushed. No immutable Executa version, App version, GitHub Release, review submission or Marketplace release was created.
+
+
+## Cross-platform CI verification gate added — 2026-11-08
+
+- Workflow no longer builds an Executa binary only once. Each native matrix runner now invokes `anna/verify_reproducible_binary.py`, which runs `anna/build_binary.py` twice with the same fixed environment, computes SHA-256 after each full build, and fails closed if they differ. Only after equality does the workflow package and smoke-test the executable.
+- Added regression coverage for missing reproducibility environment, successful equal-hash verification, and mismatch rejection.
+- Final focused regression set: **74 passed**. Full Python suite: **626 passed, 4 skipped, 3 upstream deprecation warnings**.
+- This cross-platform gate is now in the workflow source but is not yet validated by GitHub Actions. CI must run on Windows, Linux, macOS ARM64 and macOS Intel after push.
+- Local Windows two-build equality remains: SHA-256 `91d17be5a61d4a7206bb7fdada5bf3c87be1cec70e25526255ff6b57ec148191`; fresh executable smoke passed.

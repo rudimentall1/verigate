@@ -1,6 +1,8 @@
-# Verigate Authority ? Anna release gate
+# Verigate Authority — latest Anna release gate 2026-11-08
 
-## Current authoritative state ? 2026-11-08
+> The older Current authoritative state below is superseded by the latest update appended at the end of this file.
+
+## Prior authoritative snapshot — superseded by the latest update at the end
 
 ### Anna platform state (verified after upload)
 
@@ -48,7 +50,7 @@
 
 ---
 
-This block is the source of truth for the current candidate. Everything after `## Historical baseline` is retained as historical context and must not override this section.
+This block is a historical snapshot only. The authoritative App/review/Executa/build state is in the latest update at the end of this file.
 
 - Repository: `rudimentall1/verigate`; production branch: `main` at `2daecb7abe3e8c278cc470790afa127995ee0cdd`.
 - PR #27 ([fix: bind Anna decisions to exact signed payment intent](https://github.com/rudimentall1/verigate/pull/27)) was merged with squash commit `2daecb7`. It adds exact signed-intent/form binding, honest WARN/SUBMITTED/wallet-availability copy, one reverse-Sampling call per check, immutable listing asset URLs, and regression coverage.
@@ -328,3 +330,48 @@ Do not mark this gate passed based on local smoke tests or mocked APS responses.
 ## Release decision
 
 A candidate is **source-ready** only when sections 1–4 are green. It is **Anna-ready** only after sections 5–6 pass, including the real Cloud Agent persistence test. Marketplace submission/review/public release is a separate action and must not be performed as part of these checks.
+
+## Latest authoritative update — 2026-11-08
+
+This section supersedes the older Current authoritative state block above, which still described App 0.1.20 and review pointer 0.1.19.
+
+- App verigate-authority, ID 382: immutable App 0.1.21, version ID 2048, bundle ID 1871, 3 files / 82,794 bytes. Bundle SHA-256 manifest: c54014169c50439bc7331c3d51493bf5dff8de10b67383920626b1c3b03c61fe.
+- Authenticated Anna CLI confirms pending_review and 0.1.21 pinned for review. published_at is null; no Marketplace release occurred.
+- Frozen dependency: production Executa ID 1164, version 0.1.15, version ID 1029.
+- Local anna/app.json has been synchronized to 0.1.21 for the next future patch bump; this did not mutate the immutable remote App or review pointer.
+- CLI exposes no reviewer feedback. Current review remains pending.
+
+### Executa evidence and artifact identity gate
+
+- Focused local regression suite: 59/59 passed.
+- The original immutable Windows 0.1.15 archive passed extracted packaged-binary smoke; SHA-256 57ee73192da1a75f3abae2a92ddad5bb0073a2722d19bfe5e71607d2ca22cfd6.
+- Four-platform CI run 42501436184 completed success: Windows, Linux, macOS ARM64 and macOS Intel all built, packaged and passed native-runner smoke; GitHub Release job was skipped.
+- The newly rebuilt packages differ byte-for-byte from the immutable 0.1.15 packages cached by Anna. The hashes are recorded in docs/SESSION-CHECKPOINT.md. Do not upload or overwrite immutable Executa 0.1.15 with the new CI files. The CI run proves source/runtime build-smoke, not exact artifact identity.
+- Before the next Executa cut, set deterministic PyInstaller inputs (PYTHONHASHSEED and SOURCE_DATE_EPOCH), normalize archive metadata, and compare repeat builds of the exact same commit on all four targets. Guidance: https://pyinstaller.org/en/v6.12.0/advanced-topics.html.
+
+### Product and release blockers
+
+- Real Anna Cloud Agent install, live host Sampling, platform Sampling permission and APS persistence/restart remain unverified because Anna CU quota is exhausted. Local mock Sampling is not Cloud acceptance.
+- A signed SUBMITTED ExecutionReceipt records executor self-report after a wallet returns a transaction hash; it is not proof of on-chain inclusion, success or finality. Governed CHAIN_VERIFIER confirmation and reorg handling are not integrated into the normal Anna UI flow.
+- App 0.1.21 remains pending review and unpublished. Do not run apps release before approval.
+- Verigate Authority is a pre-execution gate for the integrated Verigate App/ExecutionRouter path, not a universal wallet firewall.
+
+**Release decision:** preserve App 0.1.21 as the only active review candidate. No new App cut, Executa publish or Marketplace release is justified until review feedback or a real blocking defect is available.
+
+## Additional local build-pipeline work — 2026-11-08
+
+- `package_binary.py` now normalizes ZIP/TAR.GZ metadata using `SOURCE_DATE_EPOCH`; CI config exports fixed `PYTHONHASHSEED=0` and the commit timestamp for PyInstaller. Official PyInstaller reproducible-build guidance documents these inputs: https://pyinstaller.org/en/latest/advanced-topics.html.
+- Added tests that verify repeated packaging of the same binary is byte-identical despite different source file mtimes, and that the CI reproducibility gate builds twice and fails closed on hash mismatch. Relevant focused set: **74 passed**; workflow YAML parse passed.
+- Full Python suite after this change: **626 passed, 4 skipped**.
+- Two complete local Windows PyInstaller builds with identical environment produced identical binary SHA-256 `91d17be5a61d4a7206bb7fdada5bf3c87be1cec70e25526255ff6b57ec148191`. A subsequent fresh Windows build also passed the packaged Executa smoke protocol.
+- Linux and macOS repeat-build identity has not yet been run against these local changes. Require a new CI run after authorized push before considering the reproducibility fix cross-platform verified.
+- This work does not change the Executa runtime version, the Anna App bundle, or the frozen production 0.1.15 dependency.
+
+
+## Cross-platform CI verification gate added — 2026-11-08
+
+- Workflow no longer builds an Executa binary only once. Each native matrix runner now invokes `anna/verify_reproducible_binary.py`, which runs `anna/build_binary.py` twice with the same fixed environment, computes SHA-256 after each full build, and fails closed if they differ. Only after equality does the workflow package and smoke-test the executable.
+- Added regression coverage for missing reproducibility environment, successful equal-hash verification, and mismatch rejection.
+- Final focused regression set: **74 passed**. Full Python suite: **626 passed, 4 skipped, 3 upstream deprecation warnings**.
+- This cross-platform gate is now in the workflow source but is not yet validated by GitHub Actions. CI must run on Windows, Linux, macOS ARM64 and macOS Intel after push.
+- Local Windows two-build equality remains: SHA-256 `91d17be5a61d4a7206bb7fdada5bf3c87be1cec70e25526255ff6b57ec148191`; fresh executable smoke passed.

@@ -48,6 +48,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Configure reproducible build environment
+        shell: bash
+        run: |
+          echo "PYTHONHASHSEED=0" >> "$GITHUB_ENV"
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
       - name: Configure static OpenSSL for Intel macOS
         if: matrix.target == 'darwin-x86_64'
         shell: bash
@@ -60,8 +66,8 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pyinstaller
 
-      - name: Build frozen Executa
-        run: python anna/build_binary.py
+      - name: Build twice and verify binary reproducibility
+        run: python anna/verify_reproducible_binary.py
 
       - name: Package binary
         run: python anna/package_binary.py "${{ matrix.target }}" "${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.15' }}"
