@@ -52,7 +52,7 @@ function callPlugin(method, args, { appStorage = new Map(), appContext = true, s
             : JSON.stringify({ explanation: "Plain explanation.", what_could_change: null });
         }
         if (out instanceof Error) {
-          send({ jsonrpc: "2.0", id: msg.id, error: { code: -32003, message: out.message } });
+          send({ jsonrpc: "2.0", id: msg.id, error: { code: Number.isInteger(out.code) ? out.code : -32003, message: out.message } });
         } else if (typeof out === "string") {
           send({
             jsonrpc: "2.0", id: msg.id,
@@ -147,7 +147,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows) {
@@ -173,11 +173,16 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
         return { etag };
       },
     },
-    tools: {
+    tools: toolsMissing ? {} : {
       invoke: async ({ method, args }) => {
         if (method === "verigate_ai_review") {
           calls.llm += 1;
           calls.sampling.push(args);
+          if (aiReviewInvokeFails) {
+            const error = new Error("Anna Executa AI review invocation rejected after session refresh");
+            error.status = 401;
+            throw error;
+          }
         } else {
           calls.tools.push(method);
         }
@@ -495,6 +500,24 @@ await test("Anna policy-summary 401 is surfaced instead of silently ignored", as
   eq(ui.calls.tools.includes("verigate_check"), false, "policy evaluation does not proceed after host authorization failure");
 });
 
+await test("missing Anna Executa tool is surfaced and never treated as an LLM outage", async () => {
+  const ui = await launch({ toolsMissing: true });
+  await ui.click();
+  ok(ui.shown("error"), "missing tool integration is visible");
+  ok(ui.text("error").includes("Anna Executa is not available in this session"), "the missing runtime tool is named precisely");
+  eq(ui.calls.tools.length, 0, "no policy-only preview runs without the required Executa tool");
+  eq(ui.text("decision"), "", "no decision is shown when the Executa tool is absent");
+});
+
+await test("Anna AI tool invocation 401 is surfaced and never downgraded to a policy-only preview", async () => {
+  const ui = await launch({ aiReviewInvokeFails: true });
+  await ui.click();
+  ok(ui.shown("error"), "AI tool invocation failure is visible");
+  ok(ui.text("error").includes("Anna Executa AI review invocation rejected after session refresh"), "original host error is preserved");
+  eq(ui.calls.tools.length, 0, "no deterministic preview runs after an invocation/authorization failure");
+  eq(ui.text("decision"), "", "no decision is shown from a failed AI invocation");
+});
+
 await test("Anna policy-summary 401 returned in an error envelope is surfaced instead of ignored", async () => {
   const ui = await launch({ policySummaryReturnsError: true });
   await ui.click();
@@ -778,6 +801,25 @@ await test("prompt-injection flag escalates ALLOW to WARN but never lowers anyth
   eq(bad.text("decision"), "BLOCK");
 });
 
+await test("free-form wording and arbitrary decimal amount reach Anna without lexical gates", async () => {
+  const descriptions = [
+    "\u0421\u043a\u0438\u043d\u044c \u043f\u043b\u0438\u0437 123.456789 USDC \u043d\u0430 Base, \u044d\u0442\u043e \u0437\u0430 \u0438\u043d\u0432\u043e\u0439\u0441 \u21161042",
+    "pls settle the invoice - amount is 123.456789 USDC, recipient " + VALID,
+    "\u043e\u043f\u043b\u0430\u0442\u0438\t\u0441\u0447\u0451\u0442!!! \u0441\u0443\u043c\u043c\u0430 123.456789 USDC; \u043f\u043e\u043b\u0443\u0447\u0430\u0442\u0435\u043b\u044c " + VALID,
+  ];
+  for (const description of descriptions) {
+    const ui = await launch({
+      description,
+      interpret: interpretJson({ ...GOOD, amount: 123.456789, summary: "Parsed free-form payment request" }),
+    });
+    await ui.click();
+    eq(ui.calls.llm, 1, "every free-form phrase is sent to Anna for semantic interpretation");
+    ok(ui.calls.sampling[0].prompt.includes(description), "the complete original request reaches Sampling unchanged");
+    eq(ui.calls.toolArgs.verigate_check.amount, 123.456789, "arbitrary decimal amount is preserved exactly");
+    ok(["ALLOW", "WARN"].includes(ui.text("decision")), "valid amount is evaluated by policy, not a phrase/amount allowlist");
+  }
+});
+
 await test("limits: 300 USDC is WARN, 600 USDC is BLOCK", async () => {
   const a = await launch({ interpret: interpretJson({ ...GOOD, amount: 300 }) });
   await a.click(); eq(a.text("decision"), "WARN");
@@ -800,16 +842,17 @@ await test("LLM unavailable: explicit fields still get a policy-only preview, ne
   ui.set("amount", "25");
   await ui.click();
   eq(ui.text("decision"), "ALLOW");
-  ok(ui.text("ai-review-summary").includes("was not performed"), "missing AI review is disclosed");
+  ok(ui.text("ai-review-summary").includes("no AI contextual risk review was performed"), "missing AI review is disclosed");
+  ok(ui.text("ai-review-summary").includes("[-32003] LLM down"), "the exact Sampling error code and reason are visible instead of being hidden by the policy-only fallback");
   ok(ui.text("ai-flags").includes("No AI contextual risk assessment"), "no AI safety claim is made");
   eq(ui.calls.tools.includes("verigate_check"), true, "deterministic Verigate policy still runs");
   eq(ui.$("execution-btn").disabled, true, "execution permission stays disabled without AI review");
   eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no authorization is issued");
 });
 
-await test("Anna LLM refresh 401: policy-only preview works but execution stays disabled", async () => {
-  const authError = new Error("HTTP 401 while refreshing Anna session");
-  authError.status = 401;
+await test("Anna Sampling grant denial: policy-only preview reports missing llm.sample permission and stays non-executable", async () => {
+  const authError = new Error("Anna host has not granted llm.sample to this Executa");
+  authError.code = -32001;
   const ui = await launch({ interpret: authError });
   ui.set("target", VALID);
   ui.set("asset", "USDC");
@@ -817,7 +860,8 @@ await test("Anna LLM refresh 401: policy-only preview works but execution stays 
   ui.set("amount", "25");
   await ui.click();
   eq(ui.text("decision"), "ALLOW");
-  ok(ui.text("ai-review-summary").includes("was not performed"), "401 does not pretend AI review succeeded");
+  ok(ui.text("ai-review-summary").includes("no AI contextual risk review was performed"), "provider failure does not pretend AI review succeeded");
+  ok(ui.text("ai-review-summary").includes("[-32001] Anna host has not granted llm.sample to this Executa"), "the exact missing Sampling grant is preserved for diagnosis");
   eq(ui.$("execution-btn").disabled, true, "401 never unlocks execution authority");
   eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no authorization is issued");
 });

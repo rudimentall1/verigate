@@ -118,7 +118,7 @@ function getTextFromCompletion(reply) {
 async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
   if (!state.anna?.tools?.invoke) {
     const error = new Error("Anna Executa is not available in this session. Open Verigate from the Anna app runtime and try again.");
-    error.annaLlmUnavailable = true;
+    error.annaInvocationFailure = true;
     throw error;
   }
 
@@ -136,8 +136,13 @@ async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
       }
     });
   } catch (cause) {
+    // Do not turn every invocation failure into an apparent LLM outage.
+    // Permission, missing-tool, transport and runtime errors must remain visible
+    // so operators can distinguish a capability/installation problem from a
+    // genuine Sampling-unavailable response. Only the explicit host response
+    // below may enable the clearly labelled policy-only preview.
     const error = cause instanceof Error ? cause : new Error(String(cause));
-    error.annaLlmUnavailable = true;
+    error.annaInvocationFailure = true;
     throw error;
   }
 
@@ -145,7 +150,9 @@ async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
   if (outer?.success !== true) {
     const detail = typeof outer?.error === "string"
       ? outer.error
-      : outer?.error?.message || "Anna Sampling is unavailable or the host rejected the request.";
+      : outer?.error?.message
+        ? (outer.error.code !== undefined ? `[${outer.error.code}] ` : "") + outer.error.message
+        : "Anna Sampling is unavailable or the host rejected the request.";
     const error = new Error(detail);
     // A malformed successful envelope must remain an explicit error; only a
     // host/Sampling outage permits the clearly labelled policy-only preview.
@@ -232,7 +239,7 @@ function prettyRule(rule) {
 
 const READ_FAILURE = "Anna AI's answer could not be read (this happens occasionally). Press \"Check with Anna AI\" again, or rephrase the request with the recipient, asset, network and amount.";
 
-function manualInterpretation() {
+function manualInterpretation(reason = "") {
   // LLM is optional for a policy preview. In manual mode we use only explicit
   // form values; we never infer payment fields from free text or claim an AI review.
   const fields = {
@@ -245,7 +252,7 @@ function manualInterpretation() {
   };
   return {
     fields, questions: [], ambiguities: [], flags: [], aiAvailable: false,
-    summary: "Anna AI is unavailable. Verigate will check only the values entered explicitly below; no AI contextual risk review was performed."
+    summary: "Anna AI is unavailable" + (reason ? ": " + clip(reason, 180) : "") + ". Verigate will check only the values entered explicitly below; no AI contextual risk review was performed."
   };
 }
 
@@ -279,7 +286,7 @@ async function interpretRequest(description) {
       // Only a failed Host LLM request enables a policy-only preview. Invalid
       // response envelopes and malformed model output remain explicit errors.
       if (!error?.annaLlmUnavailable) throw error;
-      return manualInterpretation();
+      return manualInterpretation(error?.message || "Sampling request failed");
     }
     try {
       return sanitizeInterpretation(parseJsonFromModel(raw, READ_FAILURE));
@@ -547,7 +554,7 @@ function renderRules(matchedRules, aiAssessment) {
   const ai = all.filter((r) => (r?.rule || r?.rule_id) === "ai_risk_flag");
   const rules = all.filter((r) => (r?.rule || r?.rule_id) !== "ai_risk_flag");
   $("ai-review-summary").textContent = aiAssessment?.aiAvailable === false
-    ? "Anna AI contextual review was not performed. This result is based only on explicit form values and Verigate policy."
+    ? (aiAssessment.summary || "Anna AI contextual review was not performed. This result is based only on explicit form values and Verigate policy.")
     : aiAssessment?.summary
       ? "Anna AI contextual review: " + aiAssessment.summary
       : "Anna AI reviewed the payment context, recipient and stated purpose.";

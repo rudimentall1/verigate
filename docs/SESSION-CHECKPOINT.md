@@ -1,13 +1,39 @@
-# Verigate Authority — current session checkpoint
+# Verigate Authority ? current session checkpoint
 
 **Updated:** 2026-11-08
 **Repository:** https://github.com/rudimentall1/verigate
-**Local working copy:** `C:\Users\User\Desktop\Work\verigate-anna-0.1.13`
-**Current branch:** `feat/anna-0.1.18-executa-0.1.14-hardening`
-**Latest verified code/artifact commit:** `0d36419af8365d6e171d0a3a92d5259148078405`
-**PR:** https://github.com/rudimentall1/verigate/pull/24 — OPEN, mergeable, NOT merged.
+**Active worktree:** `C:\Users\User\verigate-anna-release` (original checkout `C:\Users\User\verigate` untouched)
+**Branch / base:** `fix/anna-sampling-capability` at `d56d9b4`; origin branch was identical before current local edits.
+**Current local modifications:** `anna/bundle/app.js`, `scripts/test_anna_ui.mjs` (not yet committed or pushed). Keep `_tools/` and `_anna-screen.png` untracked; do not stage them.
 
-> Current status: branch HEAD is `0d36419`; worktree was clean before this checkpoint refresh. PR #24 merged product/runtime commit `98d4c230` into `integrate/anna-0.1.9-mainline`. PR #26 contains the post-merge E2E harness/docs follow-up. Push CI `42466153268` and PR CI `42466167865` passed on `0d36419`; four-platform binary workflow `42466174769` also passed on `0d36419`, with release skipped. Package hashes and blockers are recorded in `docs/ANNA-RELEASE-GATE.md`, the authoritative detailed release record. All older status statements below are historical and must not be used as current evidence.
+## Current Anna platform state (queried with Anna CLI 0.1.64)
+
+- App `verigate-authority`, ID `382`: latest `0.1.19`, version ID `2044`, status `PENDING_REVIEW`; `0.1.19` is pinned in review. Do not overwrite or claim the local uncommitted UI fix is included in this immutable version.
+- Bundled Executa `tool-rinat-verigate-authority-2um8gwhw`: latest `0.1.15`, version ID `1029`, tool ID unchanged; visibility `app_bundled`, `published: no` (expected for bundled Executa).
+- App manifest requires bundled Executa `min_version: 0.1.15`. Executa manifest and Python runtime both declare `host_capabilities: ["llm.sample"]`; this declaration enables the capability to be requested but does not grant it. The Agent/Executa Sampling grant and real Cloud Sampling response remain unverified.
+- No live Anna Cloud Agent Sampling acceptance was run in this pass. Local tests use a mock host; do not call them Cloud acceptance. Earlier checkpoint documents report Anna CU quota exhaustion. No review submission, release, or Marketplace publication was performed by this pass.
+
+## Latest verified local results
+
+- Full Python suite: `621 passed, 4 skipped, 3 upstream deprecation warnings` (exit 0).
+- Anna UI E2E: **47/47 passed** on the final local source, including free-form Russian/English requests, arbitrary decimal `123.456789 USDC`, missing Executa tool, host invocation 401, Sampling provider failure, no policy-only downgrade for missing tools, exact signed-intent checks, explicit confirmations and wallet hand-off.
+- `tests/test_anna_sampling_roundtrip.py`: **1 passed**.
+- `npm run test:atomic`: passed; stale authorization caused zero side effects, fresh authorization caused one.
+- `npm run test:guard`: passed; zero executor, attacker, stale state and value mismatch rejected; exact value forwarded. Ganache used its JS fallback because optional ?WS native binary is unavailable.
+- Anna CLI `validate --strict`: passed (schema 4, dispatcher 0.33.0).
+- Windows Executa 0.1.15 PyInstaller build, package, extracted packaged-binary smoke: passed. Package SHA-256 `86c02c8b05f5b906c9a3d8ce71257b681fb48badc90a61ef2c31c1a3205d83aa`.
+- `git diff --check`: passed. Only intended tracked modifications are the two files listed above.
+
+## Latest code changes (not yet committed)
+
+- `askAnna()` no longer converts arbitrary `tools.invoke` failures into an apparent LLM outage. Missing Executa tool and host invocation/permission/transport errors now surface explicitly and do not run a policy-only preview.
+- Only an explicit Executa Sampling-unavailable response can enter the clearly labelled policy-only fallback; that fallback uses only explicit form fields and cannot create execution authority.
+- Sampling error code and host reason are preserved in the visible review summary rather than discarded.
+- Regression coverage verifies free-form Russian/English wording and a non-round decimal amount reach Sampling unchanged and are forwarded to deterministic policy without lexical or fixed-amount allowlists.
+- No authorization invariant was weakened. Signed receipt/form equality, dynamic authority, explicit UI confirmation, one-time approval and ExecutionRouter wallet hand-off remain enforced.
+- Because App 0.1.19 is pinned in review, these local UI changes are not in that immutable candidate. A new App version would be required to include them; do not submit it for review without explicit authorization.
+
+---
 
 ## 1. User requirements that must not be lost
 

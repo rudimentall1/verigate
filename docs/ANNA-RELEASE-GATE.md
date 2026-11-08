@@ -1,16 +1,39 @@
 # Verigate Authority ? Anna release gate
 
-## Current candidate status — 2026-11-08 (authoritative)
-### Sampling regression correction ? new local candidate, not uploaded
+## Current authoritative state ? 2026-11-08
 
-- The archived Desktop file anna-0.1.9-files.zip confirms the older UI called state.anna.llm.complete(...) directly. The current Git history confirms that commit 99f502c replaced this with Executa reverse Sampling. Root cause found in that same commit: the migration from direct state.anna.llm.complete(...) to Executa reverse sampling/createMessage removed host_capabilities entirely, while the new Executa now requires llm.sample. The binary smoke validator and regression test then incorrectly prohibited that declaration, masking the missing platform permission in CI.
-- Anna's Executa examples require host_capabilities: [llm.sample] for a tool that calls the host LLM. Declaring the capability makes it available for user authorization; it does not grant it automatically. A separate Agent/Executa LLM Sampling grant is required.
-- Corrected local source: Executa 0.1.15, Anna App 0.1.19. The existing Anna App 0.1.18 / Executa 0.1.14 review candidate remains immutable and untouched. No new Anna upload/cut/review submission has been performed.
-- Verification on Windows: focused Anna tests 31 passed; full Python suite 621 passed, 4 skipped, 3 upstream deprecation warnings; Anna UI E2E 44/44 passed; Anna CLI 0.1.64 strict validation passed; Windows PyInstaller build and packaged-artifact smoke passed (decision=ALLOW, signed receipt, App-scope approval consumed once, wallet hand-off consumed once, submitted receipt persisted and verified).
-- The local Sampling roundtrip uses a mock host. It proves framing and response routing only; it does not prove Anna Cloud has granted Sampling or that its LLM provider will answer. Cloud acceptance remains pending a single test after upload and explicit grant.
-- First PR CI run 42484525622 passed the Python, contracts, strict schema validation and 44/44 Anna UI jobs, but the Linux Executa smoke step still expected 0.1.14 while the rebuilt binary correctly reported 0.1.15. Updated the CI workflow's smoke/package version and added an assertion tying those CI expectations to the Executa version; the exact updated SHA must pass CI before merge.
-- Distinguish two unrelated things: retired App-level host_capabilities / aps.scope.* declarations are not to be restored in the schema-4 App manifest; the bundled Executa describe manifest must declare llm.sample because that is the capability the Executa itself invokes.
+### Anna platform versions
 
+- Anna CLI 0.1.64 query confirms App `verigate-authority` / ID `382`: latest App `0.1.19` / version ID `2044`, status `PENDING_REVIEW`, pinned at submit-review. This version is immutable; do not imply subsequent local edits are included.
+- Bundled Executa tool `tool-rinat-verigate-authority-2um8gwhw`: latest `0.1.15` / version ID `1029`, `app_bundled` visibility, `published: no` (expected for bundled distribution).
+- App schema-4 manifest requires `bundled:verigate-authority` at minimum version `0.1.15`. Executa manifest and Python `MANIFEST` both declare `host_capabilities: ["llm.sample"]`. This declaration is necessary but is not itself a user/Agent Sampling grant.
+
+### Root cause and current local remediation
+
+- The older App called `state.anna.llm.complete(...)` directly. Commit `99f502c` migrated to Executa reverse `sampling/createMessage` but removed `host_capabilities: ["llm.sample"]`. The mock host tests did not expose the missing production capability because they simulated Sampling without enforcing platform permission. The capability has since been restored in Executa 0.1.15 and is covered by manifest/smoke assertions.
+- Current local App UI changes (not committed/pushed) stop masking missing Executa tools and `tools.invoke` authorization/transport failures as generic LLM outages. Only an explicit Sampling-unavailable response can use policy-only preview, and that preview remains limited to explicit form fields with execution disabled.
+- Sampling error code/message are retained in the visible summary. UI tests cover missing tool, invocation 401, Sampling provider failure, free-form Russian/English requests and decimal amounts without lexical allowlists.
+- No signed-receipt, dynamic-authority, explicit confirmation, one-time approval, ExecutionRouter or wallet-submission security checks were removed or weakened.
+
+### Verified local results on Windows worktree
+
+- Python full suite: **621 passed, 4 skipped**, 3 upstream deprecation warnings.
+- Anna UI E2E: **47/47 passed** on final local source.
+- `tests/test_anna_sampling_roundtrip.py`: **1 passed** (mock host; protocol/framing only).
+- `npm run test:atomic`: passed; stale authorization had zero side effect and fresh authorization had one.
+- `npm run test:guard`: passed; executor/attacker/stale-state/value-mismatch cases rejected and exact value forwarded. Ganache fell back to JS because the optional ?WS native binary is absent.
+- Anna CLI 0.1.64 `validate --strict`: passed (schema 4, dispatcher 0.33.0).
+- Windows Executa 0.1.15 PyInstaller build, archive packaging, extracted-binary smoke: passed. Package SHA-256: `86c02c8b05f5b906c9a3d8ce71257b681fb48badc90a61ef2c31c1a3205d83aa`.
+- `git diff --check`: passed. Current local tracked edits are limited to `anna/bundle/app.js` and `scripts/test_anna_ui.mjs`; original checkout remains untouched.
+
+### Still unverified / release gates
+
+- Real Anna Cloud Agent install, actual platform-issued Sampling grant, real `sampling/createMessage` LLM response, and runtime permission state remain unverified. Local mock tests are not Cloud acceptance. Earlier checkpoint records Anna CU quota exhaustion; do not claim a live cloud test.
+- The App 0.1.19 version ID 2044 is pinned in review and does not contain the latest uncommitted UI diagnostics. To include those edits, create a new App version (not a mutation of 0.1.19). Do not upload/cut or submit another review version without explicit authorization.
+- The local Executa Windows package is verified. Four-platform artifact evidence from the earlier workflow remains separate; rebuild all platform binaries from the final committed source before claiming a final cross-platform release.
+- No GitHub Release or Marketplace publication was performed in this pass.
+
+---
 
 This block is the source of truth for the current candidate. Everything after `## Historical baseline` is retained as historical context and must not override this section.
 
