@@ -43,7 +43,7 @@
         {
           "name": "agent_id",
           "type": "string",
-          "description": "Identifier of the agent requesting the action.",
+          "description": "User-facing agent label only. It does not control identity, spend accounting or dynamic authority; those are bound to this installation issuer key.",
           "required": true
         },
         {
@@ -88,13 +88,13 @@
     },
     {
       "name": "verigate_policy_summary",
-      "description": "Return the active policy limits (networks, assets, caps, confirmation threshold) so a request can be compared with them. Read-only.",
+      "description": "Return active policy limits and this installation accounting principal. The optional agent_id is a display label only and never selects or resets accounting state. Read-only.",
       "timeout": 15,
       "parameters": [
         {
           "name": "agent_id",
           "type": "string",
-          "description": "Optional agent identifier for read-only usage and spend context.",
+          "description": "Optional display label; it does not select the accounting principal.",
           "required": false,
           "default": ""
         },
@@ -116,13 +116,13 @@
     },
     {
       "name": "verigate_authorize_payment",
-      "description": "After the user explicitly confirms the exact payment in the Anna UI, evaluate it with persistent Verigate policy and issue a capability-bound, one-time signed Execution Authorization only when the result is ALLOW. WARN and BLOCK never receive execution authority. This does not send funds. A wallet/executor must enforce the authorization through Verigate ExecutionRouter before any side effect.",
+      "description": "After the user explicitly confirms the exact payment in the Anna UI, evaluate it with persistent Verigate policy and issue a capability-bound, one-time signed Execution Authorization for ALLOW. A WARN may be converted to ALLOW only after a separate, exact, one-time App UI warning review; BLOCK can never be overridden. The fresh policy result and dynamic authority are rechecked before issuance. This does not send funds. A wallet/executor must enforce the authorization through Verigate ExecutionRouter before any side effect.",
       "timeout": 30,
       "parameters": [
         {
           "name": "agent_id",
           "type": "string",
-          "description": "Identifier of the agent requesting the payment.",
+          "description": "User-facing agent label only. Identity and limits are bound to this installation issuer key, not to this caller-supplied string.",
           "required": true
         },
         {
@@ -168,6 +168,13 @@
           "type": "string",
           "description": "One-time nonce created by the Anna App UI after explicit user confirmation. Direct chat invocation has no app-scoped approval record and fails closed.",
           "required": true
+        },
+        {
+          "name": "approval_kind",
+          "type": "string",
+          "description": "Use payment_authorization for ALLOW or payment_warning_review for a separate explicit review of the exact WARN rules.",
+          "required": false,
+          "default": "payment_authorization"
         }
       ]
     },

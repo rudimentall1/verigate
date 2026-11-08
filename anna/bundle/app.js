@@ -7,11 +7,12 @@ const TOOL_ID =
   DEV_FALLBACK_TOOL_ID;
 
 const $ = (id) => document.getElementById(id);
-const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], lastAiAvailable: null, lastExecutionAuthorization: null, busy: false, lastInterpretedDescription: "", requestId: 0 };
+const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], lastAiAvailable: null, lastDynamicAuthority: null, lastExecutionAuthorization: null, busy: false, lastInterpretedDescription: "", requestId: 0 };
 const buttons = [$("check-btn"), $("execution-btn"), $("wallet-execute-btn")];
 const inputs = ["action-description", "agent-id", "target", "asset", "network", "amount", "resource", "confirm-details"].map($);
 const FIELD_IDS = ["target", "asset", "network", "amount"];
 const FIELD_LABELS = { target: "recipient", asset: "asset", network: "network", amount: "amount" };
+const normalizeAgentLabel = (value) => Array.from(String(value ?? "").trim().replace(/\s+/g, " ")).slice(0, 128).join("");
 const DEFAULT_QUESTIONS = {
   target: "Which recipient address should receive the payment?",
   asset: "Which asset should be paid (for example USDC)?",
@@ -23,9 +24,17 @@ const FLAG_CODES = new Set(["prompt_injection", "urgency_pressure", "recipient_m
 function setBusy(busy, message) {
   state.busy = busy;
   buttons.forEach((button) => { button.disabled = busy || !state.anna; });
+  const currentAsset = String(state.lastValues?.asset || "").toUpperCase();
+  const currentAmount = Number(state.lastValues?.amount);
+  const dynamicLimit = state.lastDynamicAuthority?.per_action_limits?.[currentAsset];
+  const dynamicAuthorityAllows = !!state.lastDynamicAuthority &&
+    typeof dynamicLimit === "number" && Number.isFinite(dynamicLimit) &&
+    Number.isFinite(currentAmount) && currentAmount > 0 && currentAmount <= dynamicLimit;
+  const decision = String(state.lastReceipt?.payload?.decision?.decision || "").toUpperCase();
   const canPrepareExecution =
-    String(state.lastReceipt?.payload?.decision?.decision || "").toUpperCase() === "ALLOW" &&
+    ["ALLOW", "WARN"].includes(decision) &&
     state.lastAiAvailable !== false &&
+    dynamicAuthorityAllows &&
     state.lastExecutionAuthorization === null;
   $("execution-btn").disabled = busy || !state.anna || !canPrepareExecution;
   inputs.forEach((input) => { input.disabled = busy; });
@@ -60,6 +69,7 @@ function clearResult() {
   state.lastValues = null;
   state.lastFlags = [];
   state.lastAiAvailable = null;
+  state.lastDynamicAuthority = null;
   state.lastExecutionAuthorization = null;
   $("result").style.display = "none";
   $("execution-panel").style.display = "none";
@@ -470,6 +480,16 @@ function buildLimitRows(limits, values, ruleIds) {
   const cap = (table) => (table && typeof table[asset] === "number") ? table[asset] : null;
   const perTx = cap(limits.per_tx_cap);
   if (perTx !== null) add("Per-transaction cap", String(values.amount), String(perTx), values.amount > perTx ? "blocked" : "ok");
+  const dynamicAuthority = limits.dynamic_authority;
+  const dynamicLimit = cap(dynamicAuthority?.per_action_limits);
+  if (dynamicLimit !== null) {
+    add(
+      "Dynamic agent authority (" + String(dynamicAuthority.state || "UNKNOWN") + ")",
+      String(values.amount),
+      String(dynamicLimit),
+      values.amount > dynamicLimit ? "blocked" : "ok"
+    );
+  }
   const confirm = cap(limits.confirmation_required_over);
   if (confirm !== null) add("Human review above", String(values.amount), String(confirm), values.amount > confirm ? "review" : "ok");
   const newPayee = cap(limits.new_payee_cap);
@@ -680,7 +700,7 @@ async function checkAuthority() {
     const limits = await loadLimits(values);
     if (requestId !== state.requestId) return;
     const args = {
-      agent_id: values.agent_id,
+      agent_id: normalizeAgentLabel(values.agent_id),
       payee: values.payee,
       asset: values.asset.toUpperCase(),
       network: values.network.toLowerCase(),
@@ -692,20 +712,51 @@ async function checkAuthority() {
     if (requestId !== state.requestId) return;
     const envelope = extractDecisionEnvelope(toolResponse);
     envelope.verification = await verifyDecisionReceipt(envelope.receipt);
+    const previewIntent = envelope.receipt?.payload?.intent;
+    const expectedAgentLabel = normalizeAgentLabel(values.agent_id);
+    if (previewIntent?.metadata?.anna_agent_label !== expectedAgentLabel ||
+        previewIntent?.metadata?.anna_accounting_scope !== "issuer_installation" ||
+        typeof previewIntent?.agent_id !== "string" ||
+        !previewIntent.agent_id.startsWith("anna-installation:")) {
+      throw new Error("The signed policy preview is not bound to this App label and installation accounting principal. No execution permission is available.");
+    }
+    if (limits && (limits.accounting_scope !== "issuer_installation" ||
+        limits.accounting_principal_id !== previewIntent.agent_id)) {
+      throw new Error("The policy summary and signed preview disagree about the installation accounting principal. No execution permission is available.");
+    }
     if (requestId !== state.requestId) return;
     state.lastReceipt = envelope.receipt;
     state.lastValues = { ...values };
     state.lastFlags = [...review.flags];
     state.lastAiAvailable = review.aiAvailable !== false;
     state.lastExecutionAuthorization = null;
-    const canIssuePermission = envelope.decision === "ALLOW" && state.lastAiAvailable;
-    $("execution-panel").style.display = envelope.decision === "ALLOW" ? "block" : "none";
+    const dynamicAuthority = limits?.dynamic_authority;
+    state.lastDynamicAuthority = dynamicAuthority || null;
+    const dynamicLimit = dynamicAuthority?.per_action_limits?.[values.asset.toUpperCase()];
+    const dynamicAuthorityAvailable = !!dynamicAuthority &&
+      typeof dynamicLimit === "number" && Number.isFinite(dynamicLimit);
+    const exceedsDynamicAuthority = dynamicAuthorityAvailable && values.amount > dynamicLimit;
+    const reviewableDecision = ["ALLOW", "WARN"].includes(envelope.decision);
+    const canIssuePermission = reviewableDecision &&
+      state.lastAiAvailable && dynamicAuthorityAvailable && !exceedsDynamicAuthority;
+    $("execution-panel").style.display = reviewableDecision ? "block" : "none";
+    $("execution-btn").textContent = envelope.decision === "WARN"
+      ? "Review warnings & approve"
+      : "Create one-time permission";
     $("execution-btn").disabled = !canIssuePermission;
     $("execution-summary").textContent = canIssuePermission
-      ? "Verigate can now issue a one-time permission bound to this exact payment request. Nothing will be sent from this app."
-      : envelope.decision === "ALLOW" && !state.lastAiAvailable
-        ? "Policy preview only. Anna AI contextual review is unavailable, so execution permission is disabled."
-        : "Only ALLOW can receive execution authority.";
+      ? envelope.decision === "WARN"
+        ? "The policy raised warnings. Review the exact warning rules below and explicitly approve this payment to create a one-time permission. BLOCK rules cannot be overridden. Nothing will be sent from this app."
+        : "Current " + dynamicAuthority.state + " authority covers this amount. Verigate can issue a one-time permission bound to this exact payment request. Nothing will be sent from this app."
+      : !reviewableDecision
+        ? "BLOCK is not overridable and cannot receive execution authority."
+        : !state.lastAiAvailable
+          ? "Policy preview only. Anna AI contextual review is unavailable, so execution permission is disabled."
+          : !dynamicAuthorityAvailable
+            ? "Policy " + envelope.decision + ", but the current dynamic authority could not be verified. Execution permission is disabled."
+            : "Policy " + envelope.decision + ", but current " + dynamicAuthority.state + " authority permits at most " +
+              dynamicLimit + " " + values.asset.toUpperCase() +
+              " per action. Reduce the amount or complete the verified authority progression before requesting permission.";
 
     const pill = $("decision");
     pill.textContent = envelope.decision;
@@ -726,7 +777,7 @@ async function checkAuthority() {
     if (requestId !== state.requestId) return;
     $("result-summary").textContent = explained.explanation;
     $("suggestion").textContent = explained.next ? "What could change this: " + explained.next : "";
-    setBusy(false, "Preview complete. No payment was sent. For ALLOW, you can separately request a one-time execution permission.");
+    setBusy(false, "Preview complete. No payment was sent. A one-time execution permission is available only when policy and current dynamic authority both allow this amount.");
   } catch (error) {
     if (requestId !== state.requestId) return;
     clearResult();
@@ -841,21 +892,44 @@ async function prepareExecutionAuthorization() {
     showError("Anna AI contextual review is unavailable. This is a policy preview only; execution permission remains disabled.");
     return;
   }
-  if (currentDecision !== "ALLOW") {
-    showError("Only an ALLOW decision can receive execution authority.");
+  if (!["ALLOW", "WARN"].includes(currentDecision)) {
+    showError("BLOCK is not overridable and cannot receive execution authority.");
     return;
   }
   const v = state.lastValues;
-  setBusy(true, "Waiting for confirmation to create a one-time permission…");
+  const dynamicLimit = state.lastDynamicAuthority?.per_action_limits?.[String(v.asset).toUpperCase()];
+  if (typeof dynamicLimit !== "number" || !Number.isFinite(dynamicLimit) ||
+      !Number.isFinite(Number(v.amount)) || Number(v.amount) <= 0 || Number(v.amount) > dynamicLimit) {
+    showError("The current dynamic authority does not cover this amount. No permission was issued.");
+    return;
+  }
+  const isWarningReview = currentDecision === "WARN";
+  const warningRules = (state.lastReceipt?.payload?.decision?.matched_rules || [])
+    .filter((rule) => String(rule?.severity || "").toUpperCase() === "WARN");
+  const reviewedRuleIds = [...new Set(warningRules
+    .map((rule) => rule?.rule || rule?.rule_id)
+    .filter((ruleId) => typeof ruleId === "string" && ruleId.length > 0))].sort();
+  if (isWarningReview && reviewedRuleIds.length === 0) {
+    showError("The WARN receipt contains no reviewable warning rule IDs. Run a fresh check.");
+    return;
+  }
+
+  const approvalKind = isWarningReview ? "payment_warning_review" : "payment_authorization";
+  const warningText = warningRules.map((rule) => "• " + String(rule.message || rule.rule || "Warning")).join("\n");
+  setBusy(true, isWarningReview
+    ? "Waiting for explicit review of the policy warnings…"
+    : "Waiting for confirmation to create a one-time permission…");
   let confirmed = false;
   try {
     confirmed = await requestUserConfirmation({
-      title: "Confirm one-time permission",
+      title: isWarningReview ? "Review and approve warnings" : "Confirm one-time permission",
       message:
         v.amount + " " + v.asset + " on " + v.network + "\nRecipient: " + v.payee +
         "\nPurpose: " + (v.resource || "not specified") +
+        (isWarningReview ? "\n\nWarnings to review:\n" + warningText +
+          "\n\nThis explicitly approves the listed WARN rules for this exact payment only. BLOCK rules cannot be overridden." : "") +
         "\n\nThis does NOT send funds. It creates a one-time permission for a separate wallet or executor.",
-      confirmLabel: "Create permission"
+      confirmLabel: isWarningReview ? "Approve warnings & create permission" : "Create permission"
     });
   } catch (error) {
     showError(error?.message || String(error));
@@ -869,13 +943,14 @@ async function prepareExecutionAuthorization() {
 
   setBusy(true, "Verigate is rechecking policy and issuing a one-time permission…");
   try {
-    const { nonce: confirmationNonce, approval } = await storeAppApproval("payment_authorization", {
-      agent_id: String(v.agent_id).trim(),
+    const { nonce: confirmationNonce, approval } = await storeAppApproval(approvalKind, {
+      agent_id: normalizeAgentLabel(v.agent_id),
       payee: String(v.payee).trim(),
       asset: String(v.asset).trim().toUpperCase(),
       network: String(v.network).trim().toLowerCase(),
       amount: Number(v.amount),
-      resource: String(v.resource || "").trim()
+      resource: String(v.resource || "").trim(),
+      ...(isWarningReview ? { reviewed_rule_ids: reviewedRuleIds } : {})
     });
     const args = {
       agent_id: approval.agent_id,
@@ -884,7 +959,8 @@ async function prepareExecutionAuthorization() {
       network: approval.network,
       amount: approval.amount,
       resource: approval.resource,
-      confirmation_nonce: confirmationNonce
+      confirmation_nonce: confirmationNonce,
+      approval_kind: approvalKind
     };
     if (state.lastFlags.length) args.ai_flags_json = JSON.stringify(state.lastFlags);
     let response;
@@ -937,8 +1013,16 @@ async function prepareExecutionAuthorization() {
     }
     const verification = verifiedOuter?.data;
     const authorizedAction = verification?.action;
-    const exactActionMatches = Boolean(authorizedAction) &&
-      authorizedAction.agent_id === v.agent_id &&
+    const previewIntent = state.lastReceipt?.payload?.intent;
+    const issuedIntent = receipt?.payload?.intent;
+    const expectedAgentLabel = normalizeAgentLabel(v.agent_id);
+    const exactActionMatches = Boolean(authorizedAction && previewIntent && issuedIntent) &&
+      authorizedAction.agent_id === previewIntent.agent_id &&
+      authorizedAction.agent_id === issuedIntent.agent_id &&
+      authorizedAction.metadata?.anna_agent_label === expectedAgentLabel &&
+      authorizedAction.metadata?.anna_accounting_scope === "issuer_installation" &&
+      previewIntent.metadata?.anna_agent_label === expectedAgentLabel &&
+      issuedIntent.metadata?.anna_agent_label === expectedAgentLabel &&
       authorizedAction.action_type === "payment" &&
       authorizedAction.target === v.payee &&
       String(authorizedAction.asset || "").toUpperCase() === v.asset.toUpperCase() &&

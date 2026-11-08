@@ -14,7 +14,7 @@ Anna App UI
     -> App UI
 ```
 
-The AI performs payment-context analysis in addition to field extraction, but it cannot grant authority. AI input is advisory and can only make a result stricter (a risk flag raises ALLOW to WARN; an advisory BLOCK is ignored). The final ALLOW, WARN or BLOCK always comes from the policy engine, which also validates the recipient address for the network. A preview check is non-persistent: it does not record a new attempt or execute anything, but it reads existing persisted history when evaluating first-payee, rolling 24-hour spend and per-minute controls. The separate user-confirmed authorization step re-runs the policy with persistent accounting; only that step records the authorization and its audit history. Before showing a result, the app verifies the Ed25519 signature against the installation's local issuer key and displays that public key and its fingerprint. This confirms receipt integrity for that issuer key; external consumers must obtain and pin the key through a trusted channel.
+The AI performs payment-context analysis in addition to field extraction, but it cannot grant authority. AI input is advisory and can only make a result stricter (a risk flag raises ALLOW to WARN; an advisory BLOCK is ignored). The final ALLOW, WARN or BLOCK always comes from the policy engine, which also validates the recipient address for the network. A preview check is non-persistent: it does not record a new attempt or execute anything, but it reads existing persisted history when evaluating first-payee, rolling 24-hour spend and per-minute controls. The separate user-confirmed authorization step re-runs the policy with persistent accounting; ALLOW uses the standard App approval, while WARN requires a distinct one-time warning-review approval bound to the exact matched rules. Only a successful authorization step records the authorization and its audit history. Before showing a result, the app verifies the Ed25519 signature against the installation's local issuer key and displays that public key and its fingerprint. This confirms receipt integrity for that issuer key; external consumers must obtain and pin the key through a trusted channel.
 
 ## User flow
 
@@ -22,6 +22,12 @@ The AI performs payment-context analysis in addition to field extraction, but it
 2. When Anna LLM is available, it extracts the request and performs contextual risk review. If the LLM is unavailable (for example, quota exhaustion), the App offers a policy-only preview using only the recipient, asset, network and amount explicitly entered in the form; it never infers missing values from free text.
 3. If a required detail is missing or unclear, the App asks for it and does not run the policy check until it is provided (or, for unclear details, confirmed).
 4. Review the result: the deterministic ALLOW/WARN/BLOCK decision, explanation, any AI risk flags (when AI review ran), a table comparing the request with policy limits, and matched rules. The verified receipt, issuer public key and key fingerprint are available in the details panel. A policy-only preview clearly states that no AI contextual review was performed and cannot create execution permission.
+
+## Identity and accounting scope
+
+The editable Agent label is display metadata, not an identity credential. For Anna payment checks, policy previews, capability registration, spend/rate accounting and dynamic authority all use a principal derived from the SHA-256 fingerprint of this installation's persistent Ed25519 issuer public key. The entered label is retained in the signed intent/authorization metadata and checked against the App UI, but changing it cannot create a fresh budget. All labels used by one Verigate installation therefore share the same first-payee history, daily budget, rate limit and dynamic-authority state.
+
+This is deliberately an installation-scoped mitigation, not a per-user/account-wide quota across separate Anna Cloud Agents or App installations. A different workspace or issuer key produces a different principal; separate installations are not aggregated. Multiple logical agents on one installation currently share this principal. A future per-agent model needs cryptographic agent enrollment, while a cross-Agent account quota needs a trusted platform principal and a concurrency-safe shared ledger. Anna APS App scope is per current user and App, but the APS KV contract does not currently provide an atomic create-if-absent primitive for race-free first-time principal bootstrap. The code does not claim that cross-Agent aggregation or Cloud lifecycle persistence has been verified.
 
 Do not treat ALLOW as a guarantee that the recipient is safe, that the transaction will execute, or that it has executed.
 
@@ -92,10 +98,13 @@ Record the actual returned decision and matched rules during those tests. Do not
 ## Capability-bound execution authorization
 
 After a preview returns ALLOW, the user can explicitly click Create one-time permission.
-The Executa re-runs the persistent policy, stores the authorization/audit artifacts and issues
-a short-lived, one-time Ed25519 Execution Authorization only if the fresh decision is still ALLOW.
-WARN and BLOCK never receive execution authority. The app verifies the authorization before
-displaying it.
+For WARN, the user can instead open a separate review dialog that lists the exact warning rules
+and explicitly approve that payment only. The Executa consumes a distinct 60-second App-scope
+approval, re-runs the policy, verifies that the reviewed warning-rule IDs exactly match the fresh
+WARN result, and then rechecks capability and dynamic authority before issuing a short-lived,
+one-time Ed25519 Execution Authorization. A BLOCK is never overridable; daily spend, per-action
+authority and per-transaction hard limits remain enforced. The app verifies the authorization
+before displaying it.
 
 The authorization binds the exact payment action, capability, policy and dynamic-authority
 snapshot. A downstream wallet/executor must pass it through Verigate ExecutionRouter; the router

@@ -12,6 +12,8 @@ from pathlib import Path
 from decimal import Decimal, InvalidOperation
 import re
 
+from cryptography.hazmat.primitives import serialization
+
 if getattr(sys, "frozen", False):
     _BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
     _SOURCE_REPO_ROOT = _BUNDLE_ROOT
@@ -75,7 +77,7 @@ MANIFEST = {
             ),
             "timeout": 30,
             "parameters": [
-                {"name": "agent_id", "type": "string", "description": "Identifier of the agent requesting the action.", "required": True},
+                {"name": "agent_id", "type": "string", "description": "User-facing agent label only. It does not control identity, spend accounting or dynamic authority; those are bound to this installation issuer key.", "required": True},
                 {"name": "payee", "type": "string", "description": "Recipient of the payment or action.", "required": True},
                 {"name": "asset", "type": "string", "description": "Asset being moved, e.g. USDC.", "required": True},
                 {"name": "network", "type": "string", "description": "Network the action runs on, e.g. base.", "required": True},
@@ -86,10 +88,10 @@ MANIFEST = {
         },
         {
             "name": "verigate_policy_summary",
-            "description": "Return the active policy limits (networks, assets, caps, confirmation threshold) so a request can be compared with them. Read-only.",
+            "description": "Return active policy limits and this installation accounting principal. The optional agent_id is a display label only and never selects or resets accounting state. Read-only.",
             "timeout": 15,
             "parameters": [
-                {"name": "agent_id", "type": "string", "description": "Optional agent identifier for read-only usage and spend context.", "required": False, "default": ""},
+                {"name": "agent_id", "type": "string", "description": "Optional display label; it does not select the accounting principal.", "required": False, "default": ""},
                 {"name": "payee", "type": "string", "description": "Optional recipient for first-payment context.", "required": False, "default": ""},
                 {"name": "asset", "type": "string", "description": "Optional asset for rolling spend context.", "required": False, "default": ""},
             ],
@@ -99,20 +101,23 @@ MANIFEST = {
             "description": (
                 "After the user explicitly confirms the exact payment in the Anna UI, evaluate it "
                 "with persistent Verigate policy and issue a capability-bound, one-time signed "
-                "Execution Authorization only when the result is ALLOW. WARN and BLOCK never receive "
-                "execution authority. This does not send funds. A wallet/executor must enforce the "
-                "authorization through Verigate ExecutionRouter before any side effect."
+                "Execution Authorization for ALLOW. A WARN may be converted to ALLOW only after "
+                "a separate, exact, one-time App UI warning review; BLOCK can never be overridden. "
+                "The fresh policy result and dynamic authority are rechecked before issuance. This does "
+                "not send funds. A wallet/executor must enforce the authorization through Verigate "
+                "ExecutionRouter before any side effect."
             ),
             "timeout": 30,
             "parameters": [
-                {"name": "agent_id", "type": "string", "description": "Identifier of the agent requesting the payment.", "required": True},
+                {"name": "agent_id", "type": "string", "description": "User-facing agent label only. Identity and limits are bound to this installation issuer key, not to this caller-supplied string.", "required": True},
                 {"name": "payee", "type": "string", "description": "Exact payment recipient.", "required": True},
                 {"name": "asset", "type": "string", "description": "Payment asset, e.g. USDC.", "required": True},
                 {"name": "network", "type": "string", "description": "Exact network, e.g. base.", "required": True},
                 {"name": "amount", "type": "number", "description": "Exact payment amount.", "required": True},
                 {"name": "resource", "type": "string", "description": "Payment purpose or invoice reference.", "required": False, "default": ""},
                 {"name": "ai_flags_json", "type": "string", "description": "Advisory AI risk flags. They may only escalate ALLOW to WARN.", "required": False, "default": ""},
-                {"name": "confirmation_nonce", "type": "string", "description": "One-time nonce created by the Anna App UI after explicit user confirmation. Direct chat invocation has no app-scoped approval record and fails closed.", "required": True}
+                {"name": "confirmation_nonce", "type": "string", "description": "One-time nonce created by the Anna App UI after explicit user confirmation. Direct chat invocation has no app-scoped approval record and fails closed.", "required": True},
+                {"name": "approval_kind", "type": "string", "description": "Use payment_authorization for ALLOW or payment_warning_review for a separate explicit review of the exact WARN rules.", "required": False, "default": "payment_authorization"}
             ]
         },
         {
@@ -339,6 +344,15 @@ async def _verigate_ai_review(args: dict) -> dict:
     }
 
 
+def _anna_installation_principal(private_key) -> str:
+    """Return the stable, non-secret accounting principal for this issuer installation."""
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    return "anna-installation:" + hashlib.sha256(public_key).hexdigest()
+
+
 def _verigate_check(args: dict) -> dict:
     for name in _REQUIRED_ARGS:
         if name not in args:
@@ -347,21 +361,27 @@ def _verigate_check(args: dict) -> dict:
         from core.models import PaymentIntent
 
         for name in ("agent_id", "payee", "asset", "network"):
-            if not isinstance(args[name], str):
-                raise TypeError(f"{name} must be a string")
+            if not isinstance(args[name], str) or not args[name].strip():
+                raise TypeError(f"{name} must be a non-empty string")
         amount = float(args["amount"])
         if not math.isfinite(amount):
             raise ValueError("amount must be a finite number")
+        agent_label = _clean(args["agent_id"], 128)
+        engine, private_key = _get_state()
+        principal_id = _anna_installation_principal(private_key)
         intent = PaymentIntent(
-            agent_id=args["agent_id"].strip(),
+            agent_id=principal_id,
             payee=args["payee"].strip(),
             asset=args["asset"].strip(),
             network=args["network"].strip(),
             amount=amount,
             resource=_clean(args.get("resource", ""), 200),
+            metadata={
+                "anna_agent_label": agent_label,
+                "anna_accounting_scope": "issuer_installation",
+            },
         )
         advisory = _parse_ai_flags(args.get("ai_flags_json"))
-        engine, private_key = _get_state()
         # A check is a simulation: nothing is recorded, so the same request always
         # gets the same answer and repeated tests do not consume any budget.
         attestation = engine.authorize(intent, private_key, advisory=advisory, persist=False)
@@ -370,9 +390,31 @@ def _verigate_check(args: dict) -> dict:
     return {"success": True, "data": attestation}
 
 
+def _anna_payment_capability_id(agent_id: str, policy) -> str:
+    return "anna-payment-" + hashlib.sha256(
+        f"{agent_id}:{policy.digest}".encode("utf-8")
+    ).hexdigest()[:24]
+
+
 def _verigate_policy_summary(args: dict) -> dict:
-    engine, _ = _get_state()
+    engine, private_key = _get_state()
     p = engine.policy
+    principal_id = _anna_installation_principal(private_key)
+    capability_id = _anna_payment_capability_id(principal_id, p)
+    authority = engine.authority_service.snapshot(
+        principal_id,
+        capability_id,
+        persist=False,
+    )
+    dynamic_limits = {
+        str(name).upper(): float(
+            min(
+                Decimal(str(limit)),
+                Decimal(str(limit)) * Decimal(str(authority.multiplier)),
+            )
+        )
+        for name, limit in (p.per_tx_cap or {}).items()
+    }
     data = {
         "allowed_networks": p.allowed_networks,
         "allowed_assets": p.allowed_assets,
@@ -387,18 +429,27 @@ def _verigate_policy_summary(args: dict) -> dict:
         "history_recorded_for_preview": False,
         "history_used_for_limits": True,
         "authorization_records_history": True,
+        "accounting_scope": "issuer_installation",
+        "accounting_principal_id": principal_id,
+        "dynamic_authority": {
+            "state": authority.state.value,
+            "multiplier": authority.multiplier,
+            "per_action_limits": dynamic_limits,
+            "successes": authority.successes,
+            "adverse_events": authority.adverse_events,
+            "critical_events": authority.critical_events,
+            "reason": authority.reason,
+        },
+        "calls_last_minute": engine.storage.calls_last_minute(principal_id),
     }
-    agent_id = args.get("agent_id")
-    payee = args.get("payee")
     asset = args.get("asset")
-    if isinstance(agent_id, str) and agent_id.strip():
-        data["calls_last_minute"] = engine.storage.calls_last_minute(agent_id.strip())
-        if isinstance(asset, str) and asset.strip():
-            data["rolling_24h_spend"] = engine.storage.spent_today(agent_id.strip(), asset.strip().upper())
-        if isinstance(payee, str) and payee.strip():
-            data["recipient_seen_before"] = engine.storage.payee_seen_before(
-                agent_id.strip(), payee.strip(), "__anna_policy_summary__"
-            )
+    payee = args.get("payee")
+    if isinstance(asset, str) and asset.strip():
+        data["rolling_24h_spend"] = engine.storage.spent_today(principal_id, asset.strip().upper())
+    if isinstance(payee, str) and payee.strip():
+        data["recipient_seen_before"] = engine.storage.payee_seen_before(
+            principal_id, payee.strip(), "__anna_policy_summary__"
+        )
     return {"success": True, "data": data}
 
 
@@ -524,8 +575,15 @@ async def _consume_app_approval(nonce: object, expected: dict) -> dict:
     return approval
 
 
-async def _consume_app_confirmation(args: dict, normalized: dict) -> dict:
-    expected = {"kind": "payment_authorization", **normalized}
+async def _consume_app_confirmation(
+    args: dict,
+    normalized: dict,
+    *,
+    approval_kind: str = "payment_authorization",
+) -> dict:
+    if approval_kind not in {"payment_authorization", "payment_warning_review"}:
+        raise PermissionError("unsupported App UI approval kind")
+    expected = {"kind": approval_kind, **normalized}
     return await _consume_app_approval(args.get("confirmation_nonce"), expected)
 
 
@@ -575,20 +633,29 @@ async def _verigate_authorize_payment(args: dict) -> dict:
         # This is the security boundary: a client boolean is not proof of
         # human approval. The app-scoped, one-time record must be present and
         # atomically consumed before any persistent authorization is issued.
-        approval = await _consume_app_confirmation(args, normalized)
+        approval_kind = args.get("approval_kind", "payment_authorization")
+        if not isinstance(approval_kind, str):
+            raise ValueError("approval_kind must be a string")
+        approval = await _consume_app_confirmation(
+            args,
+            normalized,
+            approval_kind=approval_kind,
+        )
         advisory = _parse_ai_flags(args.get("ai_flags_json"))
 
-        agent_id = normalized["agent_id"]
+        agent_label = normalized["agent_id"]
         asset = normalized["asset"]
         network = normalized["network"]
         payee = normalized["payee"]
         resource = normalized["resource"]
 
         engine, private_key = _get_state()
+        # The editable App field is a display label, never an authorization
+        # principal. Bind accounting, capability and dynamic authority to the
+        # persistent issuer key so rotating labels cannot reset policy history.
+        agent_id = _anna_installation_principal(private_key)
         policy = engine.policy
-        capability_id = "anna-payment-" + hashlib.sha256(
-            f"{agent_id}:{policy.digest}".encode("utf-8")
-        ).hexdigest()[:24]
+        capability_id = _anna_payment_capability_id(agent_id, policy)
         registry = CapabilityRegistry(engine.storage)
         existing = engine.storage.capability(capability_id)
         if existing is None:
@@ -612,6 +679,8 @@ async def _verigate_authorize_payment(args: dict) -> dict:
             registry.resolve(capability_id)  # revoked/inactive authority fails closed
 
         intent_metadata = {
+            "anna_agent_label": agent_label,
+            "anna_accounting_scope": "issuer_installation",
             "anna_user_confirmation": {
                 "confirmed": True,
                 "source": "anna-app-scoped-one-time-approval",
@@ -631,9 +700,34 @@ async def _verigate_authorize_payment(args: dict) -> dict:
             resource=resource,
             metadata=intent_metadata,
         )
-        artifacts = engine.authorize_with_capability(
-            intent, capability_id, private_key, advisory=advisory
-        )
+        if approval_kind == "payment_warning_review":
+            reviewed_rule_ids = approval.get("reviewed_rule_ids")
+            if (
+                not isinstance(reviewed_rule_ids, list)
+                or not reviewed_rule_ids
+                or any(not isinstance(rule_id, str) or not rule_id for rule_id in reviewed_rule_ids)
+                or len(set(reviewed_rule_ids)) != len(reviewed_rule_ids)
+            ):
+                raise PermissionError("App warning review does not contain a valid reviewed_rule_ids list")
+            review_evidence = {
+                "source": "anna-app-scoped-one-time-warning-review",
+                "reviewed_rule_ids": sorted(reviewed_rule_ids),
+                "confirmed_at": approval["created_at_ms"] / 1000.0,
+                "approval_nonce_sha256": hashlib.sha256(
+                    args["confirmation_nonce"].encode("ascii")
+                ).hexdigest(),
+            }
+            artifacts = engine.authorize_with_capability_after_warning_review(
+                intent,
+                capability_id,
+                private_key,
+                review_evidence=review_evidence,
+                advisory=advisory,
+            )
+        else:
+            artifacts = engine.authorize_with_capability(
+                intent, capability_id, private_key, advisory=advisory
+            )
         decision = artifacts["decision_receipt"]["payload"]["decision"]["decision"]
         execution = artifacts.get("execution_authorization")
         if decision != "ALLOW" or execution is None:

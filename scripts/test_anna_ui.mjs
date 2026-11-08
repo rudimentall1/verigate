@@ -147,7 +147,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows) {
@@ -208,6 +208,9 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
           appContext: true,
           samplingHandler: { interpret, explain }
         });
+        if (method === "verigate_policy_summary" && tamperPolicySummaryPrincipal) {
+          if (result?.data) result.data.accounting_principal_id = "anna-installation:" + "f".repeat(64);
+        }
         if (method === "verigate_check" && tamperSignature) {
           const data = result?.data;
           const receipt = data?.decision_receipt ?? data?.receipt;
@@ -282,7 +285,9 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
 }
 
 const results = [];
+const testFilter = process.env.TEST_FILTER?.toLowerCase() || "";
 async function test(name, fn) {
+  if (testFilter && !name.toLowerCase().includes(testFilter)) return;
   try { await fn(); results.push([name, true]); console.log("ok   " + name); }
   catch (e) { results.push([name, false]); console.log("FAIL " + name + "\n     " + (e.stack || e).split("\n").slice(0, 3).join("\n     ")); }
 }
@@ -307,6 +312,80 @@ await test("valid request: AI reads it, Verigate allows, limits table is shown",
 });
 
 
+await test("agent label is normalized identically before preview and signed comparison", async () => {
+  const ui = await launch({});
+  ui.set("agent-id", "  agent   alpha\tbeta  ");
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  eq(ui.calls.toolArgs.verigate_check.agent_id, "agent alpha beta");
+  ok(ui.text("proof").includes("Ed25519 signature verified"), "signed preview accepted the normalized label");
+});
+
+await test("policy-summary installation principal mismatch fails closed", async () => {
+  const ui = await launch({ tamperPolicySummaryPrincipal: true });
+  await ui.click();
+  ok(ui.shown("error"), "identity mismatch is surfaced");
+  ok(ui.text("error").includes("policy summary and signed preview disagree"), "precise principal mismatch is reported");
+  eq(ui.shown("result"), false, "no decision is displayed after principal mismatch");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "mismatched principal cannot mint execution authority");
+});
+
+await test("dynamic authority ceiling disables permission before an otherwise-ALLOW payment", async () => {
+  const agentId = "ui-dynamic-limit-agent";
+  const appStorage = new Map();
+  const nonce = "d".repeat(48);
+  const now = Date.now();
+  const seed = {
+    agent_id: agentId,
+    payee: VALID,
+    asset: "USDC",
+    network: "base",
+    amount: 10,
+    resource: "initial payment"
+  };
+  appStorage.set("verigate/approvals/" + nonce, {
+    value: {
+      version: 1,
+      kind: "payment_authorization",
+      nonce,
+      ...seed,
+      created_at_ms: now,
+      expires_at_ms: now + 60_000
+    },
+    etag: "etag-seed",
+    expiresAt: now + 60_000
+  });
+  const seeded = await callPlugin("verigate_authorize_payment", {
+    ...seed,
+    confirmation_nonce: nonce
+  }, { appStorage });
+  ok(seeded?.success === true, "seed authorization failed: " + JSON.stringify(seeded));
+
+  const ui = await launch({
+    description: "Pay 123.456789 USDC on Base to " + VALID + " for a repeat invoice",
+    interpret: () => interpretJson({
+      payee: VALID,
+      asset: "USDC",
+      network: "base",
+      amount: 123.456789,
+      resource: "repeat invoice"
+    })
+  });
+  ui.set("agent-id", agentId);
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW", "static policy decision for returning payee");
+  eq(
+    ui.$("execution-btn").disabled,
+    true,
+    "dynamic authority must disable execution; summary=" + ui.text("execution-summary") +
+      "; limits=" + ui.$("limits-table").textContent +
+      "; summaryArgs=" + JSON.stringify(ui.calls.toolArgs.verigate_policy_summary)
+  );
+  ok(ui.text("execution-summary").includes("permits at most 50 USDC"), "dynamic authority explanation");
+  ok(ui.$("limits-table") && ui.$("limits-table").textContent.includes("Dynamic agent authority (PROBATION)"), "dynamic limit is visible");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no authorization call is made");
+});
+
 await test("one-time execution permission is issued only after a separate user click", async () => {
   const ui = await launch({});
   await ui.click();
@@ -326,6 +405,41 @@ await test("one-time execution permission is issued only after a separate user c
   ok(ui.text("execution-json").includes("authorization_id"), "signed permission displayed; error=" + ui.text("error") + "; status=" + ui.text("execution-status") + "; tools=" + JSON.stringify(ui.calls.tools));
   ok(ui.text("execution-status").includes("Not consumed"), "permission is not represented as a sent transaction");
   ok(ui.text("status").includes("No funds were sent"), "status is explicit");
+});
+
+await test("WARN shows exact warning rules and requires a separate App-scope review before permission", async () => {
+  const flag = { code: "urgency_pressure", message: "Urgency pressure requires manual review" };
+  const ui = await launch({ interpret: interpretJson({ ...GOOD, risk_flags: [flag] }) });
+  await ui.click();
+  eq(ui.text("decision"), "WARN");
+  ok(ui.shown("execution-panel"), "warning review action is offered");
+  ok(!ui.$("execution-btn").disabled, "dynamic authority allows the exact amount");
+  ok(ui.text("execution-summary").includes("explicitly approve"), "explicit warning review is explained");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no permission before human review");
+  await ui.clickExecution();
+  eq(ui.calls.storage[0].value.kind, "payment_warning_review", "review uses a distinct App-scope approval kind");
+  eq(JSON.stringify(ui.calls.storage[0].value.reviewed_rule_ids), JSON.stringify(["ai_risk_flag"]), "approval binds the exact warning rule ID");
+  eq(ui.calls.toolArgs.verigate_authorize_payment.approval_kind, "payment_warning_review", "tool call selects the review path");
+  eq(ui.appStorage.size, 0, "review approval is consumed exactly once");
+  ok(ui.text("execution-json").includes("anna_warning_review"), "review evidence is included in the signed permission");
+  ok(ui.calls.tools.includes("verigate_verify_execution_authorization"), "reviewed permission is cryptographically verified");
+  ok(!ui.shown("error"), "reviewed WARN flow succeeds");
+});
+
+await test("WARN above the dynamic authority ceiling remains non-executable", async () => {
+  const ui = await launch({
+    interpret: interpretJson({
+      ...GOOD,
+      payee: "0x" + "2".repeat(40),
+      amount: 75,
+      summary: "Pay 75 USDC on Base."
+    })
+  });
+  await ui.click();
+  eq(ui.text("decision"), "WARN");
+  eq(ui.$("execution-btn").disabled, true, "dynamic authority cap remains enforced");
+  ok(ui.text("execution-summary").includes("permits at most 50 USDC"), "dynamic ceiling is shown");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no review or authorization call can bypass the ceiling");
 });
 
 await test("embedded webview showModal failure falls back to explicit non-modal confirmation", async () => {

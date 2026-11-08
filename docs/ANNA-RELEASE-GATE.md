@@ -1,6 +1,27 @@
 # Verigate Authority — Anna release gate
 
-## Verified checkpoint — 2026-11-07
+## Current candidate status - 2026-11-08 (authoritative override)
+
+This block supersedes older branch names, SHA values, checkout descriptions, test counts and artifact status in the historical baseline below. Do not use historical CI or binary builds as proof for the current uncommitted worktree.
+
+- Repository: rudimentall1/verigate; branch: feat/anna-0.1.18-executa-0.1.14-hardening.
+- Current HEAD: 70c52f05cf36c0d8e9bb436c0edb913c62fbcd84 (fix: mark platform-specific fsevents as optional). PR #24 is OPEN and not merged. The worktree has 22 modified, uncommitted files; no files are staged, no new commit or push has been made.
+- Candidate versions remain App 0.1.18 / Executa 0.1.14. No Anna upload, cut, publish, review submission, Marketplace release or GitHub Release has been made.
+- Latest full Python suite on the current source: 578 passed, 4 skipped, 3 upstream deprecation warnings (112.73s).
+- Latest Anna App UI E2E: 43/43 passed (183.24s), using the real local App bundle and Python Executa subprocess with fixture-backed Anna host calls. This is not Anna Cloud acceptance.
+- Local policy and identity tests cover 50 different Agent labels sharing one issuer-installation principal and blocking the 51st 40-USDC request at the 2,000-USDC rolling cap. Two separate two-connection concurrency regressions cover ordinary payment evaluation and WARN-review authorization; only one of two concurrent final 40-USDC requests is allowed.
+- EVM chain/RPC/outcome/lifecycle focused tests: 24/24 passed. The verifier checks signed transaction binding, requires the observed transaction chainId, checks verifier-pinned enrolled sender, tx/receipt block metadata, canonical block hash and configured confirmation depth. It is not wired into Anna's UI and does not issue an independent CHAIN_VERIFIER attestation.
+- npm run test:atomic passed: stale authorization reverted, stale side effect 0, fresh side effect 1. npm run test:guard passed: zero executor, attacker/oracle, stale state and value mismatch rejected; exact value forwarded. Ganache used the NodeJS fallback because the optional ?WS native binary is absent on this Windows/Node build.
+- Anna schema-4 validation passed with @anna-ai/cli@0.1.64 / dispatcher 0.33.0 using validate --strict.
+- Existing exact-SHA GitHub CI and four-platform Executa artifacts are for the prior committed HEAD only. Existing archives were built before the current 22 local edits and are NOT final candidate binaries. Rebuild all four platforms from the eventual candidate commit and require green CI on that exact SHA.
+- Anna CU quota is exhausted. Real Cloud Agent install, LLM Sampling, APS App-scope authorization, /data/workspace persistence/restart and post-upgrade lifecycle remain UNVERIFIED.
+- Remaining release blockers: signed SUBMITTED ExecutionReceipt persistence from wallet send; separate governed CHAIN_VERIFIER service/key and independent OutcomeAttestation; wallet enrollment registry mapped to an authenticated principal; network-specific finality plus post-attestation reorg monitoring/reversal; cross-Agent/account-wide budget across separate workspaces; realistic multi-process/Executa load test.
+- Payment values are arbitrary positive USDC values with up to six decimals; 50 and 250 are policy thresholds, not allowed denominations. Static per-transaction cap is 500 USDC and rolling daily cap is 2,000 USDC (hard BLOCK); effective PROBATION dynamic ceiling is currently 50 USDC.
+- RELEASE DECISION: not ready for Anna upload/cut. Continue source-level work, then final review, commit/push the feature branch, run exact-SHA CI and rebuild binaries. Do not use the last upload attempt as a debugging experiment.
+
+
+
+## Historical baseline - 2026-11-07
 
 This working checkpoint supersedes the earlier baseline notes after local hardening against the official Anna 1.1.0 / CLI 0.1.64 documentation published 2026-11-06. Source changes are currently uncommitted on the Windows laptop; the candidate SHA, CI and binary artefacts must be recorded only after the final local suite and a single reviewed Git commit. A green source build is not the same as a successful Cloud Agent install, Marketplace approval, or publication.
 
@@ -56,6 +77,12 @@ Read through the locally authenticated `anna-app` CLI (host `https://anna.partne
 - **Still pending:** final source diff review, commit and push; green GitHub CI on the exact new commit; Linux/macOS builds and smoke packages.
 - **Cloud acceptance remains unverified and cannot be run with the current exhausted Anna CU quota.** Local host fixtures prove protocol and code paths only; they cannot prove Cloud Agent installation, server-side Sampling enablement, APS App-context issuance, Linux binary discovery, or `/data/workspace` lifecycle behaviour. Do not mark this App Anna-ready or claim a successful Cloud Agent test.
 
+### Anna accounting identity boundary ? local hardening, limited scope
+
+The current source maps every user-provided agent_id label to a server-derived principal based on the persistent Ed25519 issuer public-key fingerprint. Policy previews, capability IDs, persistent spend/rate accounting and dynamic authority all use this principal. The signed label is retained for display and exact App/UI binding. This closes label rotation within one issuer installation.
+
+This is not a cross-Agent/account-wide limit: separate Anna Agent workspaces or App installations with separate issuer keys have separate principals. Multiple logical agents on one installation currently share one budget. A true per-agent model requires cryptographic enrollment; a cross-Agent account budget requires a trusted platform identity and a concurrency-safe shared ledger. APS KV currently has ETag CAS for existing records but no atomic create-if-absent for race-free first bootstrap. The real Cloud Agent workspace/key persistence has not been verified because Anna CU quota is exhausted. Do not claim a Cloud or account-wide guarantee.
+
 ### Program context — keep separate from PortalDot
 
 DoraHacks hackathon **2349** is the **Anna AI App Builder Program**, not the separate PortalDot hackathon. The official Anna Founding Builder rules set the initial qualification window to 2026-09-01 through 2026-11-30. Qualification requires an approved and Marketplace-published functional App plus at least 200 Qualified App MAU in one calendar month during that window. For October/November first qualification, the standard Tier E grant at 200 MAU is $50/month; September-only launch-boost amounts no longer apply. Developer/internal QA, bots, failed/cancelled/incomplete runs and meaningless incentivized traffic do not count. See the [official Anna program rules](https://forum.anna.partners/t/turn-your-ai-agents-apps-into-recurring-monthly-grants-join-the-anna-ai-os-founding-builder-program-up-to-80k-month-pool/205).
@@ -90,7 +117,8 @@ This gate prevents incremental Marketplace uploads. A candidate is not Anna-read
 - [x] AI risk flags can escalate ALLOW to WARN but cannot downgrade WARN or BLOCK.
 - [x] Missing or ambiguous fields stop before policy invocation.
 - [x] Every Decision Receipt is verified before any decision is displayed, including fresh decisions returned during execution authorization.
-- [x] Every Execution Authorization is signature-verified, unexpired, and bound to the exact agent, action, target, amount, asset, network and resource shown in the UI.
+- [x] Every Execution Authorization is signature-verified, unexpired, and bound to the installation principal, signed display label, exact action, target, amount, asset, network and resource shown in the UI.
+- [x] Rotating the caller-supplied Agent label cannot reset spend/rate/dynamic-authority state within one issuer installation; a local regression reaches the 2,000-USDC daily cap through 50 unique labels and BLOCKs the next attempt.
 - [x] Missing keys, malformed responses, invalid signatures and unexpected response envelopes fail closed without displaying a decision or permission.
 - [x] Issuer private keys are stored with POSIX mode 0600 inside a mode-0700 app data directory; legacy permissions are tightened and symlinked key paths are rejected.
 
@@ -101,23 +129,26 @@ This gate prevents incremental Marketplace uploads. A candidate is not Anna-read
 - [x] Direct model/tool invocation without a UI-created approval record is rejected both outside App context and when App context exists; no client-supplied boolean can mint approval.
 - [x] Both privileged methods require separate 60-second App-scope approvals: one bound to the exact payment before issuing Execution Authorization, and one bound to the exact authorization ID and transaction before ExecutionRouter consumption. Each record is ETag-deleted exactly once.
 - [x] Critical approvals use the in-App dialog rather than browser `window.confirm()`; dialog cancellation writes no approval record and does not consume an existing permission.
-- [x] WARN and BLOCK never receive execution authority.
+- [x] WARN can receive execution authority only after a distinct App-scope one-time review bound to the exact WARN rule IDs and payment; fresh policy/capability/dynamic authority are rechecked. BLOCK and hard budget/cap rules are never overridable.
 - [x] The wallet path is limited to the explicitly supported native-USDC networks.
 - [x] The exact signed transaction is reconstructed and compared before wallet submission.
 - [x] ExecutionRouter consumes the one-time authorization before the wallet is asked to sign.
 - [x] Replay of a consumed authorization is rejected.
+- [ ] Wallet submission tx hash is persisted as a signed SUBMITTED ExecutionReceipt and bound to the enrolled wallet sender.
+- [ ] A separately governed CHAIN_VERIFIER confirms canonical block/finality and issues an independently signed outcome attestation before dynamic authority can progress.
+- [ ] Reorg monitoring/reversal is defined and tested for any previously attested transaction.
 - [x] Wallet rejection, account changes, chain changes and post-consumption failures are reported without suggesting that funds were sent.
 
 ## 4. Automated release checks
 
 Required before a candidate can be called source-ready:
 
-- [x] Full Python unit and integration suite: 551 passed, 4 skipped, 3 upstream deprecation warnings on the final aligned source.
+- [x] Latest full Python unit and integration suite on current uncommitted source: 577 passed, 4 skipped, 3 upstream deprecation warnings (120.52s).
 - [x] Evidence Graph migration tests: 2 passed, including an injected table-creation failure proving DDL rollback preserves the prior schema and data.
 - [x] Contract and ExecutionRouter EVM end-to-end suites passed locally on Ganache.
-- [x] Anna UI end-to-end tests against the real bundle and real Python Executa process, with a mock Anna reverse-Sampling host: 38/38 passed after a clean npm ci.
-- [x] Cross-layer App/Executa/manifest contract tests: 46 passed after the 0.1.18/0.1.14 alignment.
-- [ ] Multi-platform binary build/package/smoke for Linux x86_64, macOS ARM64 and macOS Intel; Windows x86_64 is locally built and smoke-tested.
+- [x] Latest Anna UI E2E against the real bundle and Python Executa process with fixture-backed reverse-Sampling/APS host: 43/43 passed (183.24s).
+- [x] Cross-layer App/Executa/manifest contract tests passed after the 0.1.18/0.1.14 alignment; exact candidate CI remains required.
+- [ ] Rebuild/package/smoke Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel from the final candidate commit. Artifacts built from prior HEAD are stale for this worktree.
 - [x] `anna-app validate --strict` on schema 4 / CLI 0.1.64 passed after SemVer alignment and listing changes without warnings.
 - [ ] The final CI run must be green on the exact candidate commit. No candidate commit or CI run exists yet.
 
@@ -136,6 +167,11 @@ Real Anna Cloud Agent acceptance is currently unavailable because the Anna CU qu
 | Tampered Decision Receipt | No decision displayed |
 | Tampered or mismatched Execution Authorization | No permission displayed and no wallet call |
 | Replayed consumed authorization | Rejected by ExecutionRouter |
+| Wallet sends an EVM transaction | A signed SUBMITTED ExecutionReceipt is persisted with the exact tx hash and enrolled wallet binding |
+| EVM transaction remains pending / shallow / reorged | Outcome stays UNKNOWN; no dynamic-authority promotion |
+| EVM transaction reaches configured finality threshold | Separate governed CHAIN_VERIFIER confirms exact tx/receipt/effect and emits an independently signed OutcomeAttestation |
+| CHAIN_VERIFIER attestation replay/tampering/wrong wallet | Rejected against registered verifier key, stored signed receipt, exact action, enrolled sender and canonical block evidence |
+| Post-attestation reorg | Reorg monitor emits a governed adverse/reversal event or freezes progression; no automatic success assumption |
 | Tool unavailable / bad envelope / missing issuer key | Clear fail-closed error; no decision inferred |
 
 The real Anna acceptance pass must record the exact App version, Executa version, Agent type (Cloud or local), tool handle resolution, test results and relevant error text. Never infer cloud compatibility from local jsdom tests.

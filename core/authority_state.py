@@ -149,6 +149,7 @@ class DynamicAuthorityService:
         capability_id: str,
         *,
         now: float | None = None,
+        persist: bool = True,
     ) -> AuthoritySnapshot:
         now = time.time() if now is None else now
         latest_reset = self.storage.latest_authority_reset(
@@ -204,12 +205,13 @@ class DynamicAuthorityService:
             authority_policy_sha256=self.policy.digest,
             history_start_at=history_start,
         )
-        self.storage.set_authority_state(
-            agent_id,
-            capability_id,
-            state.value,
-            snapshot.as_dict(),
-        )
+        if persist:
+            self.storage.set_authority_state(
+                agent_id,
+                capability_id,
+                state.value,
+                snapshot.as_dict(),
+            )
         return snapshot
 
     def assert_action(self, capability: Capability, action: ActionIntent) -> AuthoritySnapshot:

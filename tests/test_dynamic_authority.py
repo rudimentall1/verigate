@@ -78,6 +78,27 @@ class DynamicAuthorityTest(unittest.TestCase):
         with self.assertRaisesRegex(PermissionError, "dynamic authority limit"):
             self.service.assert_action(self.capability, blocked)
 
+    def test_read_only_snapshot_does_not_persist_authority_state(self):
+        self.assertIsNone(
+            self.storage.latest_authority_state(
+                self.capability.agent_id,
+                self.capability.capability_id,
+            )
+        )
+        preview = self.service.snapshot(
+            self.capability.agent_id,
+            self.capability.capability_id,
+            persist=False,
+        )
+        self.assertEqual(preview.state, AuthorityState.PROBATION)
+        self.assertAlmostEqual(preview.multiplier, 0.10)
+        self.assertIsNone(
+            self.storage.latest_authority_state(
+                self.capability.agent_id,
+                self.capability.capability_id,
+            )
+        )
+
     def test_success_history_promotes_to_standard_then_elevated(self):
         for i in range(5):
             self.success(f"ok-{i}")

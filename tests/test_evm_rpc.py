@@ -24,6 +24,33 @@ class EvmRpcClientTest(unittest.TestCase):
         self.assertEqual(client.chain_id(), 8453)
         self.assertIn(b'"eth_chainId"', calls[0])
 
+    def test_get_block_by_number_requests_canonical_block_and_validates_number(self):
+        calls = []
+
+        def transport(endpoint, payload, headers, timeout):
+            request = __import__("json").loads(payload)
+            calls.append(request)
+            return (
+                b'{"jsonrpc":"2.0","id":1,"result":'
+                b'{"number":"0x10","hash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}'
+            )
+
+        client = EvmRpcClient("https://example.invalid", transport=transport)
+        block = client.get_block_by_number(16)
+        self.assertEqual(block["number"], "0x10")
+        self.assertEqual(calls[0]["method"], "eth_getBlockByNumber")
+        self.assertEqual(calls[0]["params"], ["0x10", False])
+
+        mismatched = EvmRpcClient(
+            "https://example.invalid",
+            transport=lambda *_: (
+                b'{"jsonrpc":"2.0","id":1,"result":'
+                b'{"number":"0x11","hash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}'
+            ),
+        )
+        with self.assertRaisesRegex(EvmRpcError, "different block number"):
+            mismatched.get_block_by_number(16)
+
     def test_send_raw_transaction_uses_exact_wire_payload(self):
         calls = []
 

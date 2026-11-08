@@ -105,6 +105,51 @@ class EvmRpcClient:
             raise EvmRpcError("eth_getTransactionReceipt returned invalid result")
         return result
 
+    def get_block_by_number(self, block_number: int) -> dict[str, Any] | None:
+        if isinstance(block_number, bool) or not isinstance(block_number, int) or block_number < 0:
+            raise ValueError("invalid EVM block number")
+        result = self._request("eth_getBlockByNumber", [hex(block_number), False])
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            raise EvmRpcError("eth_getBlockByNumber returned invalid result")
+        returned_number = result.get("number")
+        returned_hash = result.get("hash")
+        if not isinstance(returned_number, str) or not returned_number.startswith("0x"):
+            raise EvmRpcError("eth_getBlockByNumber returned no valid block number")
+        try:
+            parsed_number = int(returned_number, 16)
+        except ValueError as exc:
+            raise EvmRpcError("eth_getBlockByNumber returned an invalid block number") from exc
+        if parsed_number != block_number:
+            raise EvmRpcError("eth_getBlockByNumber returned a different block number")
+        if (
+            not isinstance(returned_hash, str)
+            or len(returned_hash) != 66
+            or not returned_hash.startswith("0x")
+            or any(char not in "0123456789abcdefABCDEF" for char in returned_hash[2:])
+        ):
+            raise EvmRpcError("eth_getBlockByNumber returned an invalid block hash")
+        return result
+
+    def get_transaction_by_hash(self, transaction_hash: str) -> dict[str, Any] | None:
+        if (
+            not isinstance(transaction_hash, str)
+            or not transaction_hash.startswith("0x")
+            or len(transaction_hash) != 66
+            or any(c not in "0123456789abcdefABCDEF" for c in transaction_hash[2:])
+        ):
+            raise ValueError("invalid EVM transaction hash")
+        result = self._request("eth_getTransactionByHash", [transaction_hash])
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            raise EvmRpcError("eth_getTransactionByHash returned invalid result")
+        returned_hash = result.get("hash")
+        if not isinstance(returned_hash, str) or returned_hash.lower() != transaction_hash.lower():
+            raise EvmRpcError("eth_getTransactionByHash returned a mismatched transaction")
+        return result
+
     def confirm_transaction(self, transaction_hash: str) -> dict[str, Any]:
         receipt = self.get_transaction_receipt(transaction_hash)
         if receipt is None:
