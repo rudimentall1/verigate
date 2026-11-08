@@ -6,6 +6,7 @@ suitable for a CHAIN_RECEIPT OutcomeClaim and subsequent attestation.
 """
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from core.effect_verification import EffectVerifier, ObservedEffect, digest
@@ -240,6 +241,9 @@ class EVMChainVerifier(EffectVerifier):
             "transaction_to": transaction.get("to") if transaction else None,
             "transaction_from": transaction.get("from") if transaction else None,
             "transaction_input_sha256": digest(transaction.get("input", transaction.get("data"))) if transaction else None,
+            "transaction_calldata_sha256": hashlib.sha256(
+                str(transaction.get("input", transaction.get("data"))).lower().encode("utf-8")
+            ).hexdigest() if transaction else None,
             "transaction_value_wei": str(_quantity(transaction.get("value"), "observed transaction value")) if transaction else None,
             "receipt_sha256": digest(receipt) if receipt is not None else None,
         }
