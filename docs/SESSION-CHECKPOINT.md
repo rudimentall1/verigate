@@ -297,3 +297,13 @@ This section supersedes all earlier statements in this file that say App 0.1.18 
 - Upload used a separate clean worktree at `C:\\Users\\User\\verigate-anna-release`, created from exact `origin/main` SHA `8823b97`.
 - The user's original checkout `C:\\Users\\User\\verigate` was not modified by this work. It remains at HEAD `674ea3a`, 221 commits behind `origin/main`, with 7 pre-existing modified files. Do not publish from it or overwrite those changes.
 - Detailed release gate and all evidence are in `docs/ANNA-RELEASE-GATE.md`.
+
+### Review candidate correction — verified from user-provided Anna Console screenshot (2026-11-08)
+
+The previous subsection above incorrectly stated that review remained pinned to 0.1.17. That statement is superseded.
+
+- Versions page marks App `0.1.18` as `review candidate`.
+- Submit for review panel explicitly says `v0.1.18 is pinned for this review` and badge `In review: v0.1.18`.
+- Therefore App `0.1.18` is already the active review candidate. Do not submit again.
+- The earlier CLI/API interpretation was stale or inconsistent with the live Developer Console. For current review pinning, the user-provided live console screenshot is the authoritative evidence.
+- `Unpublished` in Version history is the publication state, not the review-candidate state. Review is in progress; Marketplace publication has not occurred.
