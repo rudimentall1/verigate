@@ -299,6 +299,50 @@ CREATE TABLE IF NOT EXISTS attestor_governance_actions (
 CREATE INDEX IF NOT EXISTS idx_attestor_governance_attestor
     ON attestor_governance_actions(attestor_id, created_at);
 
+CREATE TABLE IF NOT EXISTS external_execution_submissions (
+    authorization_id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    authorization_json TEXT NOT NULL,
+    receipt_json TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_external_submissions_agent_time
+    ON external_execution_submissions(agent_id, created_at);
+
+CREATE TABLE IF NOT EXISTS wallet_enrollments (
+    enrollment_id TEXT PRIMARY KEY,
+    installation_principal TEXT NOT NULL,
+    issuer_key_id TEXT NOT NULL,
+    issuer_public_key_b64 TEXT NOT NULL,
+    chain_id INTEGER NOT NULL,
+    network TEXT NOT NULL,
+    wallet_address TEXT NOT NULL,
+    min_confirmations INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    revoked_at REAL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_enrollments_active_wallet
+    ON wallet_enrollments(chain_id, wallet_address) WHERE status = 'ACTIVE';
+
+CREATE INDEX IF NOT EXISTS idx_wallet_enrollments_principal
+    ON wallet_enrollments(installation_principal, chain_id, status);
+
+CREATE TABLE IF NOT EXISTS wallet_enrollment_governance_actions (
+    action_id TEXT PRIMARY KEY,
+    action_sha256 TEXT NOT NULL UNIQUE,
+    enrollment_id TEXT NOT NULL,
+    installation_principal TEXT NOT NULL,
+    action TEXT NOT NULL,
+    envelope_json TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_enrollment_actions_scope
+    ON wallet_enrollment_governance_actions(installation_principal, created_at);
+
 CREATE TABLE IF NOT EXISTS execution_outcome_claims (
     claim_id TEXT PRIMARY KEY,
     authorization_id TEXT NOT NULL,
@@ -793,6 +837,92 @@ class Storage:
                 (intent_id,),
             ).fetchone()
         return self.authorization_by_id(row[0]) if row else None
+
+    def record_external_execution_submission(self, authorization: dict, receipt: dict) -> dict:
+        """Persist a verified installation-signed authorization/receipt pair atomically."""
+        auth_payload = authorization["payload"]
+        receipt_payload = receipt["payload"]
+        authorization_id = auth_payload["authorization_id"]
+        if receipt_payload.get("authorization_id") != authorization_id:
+            raise ValueError("external execution receipt authorization mismatch")
+        auth_json = json.dumps(authorization, sort_keys=True, separators=(",", ":"))
+        receipt_json = json.dumps(receipt, sort_keys=True, separators=(",", ":"))
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                existing = self._conn.execute(
+                    "SELECT authorization_json, receipt_json FROM external_execution_submissions WHERE authorization_id = ?",
+                    (authorization_id,),
+                ).fetchone()
+                if existing is not None:
+                    if existing[0] != auth_json or existing[1] != receipt_json:
+                        raise ValueError("a conflicting external execution submission already exists")
+                    self._conn.commit()
+                    return {"stored": True, "idempotent": True}
+                existing_authorization = self._conn.execute(
+                    "SELECT execution_authorization_json FROM authorization_artifacts WHERE authorization_id = ?",
+                    (authorization_id,),
+                ).fetchone()
+                if (
+                    existing_authorization is not None
+                    and existing_authorization[0] is not None
+                    and existing_authorization[0] != auth_json
+                ):
+                    raise ValueError("a different signed execution authorization is already recorded")
+                existing_receipt = self._conn.execute(
+                    "SELECT receipt_json FROM execution_receipts WHERE authorization_id = ?",
+                    (authorization_id,),
+                ).fetchone()
+                if existing_receipt is not None and existing_receipt[0] != receipt_json:
+                    raise ValueError("a different execution receipt is already recorded for this authorization")
+                if existing_receipt is None:
+                    self._conn.execute(
+                        "INSERT INTO execution_receipts "
+                        "(receipt_id, authorization_id, intent_id, agent_id, network, status, transaction_ref, receipt_json, signature, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            receipt_payload["receipt_id"], authorization_id,
+                            receipt_payload["intent_id"], receipt_payload["agent_id"],
+                            receipt_payload.get("network") or "", receipt_payload["status"],
+                            receipt_payload.get("transaction_ref"), receipt_json,
+                            receipt["signature"], time.time(),
+                        ),
+                    )
+                self._conn.execute(
+                    "INSERT INTO external_execution_submissions "
+                    "(authorization_id, agent_id, authorization_json, receipt_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (authorization_id, auth_payload["agent_id"], auth_json, receipt_json, time.time()),
+                )
+                self._conn.commit()
+                return {"stored": True, "idempotent": False}
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def external_execution_submission_by_authorization(self, authorization_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT authorization_json, receipt_json FROM external_execution_submissions WHERE authorization_id = ?",
+                (authorization_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {"authorization": json.loads(row[0]), "execution_receipt": json.loads(row[1])}
+
+    def execution_authorization_by_id(self, authorization_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT execution_authorization_json FROM authorization_artifacts WHERE authorization_id = ?",
+                (authorization_id,),
+            ).fetchone()
+            if row is not None and row[0]:
+                return json.loads(row[0])
+            row = self._conn.execute(
+                "SELECT authorization_json FROM external_execution_submissions WHERE authorization_id = ?",
+                (authorization_id,),
+            ).fetchone()
+        return json.loads(row[0]) if row else None
 
     def execution_receipt_by_authorization(self, authorization_id: str) -> dict | None:
         with self._lock:
@@ -1645,6 +1775,112 @@ class Storage:
     def set_signature(self, intent_id: str, signature: str) -> None:
         """Backward-compatible alias for update_signature()."""
         self.update_signature(intent_id, signature)
+
+    def apply_wallet_enrollment_governance(
+        self,
+        *,
+        operation: str,
+        enrollment: dict | None,
+        enrollment_id: str,
+        installation_principal: str,
+        envelope: dict,
+    ) -> dict:
+        """Atomically apply a governed wallet enrollment change and audit it."""
+        if operation not in {"WALLET_ENROLL", "WALLET_REVOKE"}:
+            raise ValueError("unsupported wallet enrollment operation")
+        action = envelope["action"]
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                if operation == "WALLET_ENROLL":
+                    if enrollment is None:
+                        raise ValueError("wallet enrollment data is required")
+                    self._conn.execute(
+                        "INSERT INTO wallet_enrollments "
+                        "(enrollment_id, installation_principal, issuer_key_id, issuer_public_key_b64, "
+                        "chain_id, network, wallet_address, min_confirmations, status, created_at, revoked_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, NULL)",
+                        (
+                            enrollment["enrollment_id"], enrollment["installation_principal"],
+                            enrollment["issuer_key_id"], enrollment["issuer_public_key_b64"],
+                            enrollment["chain_id"], enrollment["network"], enrollment["wallet_address"],
+                            enrollment["min_confirmations"], time.time(),
+                        ),
+                    )
+                else:
+                    cursor = self._conn.execute(
+                        "UPDATE wallet_enrollments SET status = 'REVOKED', revoked_at = ? "
+                        "WHERE enrollment_id = ? AND status = 'ACTIVE'",
+                        (time.time(), enrollment_id),
+                    )
+                    if cursor.rowcount != 1:
+                        raise LookupError("active wallet enrollment not found")
+                self._conn.execute(
+                    "INSERT INTO wallet_enrollment_governance_actions "
+                    "(action_id, action_sha256, enrollment_id, installation_principal, action, envelope_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        action["action_id"], envelope["action_sha256"], enrollment_id,
+                        installation_principal, operation,
+                        json.dumps(envelope, sort_keys=True, separators=(",", ":")), time.time(),
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError as exc:
+                self._conn.rollback()
+                raise ValueError("wallet enrollment conflicts with an existing enrollment or governance action") from exc
+            except Exception:
+                self._conn.rollback()
+                raise
+        result = self.wallet_enrollment(enrollment_id)
+        if result is None:
+            raise RuntimeError("wallet enrollment write did not persist")
+        return result
+
+    def wallet_enrollment(self, enrollment_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT enrollment_id, installation_principal, issuer_key_id, issuer_public_key_b64, "
+                "chain_id, network, wallet_address, min_confirmations, status, created_at, revoked_at "
+                "FROM wallet_enrollments WHERE enrollment_id = ?",
+                (enrollment_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        keys = (
+            "enrollment_id", "installation_principal", "issuer_key_id", "issuer_public_key_b64",
+            "chain_id", "network", "wallet_address", "min_confirmations", "status", "created_at", "revoked_at",
+        )
+        return dict(zip(keys, row))
+
+    def wallet_enrollment_for_wallet(
+        self, installation_principal: str, chain_id: int, wallet_address: str
+    ) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT enrollment_id FROM wallet_enrollments "
+                "WHERE installation_principal = ? AND chain_id = ? AND wallet_address = ?",
+                (installation_principal, chain_id, wallet_address.lower()),
+            ).fetchone()
+        return self.wallet_enrollment(row[0]) if row else None
+
+    def wallet_enrollments_for_principal(self, installation_principal: str) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT enrollment_id FROM wallet_enrollments "
+                "WHERE installation_principal = ? ORDER BY chain_id, wallet_address",
+                (installation_principal,),
+            ).fetchall()
+        return [item for row in rows if (item := self.wallet_enrollment(row[0])) is not None]
+
+    def wallet_enrollment_governance_actions(self, installation_principal: str) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT envelope_json FROM wallet_enrollment_governance_actions "
+                "WHERE installation_principal = ? ORDER BY created_at",
+                (installation_principal,),
+            ).fetchall()
+        return [json.loads(row[0]) for row in rows]
 
     def register_outcome_attestor(self, attestor: dict) -> None:
         with self._lock:

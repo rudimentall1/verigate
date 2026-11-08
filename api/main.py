@@ -57,6 +57,8 @@ from attest.verify import verify_attestation
 from attest.receipt import verify_execution_authorization
 from core.adversarial import AdversarialVerificationPlane
 from core.attestor import AttestorAuthorityService
+from core.wallet_enrollment import WalletEnrollmentService
+from core.submission_ingest import ExecutionSubmissionService
 from core.authority import AuthorityGraph
 from core.authority_state import DynamicAuthorityService
 from core.engine import GuardrailEngine
@@ -119,6 +121,12 @@ from .schemas import (
     AttestorGovernanceRequest,
     AttestorGovernanceResponse,
     AttestorResponse,
+    WalletEnrollmentGovernanceRequest,
+    WalletEnrollmentGovernanceResponse,
+    WalletEnrollmentListResponse,
+    ExecutionSubmissionIngestRequest,
+    ExecutionSubmissionIngestResponse,
+    ExecutionSubmissionEvidenceResponse,
     PaymentIntentRequest,
     VerifyRequest,
     VerifyResponse,
@@ -205,6 +213,8 @@ def _load_governance_policy() -> GovernancePolicy:
             "ATTESTOR_ROTATE",
             "ATTESTOR_REVOKE",
             "ATTESTOR_EXPIRE",
+            "WALLET_ENROLL",
+            "WALLET_REVOKE",
         ),
     )
     policy.validate()
@@ -779,6 +789,71 @@ def get_attestor(attestor_id: str) -> dict:
 
 
 @app.post(
+    "/v1/governance/wallet-enrollments",
+    response_model=WalletEnrollmentGovernanceResponse,
+)
+def govern_wallet_enrollment(req: WalletEnrollmentGovernanceRequest) -> dict:
+    assert _storage is not None and _governance_policy is not None
+    # A single local governor is acceptable for development, not for binding
+    # production wallets to installation signing keys.
+    if _governance_policy.threshold < 2:
+        raise HTTPException(
+            status_code=503,
+            detail="wallet enrollment requires a multi-party governance policy (threshold >= 2)",
+        )
+    try:
+        return WalletEnrollmentService(_storage).apply(
+            req.action, req.approvals, _governance_policy,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get(
+    "/v1/governance/wallet-enrollments/{installation_principal}",
+    response_model=WalletEnrollmentListResponse,
+)
+def list_wallet_enrollments(installation_principal: str) -> dict:
+    assert _storage is not None
+    if (
+        len(installation_principal) != len("anna-installation:") + 64
+        or not installation_principal.startswith("anna-installation:")
+        or any(char not in "0123456789abcdef" for char in installation_principal.split(":", 1)[-1])
+    ):
+        raise HTTPException(status_code=400, detail="invalid installation principal")
+    return {
+        "installation_principal": installation_principal,
+        "enrollments": _storage.wallet_enrollments_for_principal(installation_principal),
+        "governance_history": _storage.wallet_enrollment_governance_actions(installation_principal),
+    }
+
+
+@app.post(
+    "/v1/execution/submissions",
+    response_model=ExecutionSubmissionIngestResponse,
+)
+def ingest_execution_submission(req: ExecutionSubmissionIngestRequest) -> dict:
+    """Ingest an Anna installation-signed SUBMITTED receipt for independent verification."""
+    assert _storage is not None
+    try:
+        return ExecutionSubmissionService(_storage).ingest(
+            req.authorization, req.execution_receipt,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=400, detail="malformed execution submission") from exc
+
+
+@app.post(
     "/v1/outcomes/attest",
     response_model=OutcomeAttestationResponse,
 )
@@ -916,6 +991,30 @@ def authority_reset_multiparty(req: MultiPartyAuthorityResetRequest) -> dict:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get(
+    "/v1/execution/submissions/{authorization_id}",
+    response_model=ExecutionSubmissionEvidenceResponse,
+)
+def external_execution_submission(authorization_id: str) -> dict:
+    """Return the enrolled installation's signed authorization and wallet receipt to its verifier."""
+    assert _storage is not None
+    submission = _storage.external_execution_submission_by_authorization(authorization_id)
+    if submission is None:
+        raise HTTPException(status_code=404, detail="external execution submission not found")
+    receipt_payload = submission["execution_receipt"]["payload"]
+    wallet_data = receipt_payload.get("submission_data") or {}
+    enrollment = _storage.wallet_enrollment_for_wallet(
+        receipt_payload["agent_id"], wallet_data.get("chain_id"), wallet_data.get("sender", "")
+    )
+    if enrollment is None or enrollment["status"] != "ACTIVE":
+        raise HTTPException(status_code=403, detail="wallet enrollment is not active")
+    return {
+        "authorization_id": authorization_id,
+        **submission,
+        "wallet_enrollment": enrollment,
+    }
 
 
 @app.get("/v1/execution/receipts/{authorization_id}")

@@ -202,3 +202,56 @@ Official references:
 - Anna 1.1.0 / CLI 0.1.64 changelog: https://forum.anna.partners/t/anna-1-1-0-beta-211-beta-220-anna-ai-cli-0-1-64-permission-gates-are-gone-manifest-schema-4-shared-node-22-chrome-runtime-for-executas-async-invoke-reliability-overhaul-faster-app-opens-harness-tools-fixed/542
 - Anna review timeline: https://forum.anna.partners/t/app-review-timeline-process/318
 - Anna program rules: https://forum.anna.partners/t/turn-your-ai-agents-apps-into-recurring-monthly-grants-join-the-anna-ai-os-founding-builder-program-up-to-80k-month-pool/205
+
+---
+
+## 6. Latest session update — governed wallet enrollment + chain submission ingest
+
+**Checkpoint refresh:** 2026-11-08 15:41 (+05:00)
+
+This section supersedes earlier branch/worktree statements above where they conflict.
+
+- **Current local branch:** `feat/governed-wallet-enrollment`
+- **Current HEAD:** `ebf9a0ba53b31bb666b5d402efe421f1f150f351`
+- **HEAD subject:** `docs: record follow-up CI and platform artifact evidence`
+- **Working tree:** intentionally dirty; changes are **not committed or pushed**.
+- **Latest worktree status:** modified `api/main.py`, `api/schemas.py`, `core/outcome.py`, `core/storage.py`; new `core/submission_ingest.py`, `core/wallet_enrollment.py`, `docs/WALLET-ENROLLMENT-AND-CHAIN-INGEST.md`, `scripts/chain_verifier_worker.py`, `tests/test_api_wallet_enrollment.py`, `tests/test_submission_ingest.py`, `tests/test_wallet_enrollment.py`.
+- Tracked diff summary at checkpoint: 4 modified tracked files, 402 insertions / 5 deletions; untracked files are additional and are not included in that diff stat.
+- `git diff --check` passed; Git emitted only LF/CRLF normalization warnings.
+
+### What the current work is targeting
+
+The next lifecycle gap is being addressed as a vertical slice: authenticated wallet enrollment, ingestion of wallet submission evidence, persistence of the execution receipt, and connection to the existing outcome-attestation path. The purpose is to bridge the Anna wallet hand-off to a receipt that can subsequently be checked by a separately governed chain verifier. A wallet-provided transaction hash by itself is **not** proof of on-chain success.
+
+New/changed surfaces currently present in the worktree:
+- API route/schema changes in `api/main.py` and `api/schemas.py`.
+- Persistence changes in `core/storage.py`.
+- Outcome lifecycle changes in `core/outcome.py`.
+- New enrollment and submission-ingestion modules.
+- A chain-verifier worker entry point.
+- Focused regression suites for enrollment, submission ingestion and API behavior.
+- Design/implementation notes in `docs/WALLET-ENROLLMENT-AND-CHAIN-INGEST.md`.
+
+### Test evidence at this checkpoint
+
+- Focused tests for the current lifecycle slice: **62/62 passed** (as reported in the latest run).
+- Full Python suite after the current work: **581 passed, 4 skipped, 3 upstream deprecation warnings**, exit code 0, 108.85 seconds.
+- These results are local test evidence only. They do not establish Anna Cloud acceptance, external RPC correctness against a live chain, or independent verifier governance.
+- The previously recorded UI E2E 43/43 and EVM `test:atomic` / `test:guard` results apply to the earlier verified source state. The latest UI E2E and EVM script reruns were still pending at the time of this checkpoint refresh; do not describe them as rerun against the current dirty worktree.
+
+### Immediate next actions
+
+1. Finish and record the UI E2E run against this exact worktree.
+2. Re-run `npm run test:atomic` and `npm run test:guard` against this exact worktree.
+3. Review the complete tracked and untracked diff for trust boundaries: wallet enrollment must be authenticated and revocable; submitted tx data must be bound to the enrolled wallet/network; idempotency and replay behavior must be explicit; no caller-supplied success flag may create a confirmed outcome; the chain verifier must use a separate key/identity and trusted enrollment data.
+4. Review transaction boundaries and concurrency in storage. In particular, prove that receipt creation/consumption and outcome transitions cannot be replayed or race into inconsistent states.
+5. Run `git diff --check`, inspect final status, and update this checkpoint with exact test results.
+6. Only then decide whether to commit/push. Do not merge, publish a GitHub Release, upload/cut App 0.1.18, or submit Anna review without explicit authorization.
+
+### Guardrails remain unchanged
+
+- Anna App 0.1.18 has not been uploaded/cut/submitted; preserve the last upload attempt.
+- No Anna Cloud acceptance is claimed; Anna CU quota remains exhausted.
+- No GitHub Release or PR merge is authorized by this work.
+- Do not stage build outputs, `.anna`, `node_modules`, `.pyinstaller`, or `dist`.
+- Keep all unrelated repositories, services, and workloads untouched.

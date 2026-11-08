@@ -251,7 +251,11 @@ class OutcomeAttestationService:
                         if claim["status"] == "SUCCEEDED"
                         else "EXECUTION_FAILED"
                     ),
-                    evidence_ref=claim_id,
+                    evidence_ref=(
+                        claim["evidence_ref"]
+                        if payload["attestor_type"] == "CHAIN_VERIFIER"
+                        else claim_id
+                    ),
                     metadata={
                         "outcome_attestation_id": payload["attestation_id"],
                         "attestation_type": payload["attestor_type"],
@@ -322,9 +326,28 @@ class OutcomeAttestationService:
         )
         if receipt is None:
             raise LookupError("execution receipt not found")
+        issuer_public_key = self.issuer_public_key
+        if registered_attestor["attestor_type"] == "CHAIN_VERIFIER" and str(claim.get("agent_id", "")).startswith("anna-installation:"):
+            receipt_payload = receipt.get("payload", {})
+            submission = receipt_payload.get("submission_data")
+            if not isinstance(submission, dict):
+                raise ValueError("Anna CHAIN_VERIFIER receipt is missing wallet enrollment metadata")
+            enrollment = self.storage.wallet_enrollment_for_wallet(
+                claim["agent_id"], submission.get("chain_id"), submission.get("sender", "")
+            )
+            if enrollment is None or enrollment["status"] != "ACTIVE":
+                raise PermissionError("Anna installation wallet enrollment is not active")
+            if receipt_payload.get("network") != enrollment["network"]:
+                raise ValueError("Anna execution receipt network does not match wallet enrollment")
+            try:
+                issuer_public_key = Ed25519PublicKey.from_public_bytes(
+                    base64.b64decode(enrollment["issuer_public_key_b64"], validate=True)
+                )
+            except (ValueError, TypeError):
+                raise ValueError("enrolled Anna installation issuer key is invalid") from None
         valid, reason = verify_execution_receipt(
             receipt,
-            self.issuer_public_key,
+            issuer_public_key,
         )
         if not valid:
             raise ValueError(f"stored execution receipt is invalid: {reason}")
@@ -403,12 +426,11 @@ class OutcomeAttestationService:
 
             # Bind the chain observation to the *original signed authorization*,
             # not merely to fields copied into an executor's receipt metadata.
-            artifacts = self.storage.authorization_by_id(claim["authorization_id"])
-            authorization = artifacts.get("execution_authorization") if artifacts else None
+            authorization = self.storage.execution_authorization_by_id(claim["authorization_id"])
             if not isinstance(authorization, dict):
                 raise LookupError("stored signed execution authorization not found")
             auth_valid, auth_reason = verify_execution_receipt(
-                receipt, self.issuer_public_key, authorization
+                receipt, issuer_public_key, authorization
             )
             if not auth_valid:
                 raise ValueError(f"execution receipt is not bound to stored authorization: {auth_reason}")

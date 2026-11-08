@@ -219,6 +219,29 @@ class ExecutionConsumeResponse(BaseModel):
     reason: str
 
 
+class ExecutionSubmissionIngestRequest(BaseModel):
+    authorization: dict
+    execution_receipt: dict
+
+
+class ExecutionSubmissionIngestResponse(BaseModel):
+    status: str
+    authorization_id: str
+    installation_principal: str
+    enrollment_id: str
+    transaction_hash: str
+    receipt_sha256: str
+    stored: bool
+    idempotent: bool
+
+
+class ExecutionSubmissionEvidenceResponse(BaseModel):
+    authorization_id: str
+    authorization: dict
+    execution_receipt: dict
+    wallet_enrollment: dict
+
+
 class OutcomeAttestationRequest(BaseModel):
     attestation: dict
 
@@ -238,6 +261,23 @@ class OutcomeEvidenceResponse(BaseModel):
     authorization_id: str
     claims: list[dict]
     attestations: list[dict]
+
+
+class WalletEnrollmentGovernanceRequest(BaseModel):
+    action: dict
+    approvals: list[dict]
+
+
+class WalletEnrollmentGovernanceResponse(BaseModel):
+    status: str
+    enrollment: dict
+    governance_action: dict
+
+
+class WalletEnrollmentListResponse(BaseModel):
+    installation_principal: str
+    enrollments: list[dict]
+    governance_history: list[dict]
 
 
 class AttestorGovernanceRequest(BaseModel):
