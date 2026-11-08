@@ -4,11 +4,11 @@
 **Repository:** https://github.com/rudimentall1/verigate
 **Local working copy:** `C:\Users\User\Desktop\Work\verigate-anna-0.1.13`
 **Current branch:** `feat/anna-0.1.18-executa-0.1.14-hardening`
-**Current HEAD:** `70c52f05cf36c0d8e9bb436c0edb913c62fbcd84`
-**Latest commit:** `fix: mark platform-specific fsevents as optional`
+**Current verified source commit:** `98d4c23062fd53e58636793623a537efae3ae592`
+**Latest verified commit:** `fix: bind chain attestations to submitted wallet receipts`
 **PR:** https://github.com/rudimentall1/verigate/pull/24 — OPEN, mergeable, NOT merged.
 
-> This section is the current source of truth and supersedes stale statements in the historical checkpoint below. The baseline worktree was clean and matched origin before this session's edits. Twenty-two files are currently modified but uncommitted; branch HEAD remains `70c52f0`. Chain-verifier hardening, the explicit WARN-review path, hard daily-cap semantics and related tests/docs are local-only and have not been committed or pushed.
+> Current status: the worktree was clean at commit `98d4c230` before the follow-up E2E harness repair. Four local follow-up files are uncommitted: the Arbitrum Sepolia E2E harness, release gate, session checkpoint and threat model. Exact-SHA CI and all four platform artifacts passed on `98d4c230`; artifact hashes and release blockers are recorded in `docs/ANNA-RELEASE-GATE.md`, which is the authoritative detailed release record. All older status statements below are historical and must not be used as current evidence.
 
 ## 1. User requirements that must not be lost
 
