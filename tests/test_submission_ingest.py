@@ -1,12 +1,14 @@
-﻿import base64
+import base64
 import hashlib
 import json
+import os
 import tempfile
+import unittest
+from unittest.mock import patch
 import time
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -41,8 +43,8 @@ def approval(action, key, tag):
     return {"payload": payload, "signature": base64.b64encode(key.sign(canonical(payload))).decode(), "algorithm": "Ed25519"}
 
 
-class TestSubmissionIngest:
-    def setup_method(self):
+class TestSubmissionIngest(unittest.TestCase):
+    def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
         self.local = Storage(str(root / "executa.db"))
@@ -113,25 +115,28 @@ class TestSubmissionIngest:
             enroll, [approval(enroll, self.gov1, "g1"), approval(enroll, self.gov2, "g2")], self.governance,
         )
 
-    def teardown_method(self):
+    def tearDown(self):
         self.local.close()
         self.remote.close()
         self.tmp.cleanup()
 
     def test_ingest_verifies_enrolled_issuer_and_persists_for_independent_verifier(self):
         result = ExecutionSubmissionService(self.remote).ingest(self.authorization, self.receipt)
-        assert result["status"] == "STORED"
-        assert result["stored"] is True and result["idempotent"] is False
-        assert self.remote.execution_receipt_by_authorization(self.authorization["payload"]["authorization_id"]) == self.receipt
-        assert self.remote.execution_authorization_by_id(self.authorization["payload"]["authorization_id"]) == self.authorization
+        self.assertEqual(result["status"], "STORED")
+        self.assertTrue(result["stored"])
+        self.assertFalse(result["idempotent"])
+        self.assertEqual(self.remote.execution_receipt_by_authorization(self.authorization["payload"]["authorization_id"]), self.receipt)
+        self.assertEqual(self.remote.execution_authorization_by_id(self.authorization["payload"]["authorization_id"]), self.authorization)
 
-    def test_http_ingestion_endpoint_accepts_verified_installation_receipt(self, monkeypatch):
+    def test_http_ingestion_endpoint_accepts_verified_installation_receipt(self):
         from api import main
         root = Path(self.tmp.name)
-        monkeypatch.delenv("VERIGATE_API_KEYS", raising=False)
-        monkeypatch.delenv("VERIGATE_TENANT_API_KEYS", raising=False)
-        monkeypatch.delenv("VERIGATE_TENANT_KEY_DIR", raising=False)
-        monkeypatch.delenv("VERIGATE_REQUIRE_AUTH", raising=False)
+        env_overrides = {
+            "VERIGATE_API_KEYS": "",
+            "VERIGATE_TENANT_API_KEYS": "",
+            "VERIGATE_TENANT_KEY_DIR": "",
+            "VERIGATE_REQUIRE_AUTH": "",
+        }
         main.POLICY_PATH = str(root / "api-policy.yaml")
         main.DB_PATH = str(root / "api-ingest.db")
         main.PRIVATE_KEY_PATH = str(root / "api-issuer.key")
@@ -140,22 +145,39 @@ class TestSubmissionIngest:
         main.GOVERNANCE_PUBLIC_KEY_PATH = str(root / "api-governance.pub")
         main.GOVERNANCE_POLICY_PATH = str(root / "api-governance.json")
         Path(main.POLICY_PATH).write_text("allowed_networks: [base]\nallowed_assets: [USDC]\n", encoding="utf-8")
-        with TestClient(main.app) as client:
-            startup_storage = main._storage
-            main._storage = self.remote
-            try:
-                response = client.post("/v1/execution/submissions", json={
-                    "authorization": self.authorization,
-                    "execution_receipt": self.receipt,
-                })
-            finally:
-                main._storage = startup_storage
-            assert response.status_code == 200, response.text
-            assert response.json()["status"] == "STORED"
-            assert response.json()["installation_principal"] == self.principal
-            startup_storage.close()
-        main._storage = main._engine = main._policy = None
-        main._governance_policy = None
+        with patch.dict(os.environ, env_overrides), patch.multiple(
+            main,
+            POLICY_PATH=main.POLICY_PATH,
+            DB_PATH=main.DB_PATH,
+            PRIVATE_KEY_PATH=main.PRIVATE_KEY_PATH,
+            PUBLIC_KEY_PATH=main.PUBLIC_KEY_PATH,
+            GOVERNANCE_PRIVATE_KEY_PATH=main.GOVERNANCE_PRIVATE_KEY_PATH,
+            GOVERNANCE_PUBLIC_KEY_PATH=main.GOVERNANCE_PUBLIC_KEY_PATH,
+            GOVERNANCE_POLICY_PATH=main.GOVERNANCE_POLICY_PATH,
+        ):
+            main.POLICY_PATH = str(root / "api-policy.yaml")
+            main.DB_PATH = str(root / "api-ingest.db")
+            main.PRIVATE_KEY_PATH = str(root / "api-issuer.key")
+            main.PUBLIC_KEY_PATH = str(root / "api-issuer.pub")
+            main.GOVERNANCE_PRIVATE_KEY_PATH = str(root / "api-governance.key")
+            main.GOVERNANCE_PUBLIC_KEY_PATH = str(root / "api-governance.pub")
+            main.GOVERNANCE_POLICY_PATH = str(root / "api-governance.json")
+            with TestClient(main.app) as client:
+                startup_storage = main._storage
+                main._storage = self.remote
+                try:
+                    response = client.post("/v1/execution/submissions", json={
+                        "authorization": self.authorization,
+                        "execution_receipt": self.receipt,
+                    })
+                finally:
+                    main._storage = startup_storage
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["status"], "STORED")
+                self.assertEqual(response.json()["installation_principal"], self.principal)
+                startup_storage.close()
+            main._storage = main._engine = main._policy = None
+            main._governance_policy = None
 
     def test_verifier_api_can_retrieve_ingested_signed_submission(self):
         result = ExecutionSubmissionService(self.remote).ingest(self.authorization, self.receipt)
@@ -165,9 +187,9 @@ class TestSubmissionIngest:
             fetched = api_main.external_execution_submission(self.authorization["payload"]["authorization_id"])
         finally:
             api_main._storage = previous_storage
-        assert fetched["authorization"] == self.authorization
-        assert fetched["execution_receipt"] == self.receipt
-        assert fetched["wallet_enrollment"]["enrollment_id"] == result["enrollment_id"]
+        self.assertEqual(fetched["authorization"], self.authorization)
+        self.assertEqual(fetched["execution_receipt"], self.receipt)
+        self.assertEqual(fetched["wallet_enrollment"]["enrollment_id"], result["enrollment_id"])
 
     def test_delayed_ingestion_uses_signed_wallet_execution_time_for_authorization_ttl(self):
         authorization = json.loads(json.dumps(self.authorization))
@@ -188,26 +210,26 @@ class TestSubmissionIngest:
         ).decode()
         # Current wall clock is later than expires_at; the signed hand-off time
         # is still inside the original authorization window.
-        assert int(time.time()) > authorization["payload"]["expires_at"]
+        self.assertGreater(int(time.time()), authorization["payload"]["expires_at"])
         result = ExecutionSubmissionService(self.remote).ingest(authorization, receipt)
-        assert result["status"] == "STORED"
+        self.assertEqual(result["status"], "STORED")
 
     def test_exact_retry_is_idempotent(self):
         service = ExecutionSubmissionService(self.remote)
         service.ingest(self.authorization, self.receipt)
         result = service.ingest(self.authorization, self.receipt)
-        assert result["idempotent"] is True
+        self.assertTrue(result["idempotent"])
 
     def test_unenrolled_wallet_is_rejected(self):
         self.receipt["payload"]["submission_data"]["sender"] = "0x" + "d" * 40
         # Re-signing is not possible without changing the issuer receipt; tampering fails signature verification.
-        with pytest.raises(PermissionError):
+        with self.assertRaises(PermissionError):
             ExecutionSubmissionService(self.remote).ingest(self.authorization, self.receipt)
 
     def test_tampered_authorization_is_rejected(self):
         tampered = json.loads(json.dumps(self.authorization))
         tampered["payload"]["agent_id"] = "anna-installation:" + "0" * 64
-        with pytest.raises(PermissionError):
+        with self.assertRaises(PermissionError):
             ExecutionSubmissionService(self.remote).ingest(tampered, self.receipt)
 
     def test_conflicting_receipt_for_same_authorization_is_rejected(self):
@@ -215,12 +237,12 @@ class TestSubmissionIngest:
         service.ingest(self.authorization, self.receipt)
         conflicting = json.loads(json.dumps(self.receipt))
         conflicting["payload"]["transaction_ref"] = "0x" + "2" * 64
-        with pytest.raises(PermissionError):
+        with self.assertRaises(PermissionError):
             service.ingest(self.authorization, conflicting)
 
     def test_full_ingest_chain_attestation_and_dynamic_authority_path(self):
         ingest = ExecutionSubmissionService(self.remote).ingest(self.authorization, self.receipt)
-        assert ingest["status"] == "STORED"
+        self.assertEqual(ingest["status"], "STORED")
         block_hash = "0x" + "d" * 64
         transfer_topic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
         sender_topic = "0x" + self.sender[2:].rjust(64, "0")
@@ -274,14 +296,14 @@ class TestSubmissionIngest:
             api_submission, attestor_id="anna-chain-verifier", attestor_private_key=verifier_key,
             rpc=EvmRpcClient("http://rpc.test", transport=transport),
         )
-        assert attestation["payload"]["claim"]["status"] == "SUCCEEDED"
+        self.assertEqual(attestation["payload"]["claim"]["status"], "SUCCEEDED")
         result = service.verify_and_record(attestation)
-        assert result["valid"] is True
-        assert result["authority_event"]["agent_id"] == self.principal
-        assert result["authority_event"]["capability_id"] == "anna-payment-test"
-        assert self.remote.authority_events(
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["authority_event"]["agent_id"], self.principal)
+        self.assertEqual(result["authority_event"]["capability_id"], "anna-payment-test")
+        self.assertEqual(self.remote.authority_events(
             agent_id=self.principal, capability_id="anna-payment-test",
-        )[0]["event_type"] == "EXECUTION_CONFIRMED"
+        )[0]["event_type"], "EXECUTION_CONFIRMED")
 
         # A later retry produces a fresh signed observation/claim, but the same
         # chain transaction must not count as a second success for Dynamic Authority.
@@ -290,8 +312,8 @@ class TestSubmissionIngest:
             rpc=EvmRpcClient("http://rpc.test", transport=transport), observed_at=124.0,
         )
         retry_result = service.verify_and_record(retry_attestation)
-        assert retry_result["valid"] is True
-        assert len(self.remote.authority_events(
+        self.assertTrue(retry_result["valid"])
+        self.assertEqual(len(self.remote.authority_events(
             agent_id=self.principal, capability_id="anna-payment-test",
-        )) == 1
-        assert len(self.remote.authority_ledger(self.principal, "anna-payment-test")) == 1
+        )), 1)
+        self.assertEqual(len(self.remote.authority_ledger(self.principal, "anna-payment-test")), 1)
