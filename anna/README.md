@@ -139,8 +139,13 @@ passes the signed artifact through ExecutionRouter.consume, which verifies the i
 signature, network adapter, exact execution artifact and single-use nonce. Only after that
 succeeds does the UI pass the exact adapter-normalized envelope to eth_sendTransaction.
 The wallet—not Anna or Verigate—signs and broadcasts. Verigate never receives a wallet private
-key. A wallet rejection after router consumption burns the one-time permission; the user must
-run a fresh check and request a new one.
+key. When the wallet returns a transaction hash, the UI writes a separate 60-second App-scoped
+approval bound to the hash, sender and exact transaction. Executa verifies that the matching
+ExecutionRouter nonce was consumed, signs and persists a `SUBMITTED` ExecutionReceipt, and
+returns the receipt for verification. This receipt is executor self-report only; an independent
+chain verifier must still inspect the transaction and its confirmation state. A wallet rejection
+after router consumption burns the one-time permission; the user must run a fresh check and
+request a new one.
 
 This wallet path is deliberately limited to native USDC on Base and Ethereum. Solana still
 supports policy checks and signed authorization artifacts, but this app version does not

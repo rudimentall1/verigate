@@ -211,6 +211,37 @@
       ]
     },
     {
+      "name": "verigate_record_wallet_submission_receipt",
+      "description": "After the connected EIP-1193 wallet returns a transaction hash, persist a signed SUBMITTED ExecutionReceipt for the already-consumed authorization. Requires a separate one-time Anna App-scope approval bound to the exact wallet hash and transaction. This is executor self-report only, not on-chain confirmation.",
+      "timeout": 30,
+      "parameters": [
+        {
+          "name": "authorization_id",
+          "type": "string",
+          "description": "ID of the previously issued and consumed Execution Authorization.",
+          "required": true
+        },
+        {
+          "name": "transaction_hash",
+          "type": "string",
+          "description": "Exact 32-byte transaction hash returned by the connected wallet.",
+          "required": true
+        },
+        {
+          "name": "sender",
+          "type": "string",
+          "description": "Connected wallet address used for this submission.",
+          "required": true
+        },
+        {
+          "name": "confirmation_nonce",
+          "type": "string",
+          "description": "One-time App UI approval created after the wallet returned the transaction hash.",
+          "required": true
+        }
+      ]
+    },
+    {
       "name": "verigate_verify_decision_receipt",
       "description": "Cryptographically verify a Verigate Decision Receipt using this installation's trusted Ed25519 issuer public key. Returns the verification result, SHA-256 key fingerprint and PEM public key for independent verification.",
       "timeout": 15,

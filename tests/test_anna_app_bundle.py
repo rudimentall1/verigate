@@ -53,6 +53,8 @@ class AnnaAppBundleTest(unittest.TestCase):
         self.assertIn('if (!data || data.verified !== true)', self.js)
         self.assertNotIn("outer?.success !== true || !data || data.verified !== true", self.js)
         self.assertIn('method: "verigate_consume_execution_authorization"', self.js)
+        self.assertIn('method: "verigate_record_wallet_submission_receipt"', self.js)
+        self.assertIn('wallet_submission_receipt', self.js)
         self.assertIn('id="wallet-execute-btn"', self.html)
         self.assertIn("eth_sendTransaction", self.js)
         self.assertIn("await verifyDecisionReceipt(envelope.receipt)", self.js)

@@ -51,7 +51,11 @@ def check_manifest(manifest: dict) -> None:
             if "required" in param and not isinstance(param["required"], bool):
                 raise SystemExit(f"describe: 'required' must be boolean: {param}")
 
-    for privileged in ("verigate_authorize_payment", "verigate_consume_execution_authorization"):
+    for privileged in (
+        "verigate_authorize_payment",
+        "verigate_consume_execution_authorization",
+        "verigate_record_wallet_submission_receipt",
+    ):
         tool = next((item for item in tools if item.get("name") == privileged), None)
         names = {item.get("name"): item for item in (tool or {}).get("parameters", [])}
         if tool is None or not names.get("confirmation_nonce", {}).get("required"):
@@ -351,6 +355,80 @@ def main() -> None:
         if replay.get("success") is not False:
             raise SystemExit(f"one-time authorization replay was not rejected: {replay}")
 
+        # 3f. A consumed wallet hand-off can only record SUBMITTED after the
+        # Anna App returns a hash and supplies a separate App-scoped approval.
+        tx_hash = "0x" + "c" * 64
+        sender = "0x" + "1" * 40
+        receipt_nonce = "f" * 48
+        receipt_now_ms = int(time.time() * 1000)
+        receipt_approval = {
+            "version": 1,
+            "kind": "wallet_submission_receipt",
+            "nonce": receipt_nonce,
+            "authorization_id": authorization["payload"]["authorization_id"],
+            "transaction_hash": tx_hash,
+            "sender": sender,
+            "network": action["network"],
+            "chain_id": tx_approval["chain_id"],
+            "to": tx_approval["to"].lower(),
+            "value_wei": tx_approval["value_wei"],
+            "data": tx_approval["data"].lower(),
+            "created_at_ms": receipt_now_ms,
+            "expires_at_ms": receipt_now_ms + 60_000,
+        }
+        receipt_args = {
+            "authorization_id": authorization["payload"]["authorization_id"],
+            "transaction_hash": tx_hash,
+            "sender": sender,
+            "confirmation_nonce": receipt_nonce,
+        }
+        direct_record = invoke_with_storage(38, {
+            "tool": "verigate_record_wallet_submission_receipt",
+            "arguments": receipt_args,
+            "context": {"invoke_id": "smoke-direct-record"},
+        }, None, False).get("result", {})
+        if direct_record.get("success") is not False:
+            raise SystemExit(f"direct receipt call bypassed the App UI: {direct_record}")
+
+        submitted = invoke_with_storage(39, {
+            "tool": "verigate_record_wallet_submission_receipt",
+            "arguments": receipt_args,
+            "context": {"invoke_id": "smoke-record-submission", "app_id": "verigate-test-app"},
+        }, receipt_approval, True).get("result", {})
+        submission_data = submitted.get("data", {})
+        execution_receipt = submission_data.get("execution_receipt", {})
+        execution_payload = execution_receipt.get("payload", {})
+        if (submitted.get("success") is not True
+                or submission_data.get("execution_status") != "SUBMITTED"
+                or submission_data.get("transaction_submitted") is not True
+                or submission_data.get("receipt_verified") is not True
+                or submission_data.get("receipt_trust_scope") != "executor_self_report"
+                or submission_data.get("independent_chain_confirmation") is not False
+                or execution_payload.get("status") != "SUBMITTED"
+                or execution_payload.get("transaction_ref") != tx_hash
+                or execution_payload.get("submission_data", {}).get("sender") != sender):
+            raise SystemExit(f"signed SUBMITTED execution receipt failed: {submitted}")
+
+        # An idempotent lookup also requires a fresh App approval and cannot be
+        # used as a direct-chat data retrieval path.
+        retry_nonce = "9" * 48
+        retry_now_ms = int(time.time() * 1000)
+        retry_approval = {
+            **receipt_approval,
+            "nonce": retry_nonce,
+            "created_at_ms": retry_now_ms,
+            "expires_at_ms": retry_now_ms + 60_000,
+        }
+        retry = invoke_with_storage(40, {
+            "tool": "verigate_record_wallet_submission_receipt",
+            "arguments": {**receipt_args, "confirmation_nonce": retry_nonce},
+            "context": {"invoke_id": "smoke-idempotent-retry", "app_id": "verigate-test-app"},
+        }, retry_approval, True).get("result", {})
+        if (retry.get("success") is not True
+                or retry.get("data", {}).get("idempotent") is not True
+                or retry.get("data", {}).get("execution_receipt") != execution_receipt):
+            raise SystemExit(f"idempotent SUBMITTED receipt retry failed: {retry}")
+
         # 4. error handling must not kill the process
         send("this is not json")
         if recv().get("error", {}).get("code") != -32700:
@@ -378,7 +456,7 @@ def main() -> None:
 
     if proc.returncode != 0:
         raise SystemExit(f"binary exited with {proc.returncode}\nSTDERR:\n{proc.stderr.read()}")
-    print(f"binary smoke test passed: describe in {elapsed:.1f}s, decision={decision}, signed=yes, app_scope_approval=consumed_once, wallet_handoff=consumed_once")
+    print(f"binary smoke test passed: describe in {elapsed:.1f}s, decision={decision}, signed=yes, app_scope_approval=consumed_once, wallet_handoff=consumed_once, submitted_receipt=persisted_and_verified")
 
 
 if __name__ == "__main__":

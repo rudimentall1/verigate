@@ -274,7 +274,7 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
       $("approval-accept").click();
       for (let i = 0; i < 400; i++) {
         await sleep(25);
-        if (/Transaction hash|consumed, but wallet/i.test($("execution-status").textContent)) break;
+        if (/ExecutionReceipt|transaction hash|consumed, but wallet/i.test($("execution-status").textContent)) break;
       }
       await sleep(30);
     },
@@ -631,16 +631,21 @@ await test("wallet hand-off consumes through ExecutionRouter before exact USDC s
   ok(ui.shown("wallet-execute-btn"), "wallet action is available for signed Base USDC transfer");
   await ui.clickWallet();
   ok(ui.calls.tools.includes("verigate_consume_execution_authorization"), "permission consumed by Verigate tool");
-  eq(ui.calls.storage.length, 2, "separate App UI approval is stored for wallet submission");
-  eq(ui.calls.storage[1].value.kind, "wallet_submission", "wallet approval is distinct from authorization approval");
+  eq(ui.calls.tools.includes("verigate_record_wallet_submission_receipt"), true, "signed wallet submission receipt is recorded");
+  eq(ui.calls.storage.length, 3, "authorization, wallet hand-off and returned-hash approvals are separately stored");
+  eq(ui.calls.storage[1].value.kind, "wallet_submission", "wallet hand-off approval is distinct from authorization approval");
   eq(ui.calls.storage[1].value.authorization_id, ui.calls.toolArgs.verigate_consume_execution_authorization.authorization_json ? JSON.parse(ui.calls.toolArgs.verigate_consume_execution_authorization.authorization_json).payload.authorization_id : null, "wallet approval binds the signed authorization");
-  eq(ui.appStorage.size, 0, "wallet approval is consumed exactly once");
+  eq(ui.calls.storage[2].value.kind, "wallet_submission_receipt", "returned-hash approval uses a separate operation");
+  eq(ui.calls.storage[2].value.transaction_hash, "0x" + "a".repeat(64), "receipt approval binds the actual wallet hash");
+  eq(ui.calls.storage[2].value.sender, VALID.toLowerCase(), "receipt approval binds the connected sender");
+  eq(ui.appStorage.size, 0, "both wallet approvals are consumed exactly once");
   eq(walletCalls.map(x => x.method).join(","), "eth_chainId,eth_requestAccounts,eth_chainId,eth_accounts,eth_sendTransaction");
   const send = walletCalls.find(x => x.method === "eth_sendTransaction");
   eq(send.params[0].to.toLowerCase(), "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
   ok(send.params[0].data.includes(VALID.slice(2).toLowerCase()), "wallet receives the signed recipient");
-  ok(ui.text("execution-status").includes("transaction hash"), "submitted hash is displayed");
+  ok(ui.text("execution-status").includes("0x" + "a".repeat(64)), "wallet-returned hash is displayed in the receipt status");
   ok(ui.text("execution-status").includes("SUBMITTED"), "submission is not misrepresented as confirmation");
+  ok(ui.text("execution-status").includes("self-report"), "executor self-report is distinguished from independent chain confirmation");
 });
 
 await test("canceling wallet confirmation leaves the permission unused", async () => {

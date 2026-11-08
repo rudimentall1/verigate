@@ -60,6 +60,12 @@ class ExecutaManifestTest(unittest.TestCase):
         consume = next(t for t in manifest["tools"] if t["name"] == "verigate_consume_execution_authorization")
         consume_params = {p["name"]: p for p in consume["parameters"]}
         self.assertTrue(consume_params["confirmation_nonce"]["required"])
+        submitted = next(t for t in manifest["tools"] if t["name"] == "verigate_record_wallet_submission_receipt")
+        submitted_params = {p["name"]: p for p in submitted["parameters"]}
+        self.assertTrue(all(submitted_params[name]["required"] for name in (
+            "authorization_id", "transaction_hash", "sender", "confirmation_nonce"
+        )))
+        self.assertIn("self-report", submitted["description"])
 
     def test_initialize_negotiates_v2_sampling_and_storage(self):
         result = self.plugin.handle({"method": "initialize", "params": {"protocolVersion": "2.0"}})
@@ -82,7 +88,11 @@ class ExecutaManifestTest(unittest.TestCase):
             self.plugin._storage._disabled_reason = previous_storage
 
     def test_sync_tool_dispatch_cannot_issue_or_consume_execution_authority(self):
-        for tool in ("verigate_authorize_payment", "verigate_consume_execution_authorization"):
+        for tool in (
+            "verigate_authorize_payment",
+            "verigate_consume_execution_authorization",
+            "verigate_record_wallet_submission_receipt",
+        ):
             with self.subTest(tool=tool), self.assertRaises(self.plugin.RpcError):
                 self.plugin.handle({"method": "invoke", "params": {
                     "tool": tool,

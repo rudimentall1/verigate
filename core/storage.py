@@ -647,6 +647,24 @@ class Storage:
                 self._conn.rollback()
                 return False
 
+    def execution_nonce_by_authorization(self, authorization_id: str, nonce: str) -> dict | None:
+        """Return the exact consumed nonce record for one authorization, if present."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT nonce, authorization_id, intent_id, agent_id, consumed_at "
+                "FROM execution_nonces WHERE authorization_id = ? AND nonce = ? LIMIT 1",
+                (authorization_id, nonce),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "nonce": row[0],
+            "authorization_id": row[1],
+            "intent_id": row[2],
+            "agent_id": row[3],
+            "consumed_at": row[4],
+        }
+
     def record_execution_receipt(self, receipt: dict) -> None:
         payload = receipt["payload"]
         with self._lock:
