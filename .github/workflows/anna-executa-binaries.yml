@@ -41,10 +41,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -70,7 +70,7 @@ jobs:
         run: python anna/smoke_package.py "${{ matrix.target }}" "${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.15' }}"
 
       - name: Upload release package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: verigate-authority-${{ matrix.target }}
           path: |
@@ -80,17 +80,17 @@ jobs:
   release:
     if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/integrate/anna-0.1.9-mainline') || (github.event_name == 'workflow_dispatch' && inputs.publish_release) }}
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Download packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: release-assets
           pattern: verigate-authority-*
