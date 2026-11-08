@@ -1,13 +1,13 @@
 # Verigate Authority — current session checkpoint
 
-**Updated:** 2026-11-08
+**Updated:** 2026-11-08 — Anna upload completed
 **Repository:** https://github.com/rudimentall1/verigate
-**Local working copy:** `C:\Users\User\Desktop\Work\verigate-anna-0.1.13`
-**Current branch:** `feat/anna-0.1.18-executa-0.1.14-hardening`
-**Latest verified code/artifact commit:** `0d36419af8365d6e171d0a3a92d5259148078405`
-**PR:** https://github.com/rudimentall1/verigate/pull/24 — OPEN, mergeable, NOT merged.
+**Release worktree:** `C:\Users\User\verigate-anna-release` (main SHA `8823b97`; used for verified upload).
+**Original Windows checkout:** `C:\\Users\\User\\verigate` remains untouched at `674ea3a`, 221 commits behind `origin/main`, with 7 pre-existing modified files.
+**Latest verified code/artifact commit:** `8823b97fbcd275d0da35f977646d95f072e5a419`.
+**Anna App:** `0.1.18` immutable version ID `2042`; bundled Executa `0.1.14` version ID `1028`. Review remains `pending_review` on old candidate `0.1.17`; `0.1.18` is not yet the review candidate.
 
-> Current status: branch HEAD is `0d36419`; worktree was clean before this checkpoint refresh. PR #24 merged product/runtime commit `98d4c230` into `integrate/anna-0.1.9-mainline`. PR #26 contains the post-merge E2E harness/docs follow-up. Push CI `42466153268` and PR CI `42466167865` passed on `0d36419`; four-platform binary workflow `42466174769` also passed on `0d36419`, with release skipped. Package hashes and blockers are recorded in `docs/ANNA-RELEASE-GATE.md`, the authoritative detailed release record. All older status statements below are historical and must not be used as current evidence.
+> Current status: current `main` SHA `8823b97` passed main CI `42477842943` and four-platform Executa build/package/smoke workflow `42479094492`. Anna App `0.1.18` (version ID `2042`) and bundled Executa `0.1.14` (version ID `1028`) were uploaded and cut successfully. Anna still has `pending_review` pinned to `0.1.17`; `0.1.18` is not yet the review candidate. Cloud Agent acceptance remains unverified. Detailed hashes and blockers are recorded in `docs/ANNA-RELEASE-GATE.md`. Older statements below are historical.
 
 ## 1. User requirements that must not be lost
 
@@ -15,7 +15,7 @@
 - **50 USDC and 250 USDC are policy thresholds, not a list of allowed payment values.** Current policy semantics: `new_payee_cap = 50 USDC`, `confirmation_required_over = 250 USDC`, `per_tx_cap = 500 USDC`, `daily_cap = 2,000 USDC`, `rate_limit_per_minute = 30`. The first two influence risk/decision behavior; they do not mean only 50 or 250 may be entered.
 - “Arbitrary amounts” does not silently mean unlimited transfers. Current configured per-transaction and daily limits still apply unless the user explicitly changes product policy. Do not hardcode 50/250 as a dropdown, enum, accepted amount set, or fixed test-only values.
 - Preserve the distinction between amount parsing/transaction construction and policy authorization. Test arbitrary values on both sides of thresholds and exact boundary behavior.
-- Do not upload Anna App 0.1.18 or consume the last Anna upload attempt until the blocking issues below are resolved and the final release artifact is proven ready.
+- Anna App 0.1.18 and Executa 0.1.14 have now been uploaded/cut after exact-main CI and four-platform package verification. Do not treat that upload as Marketplace release or Cloud acceptance; do not submit/release until the active review state is resolved.
 - Do not claim Anna Cloud / Cloud Agent / real APS acceptance: Anna CU quota is exhausted and no live cloud acceptance has been performed.
 - Russian conversation; English code, tests, docs, and reports. Minimal safe changes; no blind refactor or mass rename. No unrelated workloads or files.
 
@@ -23,7 +23,7 @@
 
 - Latest local identity hardening: caller agent_id is a signed display label; accounting and capability state use the persistent issuer-key fingerprint principal (anna-installation:<sha256>). This is installation-scoped and does not aggregate separate Agent workspaces. Identity/backend regression file: 20/20 passed; policy and Anna authorization race/identity subset: 32/32 passed; latest App UI E2E: 43/43 passed with the real local bundle + Python Executa subprocess and fixture-backed host.
 
-- Anna App candidate: **0.1.18**. Anna App currently has 0.1.17 / version ID 1981 in PENDING_REVIEW (App ID 382). Version 0.1.18 has NOT been uploaded/cut/submitted.
+- Anna App `0.1.18` was uploaded/cut as immutable version ID `2042`. App ID `382` remains `PENDING_REVIEW` with `review_candidate_version=0.1.17`; `0.1.18` is not yet the review candidate.
 - Executa candidate: **0.1.14**.
 - `npm ci` on Node 22.23.4 / npm 10.9.9 passed after fixing the nested Ganache `fsevents@2.3.2` lockfile entry to mark it optional. The lockfile fix is commit `70c52f0`.
 - Exact-commit GitHub CI on `70c52f05...`: jobs `test`, `contracts`, and `anna-ui` all passed. The Anna UI job includes UI E2E and Linux Executa binary build/smoke. Run: https://github.com/rudimentall1/verigate/actions/runs/42377014780
@@ -44,7 +44,7 @@
 - Earlier Anna UI E2E runs were 38/38, 39/39 and 41/41 during incremental hardening. Current result is 43/43 and supersedes all earlier counts. UI harness executes the real App bundle + Python Executa subprocess with fixture-backed host LLM/APS calls; it is not Anna Cloud acceptance.
 - Current EVM checks on the modified worktree: `npm run test:atomic` passed (`staleAuthorizationReverted=true`, stale side effect `0`, fresh side effect `1`); `npm run test:guard` passed (zero executor, attacker, stale state and value mismatch rejected; exact value forwarded). Ganache fell back from optional µWS native binding to the NodeJS implementation because `uws_win32_x64_137.node` is absent; the tests still exited 0.
 - Current strict App validation: `cd anna && npx --yes @anna-ai/cli@0.1.64 validate --strict` passed on schema 4 / dispatcher 0.33.0. The globally installed stale CLI reports schema max 3 and must not be used.
-- No GitHub Release was published. No Anna upload/cut/review submission/publication was performed.
+- No GitHub Release or Marketplace release was published. Anna App `0.1.18` and bundled Executa `0.1.14` were uploaded/cut; no new review submission was made and the existing review remains pinned to `0.1.17`.
 
 ## 3. Confirmed product/security findings — do not downgrade to assumptions
 
@@ -255,3 +255,45 @@ New/changed surfaces currently present in the worktree:
 - No GitHub Release or PR merge is authorized by this work.
 - Do not stage build outputs, `.anna`, `node_modules`, `.pyinstaller`, or `dist`.
 - Keep all unrelated repositories, services, and workloads untouched.
+
+
+## 7. Latest session update — Anna App upload completed (2026-11-08)
+
+This section supersedes all earlier statements in this file that say App 0.1.18 has not been uploaded.
+
+### Exact source and build
+
+- Release source: `main` SHA `8823b97fbcd275d0da35f977646d95f072e5a419`.
+- Main CI: [42477842943](https://github.com/rudimentall1/verigate/actions/runs/42477842943) — success; Python 597 passed, contracts passed, Anna UI E2E 44/44, schema-4 strict validation passed.
+- Four-platform Executa 0.1.14 build: [42479094492](https://github.com/rudimentall1/verigate/actions/runs/42479094492) — success on native macOS ARM64, macOS Intel x86_64, Linux x86_64 and Windows x86_64 runners. Each package was extracted and smoke-tested on its native runner. GitHub Release was skipped.
+- All four downloaded archives passed SHA-256 sidecar verification and archive/manifest inspection. All manifests identify version 0.1.14 and production tool ID `tool-rinat-verigate-authority-2um8gwhw`. Windows extracted-package smoke was rerun locally and passed.
+
+| Platform | SHA-256 |
+|---|---|
+| Linux x86_64 | `40c4b4c77e8a4f1165b30a5f4de946a7c17f3df4bca7c77d7fe08a67ac1e94ad` |
+| Windows x86_64 | `fac22df4350cc020efe5e19080002244ae78e705999df78498fa2229795dd724` |
+| macOS ARM64 | `aad2de876a885718394406e912759bde2f5139c591a330f4cddcdc5baebe7699` |
+| macOS Intel x86_64 | `d74ffebcc2c6af033cde3ec3f1df5af9613f026701c49eaf2b9923323a0e32d4` |
+
+### Anna upload result
+
+- Authenticated with the existing locally saved Anna PAT using `@anna-ai/cli@0.1.64`; the PAT was not copied into chat or logs.
+- Command: `anna-app apps publish --cwd anna` (composite working-draft push + immutable cut).
+- Anna response: App ID `382`, slug `verigate-authority`, App version `0.1.18`, immutable version ID `2042`, content hash `76f305a1c98b16a83b2b522abf3153605adfbc420fc9edb3a2635d1eb123ce6a`.
+- Frozen bundled Executa: tool ID `tool-rinat-verigate-authority-2um8gwhw`, Executa ID `1164`, version ID `1028`, version `0.1.14`.
+- Anna reported bundle `uploaded`, `ready`, 3 files, 76,722 bytes.
+- This is an Anna upload/immutable cut only. It is not Marketplace publication, public release or real Cloud Agent acceptance.
+
+### Critical current review state
+
+- After upload, Anna app status remains `pending_review`.
+- `review_candidate_version` remains `0.1.17`. The new immutable `0.1.18` exists but is not the review candidate.
+- CLI help says `apps submit-review` only transitions DRAFT/REJECTED to PENDING_REVIEW. Do not submit/release blindly while the app is already pending review; first resolve the existing review through Anna's supported process or wait for its completion, then submit exact version 0.1.18.
+- No Marketplace release and no GitHub Release was made.
+- Anna CU quota remains exhausted; real Cloud Agent install, LLM Sampling, App-scope APS and workspace persistence remain unverified. Independent CHAIN_VERIFIER integration, production wallet enrollment/finality governance and reorg handling remain incomplete. Do not claim production readiness or support for thousands of users.
+
+### Worktree safety
+
+- Upload used a separate clean worktree at `C:\\Users\\User\\verigate-anna-release`, created from exact `origin/main` SHA `8823b97`.
+- The user's original checkout `C:\\Users\\User\\verigate` was not modified by this work. It remains at HEAD `674ea3a`, 221 commits behind `origin/main`, with 7 pre-existing modified files. Do not publish from it or overwrite those changes.
+- Detailed release gate and all evidence are in `docs/ANNA-RELEASE-GATE.md`.

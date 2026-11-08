@@ -4,14 +4,15 @@
 
 This block is the source of truth for the current candidate. Everything after `## Historical baseline` is retained as historical context and must not override this section.
 
-- Repository: `rudimentall1/verigate`; production branch: `main` at `2daecb7abe3e8c278cc470790afa127995ee0cdd`.
+- Repository: `rudimentall1/verigate`; production branch: `main` at `8823b97fbcd275d0da35f977646d95f072e5a419`.
 - PR #27 ([fix: bind Anna decisions to exact signed payment intent](https://github.com/rudimentall1/verigate/pull/27)) was merged with squash commit `2daecb7`. It adds exact signed-intent/form binding, honest WARN/SUBMITTED/wallet-availability copy, one reverse-Sampling call per check, immutable listing asset URLs, and regression coverage.
-- PR #24 and follow-up PR #26 are merged. PR #26 merge commit: `3a170fe0f085204d74c64f503bcc9942b3527e15`.
-- Candidate versions remain Anna App `0.1.18` and bundled Executa `0.1.14`; no version bump was made.
-- CI on PR #27 head `7768a351`: [42477712451](https://github.com/rudimentall1/verigate/actions/runs/42477712451) completed successfully. Python suite: **597 passed**; contract jobs passed; Anna UI E2E passed (**44/44**); schema-4 strict validation passed; Linux Executa build and packaged-binary smoke passed.
-- Four-platform build on base `471a9f6`: [42476979298](https://github.com/rudimentall1/verigate/actions/runs/42476979298) completed successfully for macOS ARM64, macOS Intel x86_64, Linux x86_64 and Windows x86_64. Each native runner built, packaged, extracted and smoke-tested its archive. Artifacts were uploaded; the release job was skipped.
-- Main-branch CI after the squash merge is running separately; do not call the merged SHA fully revalidated until that run completes.
-- No Anna upload/cut/review submission/Marketplace release and no GitHub Release has been made. Real Anna Cloud Agent acceptance remains unverified because the Anna CU quota is exhausted.
+- Main CI on current `main`: [42477842943](https://github.com/rudimentall1/verigate/actions/runs/42477842943) completed successfully. Python suite: **597 passed**; contract jobs passed; Anna UI E2E passed (**44/44**); CLI `@anna-ai/cli@0.1.64 validate --strict` passed; Linux Executa build and packaged-binary smoke passed.
+- Four-platform Executa `0.1.14` build on exact current `main` SHA `8823b97`: [42479094492](https://github.com/rudimentall1/verigate/actions/runs/42479094492) completed successfully. Native macOS ARM64, macOS Intel x86_64, Linux x86_64 and Windows x86_64 runners each built, packaged, extracted and smoke-tested. GitHub Release job was skipped (`publish_release=false`).
+- The four CI artifacts were downloaded to the clean release worktree and independently checked: all four SHA-256 sidecars matched; each archive contained only the expected executable and `manifest.json`; each manifest had version `0.1.14` and production tool ID `tool-rinat-verigate-authority-2um8gwhw`. Windows extracted-package smoke was rerun locally and passed. Hashes: Linux `40c4b4c77e8a4f1165b30a5f4de946a7c17f3df4bca7c77d7fe08a67ac1e94ad`; Windows `fac22df4350cc020efe5e19080002244ae78e705999df78498fa2229795dd724`; macOS ARM64 `aad2de876a885718394406e912759bde2f5139c591a330f4cddcdc5baebe7699`; macOS Intel `d74ffebcc2c6af033cde3ec3f1df5af9613f026701c49eaf2b9923323a0e32d4`.
+- Anna CLI authentication was verified from the existing saved PAT; no token was exposed. The global CLI `0.1.56` is stale and fails schema-4 validation; release operations used `@anna-ai/cli@0.1.64`.
+- **Anna upload completed:** App `verigate-authority` version `0.1.18`, immutable version ID `2042`; bundled Executa `0.1.14`, version ID `1028`, tool ID `tool-rinat-verigate-authority-2um8gwhw`. Anna reported bundle status `ready`, 3 files uploaded, 76,722 bytes. This was `apps publish` (working push + immutable cut), not Marketplace release.
+- **Review state is still pending on the old candidate:** app status remains `pending_review`; `review_candidate_version` remains `0.1.17`. Version `0.1.18` exists as the latest uploaded immutable version but has **not** been submitted as the review candidate. CLI `apps submit-review` only permits DRAFT/REJECTED; do not attempt to release or assume the pending review now covers `0.1.18`. A supported Anna transition/withdrawal or review completion is needed before submitting the new candidate.
+- Real Anna Cloud Agent acceptance remains unverified because the Anna CU quota is exhausted. No Marketplace release and no GitHub Release has been made.
 
 ### Verified source and runtime checks
 
@@ -50,7 +51,7 @@ Downloaded package archives were independently checked on the Windows workstatio
 - No multi-process/Cloud Executa load test proves support for thousands of users. The product is a pre-execution gate for the integrated Verigate App/ExecutionRouter path, not a universal wallet firewall; independent transactions through other clients can bypass this app-level path.
 - Payment input and EVM construction accept arbitrary positive USDC values up to six decimals. `50` and `250` USDC are policy thresholds, not allowed denominations. Configured per-transaction and rolling daily caps still apply; arbitrary precision does not mean unlimited authorization.
 
-**Release decision: do not upload App `0.1.18` yet.** Local source tests, exact-SHA CI and all four package builds are green, but Anna Cloud acceptance and the independent chain-outcome production path remain unverified/incomplete. Do not use the exhausted upload attempt as a debugging tool.
+**Release decision: App `0.1.18` / Executa `0.1.14` upload and immutable cut are complete.** This is not Marketplace publication or Anna Cloud acceptance. The active review remains pinned to App `0.1.17`; the new `0.1.18` is not yet the review candidate. The next platform action is to resolve the existing `PENDING_REVIEW` state through Anna's supported process, then submit the exact `0.1.18` candidate. Do not call the app Anna-ready: Cloud Agent acceptance, durable Cloud persistence, governed independent CHAIN_VERIFIER integration and production reorg handling remain unverified/incomplete.
 
 ## Historical baseline - 2026-11-07
 
