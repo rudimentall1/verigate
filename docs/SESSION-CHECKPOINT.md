@@ -4,11 +4,10 @@
 **Repository:** https://github.com/rudimentall1/verigate
 **Local working copy:** `C:\Users\User\Desktop\Work\verigate-anna-0.1.13`
 **Current branch:** `feat/anna-0.1.18-executa-0.1.14-hardening`
-**Current HEAD:** `70c52f05cf36c0d8e9bb436c0edb913c62fbcd84`
-**Latest commit:** `fix: mark platform-specific fsevents as optional`
+**Latest verified code/artifact commit:** `0d36419af8365d6e171d0a3a92d5259148078405`
 **PR:** https://github.com/rudimentall1/verigate/pull/24 — OPEN, mergeable, NOT merged.
 
-> This section is the current source of truth and supersedes stale statements in the historical checkpoint below. The baseline worktree was clean and matched origin before this session's edits. Twenty-two files are currently modified but uncommitted; branch HEAD remains `70c52f0`. Chain-verifier hardening, the explicit WARN-review path, hard daily-cap semantics and related tests/docs are local-only and have not been committed or pushed.
+> Current status: branch HEAD is `0d36419`; worktree was clean before this checkpoint refresh. PR #24 merged product/runtime commit `98d4c230` into `integrate/anna-0.1.9-mainline`. PR #26 contains the post-merge E2E harness/docs follow-up. Push CI `42466153268` and PR CI `42466167865` passed on `0d36419`; four-platform binary workflow `42466174769` also passed on `0d36419`, with release skipped. Package hashes and blockers are recorded in `docs/ANNA-RELEASE-GATE.md`, the authoritative detailed release record. All older status statements below are historical and must not be used as current evidence.
 
 ## 1. User requirements that must not be lost
 
