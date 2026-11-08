@@ -147,7 +147,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, showModalThrows = false, storageSetFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows) {
@@ -203,7 +203,10 @@ async function launch({ interpret, explain, connectFails = false, showModalThrow
         if (method === "verigate_policy_summary" && policySummaryReturnsError) {
           return { result: { success: false, error: { code: 401, message: "Anna session refresh rejected in tool response" } } };
         }
-        const result = await callPlugin(method, args, {
+        const pluginArgs = method === "verigate_check" && decisionIntentOverride
+          ? { ...args, ...decisionIntentOverride }
+          : args;
+        const result = await callPlugin(method, pluginArgs, {
           appStorage,
           appContext: true,
           samplingHandler: { interpret, explain }
@@ -299,13 +302,13 @@ await test("valid request: AI reads it, Verigate allows, limits table is shown",
   await ui.click();
   eq(ui.text("decision"), "ALLOW");
   eq(JSON.stringify(ui.calls.tools), JSON.stringify(["verigate_policy_summary", "verigate_check", "verigate_verify_decision_receipt"]));
-  eq(ui.calls.llm, 2, "both interpretation and explanation must traverse Executa reverse Sampling");
+  eq(ui.calls.llm, 1, "only intake interpretation and contextual risk review use reverse Sampling");
   ok(ui.calls.sampling[0].prompt.includes("Request text (untrusted)"), "request context is sent through Executa Sampling");
   ok(ui.$("limits-table").querySelectorAll("tr").length >= 6, "limits table rows");
   ok(ui.shown("ai-review"), "contextual AI review is visible without a risk flag");
   ok(ui.text("ai-review-summary").includes("Anna AI contextual review"), "contextual AI assessment is shown");
   ok(ui.text("ai-flags").includes("No specific contextual risk indicators"), "no-flag state is not presented as a safety guarantee");
-  eq(ui.text("result-summary"), "Plain explanation.");
+  ok(ui.text("result-summary").includes("No configured policy rule was violated"), "decision explanation is deterministic and policy-derived");
   ok(ui.text("proof").includes("Ed25519 signature verified"), "signature verified before display");
   ok(ui.text("issuer-public-key").includes("BEGIN PUBLIC KEY"), "issuer public key exposed");
   ok(ui.text("receipt-json").includes("signature"), "signed receipt shown");
@@ -319,6 +322,24 @@ await test("agent label is normalized identically before preview and signed comp
   eq(ui.text("decision"), "ALLOW");
   eq(ui.calls.toolArgs.verigate_check.agent_id, "agent alpha beta");
   ok(ui.text("proof").includes("Ed25519 signature verified"), "signed preview accepted the normalized label");
+});
+
+await test("signed Decision Receipt must match every payment field in the form", async () => {
+  const mismatches = [
+    ["payee", { payee: "0x" + "1".repeat(40) }],
+    ["asset", { asset: "DAI" }],
+    ["network", { network: "ethereum" }],
+    ["amount", { amount: 24.999 }],
+    ["resource", { resource: "different invoice" }],
+  ];
+  for (const [field, decisionIntentOverride] of mismatches) {
+    const ui = await launch({ decisionIntentOverride });
+    await ui.click();
+    ok(ui.shown("error"), field + " mismatch must be rejected");
+    ok(ui.text("error").includes("does not match the current"), field + " mismatch should explain the receipt/form binding failure");
+    eq(ui.shown("result"), false, field + " mismatch must not display a decision");
+    eq(ui.calls.tools.includes("verigate_authorize_payment"), false, field + " mismatch must never mint execution authority");
+  }
 });
 
 await test("policy-summary installation principal mismatch fails closed", async () => {
@@ -866,11 +887,11 @@ await test("explanation failure falls back to a deterministic explanation", asyn
   ok(ui.text("result-summary").includes("not a guarantee"), "fallback text");
 });
 
-await test("model text is rendered as text, never as HTML", async () => {
+await test("model risk text is rendered as text, never as HTML", async () => {
   const ui = await launch({ interpret: interpretJson({ ...GOOD, risk_flags: [{ code: "other", message: "<img src=x onerror=alert(1)>" }] }), explain: JSON.stringify({ explanation: "<b>bold</b>", what_could_change: "<script>1</script>" }) });
   await ui.click();
   eq(ui.window.document.querySelectorAll("img, script b, b").length, 0, "no injected elements");
-  ok(ui.text("result-summary").includes("<b>bold</b>"), "shown literally");
+  ok(ui.text("ai-flags").includes("<img src=x onerror=alert(1)>"), "risk text shown literally");
 });
 
 await test("Anna connection failure is surfaced and app actions stay disabled", async () => {

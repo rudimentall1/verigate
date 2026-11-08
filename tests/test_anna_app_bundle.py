@@ -76,7 +76,9 @@ class AnnaAppBundleTest(unittest.TestCase):
         self.assertIn("decision_receipt", self.js)
         self.assertIn('["ALLOW", "WARN", "BLOCK"]', self.js)
         self.assertIn("matched_rules", self.js)
-        self.assertIn("never change ALLOW, WARN or BLOCK", self.js)
+        self.assertIn("function explainDecision", self.js)
+        self.assertIn("baseExplanation(envelope.decision, envelope.matchedRules)", self.js)
+        self.assertNotIn("You explain a Verigate policy decision", self.js)
 
     def test_runtime_tool_id_sidecar_is_loaded(self):
         self.assertIn('src="anna-tool-ids.js"', self.html)

@@ -1,18 +1,20 @@
 # Verigate Authority ? Anna release gate
 
-## Current candidate status ? 2026-11-08 (authoritative)
+## Current candidate status — 2026-11-08 (authoritative)
 
 This block is the source of truth for the current candidate. Everything after `## Historical baseline` is retained as historical context and must not override this section.
 
-- Repository: `rudimentall1/verigate`; branch: `feat/anna-0.1.18-executa-0.1.14-hardening`.
-- Product/runtime implementation commit: `98d4c23062fd53e58636793623a537efae3ae592` (`fix: bind chain attestations to submitted wallet receipts`).
-- PR #24 was merged by `rudimentall1` at 2026-11-08 09:09:51 UTC as `eb53d1927f16c76ac6cb96cfa93d861fc30c2ff4`; it includes `98d4c230`.
-- Follow-up PR #26 is OPEN and mergeable: https://github.com/rudimentall1/verigate/pull/26. It contains the live Arbitrum Sepolia E2E harness correction and release/security checkpoint updates. The code/artifact verification commit is `0d36419af8365d6e171d0a3a92d5259148078405`; later changes in this PR are documentation-only.
-- Candidate versions: Anna App `0.1.18`; Executa `0.1.14`. No Anna upload/cut/review submission/Marketplace release and no GitHub Release has been made.
+- Repository: `rudimentall1/verigate`; production base branch: `main` at `471a9f634f6e57d6d84adeddd6646fb9cd277388`.
+- Current hardening PR: [#27](https://github.com/rudimentall1/verigate/pull/27), branch `fix/anna-receipt-copy-and-intent-binding`, head `5f6135ae5da8f38fdaed60169e9a8c8d9453b6fd`. It adds exact signed-intent/form binding, honest WARN/SUBMITTED/wallet-availability copy, one reverse-Sampling call per check, immutable listing asset URLs, and regression coverage.
+- PR #24 is merged; follow-up PR #26 is also merged as `3a170fe0f085204d74c64f503bcc9942b3527e15`. Do not describe PR #26 as open.
+- Candidate versions remain Anna App `0.1.18` and bundled Executa `0.1.14`. The PR does not bump either version.
+- CI on PR #27 head `5f6135a`: [42477587362](https://github.com/rudimentall1/verigate/actions/runs/42477587362) completed successfully. Python suite: **597 passed**; contract jobs passed; Anna UI E2E passed (**44/44**); schema-4 strict validation passed; Linux Executa build and packaged-binary smoke passed.
+- Four-platform build on base `471a9f6`: [42476979298](https://github.com/rudimentall1/verigate/actions/runs/42476979298) completed successfully for macOS ARM64, macOS Intel x86_64, Linux x86_64 and Windows x86_64. Each native runner built, packaged, extracted and smoke-tested its archive. Artifacts were uploaded; the release job was skipped.
+- No Anna upload/cut/review submission/Marketplace release and no GitHub Release has been made. Real Anna Cloud Agent acceptance remains unverified because the Anna CU quota is exhausted.
 
 ### Verified source and runtime checks
 
-- Merged product/runtime SHA `98d4c230`: full Python suite **581 passed, 4 skipped**, 3 upstream deprecation warnings; Anna UI E2E **43/43**; `npm run test:atomic`, `npm run test:guard`, and Anna schema-4 `@anna-ai/cli@0.1.64 validate --strict` passed.
+- Earlier merged product/runtime SHA `98d4c230`: full Python suite **581 passed, 4 skipped**, 3 upstream deprecation warnings; Anna UI E2E **43/43**; `npm run test:atomic`, `npm run test:guard`, and Anna schema-4 `@anna-ai/cli@0.1.64 validate --strict` passed.
 - Exact-SHA CI on `98d4c230`: [42465006187](https://github.com/rudimentall1/verigate/actions/runs/42465006187), jobs `test`, `contracts`, `anna-ui` all passed.
 - Follow-up harness/docs commit `0d36419`: push CI [42466153268](https://github.com/rudimentall1/verigate/actions/runs/42466153268) and PR CI [42466167865](https://github.com/rudimentall1/verigate/actions/runs/42466167865) both completed successfully; jobs `test`, `contracts`, `anna-ui` all passed.
 - The harness fix was locally checked with `python -m py_compile`, direct `--help`, and focused chain-verification/outcome-attestation/dynamic-authority/lifecycle tests (**31 passed**). No Arbitrum Sepolia transaction was broadcast.
@@ -32,7 +34,7 @@ Downloaded package archives were independently checked on the Windows workstatio
 
 ### Wallet receipt and independent chain outcome boundary
 
-- The current Anna UI sends the exact transaction through the connected EIP-1193 wallet. After the wallet returns a valid `txHash`, the UI creates a separate App-scope approval bound to authorization ID, hash, sender, chain, destination, value and calldata.
+- The current Anna UI can send the exact transaction only when the host session exposes an injected EIP-1193 wallet. After the wallet returns a valid `txHash`, the UI creates a separate App-scope approval bound to authorization ID, hash, sender, chain, destination, value and calldata. Wallet availability inside the Anna sandbox is not verified.
 - Executa consumes that approval, validates the stored signed authorization and the already-consumed one-time authorization, signs and persists an `ExecutionReceipt(status=SUBMITTED)`, and returns the verified receipt. This is executor self-report that the wallet returned a hash; it is **not** proof of on-chain inclusion, success, finality or transfer.
 - `OutcomeAttestationService` requires a `CHAIN_VERIFIER` claim to reference the original signed `SUBMITTED` receipt and binds the observed chain transaction to the stored signed authorization and wallet-submission metadata. The EVM verifier checks the actual transaction, receipt, chain ID, sender pinned by trusted configuration, destination, calldata, value, canonical block and configured confirmation depth; ERC-20 transfers require the exact Transfer event.
 - The generic EVM verifier and outcome-attestation service are **not integrated into the normal Anna UI flow**. There is no governed wallet-enrollment registry, separate deployed CHAIN_VERIFIER service/key lifecycle, or post-attestation reorg monitoring/reversal. Do not claim independent chain verification is active in the Anna product.
