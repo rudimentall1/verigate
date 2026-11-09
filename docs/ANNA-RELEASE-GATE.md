@@ -399,7 +399,7 @@ All four native matrix jobs passed the double-build SHA-256 gate, package creati
 **Release decision unchanged:** App 0.1.21 remains pending review and unpublished. No App or Executa version bump is warranted for this build-only fix.
 
 
-## Latest authoritative update — 2026-11-09 (App 0.1.27 / Executa 0.1.16)
+## Superseded platform snapshot ? 2026-11-09 (App 0.1.27 / Executa 0.1.16)
 
 This update supersedes the older 2026-11-08 release decisions above. Those entries remain as historical audit evidence.
 
@@ -436,3 +436,23 @@ The live tests span immutable App 0.1.25 and 0.1.26; App 0.1.27 is the subsequen
 - The project is not a universal wallet firewall; only the integrated Verigate App/ExecutionRouter path is covered.
 
 **Release decision:** the current App 0.1.27 / Executa 0.1.16 source/runtime candidate has green source CI and four-platform binary build evidence. Preserve its draft status until the remaining live-runtime and release gates are deliberately completed.
+
+## Latest authoritative update ? 2026-11-09 (Anna App 0.1.28 / Executa 0.1.16)
+
+This update supersedes the 0.1.27 platform snapshot above. The 0.1.27 Runtime acceptance remains historical evidence for the code path; 0.1.28 is a listing/metadata refresh only.
+
+### Anna Dashboard verification
+
+- App `verigate-authority`, App ID **851**: immutable App version **0.1.28**, version ID **2082**; bundle `ready`, 3 files / 91,055 bytes; content hash `67f237c123a07e6c09900acd5fe5238c60e96b43ccf8ff8ea4b14e0826b6bec6`.
+- Independent authenticated CLI reads (`apps status`, `apps versions`) confirm `status=draft`, `is_published=false`, `review_candidate_version=null`, and `published_at=null`. No Marketplace release or review submission was performed.
+- Frozen bundled production Executa: Tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, Executa ID **1314**, version **0.1.16**, version ID **1042**, content hash `87a19b43d41b04c26a48b848c2cc4c5fe11a5a7f65e84fc78ccab9a60c4290a5`. The 0.1.28 App cut used `--skip-executa-publish`; no Executa version was created or republished.
+
+### Listing media and source synchronization
+
+- Five live Anna Runtime captures now replace the stale `v019` screenshots: ALLOW, WARN (with the probation/dynamic-authority limit disclosed), hard-cap BLOCK, missing amount, and one-time permission ready.
+- The fifth image is named `v027-5-one-time-permission-ready.png`; it shows `Not consumed` and is not represented as a completed wallet submission.
+- The existing `00-cover.jpg` artwork is retained. The cover and all five screenshot raw URLs returned HTTP 200 after merge.
+- Listing PR [#31](https://github.com/rudimentall1/verigate/pull/31) was merged as `a78d8450f53e0d350b13168dc27f70fa96f96c75`. Exact-head CI [42619825112](https://github.com/rudimentall1/verigate/actions/runs/42619825112) passed: `test`, `contracts`, and `anna-ui` all SUCCESS.
+- The laptop release worktree `C:\Users\User\verigate-anna-release` was fetched and switched to local branch `sync/anna-dashboard-0.1.28` at the exact `origin/main` SHA `a78d8450f53e0d350b13168dc27f70fa96f96c75`. The separate `C:\Users\User\verigate` worktree contains unrelated tracked modifications and was deliberately left untouched. `_tools/` and `_anna-screen.png` remain untracked and were not committed.
+
+**Release boundary:** App 0.1.28 is present in Anna Dashboard as an immutable Draft, not Marketplace-published. Executa 0.1.16 remains unchanged. No successful wallet signature, transaction hash, broadcast, chain inclusion or finality is claimed.
