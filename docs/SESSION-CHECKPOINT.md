@@ -482,3 +482,22 @@ All four native platform jobs completed success. Each runner executed the full P
 - Independent CLI server reads (apps status, apps versions) confirm App 851 status draft, is_published=false, review_candidate_version=null, no review message; version ID 2073 / 0.1.25 is present in the server version list. No release or review submission was run. Old App ID 382 was not touched.
 - Commit excludes untracked _tools/ and _anna-screen.png; these remain untracked.
 - Remaining blocker is real Anna Runtime validation: open/refresh App 0.1.25 and repeat the exact free-form payment request. A successful AI pass must show interpreted details and Anna AI contextual review summary; a policy-only response is not a pass. Do not claim live Sampling acceptance until this test succeeds.
+
+
+## Live Anna Runtime acceptance — App 0.1.25 — 2026-11-09
+
+### User-observed cloud result
+- User tested immutable App 0.1.25 (App ID 851 / version ID 2073) in the real Anna App Runtime using: `Pay 25 USDC on Base to 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed for invoice 1042.`
+- Anna AI returned a parsed interpretation: payment of 25 USDC on Base for invoice 1042; no specific mismatch or manipulation indicator was found. The UI displayed the separate section `Anna AI contextual risk review (advisory)` with the model summary and no concrete risk flags.
+- The app continued into Verigate's deterministic policy check and produced `ALLOW`. The signed Decision Receipt was accepted by the app's Ed25519 verification path. Its intent was bound to the installation principal `anna-installation:642d2053ac799fffc51ac990f1cc82dba58ca9f91909768ab412e4c9c1a1666f`, visible display label `my-agent`, recipient, USDC, Base, amount 25, and resource `invoice 1042`.
+- Displayed policy summary: per-transaction cap 500 USDC; PROBATION dynamic authority 50 USDC; human review above 250 USDC; first-payee cap 50 USDC; rolling 24-hour cap 2,000 USDC; rate limit 30/minute. All displayed checks were OK for this request.
+- Decision receipt intent ID: `f32e64b9-56f6-4bd4-8d3c-405832417d89`. Issuer public-key SHA-256 fingerprint shown by the App: `642d2053ac799fffc51ac990f1cc82dba58ca9f91909768ab412e4c9c1a1666f`.
+- This is the first user-observed successful live Anna host Sampling + contextual interpretation response in the new account flow. It closes the specific 0.1.24 failure: Anna supplied flattened `{text, model, stop_reason, usage}` and 0.1.25 correctly consumed the result.
+
+### Security boundary and remaining validation
+- No one-time Execution Authorization was created in this test; the user did not click `Create one-time permission`. No wallet call and no payment transaction occurred.
+- Cloud evidence now covers successful AI interpretation, contextual review display, deterministic policy evaluation and signed Decision Receipt verification. It does not yet cover successful live issuance and verification of Execution Authorization, App-scope approval consumption/replay protection in Cloud, ExecutionRouter consumption, injected-wallet handoff, or actual chain inclusion/finality.
+- Recommended next test is a controlled explicit permission-creation click for this exact 25 USDC request, then verify the returned signed Execution Authorization and exact-action binding. Do not click wallet submission or send funds unless intentionally testing that separate step.
+- UI observation for later polish: the rolling-24-hour row displays `used + current request amount` as `yours` (25 in this test), so it is a projected post-request total, not historical spend alone. Consider relabeling the column to `after this request` or the row to avoid ambiguity; this is display semantics, not a policy failure.
+
+**Acceptance status:** live Anna AI contextual review is now confirmed for App 0.1.25. Full live execution/transaction lifecycle remains unverified. No review submission or Marketplace publication was performed.
