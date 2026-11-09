@@ -472,3 +472,13 @@ All four native platform jobs completed success. Each runner executed the full P
 - Candidate App metadata version is now **0.1.25**. Run strict Anna schema validation, `git diff --check`, inspect the complete diff, run any required build/CI checks, then push the source commit and create App 0.1.25 as an immutable draft on App ID **851**.
 - Do not publish, submit for review, or alter the old App ID 382. Do not claim AI contextual review is live until the user confirms a successful Anna-host response and visible AI review summary in 0.1.25.
 - Keep `_tools/` and `_anna-screen.png` untracked and out of all commits.
+
+
+### 0.1.25 CI and immutable draft cut — final verification
+- Commit 566cf908cde5f92cc36fb2289a7eb892c3b24701 (fix(anna): accept flattened Executa invoke payloads) pushed to fix/anna-sampling-capability.
+- GitHub Actions run 42581211573: anna-ui, test, and contracts all SUCCESS. The anna-ui job passed schema-4 validation, scripted-host App E2E, and Linux Executa build/smoke.
+- Local final source checks: 58/58 Anna UI/Executa flow tests; anna validate --strict; git diff --check — all passed.
+- Anna CLI apps publish (push + immutable cut), with --skip-executa-publish and existing Tool ID override, succeeded for App 851: immutable App 0.1.25, version ID 2073, content hash b1ff481b6fac733917c2c0cd9267d7533f180f580cf3746a60dc09fa3a1532e8, bundle 3 files / 88,829 bytes / ready. Frozen dependency: Executa ID 1314, version ID 1042, version 0.1.16.
+- Independent CLI server reads (apps status, apps versions) confirm App 851 status draft, is_published=false, review_candidate_version=null, no review message; version ID 2073 / 0.1.25 is present in the server version list. No release or review submission was run. Old App ID 382 was not touched.
+- Commit excludes untracked _tools/ and _anna-screen.png; these remain untracked.
+- Remaining blocker is real Anna Runtime validation: open/refresh App 0.1.25 and repeat the exact free-form payment request. A successful AI pass must show interpreted details and Anna AI contextual review summary; a policy-only response is not a pass. Do not claim live Sampling acceptance until this test succeeds.
