@@ -521,3 +521,30 @@ All four native platform jobs completed success. Each runner executed the full P
 - The one-time authorization expires at Unix timestamp `1794211012` (shown by the UI as 09.11.2026 12:56:52). It must be treated as ephemeral; do not reuse it after expiry or after consumption.
 
 **Next controlled test:** if intentionally testing the next separate layer, use `Send with connected wallet` only with a connected Base wallet, inspect the wallet's exact recipient/token/amount/network confirmation, and stop before signing unless the user explicitly intends a real 25 USDC transfer. A no-send test can validate preflight only; full wallet submission necessarily sends an on-chain transaction.
+
+
+## Live Anna Runtime — wallet rejection and authorization-accounting semantics — 2026-11-09
+
+### User-observed wallet attempt
+- After a fresh policy check and newly issued Execution Authorization for 25 USDC on Base to `0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed` (invoice 1042), the user reached the Brave/MetaMask confirmation sheet.
+- Wallet sheet showed 25 USDC, destination matching the authorized recipient, Base network, USDC contract `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, `Transaction likely to fail`, and network fee `Unavailable`.
+- User denied the wallet signature. Anna Runtime result: `Permission consumed. No retry is possible with this authorization.` and `MetaMask Tx Signature: User denied transaction signature.`
+- The new Decision Receipt remained ALLOW and its Ed25519 signature verified. The fresh authorization ID was `fe4a26ff680fc496758fbc2b052a4bd53816a74c363599aaa602f21617bebe94` (intent ID `592d13f7-e44a-40dc-80ae-de9ee30f46b7`).
+- No valid transaction hash or SUBMITTED ExecutionReceipt was produced in the supplied result. The wallet signature was denied; no on-chain submission or payment is evidenced. Do not describe this as a failed on-chain transaction.
+
+### What the source proves about the burn-on-rejection behavior
+- `anna/executas/verigate-authority/verigate_authority_plugin.py::_verigate_consume_execution_authorization` consumes the App-scoped wallet approval and then calls `ExecutionRouter.consume` before returning the transaction envelope.
+- `anna/bundle/app.js::executeWithConnectedWallet` then calls `eth_sendTransaction`. Its catch branch clears the local authorization and hides the send button if `consumed === true`; it requires a fresh policy check and a new authorization after wallet rejection.
+- The Executa manifest and plugin description explicitly state that a consumed permission cannot be reused, including after wallet rejection. This behavior is intentional and matches the live outcome. Local regression tests cover one-time consumption and replay rejection; this live attempt additionally confirms the actual Anna/MetaMask rejection path burns the permission.
+
+### Authorization history is currently presented as spend history
+- The user's latest UI shows `Recipient history: previously used` and a projected rolling 24-hour value of 50 USDC for the second 25 USDC request.
+- Source inspection confirms these fields are driven by non-BLOCK audit records, not chain-confirmed token transfers: `core/storage.py::spent_today` sums `amount` across non-BLOCK rows in `audit_log`; `payee_seen_before` treats any prior non-BLOCK audit row for that recipient as seen.
+- The Anna payment authorization path persists the policy evaluation/audit row when issuing a permission. Therefore a prior permission can reserve/count 25 USDC in the rolling authorization budget and mark the recipient as previously authorized even when the wallet later rejects the signature and no transfer occurs. The second display value 50 is historical authorized amount 25 plus the current request 25; it is not proof of 50 USDC transferred.
+- This conservative accounting prevents repeated permission issuance from bypassing the budget, but current UI labels (`Rolling 24-hour spend`, `Recipient history`) overstate what the records prove. Future UI wording should distinguish authorized/reserved amount and prior authorizations from confirmed spend and successful payments. Do not change cap/accounting semantics or release reservations based solely on a client-reported wallet rejection without a separately designed and verified settlement/release lifecycle.
+
+### Current acceptance boundary
+- Confirmed live: AI review; deterministic ALLOW and signed Decision Receipt; signed exact-action Execution Authorization; ExecutionRouter consumption; wallet UI opened with the expected 25 USDC Base transfer; user-denial error propagated back to Anna; consumed authorization disabled against retry.
+- Not confirmed: wallet transaction signing, transaction hash, network broadcast, on-chain inclusion, execution success, or finality. The MetaMask `Transaction likely to fail` / `Fee unavailable` diagnostics were not resolved by the supplied evidence. Do not retry blindly.
+
+**Next engineering action:** correct the UI terminology to say `authorized/reserved amount` and `previously authorized recipient`, with an explicit note that these are policy-history counters, not proof of an on-chain payment. Separately investigate the wallet's simulation/fee failure using the actual connected sender address and read-only Base balances/transaction preflight before asking the user to sign anything.
