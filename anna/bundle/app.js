@@ -13,6 +13,16 @@ const inputs = ["action-description", "agent-id", "target", "asset", "network", 
 const FIELD_IDS = ["target", "asset", "network", "amount"];
 const FIELD_LABELS = { target: "recipient", asset: "asset", network: "network", amount: "amount" };
 const normalizeAgentLabel = (value) => Array.from(String(value ?? "").trim().replace(/\s+/g, " ")).slice(0, 128).join("");
+
+function nativeUsdcPrecisionSupported(values) {
+  const asset = String(values?.asset || "").toUpperCase();
+  const network = String(values?.network || "").toLowerCase();
+  if (asset !== "USDC" || !["base", "ethereum"].includes(network)) return true;
+  const raw = String(values?.rawAmount ?? values?.amount ?? "").trim().toLowerCase();
+  const [mantissa, exponentText = "0"] = raw.split("e");
+  const fractionalDigits = (mantissa.split(".")[1] || "").length - Number(exponentText);
+  return Number.isFinite(fractionalDigits) && fractionalDigits <= 6;
+}
 const DEFAULT_QUESTIONS = {
   target: "Which recipient address should receive the payment?",
   asset: "Which asset should be paid (for example USDC)?",
@@ -30,11 +40,13 @@ function setBusy(busy, message) {
   const dynamicAuthorityAllows = !!state.lastDynamicAuthority &&
     typeof dynamicLimit === "number" && Number.isFinite(dynamicLimit) &&
     Number.isFinite(currentAmount) && currentAmount > 0 && currentAmount <= dynamicLimit;
+  const executionPrecisionAllows = nativeUsdcPrecisionSupported(state.lastValues);
   const decision = String(state.lastReceipt?.payload?.decision?.decision || "").toUpperCase();
   const canPrepareExecution =
     ["ALLOW", "WARN"].includes(decision) &&
     state.lastAiAvailable !== false &&
     dynamicAuthorityAllows &&
+    executionPrecisionAllows &&
     state.lastExecutionAuthorization === null;
   $("execution-btn").disabled = busy || !state.anna || !canPrepareExecution;
   inputs.forEach((input) => { input.disabled = busy; });
@@ -115,10 +127,80 @@ function getTextFromCompletion(reply) {
   throw new Error("Anna AI returned an unexpected response format. Please retry.");
 }
 
+// Anna may return an MCP-style error in content[].text instead of error.message.
+// Preserve the real error and correlation identifiers instead of replacing them
+// with a generic "Sampling unavailable" message.
+function extractHostFailure(response) {
+  const queue = [response];
+  const seen = new Set();
+  let code = null;
+  let message = "";
+  const trace = {};
+
+  for (let depth = 0; queue.length && depth < 64; depth += 1) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+
+    if (code === null) {
+      const candidate = current.code ?? current.error_code ?? current.errorCode ??
+        current.status_code ?? current.statusCode;
+      if (typeof candidate === "number" || (typeof candidate === "string" && /^-?\d+$/.test(candidate))) {
+        code = Number(candidate);
+      }
+    }
+
+    for (const key of ["invoke_id", "client_id", "command_id", "reason"]) {
+      if (trace[key] === undefined && (typeof current[key] === "string" || typeof current[key] === "number")) {
+        trace[key] = String(current[key]).slice(0, 120);
+      }
+    }
+
+    if (!message) {
+      const failure = current.error;
+      if (typeof failure === "string" && failure.trim()) {
+        message = failure.trim();
+      } else if (failure && typeof failure === "object") {
+        message = String(failure.message ?? failure.detail ?? failure.reason ?? "").trim();
+      } else if (current.success === false || current.isError === true) {
+        message = String(current.message ?? current.detail ?? current.reason ?? "").trim();
+      }
+    }
+
+    if (Array.isArray(current.content)) {
+      for (const item of current.content) {
+        if (typeof item === "string") {
+          if (!message) message = item.trim();
+          try { queue.push(JSON.parse(item)); } catch { /* plain text error */ }
+        } else if (item && typeof item === "object") {
+          if (typeof item.text === "string") {
+            const contentText = item.text.trim();
+            try { queue.push(JSON.parse(contentText)); }
+            catch { if (!message && contentText) message = contentText; }
+          }
+          queue.push(item);
+        }
+      }
+    }
+
+    for (const key of ["result", "data", "output", "structuredContent", "cause", "details", "error"]) {
+      const value = current[key];
+      if (value && typeof value === "object") queue.push(value);
+    }
+  }
+
+  if (code === null) {
+    const match = message.match(/^\[(-?\d{4,6})\]/);
+    if (match) code = Number(match[1]);
+  }
+  const traceText = Object.entries(trace).map(([key, value]) => key + "=" + value).join(" ");
+  return { code, message: message.slice(0, 600), traceText };
+}
+
 async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
   if (!state.anna?.tools?.invoke) {
     const error = new Error("Anna Executa is not available in this session. Open Verigate from the Anna app runtime and try again.");
-    error.annaLlmUnavailable = true;
+    error.annaInvocationFailure = true;
     throw error;
   }
 
@@ -136,25 +218,59 @@ async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
       }
     });
   } catch (cause) {
+    // Do not turn every invocation failure into an apparent LLM outage.
+    // Permission, missing-tool, transport and runtime errors must remain visible
+    // so operators can distinguish a capability/installation problem from a
+    // genuine Sampling-unavailable response. Only the explicit host response
+    // below may enable the clearly labelled policy-only preview.
     const error = cause instanceof Error ? cause : new Error(String(cause));
-    error.annaLlmUnavailable = true;
+    error.annaInvocationFailure = true;
     throw error;
   }
 
   const outer = unwrapToolResult(response);
-  if (outer?.success !== true) {
-    const detail = typeof outer?.error === "string"
-      ? outer.error
-      : outer?.error?.message || "Anna Sampling is unavailable or the host rejected the request.";
+  const directTextResult = outer && typeof outer === "object" &&
+    outer.success !== false && !outer.error && outer.isError !== true &&
+    typeof outer.text === "string" && outer.text.trim() !== "";
+  const data = outer?.success === true && outer.data && typeof outer.data === "object"
+    ? outer.data
+    : directTextResult ? outer : null;
+
+  if (!data) {
+    const hostFailure = extractHostFailure(response);
+    const code = hostFailure.code;
+    const message = hostFailure.message || "";
+    const trace = hostFailure.traceText;
+    const detailParts = [];
+    if (code !== null && Number.isFinite(code)) detailParts.push(`[${code}]`);
+    const messageWithoutCode = code !== null && message.startsWith(`[${code}]`)
+      ? message.slice(`[${code}]`.length).trimStart()
+      : message;
+    if (messageWithoutCode) detailParts.push(messageWithoutCode);
+    if (trace) detailParts.push(trace);
+    const detail = detailParts.join(" ") ||
+      "Anna host returned an unsuccessful Executa response without an error message. " +
+      "Response envelope: " + Object.keys(outer && typeof outer === "object" ? outer : {}).join(", ");
+
+    // A reverse-Sampling error may arrive as plain MCP content text rather
+    // than error.message. Preserve it and its correlation ID for diagnosis.
+    // Only known Sampling/quota failures may use policy-only fallback.
+    const numericCode = code === null ? NaN : Number(code);
+    const authFailure = [401, 403].includes(numericCode) ||
+      /unauthori[sz]ed|forbidden|session (?:expired|refresh)|not the app owner|executa (?:is )?not available/i.test(detail);
+    const samplingFailure = outer?.llm_available === false ||
+      response?.llm_available === false ||
+      [-32001, -32002, -32003, -32006, -32007, -32008].includes(numericCode) ||
+      /sampling|llm|language model|quota|provider error|model unavailable/i.test(detail);
+
     const error = new Error(detail);
-    // A malformed successful envelope must remain an explicit error; only a
-    // host/Sampling outage permits the clearly labelled policy-only preview.
     error.annaLlmUnavailable = outer?.malformed_response !== true &&
-      outer?.llm_available === false;
+      response?.malformed_response !== true &&
+      !authFailure && samplingFailure;
     throw error;
   }
 
-  const text = outer?.data?.text;
+  const text = data.text;
   if (typeof text !== "string" || !text.trim()) {
     throw new Error("Anna Sampling returned a malformed response. No policy-only fallback was used.");
   }
@@ -232,20 +348,112 @@ function prettyRule(rule) {
 
 const READ_FAILURE = "Anna AI's answer could not be read (this happens occasionally). Press \"Check with Anna AI\" again, or rephrase the request with the recipient, asset, network and amount.";
 
-function manualInterpretation() {
-  // LLM is optional for a policy preview. In manual mode we use only explicit
-  // form values; we never infer payment fields from free text or claim an AI review.
+const LOCAL_NETWORKS = new Map([
+  ["base", "base"], ["ethereum", "ethereum"], ["ethereum mainnet", "ethereum"],
+  ["eth mainnet", "ethereum"], ["solana", "solana"]
+]);
+
+function parseExplicitAmount(raw) {
+  let value = String(raw || "").trim().replace(/[\s\u00a0'’]/g, "");
+  if (!value) return { value: null, ambiguous: false };
+  const comma = value.lastIndexOf(",");
+  const dot = value.lastIndexOf(".");
+  if (comma >= 0 && dot >= 0) {
+    const decimal = comma > dot ? "," : ".";
+    const grouping = decimal === "," ? /\./g : /,/g;
+    value = value.replace(grouping, "").replace(decimal, ".");
+  } else if (comma >= 0) {
+    const decimals = value.length - comma - 1;
+    if (decimals === 3) return { value: null, ambiguous: true };
+    value = value.replace(",", ".");
+  }
+  if (!/^\d+(?:\.\d+)?$/.test(value)) return { value: null, ambiguous: false };
+  const amount = Number(value);
+  return { value: Number.isFinite(amount) && amount > 0 ? amount : null, ambiguous: false };
+}
+
+function extractExplicitPaymentFields(description) {
+  const text = String(description || "").normalize("NFC");
+  const ambiguities = [];
+  const extracted = { payee: null, asset: null, network: null, amount: null, resource: null };
+
+  const evmAddresses = [...new Set(text.match(/\b0x[a-fA-F0-9]{40}\b/g) || [])];
+  const solanaAddresses = [...new Set(text.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g) || [])];
+  const addresses = [...new Set([...evmAddresses, ...solanaAddresses])];
+  if (addresses.length === 1) extracted.payee = addresses[0];
+  else if (addresses.length > 1) ambiguities.push({ field: "recipient", issue: "The request contains more than one possible recipient address." });
+
+  const assetPattern = new RegExp("(?<![\\p{L}\\p{N}])(?:" +
+    "(\\d[\\d\\s\\u00a0.,'’]*?)\\s*(USDC|USDT|WETH|DAI|ETH|BTC|SOL)" +
+    "|" +
+    "(USDC|USDT|WETH|DAI|ETH|BTC|SOL)\\s*([\\d][\\d\\s\\u00a0.,'’]*)" +
+    ")(?![\\p{L}\\p{N}])", "giu");
+  const amountMatches = [];
+  const mentionedAssets = new Set();
+  for (const match of text.matchAll(assetPattern)) {
+    const rawAmount = match[2] ? match[1] : match[4];
+    const asset = (match[2] || match[3] || "").toUpperCase();
+    mentionedAssets.add(asset);
+    const parsed = parseExplicitAmount(rawAmount);
+    if (parsed.ambiguous) {
+      ambiguities.push({ field: "amount", issue: "The amount uses a separator that could mean either a decimal or a thousands grouping." });
+      continue;
+    }
+    if (parsed.value !== null) amountMatches.push({ amount: parsed.value, asset });
+  }
+  if (mentionedAssets.size === 1) extracted.asset = [...mentionedAssets][0];
+  else if (mentionedAssets.size > 1) ambiguities.push({ field: "asset", issue: "The request names more than one asset." });
+  const uniqueAmounts = [...new Map(amountMatches.map((item) => [item.amount + ":" + item.asset, item])).values()];
+  if (uniqueAmounts.length === 1) {
+    extracted.amount = uniqueAmounts[0].amount;
+    extracted.asset = uniqueAmounts[0].asset;
+  } else if (uniqueAmounts.length > 1) {
+    ambiguities.push({ field: "amount", issue: "The request contains multiple different amount or asset combinations." });
+  }
+
+  const networkMatches = [...new Set(
+    [...text.matchAll(/(?:\bon\s+|(?:^|[^\p{L}\p{N}])на\s+|(?:^|[^\p{L}\p{N}])в\s+сети\s+)(base|ethereum(?:\s+mainnet)?|eth\s+mainnet|solana)\b/giu)]
+      .map((match) => LOCAL_NETWORKS.get(match[1].toLowerCase()))
+  )];
+  if (networkMatches.length === 1) extracted.network = networkMatches[0];
+  else if (networkMatches.length > 1) ambiguities.push({ field: "network", issue: "The request names more than one network." });
+
+  const purpose = text.match(/(?:\bfor\s+|\bpurpose\s*[:=]\s*|(?:^|[^\p{L}\p{N}])за\s+|(?:^|[^\p{L}\p{N}])назначение\s*[:=]\s*)([^\n;]{2,120})/iu);
+  if (purpose) extracted.resource = clip(purpose[1], 120).replace(/[.,;]+$/, "");
+
+  return { fields: extracted, ambiguities };
+}
+
+function manualInterpretation(reason = "") {
+  // Quota/host outage fallback is deliberately deterministic: extract only
+  // unambiguous values explicitly present in the user's text or form. It is a
+  // policy preview, never an AI contextual review and never execution authority.
+  const parsed = extractExplicitPaymentFields(fieldValue("action-description"));
   const fields = {
-    payee: fieldValue("target") || null,
-    asset: fieldValue("asset") ? clip(fieldValue("asset"), 12).toUpperCase() : null,
-    network: fieldValue("network") ? clip(fieldValue("network"), 24).toLowerCase() : null,
+    payee: fieldValue("target") || parsed.fields.payee,
+    asset: fieldValue("asset") ? clip(fieldValue("asset"), 12).toUpperCase() : parsed.fields.asset,
+    network: fieldValue("network") ? clip(fieldValue("network"), 24).toLowerCase() : parsed.fields.network,
     amount: fieldValue("amount") && Number.isFinite(Number(fieldValue("amount"))) && Number(fieldValue("amount")) > 0
-      ? Number(fieldValue("amount")) : null,
-    resource: fieldValue("resource") || null
+      ? Number(fieldValue("amount")) : parsed.fields.amount,
+    resource: fieldValue("resource") || parsed.fields.resource
   };
+  const reasonText = clip(reason, 180).replace(/[.!?]+$/, "");
+  const ambiguities = [...parsed.ambiguities];
+  const conflicts = [
+    ["recipient", fieldValue("target"), parsed.fields.payee, (a, b) => a.toLowerCase() === b.toLowerCase()],
+    ["asset", fieldValue("asset"), parsed.fields.asset, (a, b) => a.toUpperCase() === b.toUpperCase()],
+    ["network", fieldValue("network"), parsed.fields.network, (a, b) => a.toLowerCase() === b.toLowerCase()],
+    ["amount", fieldValue("amount"), parsed.fields.amount === null ? "" : String(parsed.fields.amount), (a, b) => Number(a) === Number(b)]
+  ];
+  for (const [field, entered, inferred, equal] of conflicts) {
+    if (entered && inferred !== null && inferred !== "" && !equal(String(entered).trim(), String(inferred).trim())) {
+      ambiguities.push({ field, issue: "The form value conflicts with a different value stated in the request." });
+    }
+  }
   return {
-    fields, questions: [], ambiguities: [], flags: [], aiAvailable: false,
-    summary: "Anna AI is unavailable. Verigate will check only the values entered explicitly below; no AI contextual risk review was performed."
+    fields, questions: [], ambiguities, flags: [], aiAvailable: false,
+    summary: "Anna AI is unavailable" + (reasonText ? ": " + reasonText : "") +
+      ". Verigate extracted only explicit, unambiguous values from the request and form. Any policy result is a policy-only preview; no AI contextual risk review was performed."
   };
 }
 
@@ -279,7 +487,7 @@ async function interpretRequest(description) {
       // Only a failed Host LLM request enables a policy-only preview. Invalid
       // response envelopes and malformed model output remain explicit errors.
       if (!error?.annaLlmUnavailable) throw error;
-      return manualInterpretation();
+      return manualInterpretation(error?.message || "Sampling request failed");
     }
     try {
       return sanitizeInterpretation(parseJsonFromModel(raw, READ_FAILURE));
@@ -360,6 +568,22 @@ function unwrapToolResult(response) {
     break;
   }
   return current;
+}
+
+function toolDataOrDirect(response, isDirectPayload) {
+  const outer = unwrapToolResult(response);
+  if (!outer || typeof outer !== "object" ||
+      outer.success === false || outer.error || outer.isError === true) {
+    return null;
+  }
+  if (outer.success === true) {
+    return outer.data && typeof outer.data === "object" ? outer.data : null;
+  }
+  // Some Anna host adapters return the Executa business payload directly,
+  // without its documented {success:true,data:{...}} wrapper. Accept only
+  // method-specific, recognizable payloads; never infer success from absence
+  // of an error alone.
+  return typeof isDirectPayload === "function" && isDirectPayload(outer) ? outer : null;
 }
 
 function extractReceiptVerification(response) {
@@ -448,8 +672,13 @@ async function loadLimits(values) {
       }
       return null;
     }
-    const data = outer?.data;
-    return outer?.success === true && data && typeof data === "object" ? data : null;
+    return toolDataOrDirect(outer, (candidate) =>
+      candidate.accounting_scope === "issuer_installation" &&
+      typeof candidate.accounting_principal_id === "string" &&
+      Array.isArray(candidate.allowed_networks) &&
+      Array.isArray(candidate.allowed_assets) &&
+      candidate.dynamic_authority && typeof candidate.dynamic_authority === "object"
+    );
   } catch (error) {
     // Preserve an auth/quota error already normalized from a returned tool envelope.
     if (String(error?.message || "").startsWith("Anna policy-summary request failed:")) throw error;
@@ -495,17 +724,21 @@ function buildLimitRows(limits, values, ruleIds) {
   const newPayee = cap(limits.new_payee_cap);
   if (newPayee !== null && limits.recipient_seen_before !== undefined) {
     if (!limits.recipient_seen_before) {
-      add("First payment to this recipient", String(values.amount), String(newPayee),
+      add("First authorization for this recipient", String(values.amount), String(newPayee),
         ruleIds.has("new_payee_cap_exceeded") ? "review" : "ok");
     } else {
-      add("Recipient history", "previously used", "first-payment cap no longer applies", "ok");
+      add("Prior Verigate authorization record", "found", "first-authorization cap no longer applies", "ok");
     }
   }
   const daily = cap(limits.daily_cap);
   if (daily !== null) {
     const used = Number(limits.rolling_24h_spend || 0);
-    add("Rolling 24-hour spend (all recipients)", String(used + values.amount), String(daily),
-      ruleIds.has("daily_cap_exceeded") ? "review" : "ok");
+    add(
+      "Projected 24-hour authorization total",
+      String(used + values.amount) + " (including this request)",
+      String(daily),
+      ruleIds.has("daily_cap_exceeded") ? "review" : "ok"
+    );
   }
   if (Number(limits.rate_limit_per_minute) > 0) {
     add("Recent payment attempts (last minute)", String(Number(limits.calls_last_minute || 0)),
@@ -547,7 +780,7 @@ function renderRules(matchedRules, aiAssessment) {
   const ai = all.filter((r) => (r?.rule || r?.rule_id) === "ai_risk_flag");
   const rules = all.filter((r) => (r?.rule || r?.rule_id) !== "ai_risk_flag");
   $("ai-review-summary").textContent = aiAssessment?.aiAvailable === false
-    ? "Anna AI contextual review was not performed. This result is based only on explicit form values and Verigate policy."
+    ? (aiAssessment.summary || "Anna AI contextual review was not performed. This result is based only on explicit form values and Verigate policy.")
     : aiAssessment?.summary
       ? "Anna AI contextual review: " + aiAssessment.summary
       : "Anna AI reviewed the payment context, recipient and stated purpose.";
@@ -657,19 +890,19 @@ async function checkAuthority() {
     const questions = missing.map((id) => DEFAULT_QUESTIONS[id]);
     if (badAmount) questions.push("The amount must be a number greater than zero. How much should be paid?");
     showClarify(questions.slice(0, 5), false);
-    $("interpretation").textContent = "Anna AI: " + (review.summary || "Some details are missing.") + " Add them to the description or the fields, then check again.";
+    $("interpretation").textContent = (review.aiAvailable === false ? "Policy-only extraction: " : "Anna AI: ") + (review.summary || "Some details are missing.") + " Add them to the description or the fields, then check again.";
     setBusy(false, "Waiting for the missing details. No check was run.");
     return;
   }
-  if (review.ambiguities.length && !$("confirm-details").checked) {
+  if ((review.ambiguities.length || review.questions.length) && !$("confirm-details").checked) {
     const items = review.ambiguities.map((a) => a.field + ": " + a.issue);
     review.questions.forEach((q) => { if (!items.includes(q)) items.push(q); });
     showClarify(items.slice(0, 5), true);
-    $("interpretation").textContent = "Anna AI: " + (review.summary || "Some details are unclear.") + " Fix them or confirm they are what you mean, then check again.";
+    $("interpretation").textContent = (review.aiAvailable === false ? "Policy-only extraction: " : "Anna AI: ") + (review.summary || "Some details are unclear.") + " Fix them or confirm they are what you mean, then check again.";
     setBusy(false, "Confirm the details to continue. No check was run.");
     return;
   }
-  $("interpretation").textContent = "Anna AI: " + (review.summary || "The request is clear.") + (review.flags.length ? " Risk flags raised: " + review.flags.length + "." : "");
+  $("interpretation").textContent = (review.aiAvailable === false ? "Policy-only extraction: " : "Anna AI: ") + (review.summary || "The request is clear.") + (review.flags.length ? " Risk flags raised: " + review.flags.length + "." : "");
 
   setBusy(true, "Verigate is evaluating the request against its policy…");
   try {
@@ -722,9 +955,11 @@ async function checkAuthority() {
     const dynamicAuthorityAvailable = !!dynamicAuthority &&
       typeof dynamicLimit === "number" && Number.isFinite(dynamicLimit);
     const exceedsDynamicAuthority = dynamicAuthorityAvailable && values.amount > dynamicLimit;
+    const executionPrecisionSupported = nativeUsdcPrecisionSupported(values);
     const reviewableDecision = ["ALLOW", "WARN"].includes(envelope.decision);
     const canIssuePermission = reviewableDecision &&
-      state.lastAiAvailable && dynamicAuthorityAvailable && !exceedsDynamicAuthority;
+      state.lastAiAvailable && dynamicAuthorityAvailable && !exceedsDynamicAuthority &&
+      executionPrecisionSupported;
     $("execution-panel").style.display = reviewableDecision ? "block" : "none";
     $("execution-btn").textContent = envelope.decision === "WARN"
       ? "Review warnings & approve"
@@ -738,18 +973,20 @@ async function checkAuthority() {
         ? "BLOCK is not overridable and cannot receive execution authority."
         : !state.lastAiAvailable
           ? "Policy preview only. Anna AI contextual review is unavailable, so execution permission is disabled."
-          : !dynamicAuthorityAvailable
-            ? "Policy " + envelope.decision + ", but the current dynamic authority could not be verified. Execution permission is disabled."
-            : "Policy " + envelope.decision + ", but current " + dynamicAuthority.state + " authority permits at most " +
-              dynamicLimit + " " + values.asset.toUpperCase() +
-              " per action. Reduce the amount or complete the verified authority progression before requesting permission.";
+          : !executionPrecisionSupported
+            ? "The policy decision is valid, but native USDC transfers on Base/Ethereum support at most 6 decimal places. No execution permission can be issued for this amount."
+            : !dynamicAuthorityAvailable
+              ? "Policy " + envelope.decision + ", but the current dynamic authority could not be verified. Execution permission is disabled."
+              : "Policy " + envelope.decision + ", but current " + dynamicAuthority.state + " authority permits at most " +
+                dynamicLimit + " " + values.asset.toUpperCase() +
+                " per action. Reduce the amount or complete the verified authority progression before requesting permission.";
 
     const pill = $("decision");
     pill.textContent = envelope.decision;
     pill.className = "decision " + envelope.decision.toLowerCase();
     $("result-title").textContent = { ALLOW: "Allowed by policy", WARN: "Human review required", BLOCK: "Blocked by policy" }[envelope.decision];
     $("result-meta").textContent = values.agent_id + " · " + values.amount + " " + values.asset.toUpperCase() + " · " + values.network;
-    $("result-summary").textContent = "Anna AI is explaining Verigate's signed decision…";
+    $("result-summary").textContent = "Preparing the verified policy explanation…";
     renderRules(envelope.matchedRules, review);
     const ruleIds = new Set((envelope.matchedRules || []).map((r) => r?.rule || r?.rule_id));
     renderLimits(buildLimitRows(limits, values, ruleIds));
@@ -763,7 +1000,9 @@ async function checkAuthority() {
     if (requestId !== state.requestId) return;
     $("result-summary").textContent = explained.explanation;
     $("suggestion").textContent = explained.next ? "What could change this: " + explained.next : "";
-    setBusy(false, "Preview complete. No payment was sent. A one-time execution permission is available only when policy and current dynamic authority both allow this amount.");
+    setBusy(false, state.lastAiAvailable === false
+      ? "Policy-only preview complete. No AI contextual review was performed; execution permission is disabled. No payment was sent."
+      : "Preview complete. No payment was sent. A one-time execution permission is available only when policy and current dynamic authority both allow this amount.");
   } catch (error) {
     if (requestId !== state.requestId) return;
     clearResult();
@@ -869,6 +1108,11 @@ async function storeAppApproval(kind, fields) {
 
 async function prepareExecutionAuthorization() {
   clearError();
+  if (state.lastExecutionAuthorization) {
+    showError("A one-time permission is already active. Use it or run a fresh check before requesting another.");
+    return;
+  }
+
   if (!state.anna || !state.lastReceipt || !state.lastValues) {
     showError("Run a fresh check first.");
     return;
@@ -883,6 +1127,10 @@ async function prepareExecutionAuthorization() {
     return;
   }
   const v = state.lastValues;
+  if (!nativeUsdcPrecisionSupported(v)) {
+    showError("Native USDC transfers on Base/Ethereum support at most 6 decimal places. No execution permission was issued.");
+    return;
+  }
   const dynamicLimit = state.lastDynamicAuthority?.per_action_limits?.[String(v.asset).toUpperCase()];
   if (typeof dynamicLimit !== "number" || !Number.isFinite(dynamicLimit) ||
       !Number.isFinite(Number(v.amount)) || Number(v.amount) <= 0 || Number(v.amount) > dynamicLimit) {
@@ -900,6 +1148,12 @@ async function prepareExecutionAuthorization() {
     return;
   }
 
+  // Remove stale authorization evidence before starting a fresh issuance attempt.
+  $("execution-json").textContent = "";
+  $("wallet-execute-btn").style.display = "none";
+  $("wallet-execute-btn").textContent = "Send with connected wallet";
+  $("execution-status").textContent = "Preparing a fresh policy check and one-time permission.";
+  $("execution-summary").textContent = "Verigate is rechecking current policy and dynamic authority. No new permission is active until a fresh signature is verified.";
   const approvalKind = isWarningReview ? "payment_warning_review" : "payment_authorization";
   const warningText = warningRules.map((rule) => "• " + String(rule.message || rule.rule || "Warning")).join("\n");
   setBusy(true, isWarningReview
@@ -961,14 +1215,17 @@ async function prepareExecutionAuthorization() {
         ". Check the Anna session, Executa availability and remaining usage quota. No execution permission was issued.");
     }
     const outer = unwrapToolResult(response);
-    if (outer?.success !== true || !outer?.data) {
+    const data = toolDataOrDirect(outer, (candidate) =>
+      Boolean(candidate.decision_receipt?.payload) &&
+      Object.prototype.hasOwnProperty.call(candidate, "execution_authorization")
+    );
+    if (!data) {
       const detail = outer?.error
         ? errorDetail(outer.error)
         : "Unexpected response envelope (" + (outer && typeof outer === "object" ? Object.keys(outer).join(", ") || "empty object" : typeof outer) + ")";
       throw new Error("Verigate authorization tool did not return a successful result: " + detail +
         ". No execution permission was issued.");
     }
-    const data = outer.data;
     const receipt = data.decision_receipt;
     if (!receipt?.payload) throw new Error("Verigate returned no signed decision receipt.");
     // A fresh decision must be cryptographically verified before any outcome is displayed.
@@ -992,12 +1249,16 @@ async function prepareExecutionAuthorization() {
       args: { authorization_json: JSON.stringify(authorization) }
     });
     const verifiedOuter = unwrapToolResult(verificationResponse);
-    if (verifiedOuter?.success === false || verifiedOuter?.error) {
+    if (verifiedOuter?.success === false || verifiedOuter?.error || verifiedOuter?.isError === true) {
       throw new Error("Anna could not verify the Execution Authorization: " +
         errorDetail(verifiedOuter.error || verifiedOuter) +
         ". No permission will be presented as valid.");
     }
-    const verification = verifiedOuter?.data;
+    const verification = toolDataOrDirect(verifiedOuter, (candidate) =>
+      typeof candidate.verified === "boolean" &&
+      candidate.algorithm === "Ed25519" &&
+      typeof candidate.authorization_id === "string"
+    );
     const authorizedAction = verification?.action;
     const previewIntent = state.lastReceipt?.payload?.intent;
     const issuedIntent = receipt?.payload?.intent;
@@ -1015,7 +1276,7 @@ async function prepareExecutionAuthorization() {
       String(authorizedAction.network || "").toLowerCase() === v.network.toLowerCase() &&
       Number(authorizedAction.amount) === v.amount &&
       String(authorizedAction.resource || "") === String(v.resource || "");
-    if (verifiedOuter?.success !== true || verification?.verified !== true ||
+    if (!verification || verification?.verified !== true ||
         verification?.algorithm !== "Ed25519" ||
         verification?.authorization_id !== authorization.payload?.authorization_id ||
         typeof verification?.key_fingerprint_sha256 !== "string" ||
@@ -1031,6 +1292,7 @@ async function prepareExecutionAuthorization() {
     const evmTransaction = authorization.payload?.action?.metadata?.evm_transaction;
     const walletNetworkSupported = Boolean(evmTransaction) && ["base", "ethereum"].includes(v.network.toLowerCase());
     $("wallet-execute-btn").style.display = walletNetworkSupported ? "inline-flex" : "none";
+    if (walletNetworkSupported) $("wallet-execute-btn").textContent = "Send with connected wallet";
     $("receipt-json").textContent = JSON.stringify(receipt, null, 2);
     $("execution-json").textContent = JSON.stringify(authorization, null, 2);
     $("execution-summary").textContent =
@@ -1085,6 +1347,7 @@ async function executeWithConnectedWallet() {
   }
 
   let consumed = false;
+  let consumeAttempted = false;
   let submittedTxHash = null;
   try {
     setBusy(true, "Checking the connected wallet before confirmation…");
@@ -1131,6 +1394,8 @@ async function executeWithConnectedWallet() {
       value_wei: expectedTx.value_wei,
       data: expectedTx.data
     });
+    // A lost or malformed response after dispatch cannot prove the permission was not consumed.
+    consumeAttempted = true;
     const response = await state.anna.tools.invoke({
       tool_id: TOOL_ID,
       method: "verigate_consume_execution_authorization",
@@ -1140,14 +1405,21 @@ async function executeWithConnectedWallet() {
       }
     });
     const outer = unwrapToolResult(response);
-    const data = outer?.data;
-    if (outer?.success !== true || !data || data.consumed !== true ||
+    const data = toolDataOrDirect(outer, (candidate) =>
+      candidate.consumed === true &&
+      typeof candidate.authorization_id === "string" &&
+      candidate.wallet_submission_required === true &&
+      candidate.transaction_submitted === false &&
+      candidate.transaction && typeof candidate.transaction === "object"
+    );
+    if (!data || data.consumed !== true ||
         data.authorization_id !== authorization.payload?.authorization_id ||
         data.wallet_submission_required !== true || data.transaction_submitted !== false) {
       throw new Error(outer?.error || "ExecutionRouter did not consume this permission. No wallet transaction was requested.");
     }
     consumed = true;
     state.lastExecutionAuthorization = null;
+    $("execution-status").textContent = "Permission consumed by ExecutionRouter. Waiting for wallet signature. This authorization cannot be reused.";
     $("wallet-execute-btn").disabled = true;
     $("wallet-execute-btn").textContent = "Permission consumed";
     const tx = data.transaction;
@@ -1204,9 +1476,14 @@ async function executeWithConnectedWallet() {
       }
     });
     const receiptOuter = unwrapToolResult(receiptResponse);
-    const receiptData = receiptOuter?.data;
+    const receiptData = toolDataOrDirect(receiptOuter, (candidate) =>
+      typeof candidate.authorization_id === "string" &&
+      typeof candidate.transaction_hash === "string" &&
+      candidate.receipt_verified === true &&
+      candidate.execution_receipt?.payload?.status === "SUBMITTED"
+    );
     const executionReceipt = receiptData?.execution_receipt;
-    if (receiptOuter?.success !== true || !receiptData ||
+    if (!receiptData ||
         receiptData.authorization_id !== authorization.payload?.authorization_id ||
         receiptData.transaction_hash !== submittedTxHash ||
         receiptData.transaction_submitted !== true ||
@@ -1232,9 +1509,17 @@ async function executeWithConnectedWallet() {
           (error?.message || String(error)) + ". Check the explorer before taking any further action; do not resubmit this payment."
         : "The one-time permission was consumed, but wallet submission did not complete or could not be verified: " +
           (error?.message || String(error)) + ". Check wallet activity. A fresh policy check and new permission are required before another attempt.";
+    } else if (consumeAttempted) {
+      // The Executa may have consumed the permission before the response was lost.
+      // Fail closed locally and require a fresh policy check instead of offering a retry.
+      state.lastExecutionAuthorization = null;
+      $("wallet-execute-btn").disabled = true;
+      $("wallet-execute-btn").style.display = "none";
+      $("wallet-execute-btn").textContent = "Authorization status unknown";
+      $("execution-status").textContent = "Verigate could not confirm whether ExecutionRouter consumed this permission. Do not retry it. Run a fresh policy check and create a new permission.";
     }
     showError(error?.message || String(error));
-    setBusy(false, consumed ? (submittedTxHash ? "Wallet returned a transaction hash. Do not retry until its status is checked." : "Permission consumed. No retry is possible with this authorization.") : "Wallet execution did not start. The permission remains unused.");
+    setBusy(false, consumed ? (submittedTxHash ? "Wallet returned a transaction hash. Do not retry until its status is checked." : "Permission consumed. No retry is possible with this authorization.") : consumeAttempted ? "Permission consumption could not be confirmed. Do not retry this authorization; run a fresh policy check." : "Wallet execution did not start. The permission remains unused.");
   }
 }
 

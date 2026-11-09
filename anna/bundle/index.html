@@ -78,7 +78,7 @@
         <p class="helper">For example: “Pay 25 USDC on Base to 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed for invoice 1042.” The App calls its bundled Verigate Executa; the Executa calls Anna's host LLM through reverse Sampling and returns its interpretation and risk flags. The model can only add scrutiny: it can never approve a payment or lower a policy decision.</p>
         <label for="action-description">What do you want the agent to do?</label>
         <textarea id="action-description" placeholder="Describe the payment: recipient address, network, asset and amount…" required></textarea>
-        <p class="helper" style="margin:14px 0 0">Details Anna AI extracted. Check them and edit if needed.</p>
+        <p class="helper" style="margin:14px 0 0">Extracted details. Check them and edit if needed.</p>
         <div class="grid">
           <div>
             <label for="agent-id">Agent label (display only)</label>
@@ -87,7 +87,7 @@
           </div>
           <div>
             <label for="target">Recipient / payee</label>
-            <input id="target" placeholder="0x… (filled in by Anna AI)" autocomplete="off" />
+            <input id="target" placeholder="0x…" autocomplete="off" />
           </div>
           <div>
             <label for="asset">Asset</label>
@@ -110,11 +110,11 @@
           <button id="check-btn" class="primary" type="button">Check with Anna AI</button>
         </div>
         <div id="clarify" aria-live="polite">
-          <h2>Anna AI needs a few details</h2>
+          <h2>A few details are needed</h2>
           <ul id="clarify-list" class="rules"></ul>
           <label id="confirm-wrap" class="confirm"><input id="confirm-details" type="checkbox" /> I confirm the details above are what I mean</label>
         </div>
-        <div class="note">Anna AI reads and reviews your request. The final ALLOW, WARN or BLOCK always comes from Verigate's deterministic policy. For native USDC on Base and Ethereum, if this Anna session exposes an injected EIP-1193 wallet, a separate confirmed step binds the exact ERC-20 transfer to the signed permission. ExecutionRouter consumes that permission before the wallet is asked to sign and submit. Without an injected wallet, policy checks and signed receipts still work, but wallet submission is unavailable in this session. The app never receives wallet private keys. Solana remains policy/authorization-only in this version.</div>
+        <div class="note">When Anna Sampling is available, Anna AI interprets and reviews your request. If unavailable, Verigate may show a clearly labelled policy-only preview from explicit details. The final ALLOW, WARN or BLOCK always comes from Verigate's deterministic policy. For native USDC on Base and Ethereum, if this Anna session exposes an injected EIP-1193 wallet, a separate confirmed step binds the exact ERC-20 transfer to the signed permission. ExecutionRouter consumes that permission before the wallet is asked to sign and submit. Without an injected wallet, policy checks and signed receipts still work, but wallet submission is unavailable in this session. The app never receives wallet private keys. Solana remains policy/authorization-only in this version.</div>
         <div id="interpretation" aria-live="polite"></div>
         <p id="status" role="status">Connecting to Anna…</p>
         <div id="error" role="alert"></div>
@@ -139,6 +139,7 @@
         <div id="limits">
           <h2>How this request compares with the limits</h2>
           <table id="limits-table"></table>
+          <p class="helper">The 24-hour counter totals recorded non-BLOCK Verigate payment authorizations, including this request. Recipient history tracks prior non-BLOCK records for that payee. These are policy-history counters, not proof that an on-chain transfer was signed, submitted, or settled.</p>
         </div>
         <h2 id="rules-heading">Policy checks</h2>
         <ul id="rules" class="rules"></ul>

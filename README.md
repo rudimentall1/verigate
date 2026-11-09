@@ -30,7 +30,11 @@ AI agents can propose consequential actions. Verigate decides whether the agent 
 
 https://github.com/user-attachments/assets/b64a0a58-b628-4b04-bddc-f9634741292b
 
-- **Status.** Working open-source protocol implementation (MIT), 450+ automated tests, green CI. Not a hosted service yet: see [Current state](#current-state), [docs/security-configuration.md](docs/security-configuration.md) and [docs/threat-model.md](docs/threat-model.md). Pilot conversations are welcome: open an issue.
+- **Status.** Working open-source protocol implementation (MIT). The latest recorded full Python suite is **626 passed, 4 skipped**; the Anna UI E2E suite is **61/61**, and the latest source CI completed all three jobs successfully ([CI run](https://github.com/rudimentall1/verigate/actions/runs/42596367889)). The generic Verigate API is not a hosted multi-tenant service: see [Current state](#current-state), [docs/security-configuration.md](docs/security-configuration.md) and [docs/threat-model.md](docs/threat-model.md).
+
+### Anna application integration
+
+Verigate Authority is also packaged as an Anna App. The current Anna platform draft is **App 0.1.27** with bundled production **Executa 0.1.16**. Anna's host LLM interprets requests and performs advisory contextual review; the deterministic Verigate policy owns ALLOW/WARN/BLOCK. The App's live Runtime tests confirmed signed Decision Receipt verification, exact-action one-time authorization and ExecutionRouter consumption before wallet hand-off. The wallet dialog was deliberately cancelled during testing; no payment transaction was broadcast. The App is not Marketplace-published. See [Anna integration and acceptance evidence](anna/README.md) and the [DoraHacks submission copy](docs/DORAHACKS-SUBMISSION.md).
 
 The product boundary is not a wallet, risk score, policy dashboard, blockchain guard, or agent framework. Payments, EVM, Solana, HTTP and MCP are execution adapters around one protocol-agnostic authority model.
 

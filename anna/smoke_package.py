@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXECUTA_DIR = ROOT / "anna" / "executas" / "verigate-authority"
 DIST = EXECUTA_DIR / "dist"
 SMOKE_SCRIPT = ROOT / "anna" / "smoke_binary.py"
-TOOL_ID = "tool-rinat-verigate-authority-2um8gwhw"
+TOOL_ID = "tool-verigate-authority-verigate-authority-28x5jku8"
 
 
 def verify_checksum(archive: Path) -> str:

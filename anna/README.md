@@ -14,18 +14,18 @@ Anna App UI
     -> App UI
 ```
 
-The AI performs payment-context analysis in addition to field extraction, but it cannot grant authority. AI input is advisory and can only make a result stricter (a risk flag raises ALLOW to WARN; an advisory BLOCK is ignored). The final ALLOW, WARN or BLOCK always comes from the policy engine, which also validates the recipient address for the network. A preview check is non-persistent: it does not record a new attempt or execute anything, but it reads existing persisted history when evaluating first-payee, rolling 24-hour spend and per-minute controls. The separate user-confirmed authorization step re-runs the policy with persistent accounting; ALLOW uses the standard App approval, while WARN requires a distinct one-time warning-review approval bound to the exact matched rules. Only a successful authorization step records the authorization and its audit history. Before showing a result, the app verifies the Ed25519 signature against the installation's local issuer key and displays that public key and its fingerprint. This confirms receipt integrity for that issuer key; external consumers must obtain and pin the key through a trusted channel.
+The AI performs payment-context analysis in addition to field extraction, but it cannot grant authority. AI input is advisory and can only make a result stricter (a risk flag raises ALLOW to WARN; an advisory BLOCK is ignored). The final ALLOW, WARN or BLOCK always comes from the policy engine, which also validates the recipient address for the network. A preview check is non-persistent: it does not record a new attempt or execute anything, but it reads existing persisted history when evaluating first-payee, rolling 24-hour authorization budget and per-minute controls. The separate user-confirmed authorization step re-runs the policy with persistent accounting; ALLOW uses the standard App approval, while WARN requires a distinct one-time warning-review approval bound to the exact matched rules. Only a successful authorization step records the authorization and its audit history. The 24-hour counter is based on non-BLOCK Verigate policy authorization records, not chain-confirmed transfers; a wallet rejection or user cancellation does not automatically release that reserved budget. Before showing a result, the app verifies the Ed25519 signature against the installation's local issuer key and displays that public key and its fingerprint. This confirms receipt integrity for that issuer key; external consumers must obtain and pin the key through a trusted channel.
 
 ## User flow
 
 1. Describe the payment in natural language and select **Check with Anna AI**.
-2. When Anna LLM is available, it extracts the request and performs contextual risk review. If the LLM is unavailable (for example, quota exhaustion), the App offers a policy-only preview using only the recipient, asset, network and amount explicitly entered in the form; it never infers missing values from free text.
+2. When Anna LLM is available, it interprets the complete request and performs contextual risk review. If Sampling is unavailable (for example, quota exhaustion), the App uses a conservative local extractor for explicit recipient addresses, supported token symbols, known networks and unambiguous amounts stated in the request or form. Multiple or conflicting values and ambiguous numeric separators require clarification. This degraded path is a clearly labelled policy-only preview: it performs no AI contextual review and can never issue execution authority. It does not pretend to understand arbitrary natural language without the host model.
 3. If a required detail is missing or unclear, the App asks for it and does not run the policy check until it is provided (or, for unclear details, confirmed).
 4. Review the result: the deterministic ALLOW/WARN/BLOCK decision, explanation, any AI risk flags (when AI review ran), a table comparing the request with policy limits, and matched rules. The verified receipt, issuer public key and key fingerprint are available in the details panel. A policy-only preview clearly states that no AI contextual review was performed and cannot create execution permission.
 
 ## Identity and accounting scope
 
-The editable Agent label is display metadata, not an identity credential. For Anna payment checks, policy previews, capability registration, spend/rate accounting and dynamic authority all use a principal derived from the SHA-256 fingerprint of this installation's persistent Ed25519 issuer public key. The entered label is retained in the signed intent/authorization metadata and checked against the App UI, but changing it cannot create a fresh budget. All labels used by one Verigate installation therefore share the same first-payee history, daily budget, rate limit and dynamic-authority state.
+The editable Agent label is display metadata, not an identity credential. For Anna payment checks, policy previews, capability registration, authorization-budget/rate accounting and dynamic authority all use a principal derived from the SHA-256 fingerprint of this installation's persistent Ed25519 issuer public key. The entered label is retained in the signed intent/authorization metadata and checked against the App UI, but changing it cannot create a fresh budget. All labels used by one Verigate installation therefore share the same prior-authorization history, rolling authorization budget, rate limit and dynamic-authority state.
 
 This is deliberately an installation-scoped mitigation, not a per-user/account-wide quota across separate Anna Cloud Agents or App installations. A different workspace or issuer key produces a different principal; separate installations are not aggregated. Multiple logical agents on one installation currently share this principal. A future per-agent model needs cryptographic agent enrollment, while a cross-Agent account quota needs a trusted platform principal and a concurrency-safe shared ledger. Anna APS App scope is per current user and App, but the APS KV contract does not currently provide an atomic create-if-absent primitive for race-free first-time principal bootstrap. The code does not claim that cross-Agent aggregation or Cloud lifecycle persistence has been verified.
 
@@ -33,14 +33,14 @@ Do not treat ALLOW as a guarantee that the recipient is safe, that the transacti
 
 ## Fresh-install test matrix (Anna Cloud Agent)
 
-Run these on a fresh install. Expected results use the Anna policy (500 per transaction, human review above 250, 50 first-payment cap, 2,000 rolling 24-hour spend cap and 30 recorded attempts per minute; a fresh install has no recipient history, while later previews read persisted authorization history without recording a new attempt; networks base/ethereum/solana, asset USDC):
+Run these on a fresh install. Expected results use the Anna policy (500 per transaction, human review above 250, 50 first-authorization cap, 2,000 rolling 24-hour authorization-budget cap and 30 recorded attempts per minute; a fresh install has no prior recipient authorization history, while later previews read persisted authorization records without recording a new attempt; networks base/ethereum/solana, asset USDC):
 
 | Request | Expected |
 |---|---|
 | Pay 25 USDC on Base to `0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed` for invoice 1042 | ALLOW |
 | Pay 25 USDC on Base to `0xabc` | BLOCK (invalid recipient) |
 | Pay 25 USDC on Base to an empty or made-up recipient | Anna asks for the recipient, or BLOCK |
-| Pay 100 USDC on Base to the valid address above | WARN (first payment to a recipient above 50) |
+| Pay 100 USDC on Base to the valid address above | WARN (first authorization for a recipient above 50) |
 | Pay 300 USDC on Base to the valid address above | WARN (above 250) |
 | Pay 600 USDC on Base to the valid address above | BLOCK (above 500) |
 | Pay my usual merchant on Base | Anna asks for amount and recipient; no check runs |
@@ -52,7 +52,7 @@ Run these on a fresh install. Expected results use the Anna policy (500 per tran
 
 The App uses Anna's Bundled Executa model. The stable handle is `verigate-authority`; Anna resolves it to the platform-assigned production `tool_id` when publishing. Local development keeps `tool-dev-verigate-authority`.
 
-The App uses manifest schema 4. Its `required_executas` allow-list references the bundled handle `bundled:verigate-authority`; the retired per-method `ui.host_api.llm/tools/storage/window` ACLs and legacy `host_capabilities` are not used. The Executa negotiates protocol v2 and advertises both `client_capabilities.sampling` and `client_capabilities.storage`. Anna mints the corresponding short-lived reverse-RPC tokens per invocation for an installed and enabled Executa. App-scope approval storage is available only to invocations attested as originating from the owning App context.
+The App uses manifest schema 4. Its `required_executas` allow-list references the bundled handle `bundled:verigate-authority`; retired App-level `host_capabilities`, legacy `aps.scope.*` declarations and per-method `ui.host_api.*` ACLs are intentionally absent. The bundled Executa is separate: because it calls Anna's reverse `sampling/createMessage` API, its own describe manifest declares `host_capabilities: ["llm.sample"]`. That declaration exposes the capability for user approval; it does not grant permission automatically. The Executa also negotiates protocol v2 and advertises `client_capabilities.sampling` and `client_capabilities.storage`. Anna mints short-lived reverse-RPC tokens per invocation for an installed and enabled Executa. App-scope approval storage is available only to invocations attested as originating from the owning App context.
 
 The AI is advisory: interpretation and contextual risk analysis run through Verigate Executa -> Anna Sampling; the policy engine owns ALLOW/WARN/BLOCK. AI risk findings can only escalate ALLOW to WARN. The AI cannot invoke privileged authorization or wallet-consumption actions as a substitute for explicit App UI confirmation.
 
@@ -83,16 +83,35 @@ npm run test:guard
 cd anna && npx --yes @anna-ai/cli@0.1.64 validate --strict
 ```
 
-The Anna UI E2E harness runs the real App bundle and real Python Executa subprocess. Its host-side Sampling fixture simulates the Anna reverse-RPC response without calling Anna's paid LLM service or consuming Anna CU quota. The wire-level `tests/test_anna_sampling_roundtrip.py` independently verifies the v2 Sampling handshake, `sampling/createMessage` frame and invoke-context propagation. These tests prove the local integration path; they do **not** prove Cloud Agent install or platform-side LLM availability.
+The Anna UI E2E harness runs the real App bundle and real Python Executa subprocess. Its host-side Sampling fixture simulates the Anna reverse-RPC response without calling Anna's paid LLM service or consuming Anna CU quota. UI coverage includes quota-exhausted fallback, Russian and English free text, decimal-dot and decimal-comma amounts, ambiguous thousands separators, conflicting form/request values, and the rule that degraded previews cannot issue execution authority. The wire-level `tests/test_anna_sampling_roundtrip.py` independently verifies the v2 Sampling handshake, `sampling/createMessage` frame and invoke-context propagation. These tests prove the local integration path; they do **not** prove Cloud Agent install or platform-side LLM availability.
 
-Before any Marketplace-ready claim, a real Anna Cloud Agent install would need to test at least these independent inputs (currently unavailable because the account's Anna CU quota is exhausted; local mocks are not a substitute):
+## Real Anna Runtime acceptance — 2026-11-09
 
-- a small payment to a new recipient (expected policy result based on the default policy);
-- an amount exceeding the configured per-transaction cap (BLOCK);
-- an amount above the confirmation threshold or first-payee cap (WARN);
-- a network outside the default allowed list (BLOCK).
+The following results were observed in the actual Anna Runtime, not inferred from the local fixture-based harness. The tests span immutable App versions 0.1.25 and 0.1.26; the current App 0.1.27 bundle includes the later wallet-state hardening described below.
 
-Record the actual returned decision and matched rules during those tests. Do not state that a case passed unless the cloud agent returned that result.
+| Layer | Observed result | Boundary |
+|---|---|---|
+| Anna host LLM | Parsed the plain-language request, extracted 25 USDC / Base / recipient / invoice 1042 and returned a separate contextual risk review | Live Sampling response confirmed |
+| Deterministic policy | Returned ALLOW and the App accepted the Ed25519-signed Decision Receipt bound to the exact visible fields and installation principal | No funds sent |
+| Permission issuance | User explicitly confirmed the action; the App displayed an Ed25519-verified, one-time Execution Authorization bound to the exact payment and Base USDC transfer envelope | A fresh permission is required after expiry or consumption |
+| ExecutionRouter | The next controlled attempt consumed the one-time permission before the wallet was opened | Consumed permissions cannot be retried |
+| Connected wallet | MetaMask showed the 25 USDC Base transfer for the authorized recipient; the user deliberately denied the signature because the test wallet was empty | No transaction hash, broadcast, or on-chain transfer |
+
+### Current Anna platform version
+
+- App ID 851, immutable App version **0.1.27** (version ID 2078); platform status is **draft**, not Marketplace-published and not submitted for review.
+- Bundled production Executa ID 1314, version **0.1.16** (version ID 1042).
+- App 0.1.27 adds UI lifecycle hardening: verified router consumption is shown immediately; stale authorization content and button labels are cleared on renewal; an unverified/lost consume response is treated as **unknown**, hides the wallet action and requires a fresh policy check instead of assuming the permission remains unused.
+- Local Anna UI E2E: **61/61 passed**. The latest source CI run on commit `fe3cbd99db24eee8e13237467f11b6122abc124a` passed all three jobs: [GitHub Actions CI](https://github.com/rudimentall1/verigate/actions/runs/42596367889).
+- Executa 0.1.16 reproducible build: all four native targets built twice with matching hashes, packaged and passed extracted-package smoke tests: [four-platform build run](https://github.com/rudimentall1/verigate/actions/runs/42571400453). The workflow's GitHub Release job was skipped; these are workflow artifacts, not a public GitHub Release.
+
+### Still unverified — do not overclaim
+
+- A successful wallet signature and transaction broadcast; the real user test intentionally cancelled at the wallet prompt.
+- Independent on-chain inclusion, confirmation depth, finality, or reorg monitoring.
+- A separate production CHAIN_VERIFIER key/governance lifecycle integrated into the normal Anna UI flow.
+- A live replay attempt against the App-scope approval and Cloud workspace persistence across a restart/reinstall.
+- Marketplace approval or publication. A successful draft runtime test is not Marketplace release evidence.
 
 
 ## Capability-bound execution authorization
@@ -119,7 +138,7 @@ enforcement boundary.
 
 Execution Authorization is not unlocked by a client-supplied `human_confirmed` boolean. The Anna UI writes a random, 60-second, one-time approval record to its private APS `app` scope only after the user confirms the exact payment. The bundled Executa negotiates protocol v2, reads that record in the owning App context, checks every payment field and its expiry, then deletes it with an ETag precondition before it runs persistent policy. A separate wallet-send click writes a second one-time record bound to the exact authorization ID and transaction fields; Executa consumes it before ExecutionRouter. Direct chat/agent calls without a UI-created App-scoped record must fail closed, even if they inherit App context.
 
-The App UI writes the confirmation in its own App-scoped APS KV bucket. The Executa can read and consume it only when the invocation is host-attested as originating from that owning App context. There is no separate legacy Executa `host_capabilities` grant to request; schema-4 own-App storage is not controlled by the retired per-method `ui.host_api.storage` ACL. Protocol v2 `initialize` advertises both `client_capabilities.storage` and `client_capabilities.sampling`. The approval record contains no wallet key and expires after 60 seconds.
+The App UI writes the confirmation in its own App-scoped APS KV bucket. The Executa can read and consume it only when the invocation is host-attested as originating from that owning App context. This App-scope storage path is distinct from LLM Sampling: the Executa separately declares `host_capabilities: ["llm.sample"]` and the user must grant LLM Sampling in the Agent/Executa permission UI. Protocol v2 `initialize` advertises both `client_capabilities.storage` and `client_capabilities.sampling`. The approval record contains no wallet key and expires after 60 seconds.
 
 ## Cloud Agent state location
 

@@ -1,7 +1,7 @@
 {
   "name": "verigate-authority",
   "display_name": "Verigate Authority",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Checks agent payment authority and can issue a capability-bound, one-time signed Execution Authorization for an external wallet or executor. Anna does not hold wallet keys or broadcast transactions; execution must pass through a Verigate enforcement adapter.",
   "author": "rudimentall1",
   "homepage": "https://github.com/rudimentall1/verigate",

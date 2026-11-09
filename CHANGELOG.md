@@ -1,6 +1,15 @@
 # Changelog
+## Anna App 0.1.27 / Executa 0.1.16
 
-## Unreleased ? Anna App 0.1.19 / Executa 0.1.15
+### Wallet authorization lifecycle hardening
+
+- Show the ExecutionRouter-consumed state immediately after a verified consume response; the UI no longer leaves the authorization status at `Not consumed` while the wallet is waiting for a signature.
+- Reset the wallet action label whenever a new signed permission is issued. Clear stale authorization JSON and summary before starting a fresh issuance, and reject duplicate permission issuance while an authorization is still active.
+- Treat a lost or malformed response after dispatching `verigate_consume_execution_authorization` as an **unknown consumption outcome**. Hide the wallet action, discard the local retry handle, and require a fresh policy check and permission instead of falsely claiming the permission remains unused.
+- Added E2E coverage for `consume → wallet denial → fresh authorization`, including distinct authorization IDs and exact UI states, plus a simulated response loss after the Executa has actually consumed the permission.
+- No policy thresholds, signed receipt formats, ExecutionRouter logic, or wallet transaction construction changed.
+
+## Historical candidate — Anna App 0.1.19 / Executa 0.1.15
 
 ### Fixed: Anna host LLM Sampling permission declaration
 
@@ -9,7 +18,7 @@
 - Updated the binary manifest validator and regression tests so a Sampling-powered Executa cannot pass validation without declaring llm.sample.
 - Real Anna Cloud acceptance still requires the user to grant LLM Sampling to this Executa in the Agent/Executa permissions UI. Local tests do not grant or prove that platform permission.
 
-## Unreleased — Anna 0.1.18 candidate / Executa 0.1.14
+## Historical candidate — Anna App 0.1.18 / Executa 0.1.14
 
 ### Anna platform integration and security
 
@@ -27,7 +36,7 @@
 - Added regression coverage for key-file permissions, encrypted key compatibility, symlink rejection and both in-App confirmation cancellation paths.
 
 
-## Unreleased
+## Earlier core security changes (version-neutral)
 
 ### Security
 

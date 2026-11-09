@@ -1,13 +1,60 @@
-# Verigate Authority — current session checkpoint
+# Verigate Authority — latest checkpoint 2026-11-08
+
+> The older notes below are historical. The authoritative App/review/Executa state is in the latest update appended at the end of this file.
 
 **Updated:** 2026-11-08
 **Repository:** https://github.com/rudimentall1/verigate
-**Local working copy:** `C:\Users\User\Desktop\Work\verigate-anna-0.1.13`
-**Current branch:** `feat/anna-0.1.18-executa-0.1.14-hardening`
-**Latest verified code/artifact commit:** `0d36419af8365d6e171d0a3a92d5259148078405`
-**PR:** https://github.com/rudimentall1/verigate/pull/24 — OPEN, mergeable, NOT merged.
+**Active worktree:** `C:\Users\User\verigate-anna-release` (original checkout `C:\Users\User\verigate` untouched)
+**Branch / base commit:** `fix/anna-sampling-capability` at `408a3010b31e138f627dd679ab586d7d0f79d394`. Build reproducibility edits and checkpoint updates described at the end are local-only and uncommitted.
+**Current source metadata:** Anna App `anna/app.json` synchronized locally to `0.1.21`; bundled Executa remains at `0.1.15`.
+**Untracked local tooling:** `_tools/` and `_anna-screen.png`; do not stage them.
 
-> Current status: branch HEAD is `0d36419`; worktree was clean before this checkpoint refresh. PR #24 merged product/runtime commit `98d4c230` into `integrate/anna-0.1.9-mainline`. PR #26 contains the post-merge E2E harness/docs follow-up. Push CI `42466153268` and PR CI `42466167865` passed on `0d36419`; four-platform binary workflow `42466174769` also passed on `0d36419`, with release skipped. Package hashes and blockers are recorded in `docs/ANNA-RELEASE-GATE.md`, the authoritative detailed release record. All older status statements below are historical and must not be used as current evidence.
+## Prior Anna platform snapshot — superseded by the authoritative update at the end
+
+- App `verigate-authority`, ID `382`: immutable App `0.1.20`, version ID `2047`, now the latest version. Overall app status remains `PENDING_REVIEW` because `0.1.19` / ID `2044` is still pinned in review. App `0.1.20` is NOT submitted for review and NOT Marketplace-released.
+- Bundled Executa `tool-rinat-verigate-authority-2um8gwhw`: version `0.1.15`, version ID `1029`. App `0.1.20` froze this exact Executa version. Four binary artifacts were verified as identical to the previously published content; platform response: `0 uploaded, 4 cached`.
+- App CLI operation succeeded using `apps publish` (stage + immutable cut), `--skip-executa-publish`, and explicit production `--executa-id`. No `apps release` or `apps submit-review` was executed.
+- New App cut output: `apps/verigate-authority: cut immutable version 0.1.20 (version_id=2047)`; frozen dependency: `tool-rinat-verigate-authority-2um8gwhw -> executa_version=1029 (v0.1.15)`.
+- Current review pointer is unchanged: `in review: v0.1.19 (pinned at submit-review)`. Do not claim 0.1.20 is in review or live.
+- App manifest requires bundled Executa minimum version `0.1.15`. Executa manifest and Python runtime declare `host_capabilities: ["llm.sample"]`; this declaration does not itself grant the runtime permission. A real Cloud Sampling grant/response remains unverified.
+
+## Recovered upload procedure and binary integrity
+
+- Previous PowerShell history confirms the established method: `anna-app apps publish` from the Anna project directory, with `--skip-executa-publish` and `--executa-id verigate-authority=tool-rinat-verigate-authority-2um8gwhw`. It is a composite command: `apps push` (working draft + UI bundle) followed by `apps cut` (immutable snapshot).
+- The failed first attempt was caused by a locally rebuilt Windows package changing the `binary_sha256` for already-published Executa `0.1.15`. Anna correctly rejected mutating an immutable version.
+- Restored all four exact `0.1.15` release archives from successful four-platform workflow `42485119112` (published artifacts; release publication disabled). Their SHA-256 values were checked against the workflow's `.sha256` sidecars and then restored in `anna/executas/verigate-authority/dist/`:
+  - `linux-x86_64`: `b029606e0b73d5677b277bb6ee5ca3fa6ab1f5cd42155a12559eca10e272ef8e`
+  - `windows-x86_64`: `57ee73192da1a75f3abae2a92ddad5bb0073a2722d19bfe5e71607d2ca22cfd6`
+  - `darwin-arm64`: `08a4d3229c9ce467114abebf8f9609c459a1c6789056ee0a7e6a4c36a3bf0904`
+  - `darwin-x86_64`: `c9811701b250f7b95eca5c43af3325c4295564918bfc4ec881f65adfa42f8231`
+- Verified restored Windows `0.1.15` archive with `anna/smoke_package.py windows-x86_64 0.1.15`: PASS (describe, signed ALLOW, App-scope approval consumed once, wallet hand-off consumed once, submitted receipt persisted/verified). Anna subsequently recognized all four platform artifacts as already published/cached.
+
+## Latest verified local and CI results
+
+- Python full suite: `621 passed, 4 skipped`, 3 upstream deprecation warnings (exit 0).
+- Anna UI E2E: **47/47 passed** on the uploaded source, covering free-form Russian/English, `123.456789 USDC`, missing Executa, host 401, Sampling grant denial, signed Intent and explicit authorization.
+- `tests/test_anna_sampling_roundtrip.py`: **1 passed** (mock host only; protocol/framing, not Cloud acceptance).
+- `npm run test:atomic`: passed; stale authorization produced zero side effects, fresh authorization one.
+- `npm run test:guard`: passed; executor/attacker/stale-state/value mismatch rejected and exact value forwarded.
+- Anna CLI 0.1.64 `validate --strict`: passed (schema 4, dispatcher 0.33.0).
+- `git diff --check`: passed before this checkpoint refresh. Windows original packaged binary smoke passed as detailed above.
+- GitHub Actions run `42492077034` for commit `1cc9b64e584b59c15150c550de2eb13b24db8a50`: all jobs `test`, `contracts`, and `anna-ui` SUCCESS.
+
+## Latest code changes included in App 0.1.20
+
+- `askAnna()` no longer converts arbitrary `tools.invoke` failures into an apparent LLM outage. Missing Executa and host invocation/permission/transport errors surface explicitly and do not run a policy-only preview.
+- Only an explicit Executa Sampling-unavailable response can enter the clearly labelled policy-only fallback; that fallback uses only explicit form fields and cannot create execution authority.
+- Sampling error code and host reason are preserved in the visible review summary.
+- Regression coverage verifies free-form Russian/English requests and non-round decimal amounts reach Sampling unchanged without lexical or fixed-amount allowlists.
+- No signed-receipt, dynamic-authority, explicit confirmation, one-time approval, ExecutionRouter or wallet-submission security checks were removed or weakened.
+
+## Still unverified / do not overclaim
+
+- Real Anna Cloud Agent install, actual platform-issued Sampling grant, real `sampling/createMessage` LLM response, APS persistence/restart, and runtime permission state remain unverified. Local mocks and CI are not Cloud acceptance. Earlier checkpoint records Anna CU quota exhaustion.
+- App `0.1.20` is uploaded and immutable, but deliberately not submitted for review and not released. `0.1.19` remains the pinned review version.
+- The generated `anna/bundle/anna-tool-ids.js` is gitignored and generated by CLI during publish; do not stage it.
+
+---
 
 ## 1. User requirements that must not be lost
 
@@ -255,3 +302,347 @@ New/changed surfaces currently present in the worktree:
 - No GitHub Release or PR merge is authorized by this work.
 - Do not stage build outputs, `.anna`, `node_modules`, `.pyinstaller`, or `dist`.
 - Keep all unrelated repositories, services, and workloads untouched.
+
+## Latest authoritative update — 2026-11-08
+
+This section supersedes the older status notes above. Older sections are retained as historical evidence only.
+
+**Current repository state:** branch fix/anna-sampling-capability, HEAD 408a3010b31e138f627dd679ab586d7d0f79d394. Local-only edits now include anna/app.json version synchronization and these two documentation updates. No upload, immutable cut, review resubmission, App release, Executa publish, GitHub Release or PR merge occurred. Keep _tools/ and _anna-screen.png untracked.
+
+### Anna platform
+
+- App verigate-authority, App ID 382: immutable version 0.1.21, version ID 2048. Authenticated CLI confirms pending_review and that 0.1.21 is the pinned review candidate.
+- Bundle ID 1871; 3 files; 82,794 bytes; SHA-256 manifest c54014169c50439bc7331c3d51493bf5dff8de10b67383920626b1c3b03c61fe.
+- published_at is null. The App is not Marketplace-published. No apps release was run.
+- Frozen dependency is production Executa tool-rinat-verigate-authority-2um8gwhw, Executa ID 1164, version 0.1.15, version ID 1029.
+- Local anna/app.json was still 0.1.20 because the last bump used --no-write. It is now synchronized locally to 0.1.21 so a future patch bump starts at 0.1.22. This local metadata change does not mutate the immutable bundle or review pointer.
+- CLI status and versions expose no reviewer comments. Last observed server state remains pending_review; no approval or rejection has been observed.
+
+### Executa 0.1.15 validation
+
+- Focused tests: 59 passed in 11.80s across test_anna_executa_manifest.py, test_anna_execution_authorization.py, test_anna_sampling_roundtrip.py and test_payee_validation.py.
+- The original Windows 0.1.15 artifact cached by Anna was extracted and passed anna/smoke_package.py windows-x86_64 0.1.15. Smoke covered describe, signed ALLOW, direct privileged-call denial, one-time App approval, one-time wallet hand-off and signed SUBMITTED receipt persistence/verification.
+- Original immutable Windows archive SHA-256: 57ee73192da1a75f3abae2a92ddad5bb0073a2722d19bfe5e71607d2ca22cfd6.
+- Four-platform workflow 42501436184 on HEAD 408a3010 completed success. Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel each built, packaged, extracted and passed smoke. Release job skipped because publish_release=false.
+- Important: the newly rebuilt CI packages are not byte-identical to the four existing immutable 0.1.15 artifacts. Do not upload these new files over 0.1.15.
+
+| Platform | Existing immutable 0.1.15 SHA-256 | New CI 42501436184 SHA-256 |
+|---|---|---|
+| Windows x86_64 | 57ee73192da1a75f3abae2a92ddad5bb0073a2722d19bfe5e71607d2ca22cfd6 | eda0e70aa477936125404566617cc3ee0bef989ced2964d22e8ccf9d621e3998 |
+| Linux x86_64 | b029606e0b73d5677b277bb6ee5ca3fa6ab1f5cd42155a12559eca10e272ef8e | 2284cf1a4e68c0bf0f9b8feec65f93a4e34bd4903a70bdab0f698bb437d08b18 |
+| macOS ARM64 | 08a4d3229c9ce467114abebf8f9609c459a1c6789056ee0a7e6a4c36a3bf0904 | 5dbd0abce88361219647eec87ac415266627124d8ac21dd7234a54aa35071366 |
+| macOS Intel x86_64 | c9811701b250f7b95eca5c43af3325c4295564918bfc4ec881f65adfa42f8231 | 227a4209ba5c25c864a888d3374151599b2a6cfde76dc126522584fd4b56c5c8 |
+
+- Executable payloads inside all four new packages also differ; this is not only an outer archive metadata difference. On Windows the PE timestamp differs. The audited plugin/build inputs and Windows build dependency versions (Python 3.11.9, PyInstaller 6.22.3, cryptography 50.0.2) were the same in both workflow runs. This proves a reproducible-build gap, not a source regression.
+- For a future Executa release, set deterministic PyInstaller inputs (PYTHONHASHSEED and SOURCE_DATE_EPOCH), normalize archive metadata, and compare repeated builds from the same commit for all four targets. PyInstaller guidance: https://pyinstaller.org/en/v6.12.0/advanced-topics.html. Do not spend a new immutable version just to fix hashes.
+- Keep the new downloaded CI packages in %TEMP%\verigate-ci-42501436184, not in the repository. The original immutable 0.1.15 packages remain the artifacts frozen by Anna App 0.1.21.
+
+### App verification and limits
+
+- Previously verified local full Python suite after App hardening: 621 passed, 4 skipped. Anna UI E2E: 53/53 passed. These are local tests, not Cloud acceptance.
+- Main CI run 42499285025 passed contracts, test and anna-ui.
+- Sampling round-trip used a fixture-backed host response. It does not prove a real Anna Cloud LLM response.
+- Real Anna Cloud Sampling, platform permission grant, APS persistence/restart and Cloud Agent installation remain unverified because Anna CU quota is exhausted. Do not call Anna Cloud LLM/Sampling or claim live end-to-end AI acceptance.
+- Wallet submission receipt is a signed SUBMITTED executor self-report after a wallet hash return; it is not on-chain confirmation. Governed CHAIN_VERIFIER finality/outcome/reorg handling is not integrated into the standard Anna UI path.
+
+### Next actions
+
+1. Preserve App 0.1.21 as the pinned review candidate. No new App cut or release while review is pending and no reviewer feedback is available.
+2. Do not modify or overwrite Executa 0.1.15 with the mismatching new CI artifacts.
+3. Before a future Executa version, fix reproducibility and compare two builds of the same commit on all four targets.
+4. If reviewers return actionable feedback, patch once, run full Python and UI E2E, inspect the diff, then create one App 0.1.22 and submit that exact version. Keep Cloud limitations explicit.
+
+## Build reproducibility hardening — local changes, not yet in CI
+
+- Updated `anna/package_binary.py` to write deterministic ZIP and TAR.GZ archives: stable entry order, fixed timestamps derived from `SOURCE_DATE_EPOCH`, fixed owner/group IDs and names, normalized modes, no ZIP extra/comment fields, fixed gzip timestamp, and stable compression settings.
+- Updated `.github/workflows/anna-executa-binaries.yml` to export `PYTHONHASHSEED=0` and `SOURCE_DATE_EPOCH` from the checked-out commit timestamp. Added `anna/verify_reproducible_binary.py`: every native CI runner now runs two complete PyInstaller builds and compares SHA-256 before packaging/smoke. A mismatch fails the job. PyInstaller documents these deterministic build controls: https://pyinstaller.org/en/latest/advanced-topics.html.
+- Added reproducibility tests for ZIP and TAR.GZ packaging. The tests change source file mtimes between package runs and assert the resulting archive bytes are identical and member metadata is normalized.
+- Packaging tests + reproducibility-gate tests + smoke-package parser + Executa manifest/auth/Sampling/payee regression set: **74 passed**. Workflow YAML parse: PASS.
+- Full Python suite on the final modified worktree: **626 passed, 4 skipped, 3 upstream deprecation warnings**.
+- Local Windows full PyInstaller build was run twice with the same environment: Python 3.10.11, PyInstaller 6.22.3, `PYTHONHASHSEED=0`, `SOURCE_DATE_EPOCH=1794154754`. Both EXE files had identical SHA-256: `91d17be5a61d4a7206bb7fdada5bf3c87be1cec70e25526255ff6b57ec148191`.
+- A fresh Windows deterministic build then passed `anna/smoke_binary.py <exe> 0.1.15`: describe, signed ALLOW, App-scope approval once, wallet hand-off once, and SUBMITTED receipt persisted/verified.
+- Scope limitation: this is local Windows reproducibility evidence. The new workflow changes have **not** been pushed or run on Linux/macOS yet. Repeat-build equality on Linux x86_64, macOS ARM64 and macOS Intel remains unverified.
+- Existing immutable 0.1.15 platform artifacts and Anna's frozen dependency were not overwritten. The old published hashes remain authoritative; new rebuilds must not be uploaded over version 0.1.15.
+- Local modifications remain uncommitted/unpushed. No immutable Executa version, App version, GitHub Release, review submission or Marketplace release was created.
+
+
+## Cross-platform CI verification gate added — 2026-11-08
+
+- Workflow no longer builds an Executa binary only once. Each native matrix runner now invokes `anna/verify_reproducible_binary.py`, which runs `anna/build_binary.py` twice with the same fixed environment, computes SHA-256 after each full build, and fails closed if they differ. Only after equality does the workflow package and smoke-test the executable.
+- Added regression coverage for missing reproducibility environment, successful equal-hash verification, and mismatch rejection.
+- Final focused regression set: **74 passed**. Full Python suite: **626 passed, 4 skipped, 3 upstream deprecation warnings**.
+- This cross-platform gate is now in the workflow source but is not yet validated by GitHub Actions. CI must run on Windows, Linux, macOS ARM64 and macOS Intel after push.
+- Local Windows two-build equality remains: SHA-256 `91d17be5a61d4a7206bb7fdada5bf3c87be1cec70e25526255ff6b57ec148191`; fresh executable smoke passed.
+
+
+## Four-platform reproducibility CI — final result 2026-11-08
+
+<badge>CI SUCCESS</badge> Run [42504828571](https://github.com/rudimentall1/verigate/actions/runs/42504828571), commit `9182b06431d33e5dac8fd666b98db6248cfeffa4`, branch `fix/anna-sampling-capability`.
+
+All four native platform jobs completed success. Each runner executed the full PyInstaller build twice with identical environment, compared binary SHA-256, then packaged, extracted and smoke-tested the archive.
+
+| Platform | Binary SHA-256 (build 1 = build 2) | Job result |
+|---|---|---|
+| Windows x86_64 | `316edcfade757c29161b6882f6c2479740bbc6df8f719355e9bbf5df6e878938` | PASS |
+| Linux x86_64 | `9d4d4b26cbe05b8a2e81eb8def0413c82253d9df1c6879495895ce9c55b3f7b6` | PASS |
+| macOS ARM64 | `ea0917c6f9900f5fcde46c943a4e97bb42ca70d71a34144b7e67e06919ef37bc` | PASS |
+| macOS Intel x86_64 | `2e2551a56583ecf59e6b23098fc1d3cad8d89d253550083bba10a351e218f09b` | PASS |
+
+- Four non-expired workflow artifacts are present: `verigate-authority-windows-x86_64`, `verigate-authority-linux-x86_64`, `verigate-authority-darwin-arm64`, `verigate-authority-darwin-x86_64`.
+- Workflow overall conclusion: **success**. The separate GitHub `release` job is **skipped** because `publish_release=false`.
+- These are CI artifacts only. No GitHub Release, no Executa publish/update, no Anna App cut, no review resubmission and no Marketplace release occurred.
+- Do not upload the new artifacts over immutable Executa 0.1.15. Anna has the exact previously-published 0.1.15 artifacts cached; the new workflow outputs have not been compared against each of those four immutable artifact hashes in this final run. The review App 0.1.21 remains frozen to production Executa 0.1.15.
+- Final local full Python suite on this source: **626 passed, 4 skipped, 3 upstream deprecation warnings**. Focused reproducibility/package/auth set: **74 passed**. Anna strict manifest validation and workflow YAML parsing passed before push.
+- Pushed commit: `9182b06431d33e5dac8fd666b98db6248cfeffa4`, message `build: enforce reproducible Executa artifacts`. Branch is pushed; local untracked `_tools/` and `_anna-screen.png` remain excluded.
+
+**Decision:** the reproducible-build fix is verified on all four target platforms. Executa 0.1.15 remains immutable. No new version is needed merely to apply this build-system fix; use a new Executa version only if a separately tested runtime change is required.
+## Anna App 851 — Sampling error-envelope fix and release 0.1.23 — 2026-11-09
+
+### Bug found from user test evidence
+- User's five App test runs all showed the same behavior: extracted fields remained empty/default placeholders (recipient `0x…`, amount `25`, resource `Invoice 1042`) and UI reported "Anna AI could not read the request. No check was run."
+- Root cause in `anna/bundle/app.js`: `askAnna()` only classified reverse-Sampling failures as eligible for policy-only fallback when the Executa error explicitly carried `llm_available: false`. If Anna wrapped the failure in an error envelope without that marker, the UI stopped before deterministic extraction and `verigate_check`.
+- Narrow fix: normalize error details from `outer.error`, `outer.data.error`, and outer status/code; classify known Sampling/quota errors as degraded-mode candidates; keep HTTP 401/403, auth/session, ownership and missing-Executa errors as hard failures. The degraded path uses only explicit, unambiguous payment values, is labelled policy-only, and cannot issue execution authorization.
+- Added UI regression cases covering a Sampling rejection envelope without `llm_available` and a 401 error envelope. The former reaches the deterministic policy preview with execution disabled; the latter fails closed before policy evaluation.
+
+### Validation
+- Full local Anna UI E2E after patch: **55/55 passed**, exit 0. Harness runs real bundled UI + real local Executa plugin with a mocked Anna host; this is not live Anna Cloud acceptance.
+- Targeted regression: Sampling error envelope **1/1 passed**; AI 401 error envelope **1/1 passed**.
+- `anna validate --strict`: passed.
+- `git diff --check`: passed before App metadata bump; rerun after checkpoint update.
+- Live Anna Cloud reverse Sampling / account grant / current quota remains **unverified**. Do not claim the host LLM is working until tested in the actual App runtime.
+
+### New Anna account upload
+- App ID **851**, slug `verigate-authority`, immutable App version **0.1.23**, version ID **2071**.
+- Bundle ID **1891**, 3 files, **83,683 bytes**, SHA-256 manifest `6fee7f0b5a2ee9d1c6bdfa53f7b7897c213a7227661ae1c58b2558fe5358ca4e`.
+- Frozen bundled Executa remains Tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, Executa ID **1314**, version **0.1.16**, version ID **1042**.
+- Current platform status: App `draft`, `is_published=false`, no review candidate, no review submission, no Marketplace publication.
+- Prior App versions 0.1.21 / 0.1.22 retained. Old account App ID 382 untouched.
+- Local source files changed for this fix: `anna/bundle/app.js`, `scripts/test_anna_ui.mjs`, `anna/app.json`, and this checkpoint. Do not stage `_tools/` or `_anna-screen.png`.
+
+**Next test in Anna:** reopen/refresh App 0.1.23 and submit a single explicit payment sentence including the network, e.g. `Pay 25 USDC on Base to 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed for invoice 1042.` If Sampling is unavailable but explicit details parse, expect a clearly labelled policy-only result with execution authorization disabled. This is not an end-to-end live LLM pass until Anna Cloud returns a successful Sampling response.
+
+## Anna App 851 — preserve Sampling error text and correlation IDs — 2026-11-09
+
+### Evidence from user test of 0.1.23
+- The exact payment fields were extracted and Verigate returned a signed deterministic `ALLOW` for 25 USDC / Base / recipient / invoice. The result explicitly identified itself as `Policy-only`; Anna LLM contextual review did not run and execution permission stayed disabled.
+- This confirms UI parsing, policy evaluation and Ed25519 receipt verification in Anna Runtime, but **does not** confirm reverse Sampling or AI contextual review.
+- The error shown was only the generic `Anna Sampling is unavailable or the host rejected the request.` The exact host error/code was not preserved in the UI.
+
+### Diagnostic changes in 0.1.24
+- `anna/bundle/app.js` now inspects nested Executa/MCP error envelopes, including plain-text `content[].text`, extracts numeric Sampling error codes, and preserves `invoke_id`, `client_id`, `command_id` and `reason` metadata when returned.
+- Known Sampling/quota/provider errors can still yield only a clearly labelled policy-only preview. 401/403 and session/auth errors remain hard failures. Malformed or unexplained errors do not silently become policy decisions.
+- The policy-only summary no longer creates doubled punctuation around a trailing full stop.
+- `scripts/test_anna_ui.mjs` adds regression coverage for plain-text Sampling quota errors with an invoke ID and plain-text 401 session failures.
+
+### Validation and upload
+- Full local Anna UI E2E after final diagnostic changes: **57/57 passed**, exit 0. This harness uses the real bundle and local Executa with a mocked Anna Host; no real cloud Sampling response is simulated as live acceptance.
+- Targeted plain-text Sampling case: **1/1 passed**; plain-text session-error case: **1/1 passed**.
+- `anna validate --strict`: passed; `git diff --check`: passed.
+- App ID **851**, immutable App version **0.1.24**, version ID **2072**; bundle ID **1892**, 3 files, **86,731 bytes**, SHA-256 manifest `52fa1eb4147e2d55e2bc8f16dda85121a3b451d342010d7eb79db711b03d8cc2`.
+- Frozen bundled Executa remains Tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, Executa ID **1314**, version **0.1.16**, version ID **1042**.
+- App 851 remains `draft`, unpublished, with no review candidate. App 382 remains untouched.
+- Files changed: `anna/app.json`, `anna/bundle/app.js`, `scripts/test_anna_ui.mjs`, and this checkpoint. Do not stage `_tools/` or `_anna-screen.png`.
+
+### Platform diagnostic context
+- Anna's official changelog dated 2026-11-06 (beta.211–beta.220) states that the user permission/grant layer and `host_capabilities` gates were removed for schema 4; enabled installed Executas receive Sampling tokens on each invoke. Do not direct the user to hunt for the obsolete per-Executa `llm.sample` grant toggle.
+- The underlying Cloud Sampling failure is **still unconfirmed**. Only a real Anna runtime invocation can reveal whether the cause is quota/provider failure, protocol negotiation, host transport, or another issue. Version 0.1.24 is intended to display the exact returned error and correlation ID rather than mask it.
+
+**Next Anna test:** reopen App 0.1.24, submit the same simple request, and inspect the AI review summary. If Sampling still fails, copy the new detailed error including any numeric code and `invoke_id`; do not treat the policy-only `ALLOW` as an AI-approved payment. This remains pre-review and non-published.
+
+
+## Anna App 851 — fix flattened Executa invoke payloads — 2026-11-09
+
+### Evidence from user's 0.1.24 runtime test
+- User supplied the full UI error: `Anna host returned an unsuccessful Executa response without an error message. Response envelope: text, model, stop_reason, usage`.
+- The returned fields `text`, `model`, `stop_reason`, and `usage` show that the host delivered a Sampling completion payload but the App treated it as a failed Executa result because the expected `{success:true,data:{...}}` wrapper was absent at the `anna.tools.invoke()` boundary.
+- This is a concrete response-envelope compatibility defect in the App UI. It is **not** evidence of a Sampling quota/provider failure in this run. The 0.1.24 output does not show that the UI successfully parsed or reviewed the model text.
+
+### Fix in local source candidate 0.1.25
+- `askAnna()` now accepts a direct flattened Sampling payload only when it contains a non-empty `text` field and no explicit failure markers. Wrapped `success/data` responses remain supported. Empty/malformed responses and explicit errors still fail closed; only recognized Sampling-unavailable failures can enter the clearly labelled, non-executable policy-only fallback.
+- Added a method-specific `toolDataOrDirect()` normalizer for other Executa calls affected by the same transport flattening: policy summary, authorization issuance, authorization verification, ExecutionRouter consume, and wallet submission receipt. Each direct form must match the expected structure for that method; absence of an error field alone is never treated as success.
+- Added a full end-to-end regression using flattened host invoke payloads across AI Sampling, policy/limits, Ed25519 Decision Receipt, explicit App-scope approval, Execution Authorization verification, ExecutionRouter consumption, EIP-1193 wallet hand-off, and signed SUBMITTED receipt.
+- The Python Executa and SDK source were not changed. Immutable Executa 0.1.16 remains the bundled dependency. No unrelated checkout, old Anna account 382, or external workload was touched.
+
+### Validation evidence
+- Full local Anna UI/Executa suite: **58/58 passed**, exit code 0, including the new flattened-payload full-flow regression. Harness runs the real local App bundle and Python Executa with scripted/mock Anna host and wallet responses; it is not live Anna Cloud acceptance.
+- The same suite retains negative-path coverage for explicit Sampling failures, HTTP 401/session errors, malformed model output, tampered signatures, exact-action binding, approval replay, and wallet network drift.
+- **Live Anna verification remains pending.** App 0.1.24 returned completion metadata but the previous UI rejected it before model JSON parsing. Only testing the new cut in Anna Runtime can establish that the cloud adapter shape now works.
+
+### Next build/release step
+- Candidate App metadata version is now **0.1.25**. Run strict Anna schema validation, `git diff --check`, inspect the complete diff, run any required build/CI checks, then push the source commit and create App 0.1.25 as an immutable draft on App ID **851**.
+- Do not publish, submit for review, or alter the old App ID 382. Do not claim AI contextual review is live until the user confirms a successful Anna-host response and visible AI review summary in 0.1.25.
+- Keep `_tools/` and `_anna-screen.png` untracked and out of all commits.
+
+
+### 0.1.25 CI and immutable draft cut — final verification
+- Commit 566cf908cde5f92cc36fb2289a7eb892c3b24701 (fix(anna): accept flattened Executa invoke payloads) pushed to fix/anna-sampling-capability.
+- GitHub Actions run 42581211573: anna-ui, test, and contracts all SUCCESS. The anna-ui job passed schema-4 validation, scripted-host App E2E, and Linux Executa build/smoke.
+- Local final source checks: 58/58 Anna UI/Executa flow tests; anna validate --strict; git diff --check — all passed.
+- Anna CLI apps publish (push + immutable cut), with --skip-executa-publish and existing Tool ID override, succeeded for App 851: immutable App 0.1.25, version ID 2073, content hash b1ff481b6fac733917c2c0cd9267d7533f180f580cf3746a60dc09fa3a1532e8, bundle 3 files / 88,829 bytes / ready. Frozen dependency: Executa ID 1314, version ID 1042, version 0.1.16.
+- Independent CLI server reads (apps status, apps versions) confirm App 851 status draft, is_published=false, review_candidate_version=null, no review message; version ID 2073 / 0.1.25 is present in the server version list. No release or review submission was run. Old App ID 382 was not touched.
+- Commit excludes untracked _tools/ and _anna-screen.png; these remain untracked.
+- Remaining blocker is real Anna Runtime validation: open/refresh App 0.1.25 and repeat the exact free-form payment request. A successful AI pass must show interpreted details and Anna AI contextual review summary; a policy-only response is not a pass. Do not claim live Sampling acceptance until this test succeeds.
+
+
+## Live Anna Runtime acceptance — App 0.1.25 — 2026-11-09
+
+### User-observed cloud result
+- User tested immutable App 0.1.25 (App ID 851 / version ID 2073) in the real Anna App Runtime using: `Pay 25 USDC on Base to 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed for invoice 1042.`
+- Anna AI returned a parsed interpretation: payment of 25 USDC on Base for invoice 1042; no specific mismatch or manipulation indicator was found. The UI displayed the separate section `Anna AI contextual risk review (advisory)` with the model summary and no concrete risk flags.
+- The app continued into Verigate's deterministic policy check and produced `ALLOW`. The signed Decision Receipt was accepted by the app's Ed25519 verification path. Its intent was bound to the installation principal `anna-installation:642d2053ac799fffc51ac990f1cc82dba58ca9f91909768ab412e4c9c1a1666f`, visible display label `my-agent`, recipient, USDC, Base, amount 25, and resource `invoice 1042`.
+- Displayed policy summary: per-transaction cap 500 USDC; PROBATION dynamic authority 50 USDC; human review above 250 USDC; first-payee cap 50 USDC; rolling 24-hour cap 2,000 USDC; rate limit 30/minute. All displayed checks were OK for this request.
+- Decision receipt intent ID: `f32e64b9-56f6-4bd4-8d3c-405832417d89`. Issuer public-key SHA-256 fingerprint shown by the App: `642d2053ac799fffc51ac990f1cc82dba58ca9f91909768ab412e4c9c1a1666f`.
+- This is the first user-observed successful live Anna host Sampling + contextual interpretation response in the new account flow. It closes the specific 0.1.24 failure: Anna supplied flattened `{text, model, stop_reason, usage}` and 0.1.25 correctly consumed the result.
+
+### Security boundary and remaining validation
+- No one-time Execution Authorization was created in this test; the user did not click `Create one-time permission`. No wallet call and no payment transaction occurred.
+- Cloud evidence now covers successful AI interpretation, contextual review display, deterministic policy evaluation and signed Decision Receipt verification. It does not yet cover successful live issuance and verification of Execution Authorization, App-scope approval consumption/replay protection in Cloud, ExecutionRouter consumption, injected-wallet handoff, or actual chain inclusion/finality.
+- Recommended next test is a controlled explicit permission-creation click for this exact 25 USDC request, then verify the returned signed Execution Authorization and exact-action binding. Do not click wallet submission or send funds unless intentionally testing that separate step.
+- UI observation for later polish: the rolling-24-hour row displays `used + current request amount` as `yours` (25 in this test), so it is a projected post-request total, not historical spend alone. Consider relabeling the column to `after this request` or the row to avoid ambiguity; this is display semantics, not a policy failure.
+
+**Acceptance status:** live Anna AI contextual review is now confirmed for App 0.1.25. Full live execution/transaction lifecycle remains unverified. No review submission or Marketplace publication was performed.
+
+
+## Live Anna Runtime acceptance — one-time Execution Authorization — 2026-11-09
+
+### User-observed result
+- User completed the App's separate `Confirm one-time permission` step for the exact request: 25 USDC on Base, recipient `0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed`, purpose `invoice 1042`.
+- Anna Runtime showed `One-time permission verified. It is bound to 25 USDC on base for 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed. Verigate has also bound the exact native-USDC transfer to the signed permission.`
+- The signed authorization was displayed as Ed25519 verified. Authorization ID: `370118c9c34d40c47f21b873d7be2d414e81bc7a72391648efb187d055465286`.
+- Authorization references Decision Receipt SHA-256 `8f1b88cb1959b2a7dd85b9805fcf2f6ec6e10553e5833219c309f6be6ccaf26b` and intent ID `2941627d-77ec-4d52-baed-45109b94130d`.
+- Signed action binds exact recipient, asset USDC, network Base, amount 25, resource `invoice 1042`, installation principal `anna-installation:642d2053ac799fffc51ac990f1cc82dba58ca9f91909768ab412e4c9c1a1666f`, and EVM transaction envelope: chain ID 8453, native Base USDC contract `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, value 0, calldata `transfer(address,uint256)` to the exact recipient for 25,000,000 USDC base units.
+- The signed authorization's authority snapshot is PROBATION (multiplier 0.1, effective USDC per-action ceiling 50). The requested 25 USDC is within that ceiling.
+- App UI explicitly displayed `Not consumed`. No ExecutionRouter consumption, wallet signature, transaction hash, or on-chain submission is present in the supplied evidence. No funds were sent.
+- Successful issuance through the plugin path implies the backend accepted and consumed the preceding short-lived App UI approval before minting the permission. However, a replay attempt was not performed; do not claim replay resistance has been independently demonstrated in live Cloud.
+
+### Acceptance status
+- Confirmed live in Anna Runtime: reverse Sampling AI interpretation/contextual review; deterministic ALLOW and Ed25519 Decision Receipt verification; separate App confirmation and creation of a signed, exact-action Execution Authorization; Ed25519 verification of that authorization.
+- Still unverified live: replay attempt against the App-scoped approval; ExecutionRouter consumption of this authorization; exact EIP-1193 wallet hand-off and wallet signature; transaction submission; independent chain inclusion, confirmation depth, finality, or reorg handling.
+- The one-time authorization expires at Unix timestamp `1794211012` (shown by the UI as 09.11.2026 12:56:52). It must be treated as ephemeral; do not reuse it after expiry or after consumption.
+
+**Next controlled test:** if intentionally testing the next separate layer, use `Send with connected wallet` only with a connected Base wallet, inspect the wallet's exact recipient/token/amount/network confirmation, and stop before signing unless the user explicitly intends a real 25 USDC transfer. A no-send test can validate preflight only; full wallet submission necessarily sends an on-chain transaction.
+
+
+## Live Anna Runtime — wallet rejection and authorization-accounting semantics — 2026-11-09
+
+### User-observed wallet attempt
+- After a fresh policy check and newly issued Execution Authorization for 25 USDC on Base to `0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed` (invoice 1042), the user reached the Brave/MetaMask confirmation sheet.
+- Wallet sheet showed 25 USDC, destination matching the authorized recipient, Base network, USDC contract `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, `Transaction likely to fail`, and network fee `Unavailable`.
+- User denied the wallet signature. Anna Runtime result: `Permission consumed. No retry is possible with this authorization.` and `MetaMask Tx Signature: User denied transaction signature.`
+- The new Decision Receipt remained ALLOW and its Ed25519 signature verified. The fresh authorization ID was `fe4a26ff680fc496758fbc2b052a4bd53816a74c363599aaa602f21617bebe94` (intent ID `592d13f7-e44a-40dc-80ae-de9ee30f46b7`).
+- No valid transaction hash or SUBMITTED ExecutionReceipt was produced in the supplied result. The wallet signature was denied; no on-chain submission or payment is evidenced. Do not describe this as a failed on-chain transaction.
+
+### What the source proves about the burn-on-rejection behavior
+- `anna/executas/verigate-authority/verigate_authority_plugin.py::_verigate_consume_execution_authorization` consumes the App-scoped wallet approval and then calls `ExecutionRouter.consume` before returning the transaction envelope.
+- `anna/bundle/app.js::executeWithConnectedWallet` then calls `eth_sendTransaction`. Its catch branch clears the local authorization and hides the send button if `consumed === true`; it requires a fresh policy check and a new authorization after wallet rejection.
+- The Executa manifest and plugin description explicitly state that a consumed permission cannot be reused, including after wallet rejection. This behavior is intentional and matches the live outcome. Local regression tests cover one-time consumption and replay rejection; this live attempt additionally confirms the actual Anna/MetaMask rejection path burns the permission.
+
+### Authorization history is currently presented as spend history
+- The user's latest UI shows `Recipient history: previously used` and a projected rolling 24-hour value of 50 USDC for the second 25 USDC request.
+- Source inspection confirms these fields are driven by non-BLOCK audit records, not chain-confirmed token transfers: `core/storage.py::spent_today` sums `amount` across non-BLOCK rows in `audit_log`; `payee_seen_before` treats any prior non-BLOCK audit row for that recipient as seen.
+- The Anna payment authorization path persists the policy evaluation/audit row when issuing a permission. Therefore a prior permission can reserve/count 25 USDC in the rolling authorization budget and mark the recipient as previously authorized even when the wallet later rejects the signature and no transfer occurs. The second display value 50 is historical authorized amount 25 plus the current request 25; it is not proof of 50 USDC transferred.
+- This conservative accounting prevents repeated permission issuance from bypassing the budget. Deployed App 0.1.25 labels overstated what those records prove; local source candidate commit `c098b64` changes the UI and docs to distinguish prior authorization history and projected authorization budget from confirmed on-chain payments. No cap/accounting semantics or release behavior changed.
+
+### Current acceptance boundary
+- Confirmed live: AI review; deterministic ALLOW and signed Decision Receipt; signed exact-action Execution Authorization; ExecutionRouter consumption; wallet UI opened with the expected 25 USDC Base transfer; user-denial error propagated back to Anna; consumed authorization disabled against retry.
+- Not confirmed: wallet transaction signing, transaction hash, network broadcast, on-chain inclusion, execution success, or finality. User clarified that the connected wallet was empty and they intentionally cancelled the signature. The MetaMask `Transaction likely to fail` / `Fee unavailable` warning was therefore expected for this unfunded wallet; it is not evidence of a Verigate transaction-construction defect or an on-chain failure.
+
+**Next engineering action:** the authorization-counter terminology correction is now implemented in the local source candidate (see section below). Wallet submission testing should resume only with a funded Base wallet containing USDC and enough ETH for gas, and only when the user deliberately intends to sign a real transfer.
+
+
+## Authorization accounting UI terminology — local source candidate — 2026-11-09
+
+### Change scope
+- Updated `anna/bundle/app.js`: `First payment to this recipient` → `First authorization for this recipient`; `Recipient history` → `Prior Verigate authorization record`; `Rolling 24-hour spend (all recipients)` → `Projected 24-hour authorization total`, explicitly including the current request.
+- Updated `anna/bundle/index.html` with a note clarifying that the rolling 24-hour counter totals recorded non-BLOCK Verigate payment authorizations and prior recipient history reflects non-BLOCK records. These policy-history records do not prove a wallet signature, transaction submission, or on-chain settlement.
+- Updated `anna/README.md` and `policies/anna.yaml` comments to describe the existing behavior as an authorization budget / prior authorization history, not confirmed spend or payment history.
+- No policy thresholds, storage queries, authorization issuance, ExecutionRouter, wallet, or transaction behavior were changed. In particular, rejected/cancelled wallet attempts continue to consume the one-time permission and their non-BLOCK authorization record remains part of the rolling budget for its 24-hour window. No client-side release mechanism was added.
+- Added `scripts/test_anna_ui.mjs` regression `authorization history is clearly distinguished from completed on-chain spend`. It issues a seeded authorization, runs a repeat preview, and checks the prior-authorization wording, projected total including the new request, and settlement disclaimer. Uses a unique recipient because the test harness shares its installation ledger across scenarios.
+
+### Local verification
+- `python -m pytest -q`: **626 passed, 4 skipped**, 3 existing deprecation warnings.
+- Full Anna UI flow suite: **59/59 passed**.
+- Anna CLI Schema 4 strict validation: **passed**.
+- `node --check` for `anna/bundle/app.js` and `scripts/test_anna_ui.mjs`: **passed**.
+- `git diff --check`: **passed**.
+
+### Deployment boundary
+- This is a local source candidate only. Anna App ID 851 remains on deployed App version 0.1.25; no new bundle was uploaded, no review candidate was created, and nothing was released or published.
+- GitHub Actions CI for source candidate `c098b64a8d244a84e70c14ac5538c4999cffe4fc` completed successfully: `anna-ui`, `test`, and `contracts` all passed. Run: `https://github.com/rudimentall1/verigate/actions/runs/42588118515`.
+
+## Anna Cloud upload - App 0.1.26 - 2026-11-09
+
+- Uploaded and froze Anna App ID 851 (`verigate-authority`) as immutable App version 0.1.26, version ID 2075.
+- Server-reported bundle: `ready`, 3 files, 89,210 bytes. Content hash: `2414e72d606e0eccf5cd5c0ef0d04cfeefd9dc32b95a5c29f7bd0d897d14c89a`.
+- Frozen bundled Executa remains tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, Executa ID 1314, version ID 1042, version 0.1.16. The publish command used `--skip-executa-publish` and an explicit tool ID override; no new Executa was published.
+- Independent `apps status` and `apps versions` reads confirmed server status `draft`, `is_published=false`, `review_candidate_version=null`, no review message, and version 0.1.26 present as ID 2075. No `apps release` or `apps submit-review` command was run. Old App ID 382 was not touched.
+- Pre-upload checks: Anna CLI 0.1.64 strict Schema 4 validation passed. GitHub Actions for source commit `633922a032750f6da981b3c3e0d96bfc53f982df`: `anna-ui`, `test`, and `contracts` all completed successfully. Run: `https://github.com/rudimentall1/verigate/actions/runs/42588602972`.
+- The CLI created the remote 0.1.26 cut but left the local `anna/app.json` version at 0.1.25. The local version field is corrected to 0.1.26 in this checkpoint commit so repository metadata matches Anna Cloud.
+- Next step: open App 0.1.26 in Anna Runtime and run the targeted no-funds/no-send acceptance checks for the UI wording changes. A real wallet submission is not needed for this verification.
+## Anna App 0.1.27 lifecycle hardening candidate - 2026-11-09
+
+### Video acceptance findings from App 0.1.26
+- The real Anna Runtime video confirmed successful Anna AI interpretation/contextual review, deterministic `ALLOW`, Ed25519 Decision Receipt verification, exact-action Ed25519 Execution Authorization, and the Base USDC wallet hand-off path through ExecutionRouter.
+- The video exposed two UI-state defects: after the router consumed a permission, the status line could still say `Not consumed`; after a subsequent authorization, the wallet button could retain the stale `Permission consumed` label. The previous signed authorization JSON also remained visible while a fresh authorization was being requested.
+- Source audit found an additional security-relevant distributed-systems edge case: if the Executa consumes a permission but the invoke response is lost, the UI previously treated the operation as not consumed. A missing response cannot prove that the remote side did not commit the consume.
+
+### Consolidated implementation
+- `anna/bundle/app.js` now changes the status immediately after a verified ExecutionRouter consume and labels the wallet control `Permission consumed` while waiting for wallet signing.
+- Issuing a fresh permission clears stale authorization JSON/status first, resets the wallet button label, and refuses duplicate issuance while a valid authorization is still active.
+- The UI resets the button to `Send with connected wallet` only after a fresh signed authorization is verified.
+- A dispatched consume call whose result cannot be verified is handled as `consumption status unknown`: old local authorization is discarded, wallet submission is hidden, and the UI instructs the user not to retry and to run a fresh policy check. It no longer claims that the permission definitely remains unused.
+- `scripts/test_anna_ui.mjs` now covers the full `consume -> wallet denial -> fresh authorization` sequence, checks that the renewed authorization ID differs, verifies intermediate consumed-state wording, and simulates a lost response after the Executa has actually consumed the permission.
+- No deterministic policy limits, signing schemas, Python authorization logic, ExecutionRouter semantics, wallet calldata, or chain support were changed.
+
+### Local verification
+- Anna UI E2E: **61/61 passed**.
+- Python suite: **626 passed, 4 skipped**; 3 existing deprecation warnings.
+- `node --check anna/bundle/app.js`: passed.
+- `node --check scripts/test_anna_ui.mjs`: passed.
+- `git diff --check`: passed.
+- Targeted replay/ambiguity test: lost consume response is treated as unknown; no wallet request or automatic retry.
+- Targeted live-like sequence test: after wallet denial, a fresh authorization gets a new ID and restores the correct button/status labels.
+
+### Deployment acceptance - Anna Cloud App 0.1.27
+- Uploaded and froze App ID 851 (`verigate-authority`) as immutable App version **0.1.27**, version ID **2078**.
+- Bundle status: `ready`, 3 files, 91,055 bytes. Content hash: `2942856f668806b1386c56f3842c9f638db53543c16609a8db7b9df87a5f7d92`.
+- Independent `apps status` and `apps versions` reads confirm `status=draft`, `is_published=false`, `review_candidate_version=null`, no review message, and version 0.1.27 present as ID 2078. No Marketplace release or review submission was performed.
+- GitHub Actions for code commit `3775de350ee1195c651f4011dfaae8ced33f0d55` completed **3/3 PASS**: `anna-ui`, `test`, `contracts`. Run: `https://github.com/rudimentall1/verigate/actions/runs/42596023372`.
+- Bundled Executa remains pinned at tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, Executa ID 1314, version ID 1042 / version 0.1.16. No Executa republish occurred. Old App ID 382 remains untouched.
+
+## Current repository and listing refresh — 2026-11-09
+
+### Source of truth
+
+- Active current source branch: `fix/anna-sampling-capability`, head `fe3cbd99db24eee8e13237467f11b6122abc124a`.
+- Default branch `main` was at `109c5f0e6d7fb7cb462e9feaa18936993a6a1e7d` before this documentation refresh. The feature branch was 21 commits ahead and 1 commit behind main (the PR #29 squash merge); do not confuse branch-head validation with a main-branch release.
+- PR #29 (Sampling capability declaration) is merged. The current branch contains subsequent App/Executa updates through App 0.1.27 / Executa 0.1.16.
+
+### Current platform state
+
+- Anna App ID 851: immutable version **0.1.27**, version ID **2078**, status **draft**, not review-submitted and not Marketplace-published.
+- Bundled Executa ID **1314**, version **0.1.16**, version ID **1042**.
+- The live Cloud test chain is documented in `anna/README.md` and `docs/ANNA-RELEASE-GATE.md`: live Anna interpretation/contextual review, deterministic ALLOW, Ed25519 Decision Receipt, exact-action one-time permission, ExecutionRouter consumption, MetaMask hand-off, intentional signature denial. No transaction hash or broadcast occurred.
+- The 0.1.27 changes harden stale/unknown UI consume states; live wallet-sign/broadcast testing of 0.1.27 itself is not claimed.
+
+### Build and test evidence
+
+- Latest source CI: [42596367889](https://github.com/rudimentall1/verigate/actions/runs/42596367889), 3/3 jobs passed on `fe3cbd99`.
+- Full Python suite: **626 passed, 4 skipped**; Anna UI E2E: **61/61 passed**.
+- Executa 0.1.16 four-platform reproducibility/package/smoke workflow: [42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453). All four platforms passed. GitHub Release job was skipped; no public 0.1.16 release exists.
+
+### Link and submission cleanup
+
+- `anna/app.json` listing image URLs now use the canonical `raw.githubusercontent.com/.../main/anna/assets/listing/` path rather than pinning to commit `471a9f6`.
+- `anna/README.md` now distinguishes App-level schema-4 permissions from the Executa's `llm.sample` host capability and records actual Cloud acceptance/remaining limitations.
+- `CHANGELOG.md` labels 0.1.19 and 0.1.18 entries as historical candidates instead of leaving them under Unreleased.
+- `README.md` test counts and Anna product status refreshed.
+- `docs/DORAHACKS-SUBMISSION.md` is the canonical replacement copy for the stale external DoraHacks listing, with working source, demo, privacy, threat-model, CI and build links. The DoraHacks website listing itself is external and is not modified by a GitHub repository commit.
+- Listing images still use filenames prefixed `v019`; the image content has not been recaptured for 0.1.27. Use the current screenshot files as existing listing art only, not as fresh 0.1.27 runtime captures.
+
+### Remaining work
+
+- Merge the current branch/source changes and this documentation refresh into `main` after exact-head CI.
+- Replace v019 listing screenshots with real captures from the current App Runtime before claiming they depict 0.1.27.
+- Do not publish a GitHub Release for Executa 0.1.16 or submit/release the Anna App without the intended release step and review.
+- No successful wallet signature, broadcast, chain finality, independent CHAIN_VERIFIER, reorg handling, live App-scope replay test or Cloud persistence/restart test is claimed.
