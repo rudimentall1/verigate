@@ -547,4 +547,25 @@ All four native platform jobs completed success. Each runner executed the full P
 - Confirmed live: AI review; deterministic ALLOW and signed Decision Receipt; signed exact-action Execution Authorization; ExecutionRouter consumption; wallet UI opened with the expected 25 USDC Base transfer; user-denial error propagated back to Anna; consumed authorization disabled against retry.
 - Not confirmed: wallet transaction signing, transaction hash, network broadcast, on-chain inclusion, execution success, or finality. User clarified that the connected wallet was empty and they intentionally cancelled the signature. The MetaMask `Transaction likely to fail` / `Fee unavailable` warning was therefore expected for this unfunded wallet; it is not evidence of a Verigate transaction-construction defect or an on-chain failure.
 
-**Next engineering action:** correct the UI terminology to say `authorized/reserved amount` and `previously authorized recipient`, with an explicit note that these are policy-history counters, not proof of an on-chain payment. Wallet submission testing should resume only with a funded Base wallet containing USDC and enough ETH for gas, and only when the user deliberately intends to sign a real transfer.
+**Next engineering action:** the authorization-counter terminology correction is now implemented in the local source candidate (see section below). Wallet submission testing should resume only with a funded Base wallet containing USDC and enough ETH for gas, and only when the user deliberately intends to sign a real transfer.
+
+
+## Authorization accounting UI terminology — local source candidate — 2026-11-09
+
+### Change scope
+- Updated `anna/bundle/app.js`: `First payment to this recipient` → `First authorization for this recipient`; `Recipient history` → `Prior Verigate authorization record`; `Rolling 24-hour spend (all recipients)` → `Projected 24-hour authorization total`, explicitly including the current request.
+- Updated `anna/bundle/index.html` with a note clarifying that the rolling 24-hour counter totals recorded non-BLOCK Verigate payment authorizations and prior recipient history reflects non-BLOCK records. These policy-history records do not prove a wallet signature, transaction submission, or on-chain settlement.
+- Updated `anna/README.md` and `policies/anna.yaml` comments to describe the existing behavior as an authorization budget / prior authorization history, not confirmed spend or payment history.
+- No policy thresholds, storage queries, authorization issuance, ExecutionRouter, wallet, or transaction behavior were changed. In particular, rejected/cancelled wallet attempts continue to consume the one-time permission and their non-BLOCK authorization record remains part of the rolling budget for its 24-hour window. No client-side release mechanism was added.
+- Added `scripts/test_anna_ui.mjs` regression `authorization history is clearly distinguished from completed on-chain spend`. It issues a seeded authorization, runs a repeat preview, and checks the prior-authorization wording, projected total including the new request, and settlement disclaimer. Uses a unique recipient because the test harness shares its installation ledger across scenarios.
+
+### Local verification
+- `python -m pytest -q`: **626 passed, 4 skipped**, 3 existing deprecation warnings.
+- Full Anna UI flow suite: **59/59 passed**.
+- Anna CLI Schema 4 strict validation: **passed**.
+- `node --check` for `anna/bundle/app.js` and `scripts/test_anna_ui.mjs`: **passed**.
+- `git diff --check`: **passed**.
+
+### Deployment boundary
+- This is a local source candidate only. Anna App ID 851 remains on deployed App version 0.1.25; no new bundle was uploaded, no review candidate was created, and nothing was released or published.
+- CI has not yet run for this source candidate; check the GitHub Actions run after push before considering a new Anna App version.

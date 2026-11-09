@@ -724,17 +724,21 @@ function buildLimitRows(limits, values, ruleIds) {
   const newPayee = cap(limits.new_payee_cap);
   if (newPayee !== null && limits.recipient_seen_before !== undefined) {
     if (!limits.recipient_seen_before) {
-      add("First payment to this recipient", String(values.amount), String(newPayee),
+      add("First authorization for this recipient", String(values.amount), String(newPayee),
         ruleIds.has("new_payee_cap_exceeded") ? "review" : "ok");
     } else {
-      add("Recipient history", "previously used", "first-payment cap no longer applies", "ok");
+      add("Prior Verigate authorization record", "found", "first-authorization cap no longer applies", "ok");
     }
   }
   const daily = cap(limits.daily_cap);
   if (daily !== null) {
     const used = Number(limits.rolling_24h_spend || 0);
-    add("Rolling 24-hour spend (all recipients)", String(used + values.amount), String(daily),
-      ruleIds.has("daily_cap_exceeded") ? "review" : "ok");
+    add(
+      "Projected 24-hour authorization total",
+      String(used + values.amount) + " (including this request)",
+      String(daily),
+      ruleIds.has("daily_cap_exceeded") ? "review" : "ok"
+    );
   }
   if (Number(limits.rate_limit_per_minute) > 0) {
     add("Recent payment attempts (last minute)", String(Number(limits.calls_last_minute || 0)),

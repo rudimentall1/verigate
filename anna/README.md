@@ -14,7 +14,7 @@ Anna App UI
     -> App UI
 ```
 
-The AI performs payment-context analysis in addition to field extraction, but it cannot grant authority. AI input is advisory and can only make a result stricter (a risk flag raises ALLOW to WARN; an advisory BLOCK is ignored). The final ALLOW, WARN or BLOCK always comes from the policy engine, which also validates the recipient address for the network. A preview check is non-persistent: it does not record a new attempt or execute anything, but it reads existing persisted history when evaluating first-payee, rolling 24-hour spend and per-minute controls. The separate user-confirmed authorization step re-runs the policy with persistent accounting; ALLOW uses the standard App approval, while WARN requires a distinct one-time warning-review approval bound to the exact matched rules. Only a successful authorization step records the authorization and its audit history. Before showing a result, the app verifies the Ed25519 signature against the installation's local issuer key and displays that public key and its fingerprint. This confirms receipt integrity for that issuer key; external consumers must obtain and pin the key through a trusted channel.
+The AI performs payment-context analysis in addition to field extraction, but it cannot grant authority. AI input is advisory and can only make a result stricter (a risk flag raises ALLOW to WARN; an advisory BLOCK is ignored). The final ALLOW, WARN or BLOCK always comes from the policy engine, which also validates the recipient address for the network. A preview check is non-persistent: it does not record a new attempt or execute anything, but it reads existing persisted history when evaluating first-payee, rolling 24-hour authorization budget and per-minute controls. The separate user-confirmed authorization step re-runs the policy with persistent accounting; ALLOW uses the standard App approval, while WARN requires a distinct one-time warning-review approval bound to the exact matched rules. Only a successful authorization step records the authorization and its audit history. The 24-hour counter is based on non-BLOCK Verigate policy authorization records, not chain-confirmed transfers; a wallet rejection or user cancellation does not automatically release that reserved budget. Before showing a result, the app verifies the Ed25519 signature against the installation's local issuer key and displays that public key and its fingerprint. This confirms receipt integrity for that issuer key; external consumers must obtain and pin the key through a trusted channel.
 
 ## User flow
 
@@ -25,7 +25,7 @@ The AI performs payment-context analysis in addition to field extraction, but it
 
 ## Identity and accounting scope
 
-The editable Agent label is display metadata, not an identity credential. For Anna payment checks, policy previews, capability registration, spend/rate accounting and dynamic authority all use a principal derived from the SHA-256 fingerprint of this installation's persistent Ed25519 issuer public key. The entered label is retained in the signed intent/authorization metadata and checked against the App UI, but changing it cannot create a fresh budget. All labels used by one Verigate installation therefore share the same first-payee history, daily budget, rate limit and dynamic-authority state.
+The editable Agent label is display metadata, not an identity credential. For Anna payment checks, policy previews, capability registration, authorization-budget/rate accounting and dynamic authority all use a principal derived from the SHA-256 fingerprint of this installation's persistent Ed25519 issuer public key. The entered label is retained in the signed intent/authorization metadata and checked against the App UI, but changing it cannot create a fresh budget. All labels used by one Verigate installation therefore share the same prior-authorization history, rolling authorization budget, rate limit and dynamic-authority state.
 
 This is deliberately an installation-scoped mitigation, not a per-user/account-wide quota across separate Anna Cloud Agents or App installations. A different workspace or issuer key produces a different principal; separate installations are not aggregated. Multiple logical agents on one installation currently share this principal. A future per-agent model needs cryptographic agent enrollment, while a cross-Agent account quota needs a trusted platform principal and a concurrency-safe shared ledger. Anna APS App scope is per current user and App, but the APS KV contract does not currently provide an atomic create-if-absent primitive for race-free first-time principal bootstrap. The code does not claim that cross-Agent aggregation or Cloud lifecycle persistence has been verified.
 
@@ -33,14 +33,14 @@ Do not treat ALLOW as a guarantee that the recipient is safe, that the transacti
 
 ## Fresh-install test matrix (Anna Cloud Agent)
 
-Run these on a fresh install. Expected results use the Anna policy (500 per transaction, human review above 250, 50 first-payment cap, 2,000 rolling 24-hour spend cap and 30 recorded attempts per minute; a fresh install has no recipient history, while later previews read persisted authorization history without recording a new attempt; networks base/ethereum/solana, asset USDC):
+Run these on a fresh install. Expected results use the Anna policy (500 per transaction, human review above 250, 50 first-authorization cap, 2,000 rolling 24-hour authorization-budget cap and 30 recorded attempts per minute; a fresh install has no prior recipient authorization history, while later previews read persisted authorization records without recording a new attempt; networks base/ethereum/solana, asset USDC):
 
 | Request | Expected |
 |---|---|
 | Pay 25 USDC on Base to `0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed` for invoice 1042 | ALLOW |
 | Pay 25 USDC on Base to `0xabc` | BLOCK (invalid recipient) |
 | Pay 25 USDC on Base to an empty or made-up recipient | Anna asks for the recipient, or BLOCK |
-| Pay 100 USDC on Base to the valid address above | WARN (first payment to a recipient above 50) |
+| Pay 100 USDC on Base to the valid address above | WARN (first authorization for a recipient above 50) |
 | Pay 300 USDC on Base to the valid address above | WARN (above 250) |
 | Pay 600 USDC on Base to the valid address above | BLOCK (above 500) |
 | Pay my usual merchant on Base | Anna asks for amount and recipient; no check runs |

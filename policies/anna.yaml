@@ -43,9 +43,9 @@ allowed_assets:
 per_tx_cap:
   USDC: 500
 
-# Tighter cap for the *first* payment to a payee the agent hasn't paid
-# before. Exceeding this is a WARN (human confirmation), not an outright
-# block — it earns full trust once the payee has a track record.
+# Tighter cap for the *first authorization* to a payee with no prior
+# non-BLOCK policy authorization record. Exceeding this is a WARN (human
+# confirmation), not an outright block; later authorizations use the recorded history.
 new_payee_cap:
   USDC: 50
 
@@ -55,7 +55,8 @@ new_payee_cap:
 confirmation_required_over:
   USDC: 250
 
-# Hard rolling 24-hour spend cap per asset, shared across all recipients.
+# Hard rolling 24-hour authorization-budget cap per asset, shared across all recipients.
+# Persisted non-BLOCK policy authorizations count toward this budget; this is not a settlement ledger.
 # Exceeding it is BLOCK and cannot be overridden by a human WARN review.
 # The preview reads persisted history; user-confirmed authorization records it.
 daily_cap:

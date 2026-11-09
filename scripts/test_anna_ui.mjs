@@ -416,6 +416,32 @@ await test("dynamic authority ceiling disables permission before an otherwise-AL
   eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no authorization call is made");
 });
 
+await test("authorization history is clearly distinguished from completed on-chain spend", async () => {
+  const testRecipient = "0x" + require("node:crypto").randomBytes(20).toString("hex");
+  const description = "Pay 25 USDC on Base to " + testRecipient + " for authorization-history regression";
+  const interpret = () => interpretJson({ ...GOOD, payee: testRecipient, resource: "authorization-history regression" });
+
+  const first = await launch({ description, interpret });
+  await first.click();
+  eq(first.text("decision"), "ALLOW", "initial request is allowed");
+  await first.clickExecution();
+  ok(first.text("execution-json").includes("authorization_id"), "first authorization was recorded");
+
+  const repeat = await launch({ description, interpret });
+  await repeat.click();
+  eq(repeat.text("decision"), "ALLOW", "repeat request remains within policy limits");
+  const limits = repeat.$("limits-table").textContent;
+  ok(limits.includes("Prior Verigate authorization record"), "recipient history is labelled as authorization history");
+  ok(limits.includes("found"), "prior policy authorization is shown as found");
+  ok(limits.includes("Projected 24-hour authorization total"), "rolling counter is labelled as a projected authorization total");
+  const projected = limits.match(/yours: (\d+(?:\.\d+)?) \(including this request\)/);
+  ok(projected && Number(projected[1]) >= 50, "projected total includes at least the seeded prior authorization plus this request; table=" + limits);
+  ok(!limits.includes("Rolling 24-hour spend"), "UI does not call authorization budget settled spend");
+  ok(!limits.includes("Recipient history"), "UI does not call a prior authorization a completed payment");
+  const note = repeat.$("limits").textContent;
+  ok(note.includes("policy-history counters, not proof that an on-chain transfer was signed, submitted, or settled"), "UI explains the limit of the evidence");
+});
+
 await test("one-time execution permission is issued only after a separate user click", async () => {
   const ui = await launch({});
   await ui.click();
