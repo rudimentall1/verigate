@@ -1,3 +1,5 @@
+> **Archived working history — 2026-11-09.** This file records prior sessions, local worktree notes and superseded states. Do not use it as the current product or release specification. See [Anna integration](../../anna/README.md) and [current Anna release status](../../anna/docs/RELEASE-STATUS.md).
+
 # Verigate Authority — latest checkpoint 2026-11-08
 
 > The older notes below are historical. The authoritative App/review/Executa state is in the latest update appended at the end of this file.
@@ -167,7 +169,7 @@
 
 ## 5. Operational guardrails
 
-- Current uncommitted worktree changes (not pushed; 22 files): anna/README.md, anna/app.json, anna/bundle/app.js, anna/bundle/index.html, anna/executas/verigate-authority/manifest.json, anna/executas/verigate-authority/verigate_authority_plugin.py, core/authority_state.py, core/engine.py, core/rules.py, docs/ANNA-RELEASE-GATE.md, docs/SESSION-CHECKPOINT.md, docs/threat-model.md, enforcement/chain_verification.py, enforcement/evm_rpc.py, policies/anna.yaml, scripts/test_anna_ui.mjs, tests/test_anna_execution_authorization.py, tests/test_chain_verification.py, tests/test_dynamic_authority.py, tests/test_engine.py, tests/test_evm_rpc.py, tests/test_money.py. git diff --check passes (CRLF normalization warnings only).
+- Current uncommitted worktree changes (not pushed; 22 files): anna/README.md, anna/app.json, anna/bundle/app.js, anna/bundle/index.html, anna/executas/verigate-authority/manifest.json, anna/executas/verigate-authority/verigate_authority_plugin.py, core/authority_state.py, core/engine.py, core/rules.py, ../anna/docs/history/RELEASE-GATE-2026-11-09.md, SESSION-CHECKPOINT-2026-11-09.md, docs/threat-model.md, enforcement/chain_verification.py, enforcement/evm_rpc.py, policies/anna.yaml, scripts/test_anna_ui.mjs, tests/test_anna_execution_authorization.py, tests/test_chain_verification.py, tests/test_dynamic_authority.py, tests/test_engine.py, tests/test_evm_rpc.py, tests/test_money.py. git diff --check passes (CRLF normalization warnings only).
 - Latest identity, finality and atomic WARN-review changes are local and uncommitted. Final local verification: Python 578 passed / 4 skipped / 3 warnings; Anna UI 43/43; EVM atomic + guard passed; schema-4 validate --strict passed. Chain/RPC/outcome/lifecycle targeted tests 24/24. No Anna Cloud acceptance was performed.
 - Before further modifying files: `git status --short --branch`, current SHA, inspect the exact target code/tests.
 - Do not stage or commit `.anna`, `node_modules`, `.pyinstaller`, or `dist`.
@@ -622,7 +624,7 @@ All four native platform jobs completed success. Each runner executed the full P
 
 - Anna App ID 851: immutable version **0.1.27**, version ID **2078**, status **draft**, not review-submitted and not Marketplace-published.
 - Bundled Executa ID **1314**, version **0.1.16**, version ID **1042**.
-- The live Cloud test chain is documented in `anna/README.md` and `docs/ANNA-RELEASE-GATE.md`: live Anna interpretation/contextual review, deterministic ALLOW, Ed25519 Decision Receipt, exact-action one-time permission, ExecutionRouter consumption, MetaMask hand-off, intentional signature denial. No transaction hash or broadcast occurred.
+- The live Cloud test chain is documented in `anna/README.md` and `../anna/docs/history/RELEASE-GATE-2026-11-09.md`: live Anna interpretation/contextual review, deterministic ALLOW, Ed25519 Decision Receipt, exact-action one-time permission, ExecutionRouter consumption, MetaMask hand-off, intentional signature denial. No transaction hash or broadcast occurred.
 - The 0.1.27 changes harden stale/unknown UI consume states; live wallet-sign/broadcast testing of 0.1.27 itself is not claimed.
 
 ### Build and test evidence
@@ -637,7 +639,7 @@ All four native platform jobs completed success. Each runner executed the full P
 - `anna/README.md` now distinguishes App-level schema-4 permissions from the Executa's `llm.sample` host capability and records actual Cloud acceptance/remaining limitations.
 - `CHANGELOG.md` labels 0.1.19 and 0.1.18 entries as historical candidates instead of leaving them under Unreleased.
 - `README.md` test counts and Anna product status refreshed.
-- `docs/DORAHACKS-SUBMISSION.md` is the canonical replacement copy for the stale external DoraHacks listing, with working source, demo, privacy, threat-model, CI and build links. The DoraHacks website listing itself is external and is not modified by a GitHub repository commit.
+- `../../submissions/dorahacks/BUILD-50393.md` is the canonical replacement copy for the stale external DoraHacks listing, with working source, demo, privacy, threat-model, CI and build links. The DoraHacks website listing itself is external and is not modified by a GitHub repository commit.
 - Listing images still use filenames prefixed `v019`; the image content has not been recaptured for 0.1.27. Use the current screenshot files as existing listing art only, not as fresh 0.1.27 runtime captures.
 
 ### Remaining work
@@ -671,7 +673,7 @@ This update supersedes the 0.1.27 platform snapshot above. The 0.1.27 Runtime ac
 ## DoraHacks listing and link refresh - 2026-11-09
 
 ### Repository changes
-- Reworked docs/DORAHACKS-SUBMISSION.md as the canonical paste-ready DoraHacks listing copy for the current product. It records App 0.1.28 / Executa 0.1.16, current capabilities, actual live acceptance boundaries, test counts, limitations, and the latest main CI/build evidence.
+- Reworked ../../submissions/dorahacks/BUILD-50393.md as the canonical paste-ready DoraHacks listing copy for the current product. It records App 0.1.28 / Executa 0.1.16, current capabilities, actual live acceptance boundaries, test counts, limitations, and the latest main CI/build evidence.
 - Added a six-asset media table with main-branch raw URLs: the retained cover plus five current v027 screenshots (ALLOW, WARN, hard-cap BLOCK, missing amount, one-time permission ready).
 - Added an explicit old-to-current mapping for the DoraHacks card's stale commit-pinned asset URLs, v019 screenshot names, ANNA branch link, old PR #16 source link, old Executa 0.1.8 release link, obsolete App/Executa version labels, and obsolete test counts.
 - Updated README.md and anna/README.md to link the post-merge main CI run 42623793063 in addition to relevant runtime-source/listing CI evidence.
@@ -694,7 +696,7 @@ This update supersedes the 0.1.27 platform snapshot above. The 0.1.27 Runtime ac
 - GitHub changes do not update the separately hosted DoraHacks project record. The repository now contains the exact replacement fields and URLs; the portal page itself still requires a manual edit in DoraHacks. The Buidl URL/record was not inferred from hackathons/registry.yaml because that entry is for a separate CMC/RWA submission.
 ### Additional broken demo URL found during live link sweep
 - The old GitHub user-attachment URL b64a0a58-b628-4b04-bddc-f9634741292b returned HTTP 404 from the laptop.
-- Replaced it in README.md and docs/DORAHACKS-SUBMISSION.md with the tracked repository demo at docs/media/verigate-demo.mp4 (canonical GitHub blob URL for the DoraHacks listing; repository-relative link in README).
+- Replaced it in README.md and ../../submissions/dorahacks/BUILD-50393.md with the tracked repository demo at docs/media/verigate-demo.mp4 (canonical GitHub blob URL for the DoraHacks listing; repository-relative link in README).
 - The direct raw main URL for docs/media/verigate-demo.mp4 returned HTTP 200; the file is tracked in the main tree (3,629,712 bytes).
 
 ### DoraHacks Build identification

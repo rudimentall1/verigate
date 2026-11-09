@@ -1,3 +1,5 @@
+> **Historical record (archived 2026-11-09).** This file preserves the full release-gate history and superseded snapshots. The current authoritative status is in [RELEASE-STATUS.md](../RELEASE-STATUS.md).
+
 # Verigate Authority — latest Anna release gate 2026-11-08
 
 > The older Current authoritative state below is superseded by the latest update appended at the end of this file.
@@ -346,7 +348,7 @@ This section supersedes the older Current authoritative state block above, which
 - Focused local regression suite: 59/59 passed.
 - The original immutable Windows 0.1.15 archive passed extracted packaged-binary smoke; SHA-256 57ee73192da1a75f3abae2a92ddad5bb0073a2722d19bfe5e71607d2ca22cfd6.
 - Four-platform CI run 42501436184 completed success: Windows, Linux, macOS ARM64 and macOS Intel all built, packaged and passed native-runner smoke; GitHub Release job was skipped.
-- The newly rebuilt packages differ byte-for-byte from the immutable 0.1.15 packages cached by Anna. The hashes are recorded in docs/SESSION-CHECKPOINT.md. Do not upload or overwrite immutable Executa 0.1.15 with the new CI files. The CI run proves source/runtime build-smoke, not exact artifact identity.
+- The newly rebuilt packages differ byte-for-byte from the immutable 0.1.15 packages cached by Anna. The hashes are recorded in ../../../docs/archive/SESSION-CHECKPOINT-2026-11-09.md. Do not upload or overwrite immutable Executa 0.1.15 with the new CI files. The CI run proves source/runtime build-smoke, not exact artifact identity.
 - Before the next Executa cut, set deterministic PyInstaller inputs (PYTHONHASHSEED and SOURCE_DATE_EPOCH), normalize archive metadata, and compare repeat builds of the exact same commit on all four targets. Guidance: https://pyinstaller.org/en/v6.12.0/advanced-topics.html.
 
 ### Product and release blockers

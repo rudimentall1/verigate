@@ -34,7 +34,7 @@ AI agents can propose consequential actions. Verigate decides whether the agent 
 
 ### Anna application integration
 
-Verigate Authority is also packaged as an Anna App. The current Anna platform draft is **App 0.1.28** with bundled production **Executa 0.1.16**. App 0.1.28 refreshes the listing media; it carries forward the 0.1.27 runtime without changing policy or wallet behavior. Anna's host LLM interprets requests and performs advisory contextual review; the deterministic Verigate policy owns ALLOW/WARN/BLOCK. The App's live Runtime tests confirmed signed Decision Receipt verification, exact-action one-time authorization and ExecutionRouter consumption before wallet hand-off. The wallet dialog was deliberately cancelled during testing; no payment transaction was broadcast. The App is not Marketplace-published. See [Anna integration and acceptance evidence](anna/README.md) and the [DoraHacks submission copy](docs/DORAHACKS-SUBMISSION.md).
+Verigate Authority is also packaged as an Anna App. The current Anna platform draft is **App 0.1.28** with bundled production **Executa 0.1.16**. App 0.1.28 refreshes the listing media; it carries forward the 0.1.27 runtime without changing policy or wallet behavior. Anna's host LLM interprets requests and performs advisory contextual review; the deterministic Verigate policy owns ALLOW/WARN/BLOCK. The App's live Runtime tests confirmed signed Decision Receipt verification, exact-action one-time authorization and ExecutionRouter consumption before wallet hand-off. The wallet dialog was deliberately cancelled during testing; no payment transaction was broadcast. The App is not Marketplace-published. See [Anna integration and acceptance evidence](anna/README.md) and [current Anna release status](anna/docs/RELEASE-STATUS.md).
 
 The product boundary is not a wallet, risk score, policy dashboard, blockchain guard, or agent framework. Payments, EVM, Solana, HTTP and MCP are execution adapters around one protocol-agnostic authority model.
 
@@ -450,3 +450,6 @@ The outcome plane is exposed through `POST /v1/outcomes/attest` and `GET /v1/evi
 See [Arc mainnet integration guide](docs/arc-mainnet-integration.md).
 
 The existing `/v1/check` endpoints remain available for compatibility.
+
+
+For the complete documentation map, see [docs/README.md](docs/README.md).

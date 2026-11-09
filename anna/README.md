@@ -171,3 +171,11 @@ This wallet path is deliberately limited to native USDC on Base and Ethereum. So
 supports policy checks and signed authorization artifacts, but this app version does not
 compose or submit a Solana token transaction. A returned transaction hash means SUBMITTED,
 not CONFIRMED. The app does not claim finality from a wallet response.
+
+
+## Documentation
+
+- [Current release status and verified limitations](docs/RELEASE-STATUS.md)
+- [Anna documentation index](docs/README.md)
+- [Historical release records](docs/history/README.md)
+- [Repository-wide documentation index](../docs/README.md)
