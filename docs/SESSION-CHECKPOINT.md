@@ -674,13 +674,13 @@ This update supersedes the 0.1.27 platform snapshot above. The 0.1.27 Runtime ac
 - Reworked docs/DORAHACKS-SUBMISSION.md as the canonical paste-ready DoraHacks listing copy for the current product. It records App 0.1.28 / Executa 0.1.16, current capabilities, actual live acceptance boundaries, test counts, limitations, and the latest main CI/build evidence.
 - Added a six-asset media table with main-branch raw URLs: the retained cover plus five current v027 screenshots (ALLOW, WARN, hard-cap BLOCK, missing amount, one-time permission ready).
 - Added an explicit old-to-current mapping for the DoraHacks card's stale commit-pinned asset URLs, v019 screenshot names, ANNA branch link, old PR #16 source link, old Executa 0.1.8 release link, obsolete App/Executa version labels, and obsolete test counts.
-- Updated README.md and anna/README.md to link the latest main snapshot CI run 42621451294 in addition to relevant runtime-source/listing CI evidence.
+- Updated README.md and anna/README.md to link the post-merge main CI run 42623793063 in addition to relevant runtime-source/listing CI evidence.
 
 ### Verified source of truth
-- Main head: 97c3a78843279430182f2009845aab7b54648ea4.
+- Main before the listing-link PR: 97c3a78843279430182f2009845aab7b54648ea4. Resulting main merge commit: 45cfc4c107949756fdf2acd2d36423f9721db1bd.
 - Anna App ID 851: immutable App 0.1.28, version ID 2082, Draft; not Marketplace-published and not submitted for review.
 - Bundled production Executa: version 0.1.16, ID 1314 / version ID 1042.
-- Main CI for commit 97c3a788 completed successfully, all three jobs: https://github.com/rudimentall1/verigate/actions/runs/42621451294.
+- Post-merge main CI for commit 45cfc4c107949756fdf2acd2d36423f9721db1bd completed successfully, all three jobs: https://github.com/rudimentall1/verigate/actions/runs/42623793063.
 - Four-platform Executa 0.1.16 reproducible build/package/smoke: https://github.com/rudimentall1/verigate/actions/runs/42571400453.
 - Recorded test state: 626 Python passed / 4 skipped; Anna UI E2E 61/61.
 
