@@ -1,4 +1,13 @@
 # Changelog
+
+## Anna App 0.1.28 / Executa 0.1.16
+
+### Anna listing refresh
+
+- Updated the Anna listing to use screenshots captured from the live App 0.1.27 Runtime: policy ALLOW, policy WARN with dynamic-authority limit disclosure, hard-cap BLOCK, missing-amount clarification, and a verified one-time permission ready for wallet hand-off.
+- Replaced obsolete v019 screenshot references with the v027 captures. The final capture is explicitly labelled permission-ready; it shows `Not consumed` and is not presented as a completed wallet submission.
+- Refreshed Anna App metadata to version 0.1.28. No Executa runtime, policy threshold, wallet flow, or transaction behavior changed; bundled Executa remains 0.1.16.
+
 ## Anna App 0.1.27 / Executa 0.1.16
 
 ### Wallet authorization lifecycle hardening
