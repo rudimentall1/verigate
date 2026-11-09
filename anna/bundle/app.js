@@ -229,7 +229,14 @@ async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
   }
 
   const outer = unwrapToolResult(response);
-  if (outer?.success !== true) {
+  const directTextResult = outer && typeof outer === "object" &&
+    outer.success !== false && !outer.error && outer.isError !== true &&
+    typeof outer.text === "string" && outer.text.trim() !== "";
+  const data = outer?.success === true && outer.data && typeof outer.data === "object"
+    ? outer.data
+    : directTextResult ? outer : null;
+
+  if (!data) {
     const hostFailure = extractHostFailure(response);
     const code = hostFailure.code;
     const message = hostFailure.message || "";
@@ -263,7 +270,7 @@ async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
     throw error;
   }
 
-  const text = outer?.data?.text;
+  const text = data.text;
   if (typeof text !== "string" || !text.trim()) {
     throw new Error("Anna Sampling returned a malformed response. No policy-only fallback was used.");
   }
@@ -563,6 +570,22 @@ function unwrapToolResult(response) {
   return current;
 }
 
+function toolDataOrDirect(response, isDirectPayload) {
+  const outer = unwrapToolResult(response);
+  if (!outer || typeof outer !== "object" ||
+      outer.success === false || outer.error || outer.isError === true) {
+    return null;
+  }
+  if (outer.success === true) {
+    return outer.data && typeof outer.data === "object" ? outer.data : null;
+  }
+  // Some Anna host adapters return the Executa business payload directly,
+  // without its documented {success:true,data:{...}} wrapper. Accept only
+  // method-specific, recognizable payloads; never infer success from absence
+  // of an error alone.
+  return typeof isDirectPayload === "function" && isDirectPayload(outer) ? outer : null;
+}
+
 function extractReceiptVerification(response) {
   // Anna host versions differ in how they wrap Executa results: some preserve
   // {success, data}, while others return the inner data object or JSON text in
@@ -649,8 +672,13 @@ async function loadLimits(values) {
       }
       return null;
     }
-    const data = outer?.data;
-    return outer?.success === true && data && typeof data === "object" ? data : null;
+    return toolDataOrDirect(outer, (candidate) =>
+      candidate.accounting_scope === "issuer_installation" &&
+      typeof candidate.accounting_principal_id === "string" &&
+      Array.isArray(candidate.allowed_networks) &&
+      Array.isArray(candidate.allowed_assets) &&
+      candidate.dynamic_authority && typeof candidate.dynamic_authority === "object"
+    );
   } catch (error) {
     // Preserve an auth/quota error already normalized from a returned tool envelope.
     if (String(error?.message || "").startsWith("Anna policy-summary request failed:")) throw error;
@@ -1172,14 +1200,17 @@ async function prepareExecutionAuthorization() {
         ". Check the Anna session, Executa availability and remaining usage quota. No execution permission was issued.");
     }
     const outer = unwrapToolResult(response);
-    if (outer?.success !== true || !outer?.data) {
+    const data = toolDataOrDirect(outer, (candidate) =>
+      Boolean(candidate.decision_receipt?.payload) &&
+      Object.prototype.hasOwnProperty.call(candidate, "execution_authorization")
+    );
+    if (!data) {
       const detail = outer?.error
         ? errorDetail(outer.error)
         : "Unexpected response envelope (" + (outer && typeof outer === "object" ? Object.keys(outer).join(", ") || "empty object" : typeof outer) + ")";
       throw new Error("Verigate authorization tool did not return a successful result: " + detail +
         ". No execution permission was issued.");
     }
-    const data = outer.data;
     const receipt = data.decision_receipt;
     if (!receipt?.payload) throw new Error("Verigate returned no signed decision receipt.");
     // A fresh decision must be cryptographically verified before any outcome is displayed.
@@ -1203,12 +1234,16 @@ async function prepareExecutionAuthorization() {
       args: { authorization_json: JSON.stringify(authorization) }
     });
     const verifiedOuter = unwrapToolResult(verificationResponse);
-    if (verifiedOuter?.success === false || verifiedOuter?.error) {
+    if (verifiedOuter?.success === false || verifiedOuter?.error || verifiedOuter?.isError === true) {
       throw new Error("Anna could not verify the Execution Authorization: " +
         errorDetail(verifiedOuter.error || verifiedOuter) +
         ". No permission will be presented as valid.");
     }
-    const verification = verifiedOuter?.data;
+    const verification = toolDataOrDirect(verifiedOuter, (candidate) =>
+      typeof candidate.verified === "boolean" &&
+      candidate.algorithm === "Ed25519" &&
+      typeof candidate.authorization_id === "string"
+    );
     const authorizedAction = verification?.action;
     const previewIntent = state.lastReceipt?.payload?.intent;
     const issuedIntent = receipt?.payload?.intent;
@@ -1226,7 +1261,7 @@ async function prepareExecutionAuthorization() {
       String(authorizedAction.network || "").toLowerCase() === v.network.toLowerCase() &&
       Number(authorizedAction.amount) === v.amount &&
       String(authorizedAction.resource || "") === String(v.resource || "");
-    if (verifiedOuter?.success !== true || verification?.verified !== true ||
+    if (!verification || verification?.verified !== true ||
         verification?.algorithm !== "Ed25519" ||
         verification?.authorization_id !== authorization.payload?.authorization_id ||
         typeof verification?.key_fingerprint_sha256 !== "string" ||
@@ -1351,8 +1386,14 @@ async function executeWithConnectedWallet() {
       }
     });
     const outer = unwrapToolResult(response);
-    const data = outer?.data;
-    if (outer?.success !== true || !data || data.consumed !== true ||
+    const data = toolDataOrDirect(outer, (candidate) =>
+      candidate.consumed === true &&
+      typeof candidate.authorization_id === "string" &&
+      candidate.wallet_submission_required === true &&
+      candidate.transaction_submitted === false &&
+      candidate.transaction && typeof candidate.transaction === "object"
+    );
+    if (!data || data.consumed !== true ||
         data.authorization_id !== authorization.payload?.authorization_id ||
         data.wallet_submission_required !== true || data.transaction_submitted !== false) {
       throw new Error(outer?.error || "ExecutionRouter did not consume this permission. No wallet transaction was requested.");
@@ -1415,9 +1456,14 @@ async function executeWithConnectedWallet() {
       }
     });
     const receiptOuter = unwrapToolResult(receiptResponse);
-    const receiptData = receiptOuter?.data;
+    const receiptData = toolDataOrDirect(receiptOuter, (candidate) =>
+      typeof candidate.authorization_id === "string" &&
+      typeof candidate.transaction_hash === "string" &&
+      candidate.receipt_verified === true &&
+      candidate.execution_receipt?.payload?.status === "SUBMITTED"
+    );
     const executionReceipt = receiptData?.execution_receipt;
-    if (receiptOuter?.success !== true || !receiptData ||
+    if (!receiptData ||
         receiptData.authorization_id !== authorization.payload?.authorization_id ||
         receiptData.transaction_hash !== submittedTxHash ||
         receiptData.transaction_submitted !== true ||

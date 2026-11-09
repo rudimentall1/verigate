@@ -147,7 +147,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows) {
@@ -231,6 +231,9 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
         }
         if (method === "verigate_verify_execution_authorization" && tamperExecutionVerificationAction) {
           if (result?.data?.action) result.data.action.target = "0x" + "1".repeat(40);
+        }
+        if (hostResponseShape === "flattened") {
+          return result?.success === true ? result.data : result;
         }
         if (verificationResponseShape === "direct") return result;
         if (verificationResponseShape === "double") return { result: { result } };
@@ -807,6 +810,35 @@ await test("Anna tool response envelopes are unwrapped without weakening receipt
     eq(ui.text("decision"), "ALLOW", shape + " response envelope");
     ok(ui.text("proof").includes("Ed25519 signature verified"), shape + " still requires a verified signature");
   }
+});
+
+await test("flattened Anna invoke payloads pass the full AI, policy and signed-permission flow", async () => {
+  const ui = await launch({ hostResponseShape: "flattened" });
+  const walletCalls = [];
+  ui.window.ethereum = {
+    request: async ({ method, params }) => {
+      walletCalls.push({ method, params });
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_sendTransaction") return "0x" + "c".repeat(64);
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW", "flattened policy receipt is accepted");
+  ok(ui.text("ai-review-summary").includes("Anna AI contextual review"), "flattened Sampling text is treated as a successful model response");
+  ok(ui.$("limits-table").querySelectorAll("tr").length >= 6, "flattened policy summary retains dynamic authority");
+  eq(ui.$("execution-btn").disabled, false, "verified AI + policy state permits a separate authorization request");
+
+  await ui.clickExecution();
+  ok(ui.text("execution-json").includes("authorization_id"), "flattened authorization payload is verified and displayed");
+  ok(!ui.shown("error"), "permission creation has no envelope error");
+
+  await ui.clickWallet();
+  eq(walletCalls.some((call) => call.method === "eth_sendTransaction"), true, "flattened ExecutionRouter result reaches the exact wallet transaction");
+  ok(ui.text("execution-status").includes("SUBMITTED"), "flattened signed submission receipt is verified and displayed");
+  ok(!ui.shown("error"), "flattened wallet-consumption and receipt results are accepted");
 });
 
 await test("tampered receipt is rejected before any decision is displayed", async () => {

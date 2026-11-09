@@ -448,3 +448,27 @@ All four native platform jobs completed success. Each runner executed the full P
 - The underlying Cloud Sampling failure is **still unconfirmed**. Only a real Anna runtime invocation can reveal whether the cause is quota/provider failure, protocol negotiation, host transport, or another issue. Version 0.1.24 is intended to display the exact returned error and correlation ID rather than mask it.
 
 **Next Anna test:** reopen App 0.1.24, submit the same simple request, and inspect the AI review summary. If Sampling still fails, copy the new detailed error including any numeric code and `invoke_id`; do not treat the policy-only `ALLOW` as an AI-approved payment. This remains pre-review and non-published.
+
+
+## Anna App 851 — fix flattened Executa invoke payloads — 2026-11-09
+
+### Evidence from user's 0.1.24 runtime test
+- User supplied the full UI error: `Anna host returned an unsuccessful Executa response without an error message. Response envelope: text, model, stop_reason, usage`.
+- The returned fields `text`, `model`, `stop_reason`, and `usage` show that the host delivered a Sampling completion payload but the App treated it as a failed Executa result because the expected `{success:true,data:{...}}` wrapper was absent at the `anna.tools.invoke()` boundary.
+- This is a concrete response-envelope compatibility defect in the App UI. It is **not** evidence of a Sampling quota/provider failure in this run. The 0.1.24 output does not show that the UI successfully parsed or reviewed the model text.
+
+### Fix in local source candidate 0.1.25
+- `askAnna()` now accepts a direct flattened Sampling payload only when it contains a non-empty `text` field and no explicit failure markers. Wrapped `success/data` responses remain supported. Empty/malformed responses and explicit errors still fail closed; only recognized Sampling-unavailable failures can enter the clearly labelled, non-executable policy-only fallback.
+- Added a method-specific `toolDataOrDirect()` normalizer for other Executa calls affected by the same transport flattening: policy summary, authorization issuance, authorization verification, ExecutionRouter consume, and wallet submission receipt. Each direct form must match the expected structure for that method; absence of an error field alone is never treated as success.
+- Added a full end-to-end regression using flattened host invoke payloads across AI Sampling, policy/limits, Ed25519 Decision Receipt, explicit App-scope approval, Execution Authorization verification, ExecutionRouter consumption, EIP-1193 wallet hand-off, and signed SUBMITTED receipt.
+- The Python Executa and SDK source were not changed. Immutable Executa 0.1.16 remains the bundled dependency. No unrelated checkout, old Anna account 382, or external workload was touched.
+
+### Validation evidence
+- Full local Anna UI/Executa suite: **58/58 passed**, exit code 0, including the new flattened-payload full-flow regression. Harness runs the real local App bundle and Python Executa with scripted/mock Anna host and wallet responses; it is not live Anna Cloud acceptance.
+- The same suite retains negative-path coverage for explicit Sampling failures, HTTP 401/session errors, malformed model output, tampered signatures, exact-action binding, approval replay, and wallet network drift.
+- **Live Anna verification remains pending.** App 0.1.24 returned completion metadata but the previous UI rejected it before model JSON parsing. Only testing the new cut in Anna Runtime can establish that the cloud adapter shape now works.
+
+### Next build/release step
+- Candidate App metadata version is now **0.1.25**. Run strict Anna schema validation, `git diff --check`, inspect the complete diff, run any required build/CI checks, then push the source commit and create App 0.1.25 as an immutable draft on App ID **851**.
+- Do not publish, submit for review, or alter the old App ID 382. Do not claim AI contextual review is live until the user confirms a successful Anna-host response and visible AI review summary in 0.1.25.
+- Keep `_tools/` and `_anna-screen.png` untracked and out of all commits.
