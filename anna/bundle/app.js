@@ -127,6 +127,76 @@ function getTextFromCompletion(reply) {
   throw new Error("Anna AI returned an unexpected response format. Please retry.");
 }
 
+// Anna may return an MCP-style error in content[].text instead of error.message.
+// Preserve the real error and correlation identifiers instead of replacing them
+// with a generic "Sampling unavailable" message.
+function extractHostFailure(response) {
+  const queue = [response];
+  const seen = new Set();
+  let code = null;
+  let message = "";
+  const trace = {};
+
+  for (let depth = 0; queue.length && depth < 64; depth += 1) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+
+    if (code === null) {
+      const candidate = current.code ?? current.error_code ?? current.errorCode ??
+        current.status_code ?? current.statusCode;
+      if (typeof candidate === "number" || (typeof candidate === "string" && /^-?\d+$/.test(candidate))) {
+        code = Number(candidate);
+      }
+    }
+
+    for (const key of ["invoke_id", "client_id", "command_id", "reason"]) {
+      if (trace[key] === undefined && (typeof current[key] === "string" || typeof current[key] === "number")) {
+        trace[key] = String(current[key]).slice(0, 120);
+      }
+    }
+
+    if (!message) {
+      const failure = current.error;
+      if (typeof failure === "string" && failure.trim()) {
+        message = failure.trim();
+      } else if (failure && typeof failure === "object") {
+        message = String(failure.message ?? failure.detail ?? failure.reason ?? "").trim();
+      } else if (current.success === false || current.isError === true) {
+        message = String(current.message ?? current.detail ?? current.reason ?? "").trim();
+      }
+    }
+
+    if (Array.isArray(current.content)) {
+      for (const item of current.content) {
+        if (typeof item === "string") {
+          if (!message) message = item.trim();
+          try { queue.push(JSON.parse(item)); } catch { /* plain text error */ }
+        } else if (item && typeof item === "object") {
+          if (typeof item.text === "string") {
+            const contentText = item.text.trim();
+            try { queue.push(JSON.parse(contentText)); }
+            catch { if (!message && contentText) message = contentText; }
+          }
+          queue.push(item);
+        }
+      }
+    }
+
+    for (const key of ["result", "data", "output", "structuredContent", "cause", "details", "error"]) {
+      const value = current[key];
+      if (value && typeof value === "object") queue.push(value);
+    }
+  }
+
+  if (code === null) {
+    const match = message.match(/^\[(-?\d{4,6})\]/);
+    if (match) code = Number(match[1]);
+  }
+  const traceText = Object.entries(trace).map(([key, value]) => key + "=" + value).join(" ");
+  return { code, message: message.slice(0, 600), traceText };
+}
+
 async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
   if (!state.anna?.tools?.invoke) {
     const error = new Error("Anna Executa is not available in this session. Open Verigate from the Anna app runtime and try again.");
@@ -160,33 +230,35 @@ async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
 
   const outer = unwrapToolResult(response);
   if (outer?.success !== true) {
-    const failure = outer?.error ?? outer?.data?.error;
-    const code = failure?.code ?? outer?.code ?? outer?.status ?? failure?.status;
-    const message = typeof failure === "string"
-      ? failure
-      : typeof failure?.message === "string"
-        ? failure.message
-        : typeof outer?.message === "string"
-          ? outer.message
-          : "";
-    const detail = message
-      ? (code !== undefined ? `[${code}] ` : "") + message
-      : "Anna Sampling is unavailable or the host rejected the request.";
+    const hostFailure = extractHostFailure(response);
+    const code = hostFailure.code;
+    const message = hostFailure.message || "";
+    const trace = hostFailure.traceText;
+    const detailParts = [];
+    if (code !== null && Number.isFinite(code)) detailParts.push(`[${code}]`);
+    const messageWithoutCode = code !== null && message.startsWith(`[${code}]`)
+      ? message.slice(`[${code}]`.length).trimStart()
+      : message;
+    if (messageWithoutCode) detailParts.push(messageWithoutCode);
+    if (trace) detailParts.push(trace);
+    const detail = detailParts.join(" ") ||
+      "Anna host returned an unsuccessful Executa response without an error message. " +
+      "Response envelope: " + Object.keys(outer && typeof outer === "object" ? outer : {}).join(", ");
 
-    // Anna hosts do not always preserve the Executa's llm_available marker
-    // when they wrap a rejected reverse-Sampling response. Classify only
-    // known Sampling/quota failures (or the unclassified failure envelope
-    // for this AI-only tool) as degraded-mode candidates. Session/auth,
-    // ownership and malformed-response failures remain hard errors.
-    const numericCode = Number(code);
+    // A reverse-Sampling error may arrive as plain MCP content text rather
+    // than error.message. Preserve it and its correlation ID for diagnosis.
+    // Only known Sampling/quota failures may use policy-only fallback.
+    const numericCode = code === null ? NaN : Number(code);
     const authFailure = [401, 403].includes(numericCode) ||
-      /unauthori[sz]ed|forbidden|session (?:expired|refresh)|not the app owner|executa (?:is )?not available/i.test(message);
+      /unauthori[sz]ed|forbidden|session (?:expired|refresh)|not the app owner|executa (?:is )?not available/i.test(detail);
     const samplingFailure = outer?.llm_available === false ||
-      [-32001, -32002, -32003, -32006, -32007].includes(numericCode) ||
-      /sampling|llm|language model|quota/i.test(detail);
+      response?.llm_available === false ||
+      [-32001, -32002, -32003, -32006, -32007, -32008].includes(numericCode) ||
+      /sampling|llm|language model|quota|provider error|model unavailable/i.test(detail);
 
     const error = new Error(detail);
     error.annaLlmUnavailable = outer?.malformed_response !== true &&
+      response?.malformed_response !== true &&
       !authFailure && samplingFailure;
     throw error;
   }
@@ -358,6 +430,7 @@ function manualInterpretation(reason = "") {
       ? Number(fieldValue("amount")) : parsed.fields.amount,
     resource: fieldValue("resource") || parsed.fields.resource
   };
+  const reasonText = clip(reason, 180).replace(/[.!?]+$/, "");
   const ambiguities = [...parsed.ambiguities];
   const conflicts = [
     ["recipient", fieldValue("target"), parsed.fields.payee, (a, b) => a.toLowerCase() === b.toLowerCase()],
@@ -372,7 +445,7 @@ function manualInterpretation(reason = "") {
   }
   return {
     fields, questions: [], ambiguities, flags: [], aiAvailable: false,
-    summary: "Anna AI is unavailable" + (reason ? ": " + clip(reason, 180) : "") +
+    summary: "Anna AI is unavailable" + (reasonText ? ": " + reasonText : "") +
       ". Verigate extracted only explicit, unambiguous values from the request and form. Any policy result is a policy-only preview; no AI contextual risk review was performed."
   };
 }

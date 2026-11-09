@@ -420,3 +420,31 @@ All four native platform jobs completed success. Each runner executed the full P
 - Local source files changed for this fix: `anna/bundle/app.js`, `scripts/test_anna_ui.mjs`, `anna/app.json`, and this checkpoint. Do not stage `_tools/` or `_anna-screen.png`.
 
 **Next test in Anna:** reopen/refresh App 0.1.23 and submit a single explicit payment sentence including the network, e.g. `Pay 25 USDC on Base to 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed for invoice 1042.` If Sampling is unavailable but explicit details parse, expect a clearly labelled policy-only result with execution authorization disabled. This is not an end-to-end live LLM pass until Anna Cloud returns a successful Sampling response.
+
+## Anna App 851 — preserve Sampling error text and correlation IDs — 2026-11-09
+
+### Evidence from user test of 0.1.23
+- The exact payment fields were extracted and Verigate returned a signed deterministic `ALLOW` for 25 USDC / Base / recipient / invoice. The result explicitly identified itself as `Policy-only`; Anna LLM contextual review did not run and execution permission stayed disabled.
+- This confirms UI parsing, policy evaluation and Ed25519 receipt verification in Anna Runtime, but **does not** confirm reverse Sampling or AI contextual review.
+- The error shown was only the generic `Anna Sampling is unavailable or the host rejected the request.` The exact host error/code was not preserved in the UI.
+
+### Diagnostic changes in 0.1.24
+- `anna/bundle/app.js` now inspects nested Executa/MCP error envelopes, including plain-text `content[].text`, extracts numeric Sampling error codes, and preserves `invoke_id`, `client_id`, `command_id` and `reason` metadata when returned.
+- Known Sampling/quota/provider errors can still yield only a clearly labelled policy-only preview. 401/403 and session/auth errors remain hard failures. Malformed or unexplained errors do not silently become policy decisions.
+- The policy-only summary no longer creates doubled punctuation around a trailing full stop.
+- `scripts/test_anna_ui.mjs` adds regression coverage for plain-text Sampling quota errors with an invoke ID and plain-text 401 session failures.
+
+### Validation and upload
+- Full local Anna UI E2E after final diagnostic changes: **57/57 passed**, exit 0. This harness uses the real bundle and local Executa with a mocked Anna Host; no real cloud Sampling response is simulated as live acceptance.
+- Targeted plain-text Sampling case: **1/1 passed**; plain-text session-error case: **1/1 passed**.
+- `anna validate --strict`: passed; `git diff --check`: passed.
+- App ID **851**, immutable App version **0.1.24**, version ID **2072**; bundle ID **1892**, 3 files, **86,731 bytes**, SHA-256 manifest `52fa1eb4147e2d55e2bc8f16dda85121a3b451d342010d7eb79db711b03d8cc2`.
+- Frozen bundled Executa remains Tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, Executa ID **1314**, version **0.1.16**, version ID **1042**.
+- App 851 remains `draft`, unpublished, with no review candidate. App 382 remains untouched.
+- Files changed: `anna/app.json`, `anna/bundle/app.js`, `scripts/test_anna_ui.mjs`, and this checkpoint. Do not stage `_tools/` or `_anna-screen.png`.
+
+### Platform diagnostic context
+- Anna's official changelog dated 2026-11-06 (beta.211–beta.220) states that the user permission/grant layer and `host_capabilities` gates were removed for schema 4; enabled installed Executas receive Sampling tokens on each invoke. Do not direct the user to hunt for the obsolete per-Executa `llm.sample` grant toggle.
+- The underlying Cloud Sampling failure is **still unconfirmed**. Only a real Anna runtime invocation can reveal whether the cause is quota/provider failure, protocol negotiation, host transport, or another issue. Version 0.1.24 is intended to display the exact returned error and correlation ID rather than mask it.
+
+**Next Anna test:** reopen App 0.1.24, submit the same simple request, and inspect the AI review summary. If Sampling still fails, copy the new detailed error including any numeric code and `invoke_id`; do not treat the policy-only `ALLOW` as an AI-approved payment. This remains pre-review and non-published.

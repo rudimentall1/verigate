@@ -549,6 +549,37 @@ await test("Anna AI 401 error envelope remains a hard failure", async () => {
   eq(ui.text("decision"), "", "no decision is shown");
 });
 
+await test("Anna Sampling plain-text content preserves quota code and invoke correlation", async () => {
+  const ui = await launch({
+    aiReviewResponseFailure: {
+      success: false,
+      isError: true,
+      invoke_id: "sampling-invoke-123",
+      content: [{ type: "text", text: "[-32002] Anna Sampling quota exceeded" }]
+    }
+  });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW", "deterministic policy preview still runs");
+  ok(ui.text("ai-review-summary").includes("[-32002] Anna Sampling quota exceeded"), "the actual Sampling error is shown");
+  ok(ui.text("ai-review-summary").includes("invoke_id=sampling-invoke-123"), "the host correlation ID is retained");
+  eq(ui.$("execution-btn").disabled, true, "degraded result cannot issue execution authority");
+});
+
+await test("plain-text session failure in Anna content is not downgraded to policy preview", async () => {
+  const ui = await launch({
+    aiReviewResponseFailure: {
+      success: false,
+      isError: true,
+      content: [{ type: "text", text: "401 Unauthorized while refreshing Anna session" }]
+    }
+  });
+  await ui.click();
+  ok(ui.shown("error"), "session failure remains visible");
+  ok(ui.text("error").includes("401 Unauthorized while refreshing Anna session"), "plain-text session failure is preserved");
+  eq(ui.calls.tools.includes("verigate_check"), false, "session failure never reaches policy evaluation");
+  eq(ui.text("decision"), "", "no policy decision is shown");
+});
+
 await test("Anna policy-summary 401 returned in an error envelope is surfaced instead of ignored", async () => {
   const ui = await launch({ policySummaryReturnsError: true });
   await ui.click();
