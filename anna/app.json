@@ -10,12 +10,12 @@
       "path": "./executas/verigate-authority"
     }
   },
-  "cover_url": "https://raw.githubusercontent.com/rudimentall1/verigate/471a9f634f6e57d6d84adeddd6646fb9cd277388/anna/assets/listing/00-cover.jpg",
+  "cover_url": "https://raw.githubusercontent.com/rudimentall1/verigate/main/anna/assets/listing/00-cover.jpg",
   "screenshots": [
-    "https://raw.githubusercontent.com/rudimentall1/verigate/471a9f634f6e57d6d84adeddd6646fb9cd277388/anna/assets/listing/v019-1-allow.png",
-    "https://raw.githubusercontent.com/rudimentall1/verigate/471a9f634f6e57d6d84adeddd6646fb9cd277388/anna/assets/listing/v019-4-risk-flag-warn.png",
-    "https://raw.githubusercontent.com/rudimentall1/verigate/471a9f634f6e57d6d84adeddd6646fb9cd277388/anna/assets/listing/v019-2-block-invalid-recipient.png",
-    "https://raw.githubusercontent.com/rudimentall1/verigate/471a9f634f6e57d6d84adeddd6646fb9cd277388/anna/assets/listing/v019-3-missing-details.png"
+    "https://raw.githubusercontent.com/rudimentall1/verigate/main/anna/assets/listing/v019-1-allow.png",
+    "https://raw.githubusercontent.com/rudimentall1/verigate/main/anna/assets/listing/v019-4-risk-flag-warn.png",
+    "https://raw.githubusercontent.com/rudimentall1/verigate/main/anna/assets/listing/v019-2-block-invalid-recipient.png",
+    "https://raw.githubusercontent.com/rudimentall1/verigate/main/anna/assets/listing/v019-3-missing-details.png"
   ],
   "homepage_url": "https://github.com/rudimentall1/verigate"
 }
