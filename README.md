@@ -41,6 +41,10 @@ The product boundary is not a wallet, risk score, policy dashboard, blockchain g
 ```text
 AGENT
   ↓
+
+https://github.com/user-attachments/assets/f04e6599-ebac-4867-b18a-b005ac7106b1
+
+
 ACTION INTENT
   ↓
 IDENTITY + CAPABILITIES + CONTEXT + POLICY
