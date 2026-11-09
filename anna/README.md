@@ -87,7 +87,7 @@ The Anna UI E2E harness runs the real App bundle and real Python Executa subproc
 
 ## Real Anna Runtime acceptance — 2026-11-09
 
-The following results were observed in the actual Anna Runtime, not inferred from the local fixture-based harness. The tests span immutable App versions 0.1.25 and 0.1.26; the current App 0.1.27 bundle includes the later wallet-state hardening described below.
+The following results were observed in the actual Anna Runtime, not inferred from the local fixture-based harness. Live runtime tests were performed on immutable App versions 0.1.25 and 0.1.26. App 0.1.27 introduced the later wallet-state hardening; current App 0.1.28 carries that same runtime forward with refreshed listing media only.
 
 | Layer | Observed result | Boundary |
 |---|---|---|
@@ -99,11 +99,12 @@ The following results were observed in the actual Anna Runtime, not inferred fro
 
 ### Current Anna platform version
 
-- App ID 851, immutable App version **0.1.27** (version ID 2078); platform status is **draft**, not Marketplace-published and not submitted for review.
+- Current App ID 851, immutable App version **0.1.28** (version ID **2082**); bundle status `ready`, 3 files / 91,055 bytes, content hash `67f237c123a07e6c09900acd5fe5238c60e96b43ccf8ff8ea4b14e0826b6bec6`. Platform status is **draft**, not Marketplace-published and not submitted for review.
 - Bundled production Executa ID 1314, version **0.1.16** (version ID 1042).
-- App 0.1.27 adds UI lifecycle hardening: verified router consumption is shown immediately; stale authorization content and button labels are cleared on renewal; an unverified/lost consume response is treated as **unknown**, hides the wallet action and requires a fresh policy check instead of assuming the permission remains unused.
-- Local Anna UI E2E: **61/61 passed**. The latest source CI run on commit `fe3cbd99db24eee8e13237467f11b6122abc124a` passed all three jobs: [GitHub Actions CI](https://github.com/rudimentall1/verigate/actions/runs/42596367889).
+- App 0.1.27 introduced UI lifecycle hardening: verified router consumption is shown immediately; stale authorization content and button labels are cleared on renewal; an unverified/lost consume response is treated as **unknown**, hides the wallet action and requires a fresh policy check instead of assuming the permission remains unused. App 0.1.28 retains this runtime unchanged; its only change is the listing/metadata refresh.
+- Anna UI E2E: **61/61 passed**. Listing-refresh PR #31 passed Python, Contracts, Anna UI E2E, strict schema-4 validation and Linux Executa smoke on exact source commit `dbdef40be648391d37bdaa48a5de074474dea2a1`: [GitHub Actions CI](https://github.com/rudimentall1/verigate/actions/runs/42619825112).
 - Executa 0.1.16 reproducible build: all four native targets built twice with matching hashes, packaged and passed extracted-package smoke tests: [four-platform build run](https://github.com/rudimentall1/verigate/actions/runs/42571400453). The workflow's GitHub Release job was skipped; these are workflow artifacts, not a public GitHub Release.
+- The 0.1.28 listing uses five live Runtime captures: ALLOW, WARN with the dynamic-authority limit disclosed, hard-cap BLOCK, missing amount, and a one-time permission ready for wallet hand-off. The fifth image shows `Not consumed`; it is not a claim of completed wallet submission. All six raw media URLs (cover plus five screenshots) returned HTTP 200 after merge.
 
 ### Still unverified — do not overclaim
 

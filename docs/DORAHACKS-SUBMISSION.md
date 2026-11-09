@@ -30,13 +30,13 @@ Live Anna Runtime testing confirmed:
 - ExecutionRouter consumption before the connected wallet was opened.
 - MetaMask displayed the expected 25 USDC Base transfer to the authorized recipient. The user intentionally cancelled the wallet signature because the test wallet had no funds; **no transaction hash, broadcast or on-chain payment occurred**.
 
-The current Anna platform draft is App **0.1.27** (App ID 851, version ID 2078) with bundled production Executa **0.1.16** (Executa ID 1314, version ID 1042). App 0.1.27 hardens wallet-authorization UI state: consumed permissions are reflected immediately, stale authorization state is cleared before renewal, and a lost/malformed consume response is treated as an unknown outcome rather than as proof that the permission remains unused.
+The current Anna platform draft is App **0.1.28** (App ID 851, version ID **2082**) with bundled production Executa **0.1.16** (Executa ID **1314**, version ID **1042**). App 0.1.28 is a listing/metadata refresh of the 0.1.27 runtime: it retains the wallet-authorization lifecycle hardening, changes no runtime or policy behavior, and uses five current screenshots from the live Anna Runtime. The new App bundle is `ready` (3 files, 91,055 bytes; content hash `67f237c123a07e6c09900acd5fe5238c60e96b43ccf8ff8ea4b14e0826b6bec6`).
 
-The latest recorded local verification is 626 Python tests passed / 4 skipped and 61/61 Anna UI E2E tests. GitHub CI completed all three jobs successfully on source commit `fe3cbd99db24eee8e13237467f11b6122abc124a`. The four-platform Executa 0.1.16 reproducible build and extracted-package smoke tests also passed for Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel x86_64.
+The latest recorded full Python suite is 626 passed / 4 skipped; the Anna UI E2E suite is 61/61. The listing-refresh source commit `dbdef40be648391d37bdaa48a5de074474dea2a1` passed all three CI jobs, including strict schema-4 validation, Anna UI E2E and the Linux Executa package smoke test ([CI run](https://github.com/rudimentall1/verigate/actions/runs/42619825112)). The four-platform Executa 0.1.16 reproducible build and extracted-package smoke tests also passed for Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel x86_64.
 
 ## Current status and limitations
 
-- Anna App 0.1.27 is an immutable **draft**. It is not Marketplace-published and has not been submitted for review.
+- Anna App 0.1.28 is an immutable **draft** (`published_at=null`, `is_published=false`, `review_candidate_version=null`). It is not Marketplace-published and has not been submitted for review.
 - The latest public GitHub Executa release is 0.1.12. Executa 0.1.16 has successful four-platform workflow artifacts, but **no public GitHub Release has been created for 0.1.16**.
 - No successful wallet signature, transaction broadcast, on-chain inclusion, finality or reorg handling is claimed.
 - A separately governed production CHAIN_VERIFIER is not integrated into the normal Anna UI flow.
@@ -49,7 +49,7 @@ The latest recorded local verification is 626 Python tests passed / 4 skipped an
 - **Anna integration source:** https://github.com/rudimentall1/verigate/tree/main/anna
 - **Anna integration and runtime evidence:** https://github.com/rudimentall1/verigate/blob/main/anna/README.md
 - **Explainer video:** https://github.com/rudimentall1/verigate/blob/main/docs/media/verigate-explainer.mp4
-- **Latest source CI (3/3 jobs):** https://github.com/rudimentall1/verigate/actions/runs/42596367889
+- **Latest listing-refresh CI (3/3 jobs):** https://github.com/rudimentall1/verigate/actions/runs/42619825112
 - **Four-platform Executa 0.1.16 build evidence:** https://github.com/rudimentall1/verigate/actions/runs/42571400453
 - **Privacy policy:** https://github.com/rudimentall1/verigate/blob/main/PRIVACY.md
 - **Threat model:** https://github.com/rudimentall1/verigate/blob/main/docs/threat-model.md
@@ -57,4 +57,4 @@ The latest recorded local verification is 626 Python tests passed / 4 skipped an
 
 ## Listing media
 
-The Anna manifest now references the checked-in listing assets through the canonical `main` path rather than the old pinned commit `471a9f6`. The current screenshot filenames still carry the `v019` prefix and their image contents have not been recaptured for App 0.1.27. Do not describe those images as fresh 0.1.27 screenshots; replace them only after capturing the actual current Runtime UI.
+The Anna manifest references the current cover and five checked-in `v027` Runtime captures through canonical `raw.githubusercontent.com/.../main/` URLs. The fifth image is a permission-ready state and deliberately shows `Not consumed`; it is not presented as a transaction submission or confirmation. The six URLs were checked from the laptop and each returned HTTP 200.
