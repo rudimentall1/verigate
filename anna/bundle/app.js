@@ -160,16 +160,34 @@ async function askAnna(systemPrompt, userPrompt, maxTokens = 400) {
 
   const outer = unwrapToolResult(response);
   if (outer?.success !== true) {
-    const detail = typeof outer?.error === "string"
-      ? outer.error
-      : outer?.error?.message
-        ? (outer.error.code !== undefined ? `[${outer.error.code}] ` : "") + outer.error.message
-        : "Anna Sampling is unavailable or the host rejected the request.";
+    const failure = outer?.error ?? outer?.data?.error;
+    const code = failure?.code ?? outer?.code ?? outer?.status ?? failure?.status;
+    const message = typeof failure === "string"
+      ? failure
+      : typeof failure?.message === "string"
+        ? failure.message
+        : typeof outer?.message === "string"
+          ? outer.message
+          : "";
+    const detail = message
+      ? (code !== undefined ? `[${code}] ` : "") + message
+      : "Anna Sampling is unavailable or the host rejected the request.";
+
+    // Anna hosts do not always preserve the Executa's llm_available marker
+    // when they wrap a rejected reverse-Sampling response. Classify only
+    // known Sampling/quota failures (or the unclassified failure envelope
+    // for this AI-only tool) as degraded-mode candidates. Session/auth,
+    // ownership and malformed-response failures remain hard errors.
+    const numericCode = Number(code);
+    const authFailure = [401, 403].includes(numericCode) ||
+      /unauthori[sz]ed|forbidden|session (?:expired|refresh)|not the app owner|executa (?:is )?not available/i.test(message);
+    const samplingFailure = outer?.llm_available === false ||
+      [-32001, -32002, -32003, -32006, -32007].includes(numericCode) ||
+      /sampling|llm|language model|quota/i.test(detail);
+
     const error = new Error(detail);
-    // A malformed successful envelope must remain an explicit error; only a
-    // host/Sampling outage permits the clearly labelled policy-only preview.
     error.annaLlmUnavailable = outer?.malformed_response !== true &&
-      outer?.llm_available === false;
+      !authFailure && samplingFailure;
     throw error;
   }
 

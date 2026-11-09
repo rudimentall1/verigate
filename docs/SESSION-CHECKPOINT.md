@@ -396,3 +396,27 @@ All four native platform jobs completed success. Each runner executed the full P
 - Pushed commit: `9182b06431d33e5dac8fd666b98db6248cfeffa4`, message `build: enforce reproducible Executa artifacts`. Branch is pushed; local untracked `_tools/` and `_anna-screen.png` remain excluded.
 
 **Decision:** the reproducible-build fix is verified on all four target platforms. Executa 0.1.15 remains immutable. No new version is needed merely to apply this build-system fix; use a new Executa version only if a separately tested runtime change is required.
+## Anna App 851 — Sampling error-envelope fix and release 0.1.23 — 2026-11-09
+
+### Bug found from user test evidence
+- User's five App test runs all showed the same behavior: extracted fields remained empty/default placeholders (recipient `0x…`, amount `25`, resource `Invoice 1042`) and UI reported "Anna AI could not read the request. No check was run."
+- Root cause in `anna/bundle/app.js`: `askAnna()` only classified reverse-Sampling failures as eligible for policy-only fallback when the Executa error explicitly carried `llm_available: false`. If Anna wrapped the failure in an error envelope without that marker, the UI stopped before deterministic extraction and `verigate_check`.
+- Narrow fix: normalize error details from `outer.error`, `outer.data.error`, and outer status/code; classify known Sampling/quota errors as degraded-mode candidates; keep HTTP 401/403, auth/session, ownership and missing-Executa errors as hard failures. The degraded path uses only explicit, unambiguous payment values, is labelled policy-only, and cannot issue execution authorization.
+- Added UI regression cases covering a Sampling rejection envelope without `llm_available` and a 401 error envelope. The former reaches the deterministic policy preview with execution disabled; the latter fails closed before policy evaluation.
+
+### Validation
+- Full local Anna UI E2E after patch: **55/55 passed**, exit 0. Harness runs real bundled UI + real local Executa plugin with a mocked Anna host; this is not live Anna Cloud acceptance.
+- Targeted regression: Sampling error envelope **1/1 passed**; AI 401 error envelope **1/1 passed**.
+- `anna validate --strict`: passed.
+- `git diff --check`: passed before App metadata bump; rerun after checkpoint update.
+- Live Anna Cloud reverse Sampling / account grant / current quota remains **unverified**. Do not claim the host LLM is working until tested in the actual App runtime.
+
+### New Anna account upload
+- App ID **851**, slug `verigate-authority`, immutable App version **0.1.23**, version ID **2071**.
+- Bundle ID **1891**, 3 files, **83,683 bytes**, SHA-256 manifest `6fee7f0b5a2ee9d1c6bdfa53f7b7897c213a7227661ae1c58b2558fe5358ca4e`.
+- Frozen bundled Executa remains Tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, Executa ID **1314**, version **0.1.16**, version ID **1042**.
+- Current platform status: App `draft`, `is_published=false`, no review candidate, no review submission, no Marketplace publication.
+- Prior App versions 0.1.21 / 0.1.22 retained. Old account App ID 382 untouched.
+- Local source files changed for this fix: `anna/bundle/app.js`, `scripts/test_anna_ui.mjs`, `anna/app.json`, and this checkpoint. Do not stage `_tools/` or `_anna-screen.png`.
+
+**Next test in Anna:** reopen/refresh App 0.1.23 and submit a single explicit payment sentence including the network, e.g. `Pay 25 USDC on Base to 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed for invoice 1042.` If Sampling is unavailable but explicit details parse, expect a clearly labelled policy-only result with execution authorization disabled. This is not an end-to-end live LLM pass until Anna Cloud returns a successful Sampling response.

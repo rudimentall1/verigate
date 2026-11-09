@@ -147,7 +147,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows) {
@@ -183,6 +183,7 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
             error.status = 401;
             throw error;
           }
+          if (aiReviewResponseFailure) return { result: aiReviewResponseFailure };
         } else {
           calls.tools.push(method);
         }
@@ -516,6 +517,36 @@ await test("Anna AI tool invocation 401 is surfaced and never downgraded to a po
   ok(ui.text("error").includes("Anna Executa AI review invocation rejected after session refresh"), "original host error is preserved");
   eq(ui.calls.tools.length, 0, "no deterministic preview runs after an invocation/authorization failure");
   eq(ui.text("decision"), "", "no decision is shown from a failed AI invocation");
+});
+
+await test("Anna Sampling rejection envelope without llm_available marker degrades to a non-executable policy preview", async () => {
+  const ui = await launch({
+    aiReviewResponseFailure: {
+      success: false,
+      error: "Anna Sampling is unavailable or the host rejected the request."
+    }
+  });
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW", "deterministic policy still runs on the exact parsed request");
+  ok(ui.text("ai-review-summary").includes("no AI contextual risk review was performed"), "the UI explicitly discloses that AI review did not run");
+  ok(ui.text("ai-review-summary").includes("Anna Sampling is unavailable"), "the host failure is preserved");
+  eq(ui.calls.tools.includes("verigate_check"), true, "policy check runs after the bounded Sampling failure");
+  eq(ui.$("execution-btn").disabled, true, "degraded preview never enables execution permission");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no authorization is issued in degraded mode");
+});
+
+await test("Anna AI 401 error envelope remains a hard failure", async () => {
+  const ui = await launch({
+    aiReviewResponseFailure: {
+      success: false,
+      error: { code: 401, message: "Unauthorized while refreshing Anna session" }
+    }
+  });
+  await ui.click();
+  ok(ui.shown("error"), "session failure is shown");
+  ok(ui.text("error").includes("[401] Unauthorized while refreshing Anna session"), "the original 401 is preserved");
+  eq(ui.calls.tools.includes("verigate_check"), false, "session failure never becomes a policy preview");
+  eq(ui.text("decision"), "", "no decision is shown");
 });
 
 await test("Anna policy-summary 401 returned in an error envelope is surfaced instead of ignored", async () => {
