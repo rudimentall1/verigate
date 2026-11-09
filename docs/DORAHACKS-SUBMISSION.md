@@ -51,7 +51,7 @@ A model can misunderstand a payment request, extract the wrong recipient, miss a
 
 **Verigate Authority adds an independent authorization step to an AI-assisted payment flow in Anna.**
 
-The user describes a payment in ordinary language. Anna's host LLM interprets the request, extracts the payment fields, asks for missing or ambiguous details, and provides contextual risk findings. The model is advisory: it cannot issue permission, turn a BLOCK into an approval, or lower a deterministic policy decision.
+The user describes a payment in ordinary language. Anna's host LLM interprets the request, extracts the payment fields, asks for missing or ambiguous details, and provides contextual risk findings. The model is advisory: it cannot issue permission, turn a BLOCK into an approval, or lower a deterministic policy decision. If Anna Sampling is unavailable, the App clearly labels a conservative policy-only preview; it does not pretend that AI review ran, and that degraded path cannot issue execution authority.
 
 Verigate's deterministic policy engine checks the explicit payment details and the installation's current authority state. It validates the recipient for the selected network and evaluates the asset, network, amount, recipient history, spending controls, review thresholds, and rate limits. It returns a signed **ALLOW**, **WARN**, or **BLOCK** decision.
 
