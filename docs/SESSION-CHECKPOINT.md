@@ -579,3 +579,31 @@ All four native platform jobs completed success. Each runner executed the full P
 - Pre-upload checks: Anna CLI 0.1.64 strict Schema 4 validation passed. GitHub Actions for source commit `633922a032750f6da981b3c3e0d96bfc53f982df`: `anna-ui`, `test`, and `contracts` all completed successfully. Run: `https://github.com/rudimentall1/verigate/actions/runs/42588602972`.
 - The CLI created the remote 0.1.26 cut but left the local `anna/app.json` version at 0.1.25. The local version field is corrected to 0.1.26 in this checkpoint commit so repository metadata matches Anna Cloud.
 - Next step: open App 0.1.26 in Anna Runtime and run the targeted no-funds/no-send acceptance checks for the UI wording changes. A real wallet submission is not needed for this verification.
+## Anna App 0.1.27 lifecycle hardening candidate - 2026-11-09
+
+### Video acceptance findings from App 0.1.26
+- The real Anna Runtime video confirmed successful Anna AI interpretation/contextual review, deterministic `ALLOW`, Ed25519 Decision Receipt verification, exact-action Ed25519 Execution Authorization, and the Base USDC wallet hand-off path through ExecutionRouter.
+- The video exposed two UI-state defects: after the router consumed a permission, the status line could still say `Not consumed`; after a subsequent authorization, the wallet button could retain the stale `Permission consumed` label. The previous signed authorization JSON also remained visible while a fresh authorization was being requested.
+- Source audit found an additional security-relevant distributed-systems edge case: if the Executa consumes a permission but the invoke response is lost, the UI previously treated the operation as not consumed. A missing response cannot prove that the remote side did not commit the consume.
+
+### Consolidated implementation
+- `anna/bundle/app.js` now changes the status immediately after a verified ExecutionRouter consume and labels the wallet control `Permission consumed` while waiting for wallet signing.
+- Issuing a fresh permission clears stale authorization JSON/status first, resets the wallet button label, and refuses duplicate issuance while a valid authorization is still active.
+- The UI resets the button to `Send with connected wallet` only after a fresh signed authorization is verified.
+- A dispatched consume call whose result cannot be verified is handled as `consumption status unknown`: old local authorization is discarded, wallet submission is hidden, and the UI instructs the user not to retry and to run a fresh policy check. It no longer claims that the permission definitely remains unused.
+- `scripts/test_anna_ui.mjs` now covers the full `consume -> wallet denial -> fresh authorization` sequence, checks that the renewed authorization ID differs, verifies intermediate consumed-state wording, and simulates a lost response after the Executa has actually consumed the permission.
+- No deterministic policy limits, signing schemas, Python authorization logic, ExecutionRouter semantics, wallet calldata, or chain support were changed.
+
+### Local verification
+- Anna UI E2E: **61/61 passed**.
+- Python suite: **626 passed, 4 skipped**; 3 existing deprecation warnings.
+- `node --check anna/bundle/app.js`: passed.
+- `node --check scripts/test_anna_ui.mjs`: passed.
+- `git diff --check`: passed.
+- Targeted replay/ambiguity test: lost consume response is treated as unknown; no wallet request or automatic retry.
+- Targeted live-like sequence test: after wallet denial, a fresh authorization gets a new ID and restores the correct button/status labels.
+
+### Deployment boundary
+- Anna App ID 851 remains on immutable version 0.1.26 (version ID 2075), status `draft`; no Marketplace release or review submission was performed.
+- Version 0.1.27 is a local candidate only at this checkpoint. It must pass new GitHub Actions CI before being uploaded as one consolidated Draft.
+- Bundled Executa remains pinned at tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, version 0.1.16. Old App ID 382 remains untouched.

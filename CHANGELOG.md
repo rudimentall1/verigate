@@ -1,4 +1,13 @@
 # Changelog
+## Anna App 0.1.27 / Executa 0.1.16
+
+### Wallet authorization lifecycle hardening
+
+- Show the ExecutionRouter-consumed state immediately after a verified consume response; the UI no longer leaves the authorization status at `Not consumed` while the wallet is waiting for a signature.
+- Reset the wallet action label whenever a new signed permission is issued. Clear stale authorization JSON and summary before starting a fresh issuance, and reject duplicate permission issuance while an authorization is still active.
+- Treat a lost or malformed response after dispatching `verigate_consume_execution_authorization` as an **unknown consumption outcome**. Hide the wallet action, discard the local retry handle, and require a fresh policy check and permission instead of falsely claiming the permission remains unused.
+- Added E2E coverage for `consume → wallet denial → fresh authorization`, including distinct authorization IDs and exact UI states, plus a simulated response loss after the Executa has actually consumed the permission.
+- No policy thresholds, signed receipt formats, ExecutionRouter logic, or wallet transaction construction changed.
 
 ## Unreleased ? Anna App 0.1.19 / Executa 0.1.15
 

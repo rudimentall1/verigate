@@ -1108,6 +1108,11 @@ async function storeAppApproval(kind, fields) {
 
 async function prepareExecutionAuthorization() {
   clearError();
+  if (state.lastExecutionAuthorization) {
+    showError("A one-time permission is already active. Use it or run a fresh check before requesting another.");
+    return;
+  }
+
   if (!state.anna || !state.lastReceipt || !state.lastValues) {
     showError("Run a fresh check first.");
     return;
@@ -1143,6 +1148,12 @@ async function prepareExecutionAuthorization() {
     return;
   }
 
+  // Remove stale authorization evidence before starting a fresh issuance attempt.
+  $("execution-json").textContent = "";
+  $("wallet-execute-btn").style.display = "none";
+  $("wallet-execute-btn").textContent = "Send with connected wallet";
+  $("execution-status").textContent = "Preparing a fresh policy check and one-time permission.";
+  $("execution-summary").textContent = "Verigate is rechecking current policy and dynamic authority. No new permission is active until a fresh signature is verified.";
   const approvalKind = isWarningReview ? "payment_warning_review" : "payment_authorization";
   const warningText = warningRules.map((rule) => "• " + String(rule.message || rule.rule || "Warning")).join("\n");
   setBusy(true, isWarningReview
@@ -1281,6 +1292,7 @@ async function prepareExecutionAuthorization() {
     const evmTransaction = authorization.payload?.action?.metadata?.evm_transaction;
     const walletNetworkSupported = Boolean(evmTransaction) && ["base", "ethereum"].includes(v.network.toLowerCase());
     $("wallet-execute-btn").style.display = walletNetworkSupported ? "inline-flex" : "none";
+    if (walletNetworkSupported) $("wallet-execute-btn").textContent = "Send with connected wallet";
     $("receipt-json").textContent = JSON.stringify(receipt, null, 2);
     $("execution-json").textContent = JSON.stringify(authorization, null, 2);
     $("execution-summary").textContent =
@@ -1335,6 +1347,7 @@ async function executeWithConnectedWallet() {
   }
 
   let consumed = false;
+  let consumeAttempted = false;
   let submittedTxHash = null;
   try {
     setBusy(true, "Checking the connected wallet before confirmation…");
@@ -1381,6 +1394,8 @@ async function executeWithConnectedWallet() {
       value_wei: expectedTx.value_wei,
       data: expectedTx.data
     });
+    // A lost or malformed response after dispatch cannot prove the permission was not consumed.
+    consumeAttempted = true;
     const response = await state.anna.tools.invoke({
       tool_id: TOOL_ID,
       method: "verigate_consume_execution_authorization",
@@ -1404,6 +1419,7 @@ async function executeWithConnectedWallet() {
     }
     consumed = true;
     state.lastExecutionAuthorization = null;
+    $("execution-status").textContent = "Permission consumed by ExecutionRouter. Waiting for wallet signature. This authorization cannot be reused.";
     $("wallet-execute-btn").disabled = true;
     $("wallet-execute-btn").textContent = "Permission consumed";
     const tx = data.transaction;
@@ -1493,9 +1509,17 @@ async function executeWithConnectedWallet() {
           (error?.message || String(error)) + ". Check the explorer before taking any further action; do not resubmit this payment."
         : "The one-time permission was consumed, but wallet submission did not complete or could not be verified: " +
           (error?.message || String(error)) + ". Check wallet activity. A fresh policy check and new permission are required before another attempt.";
+    } else if (consumeAttempted) {
+      // The Executa may have consumed the permission before the response was lost.
+      // Fail closed locally and require a fresh policy check instead of offering a retry.
+      state.lastExecutionAuthorization = null;
+      $("wallet-execute-btn").disabled = true;
+      $("wallet-execute-btn").style.display = "none";
+      $("wallet-execute-btn").textContent = "Authorization status unknown";
+      $("execution-status").textContent = "Verigate could not confirm whether ExecutionRouter consumed this permission. Do not retry it. Run a fresh policy check and create a new permission.";
     }
     showError(error?.message || String(error));
-    setBusy(false, consumed ? (submittedTxHash ? "Wallet returned a transaction hash. Do not retry until its status is checked." : "Permission consumed. No retry is possible with this authorization.") : "Wallet execution did not start. The permission remains unused.");
+    setBusy(false, consumed ? (submittedTxHash ? "Wallet returned a transaction hash. Do not retry until its status is checked." : "Permission consumed. No retry is possible with this authorization.") : consumeAttempted ? "Permission consumption could not be confirmed. Do not retry this authorization; run a fresh policy check." : "Wallet execution did not start. The permission remains unused.");
   }
 }
 

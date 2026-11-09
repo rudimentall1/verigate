@@ -147,7 +147,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows) {
@@ -217,6 +217,9 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
           appContext: true,
           samplingHandler: { interpret, explain }
         });
+        if (method === "verigate_consume_execution_authorization" && consumeInvokeDropsResponse) {
+          throw new Error("Simulated transport loss after ExecutionRouter consumed the permission");
+        }
         if (method === "verigate_policy_summary" && tamperPolicySummaryPrincipal) {
           if (result?.data) result.data.accounting_principal_id = "anna-installation:" + "f".repeat(64);
         }
@@ -273,7 +276,7 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
       }
       await sleep(30);
     },
-    async clickWallet() {
+    async clickWallet({ stopAtConsume = false } = {}) {
       $("wallet-execute-btn").click();
       for (let i = 0; i < 200; i++) {
         if ($("approval-dialog").hasAttribute("open")) break;
@@ -286,7 +289,9 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
       $("approval-accept").click();
       for (let i = 0; i < 400; i++) {
         await sleep(25);
-        if (/ExecutionReceipt|transaction hash|consumed, but wallet/i.test($("execution-status").textContent)) break;
+        const executionStatus = $("execution-status").textContent;
+        if ((stopAtConsume && executionStatus.includes("Permission consumed by ExecutionRouter")) ||
+            /ExecutionReceipt|transaction hash|consumed, but wallet|consumption could not be confirmed/i.test(executionStatus)) break;
       }
       await sleep(30);
     },
@@ -829,6 +834,64 @@ await test("wallet network drift after consumption prevents submission", async (
   ok(ui.text("execution-status").includes("network changed"), "network drift is disclosed");
 });
 
+await test("wallet rejection consumes the old permission and a fresh authorization resets every UI state", async () => {
+  const ui = await launch({});
+  let rejectWalletSend;
+  ui.window.ethereum = {
+    request: async ({ method }) => {
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_sendTransaction") return new Promise((resolve, reject) => { rejectWalletSend = reject; });
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.click();
+  await ui.clickExecution();
+  eq(ui.text("wallet-execute-btn"), "Send with connected wallet", "fresh permission starts with the correct wallet action");
+  await ui.clickWallet({ stopAtConsume: true });
+  ok(ui.text("execution-status").includes("Permission consumed by ExecutionRouter"), "status switches immediately after ExecutionRouter consumption");
+  eq(ui.text("wallet-execute-btn"), "Permission consumed", "button label matches the pending consumed state");
+  ok(typeof rejectWalletSend === "function", "wallet signature request is pending after consume");
+  rejectWalletSend(new Error("User denied transaction signature"));
+  for (let i = 0; i < 200 && !ui.text("execution-status").includes("consumed, but wallet submission did not complete"); i++) await sleep(10);
+  ok(ui.text("execution-status").includes("consumed, but wallet submission did not complete"), "wallet denial is reported after permission consumption");
+  ok(ui.text("execution-status").includes("User denied transaction signature"), "wallet denial reason is preserved");
+  eq(ui.shown("wallet-execute-btn"), false, "consumed permission cannot be submitted again");
+  eq(ui.$("execution-btn").disabled, false, "fresh authorization remains available after a new policy recheck is required");
+
+  // The authorization action performs a fresh persistent policy check; the old permission is not reused.
+  const firstAuthorizationId = JSON.parse(ui.text("execution-json")).payload.authorization_id;
+  await ui.clickExecution();
+  ok(ui.text("execution-json").includes("authorization_id"), "new signed authorization was issued");
+  const renewedAuthorizationId = JSON.parse(ui.text("execution-json")).payload.authorization_id;
+  ok(renewedAuthorizationId !== firstAuthorizationId, "fresh permission has a new authorization ID; the consumed one is never reused");
+  eq(ui.text("wallet-execute-btn"), "Send with connected wallet", "new authorization resets the stale consumed label");
+  eq(ui.$("wallet-execute-btn").disabled, false, "new authorization restores an enabled wallet action");
+  ok(ui.text("execution-status").includes("Not consumed"), "new authorization starts in the unconsumed state");
+});
+
+await test("lost consume response is treated as unknown and never leaves a retryable permission", async () => {
+  const ui = await launch({ consumeInvokeDropsResponse: true });
+  const walletCalls = [];
+  ui.window.ethereum = {
+    request: async ({ method, params }) => {
+      walletCalls.push({ method, params });
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_sendTransaction") return "0x" + "d".repeat(64);
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.click();
+  await ui.clickExecution();
+  await ui.clickWallet();
+  ok(ui.text("execution-status").includes("could not confirm whether ExecutionRouter consumed"), "ambiguous consume response is not reported as unused");
+  ok(ui.text("execution-status").includes("Do not retry it"), "ambiguous authorization is fail-closed");
+  eq(ui.shown("wallet-execute-btn"), false, "no retry button remains after ambiguous consume");
+  eq(walletCalls.some((call) => call.method === "eth_sendTransaction"), false, "wallet is not called without confirmed consume response");
+  const consumeCalls = ui.calls.tools.filter((method) => method === "verigate_consume_execution_authorization");
+  eq(consumeCalls.length, 1, "ambiguous consume is never automatically retried");
+});
 await test("Anna tool response envelopes are unwrapped without weakening receipt verification", async () => {
   for (const shape of ["direct", "single", "double", "nested_data"]) {
     const ui = await launch({ verificationResponseShape: shape });
