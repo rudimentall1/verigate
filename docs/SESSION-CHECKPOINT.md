@@ -667,3 +667,32 @@ This update supersedes the 0.1.27 platform snapshot above. The 0.1.27 Runtime ac
 - The laptop release worktree `C:\Users\User\verigate-anna-release` was fetched and switched to local branch `sync/anna-dashboard-0.1.28` at the exact `origin/main` SHA `a78d8450f53e0d350b13168dc27f70fa96f96c75`. The separate `C:\Users\User\verigate` worktree contains unrelated tracked modifications and was deliberately left untouched. `_tools/` and `_anna-screen.png` remain untracked and were not committed.
 
 **Release boundary:** App 0.1.28 is present in Anna Dashboard as an immutable Draft, not Marketplace-published. Executa 0.1.16 remains unchanged. No successful wallet signature, transaction hash, broadcast, chain inclusion or finality is claimed.
+
+## DoraHacks listing and link refresh - 2026-11-09
+
+### Repository changes
+- Reworked docs/DORAHACKS-SUBMISSION.md as the canonical paste-ready DoraHacks listing copy for the current product. It records App 0.1.28 / Executa 0.1.16, current capabilities, actual live acceptance boundaries, test counts, limitations, and the latest main CI/build evidence.
+- Added a six-asset media table with main-branch raw URLs: the retained cover plus five current v027 screenshots (ALLOW, WARN, hard-cap BLOCK, missing amount, one-time permission ready).
+- Added an explicit old-to-current mapping for the DoraHacks card's stale commit-pinned asset URLs, v019 screenshot names, ANNA branch link, old PR #16 source link, old Executa 0.1.8 release link, obsolete App/Executa version labels, and obsolete test counts.
+- Updated README.md and anna/README.md to link the latest main snapshot CI run 42621451294 in addition to relevant runtime-source/listing CI evidence.
+
+### Verified source of truth
+- Main head: 97c3a78843279430182f2009845aab7b54648ea4.
+- Anna App ID 851: immutable App 0.1.28, version ID 2082, Draft; not Marketplace-published and not submitted for review.
+- Bundled production Executa: version 0.1.16, ID 1314 / version ID 1042.
+- Main CI for commit 97c3a788 completed successfully, all three jobs: https://github.com/rudimentall1/verigate/actions/runs/42621451294.
+- Four-platform Executa 0.1.16 reproducible build/package/smoke: https://github.com/rudimentall1/verigate/actions/runs/42571400453.
+- Recorded test state: 626 Python passed / 4 skipped; Anna UI E2E 61/61.
+
+### Link verification
+- The six canonical raw asset URLs were requested from the laptop on 2026-11-09. All returned HTTP 200 with expected JPEG/PNG content types.
+- docs/media/verigate-explainer.mp4 is tracked in the current main tree.
+- Current GitHub repository, main/anna, Anna README, privacy policy, threat model, latest main CI and four-platform build-evidence URLs were verified against the repository/current workflow state.
+- The old DoraHacks references were stale even where the destination still existed: PR #16 remains open but is not the current source snapshot; release 0.1.8 is historical; the ANNA branch and v019 screenshot family are superseded. The replacement copy deliberately avoids claiming Executa 0.1.16 has a public GitHub Release.
+
+### External portal boundary
+- GitHub changes do not update the separately hosted DoraHacks project record. The repository now contains the exact replacement fields and URLs; the portal page itself still requires a manual edit in DoraHacks. The Buidl URL/record was not inferred from hackathons/registry.yaml because that entry is for a separate CMC/RWA submission.
+### Additional broken demo URL found during live link sweep
+- The old GitHub user-attachment URL b64a0a58-b628-4b04-bddc-f9634741292b returned HTTP 404 from the laptop.
+- Replaced it in README.md and docs/DORAHACKS-SUBMISSION.md with the tracked repository demo at docs/media/verigate-demo.mp4 (canonical GitHub blob URL for the DoraHacks listing; repository-relative link in README).
+- The direct raw main URL for docs/media/verigate-demo.mp4 returned HTTP 200; the file is tracked in the main tree (3,629,712 bytes).

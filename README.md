@@ -26,11 +26,11 @@ AI agents can propose consequential actions. Verigate decides whether the agent 
 
 - **Try it in 60 seconds.** `python examples/genesis_demo.py` runs the full lifecycle, verifies the proof, then tampers with it and shows INVALID.
 - **Verify a proof without Verigate.** `pip install verigate-verify`, then `verigate-verify proof.json --public-key issuer.pub` ([PyPI](https://pypi.org/project/verigate-verify/), source in `packaging/verigate-verify`).
-- **Technical demo (78 s, terminal).** The full authority lifecycle, execution, a portable proof, and rejection of a tampered proof:
+- **Technical demo (terminal).** The full authority lifecycle, execution, a portable proof, and rejection of a tampered proof:
 
-https://github.com/user-attachments/assets/b64a0a58-b628-4b04-bddc-f9634741292b
+[View the technical demo](docs/media/verigate-demo.mp4)
 
-- **Status.** Working open-source protocol implementation (MIT). The latest recorded full Python suite is **626 passed, 4 skipped**; the Anna UI E2E suite is **61/61**, and the latest Anna listing refresh CI completed all three jobs successfully ([CI run](https://github.com/rudimentall1/verigate/actions/runs/42619825112)). The generic Verigate API is not a hosted multi-tenant service: see [Current state](#current-state), [docs/security-configuration.md](docs/security-configuration.md) and [docs/threat-model.md](docs/threat-model.md).
+- **Status.** Working open-source protocol implementation (MIT). The latest recorded full Python suite is **626 passed, 4 skipped**; the Anna UI E2E suite is **61/61**, and the latest Anna listing refresh CI completed all three jobs successfully ([CI run](https://github.com/rudimentall1/verigate/actions/runs/42621451294)). The generic Verigate API is not a hosted multi-tenant service: see [Current state](#current-state), [docs/security-configuration.md](docs/security-configuration.md) and [docs/threat-model.md](docs/threat-model.md).
 
 ### Anna application integration
 
