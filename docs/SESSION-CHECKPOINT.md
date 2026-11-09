@@ -501,3 +501,23 @@ All four native platform jobs completed success. Each runner executed the full P
 - UI observation for later polish: the rolling-24-hour row displays `used + current request amount` as `yours` (25 in this test), so it is a projected post-request total, not historical spend alone. Consider relabeling the column to `after this request` or the row to avoid ambiguity; this is display semantics, not a policy failure.
 
 **Acceptance status:** live Anna AI contextual review is now confirmed for App 0.1.25. Full live execution/transaction lifecycle remains unverified. No review submission or Marketplace publication was performed.
+
+
+## Live Anna Runtime acceptance — one-time Execution Authorization — 2026-11-09
+
+### User-observed result
+- User completed the App's separate `Confirm one-time permission` step for the exact request: 25 USDC on Base, recipient `0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed`, purpose `invoice 1042`.
+- Anna Runtime showed `One-time permission verified. It is bound to 25 USDC on base for 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed. Verigate has also bound the exact native-USDC transfer to the signed permission.`
+- The signed authorization was displayed as Ed25519 verified. Authorization ID: `370118c9c34d40c47f21b873d7be2d414e81bc7a72391648efb187d055465286`.
+- Authorization references Decision Receipt SHA-256 `8f1b88cb1959b2a7dd85b9805fcf2f6ec6e10553e5833219c309f6be6ccaf26b` and intent ID `2941627d-77ec-4d52-baed-45109b94130d`.
+- Signed action binds exact recipient, asset USDC, network Base, amount 25, resource `invoice 1042`, installation principal `anna-installation:642d2053ac799fffc51ac990f1cc82dba58ca9f91909768ab412e4c9c1a1666f`, and EVM transaction envelope: chain ID 8453, native Base USDC contract `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, value 0, calldata `transfer(address,uint256)` to the exact recipient for 25,000,000 USDC base units.
+- The signed authorization's authority snapshot is PROBATION (multiplier 0.1, effective USDC per-action ceiling 50). The requested 25 USDC is within that ceiling.
+- App UI explicitly displayed `Not consumed`. No ExecutionRouter consumption, wallet signature, transaction hash, or on-chain submission is present in the supplied evidence. No funds were sent.
+- Successful issuance through the plugin path implies the backend accepted and consumed the preceding short-lived App UI approval before minting the permission. However, a replay attempt was not performed; do not claim replay resistance has been independently demonstrated in live Cloud.
+
+### Acceptance status
+- Confirmed live in Anna Runtime: reverse Sampling AI interpretation/contextual review; deterministic ALLOW and Ed25519 Decision Receipt verification; separate App confirmation and creation of a signed, exact-action Execution Authorization; Ed25519 verification of that authorization.
+- Still unverified live: replay attempt against the App-scoped approval; ExecutionRouter consumption of this authorization; exact EIP-1193 wallet hand-off and wallet signature; transaction submission; independent chain inclusion, confirmation depth, finality, or reorg handling.
+- The one-time authorization expires at Unix timestamp `1794211012` (shown by the UI as 09.11.2026 12:56:52). It must be treated as ephemeral; do not reuse it after expiry or after consumption.
+
+**Next controlled test:** if intentionally testing the next separate layer, use `Send with connected wallet` only with a connected Base wallet, inspect the wallet's exact recipient/token/amount/network confirmation, and stop before signing unless the user explicitly intends a real 25 USDC transfer. A no-send test can validate preflight only; full wallet submission necessarily sends an on-chain transaction.
