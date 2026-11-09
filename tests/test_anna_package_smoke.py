@@ -15,7 +15,7 @@ SPEC = importlib.util.spec_from_file_location("anna_smoke_package", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
-TOOL_ID = "tool-rinat-verigate-authority-2um8gwhw"
+TOOL_ID = "tool-verigate-authority-verigate-authority-28x5jku8"
 MANIFEST = {
     "name": TOOL_ID,
     "display_name": "Verigate Authority",

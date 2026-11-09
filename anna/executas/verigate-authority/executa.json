@@ -1,7 +1,7 @@
 {
   "slug": "verigate-authority",
   "name": "verigate-authority",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "executa_type": "tool",
   "description": "Verigate authority checks, one-time permissions and ExecutionRouter-gated EVM wallet hand-off for native USDC on Base/Ethereum. Wallet keys remain external.",
   "tool_id": "tool-dev-verigate-authority",

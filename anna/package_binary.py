@@ -18,7 +18,7 @@ DIST = EXECUTA_DIR / "dist"
 
 # The platform-minted ID is the identity of this published Executa. The
 # local development ID in executa.json is intentionally different.
-PLATFORM_TOOL_ID = "tool-rinat-verigate-authority-2um8gwhw"
+PLATFORM_TOOL_ID = "tool-verigate-authority-verigate-authority-28x5jku8"
 DISPLAY_NAME = "Verigate Authority"
 ZIP_MIN_EPOCH = 315532800  # 1980-01-01T00:00:00Z, the earliest ZIP timestamp.
 ZIP_MAX_EPOCH = 4354819198  # 2107-12-31T23:59:58Z, the latest ZIP timestamp.

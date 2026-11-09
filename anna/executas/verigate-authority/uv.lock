@@ -257,7 +257,7 @@ wheels = [
 
 [[package]]
 name = "tool-dev-verigate-authority"
-version = "0.1.15"
+version = "0.1.16"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },

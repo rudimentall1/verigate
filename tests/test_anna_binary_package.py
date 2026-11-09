@@ -15,7 +15,7 @@ from anna.package_binary import (
 from anna.verify_reproducible_binary import verify_reproducible_binary
 
 
-TOOL_ID = "tool-rinat-verigate-authority-2um8gwhw"
+TOOL_ID = "tool-verigate-authority-verigate-authority-28x5jku8"
 DESCRIPTION = "Checks policy only. Does not execute transactions."
 
 
