@@ -9,7 +9,7 @@
 - Added E2E coverage for `consume → wallet denial → fresh authorization`, including distinct authorization IDs and exact UI states, plus a simulated response loss after the Executa has actually consumed the permission.
 - No policy thresholds, signed receipt formats, ExecutionRouter logic, or wallet transaction construction changed.
 
-## Unreleased ? Anna App 0.1.19 / Executa 0.1.15
+## Historical candidate — Anna App 0.1.19 / Executa 0.1.15
 
 ### Fixed: Anna host LLM Sampling permission declaration
 
@@ -18,7 +18,7 @@
 - Updated the binary manifest validator and regression tests so a Sampling-powered Executa cannot pass validation without declaring llm.sample.
 - Real Anna Cloud acceptance still requires the user to grant LLM Sampling to this Executa in the Agent/Executa permissions UI. Local tests do not grant or prove that platform permission.
 
-## Unreleased — Anna 0.1.18 candidate / Executa 0.1.14
+## Historical candidate — Anna App 0.1.18 / Executa 0.1.14
 
 ### Anna platform integration and security
 
@@ -36,7 +36,7 @@
 - Added regression coverage for key-file permissions, encrypted key compatibility, symlink rejection and both in-App confirmation cancellation paths.
 
 
-## Unreleased
+## Earlier core security changes (version-neutral)
 
 ### Security
 
