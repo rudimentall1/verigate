@@ -541,7 +541,7 @@ All four native platform jobs completed success. Each runner executed the full P
 - The user's latest UI shows `Recipient history: previously used` and a projected rolling 24-hour value of 50 USDC for the second 25 USDC request.
 - Source inspection confirms these fields are driven by non-BLOCK audit records, not chain-confirmed token transfers: `core/storage.py::spent_today` sums `amount` across non-BLOCK rows in `audit_log`; `payee_seen_before` treats any prior non-BLOCK audit row for that recipient as seen.
 - The Anna payment authorization path persists the policy evaluation/audit row when issuing a permission. Therefore a prior permission can reserve/count 25 USDC in the rolling authorization budget and mark the recipient as previously authorized even when the wallet later rejects the signature and no transfer occurs. The second display value 50 is historical authorized amount 25 plus the current request 25; it is not proof of 50 USDC transferred.
-- This conservative accounting prevents repeated permission issuance from bypassing the budget, but current UI labels (`Rolling 24-hour spend`, `Recipient history`) overstate what the records prove. Future UI wording should distinguish authorized/reserved amount and prior authorizations from confirmed spend and successful payments. Do not change cap/accounting semantics or release reservations based solely on a client-reported wallet rejection without a separately designed and verified settlement/release lifecycle.
+- This conservative accounting prevents repeated permission issuance from bypassing the budget. Deployed App 0.1.25 labels overstated what those records prove; local source candidate commit `c098b64` changes the UI and docs to distinguish prior authorization history and projected authorization budget from confirmed on-chain payments. No cap/accounting semantics or release behavior changed.
 
 ### Current acceptance boundary
 - Confirmed live: AI review; deterministic ALLOW and signed Decision Receipt; signed exact-action Execution Authorization; ExecutionRouter consumption; wallet UI opened with the expected 25 USDC Base transfer; user-denial error propagated back to Anna; consumed authorization disabled against retry.
@@ -568,4 +568,4 @@ All four native platform jobs completed success. Each runner executed the full P
 
 ### Deployment boundary
 - This is a local source candidate only. Anna App ID 851 remains on deployed App version 0.1.25; no new bundle was uploaded, no review candidate was created, and nothing was released or published.
-- CI has not yet run for this source candidate; check the GitHub Actions run after push before considering a new Anna App version.
+- GitHub Actions CI for source candidate `c098b64a8d244a84e70c14ac5538c4999cffe4fc` completed successfully: `anna-ui`, `test`, and `contracts` all passed. Run: `https://github.com/rudimentall1/verigate/actions/runs/42588118515`.
