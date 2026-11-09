@@ -1,24 +1,22 @@
-# Verigate Authority
+# Verigate
 
-**AI agents can act. They cannot authorize themselves.**
+**Agent Authority Control Plane / Agent Authority Infrastructure for autonomous agents.**
 
-Verigate is a deterministic authority layer for AI-agent payments and privileged tool actions. It binds identity, capability, policy, and the exact requested action to a short-lived permission, then enforces that permission at the execution boundary. Exported proof can be verified independently offline.
+AI agents can propose consequential actions. Verigate decides whether the agent has the authority to execute the exact action, enforces that authorization at the execution boundary, records what happened, and produces evidence that can be verified independently later.
 
-> **The model proposes. Verigate decides. The execution boundary enforces. Anyone can verify the proof.**
-
-**The judge test:** change the approved tool endpoint or transaction destination after ALLOW. Verigate returns BLOCK and the execution callback is not invoked (Broadcasts: 0). Alter the exported proof and the independent verifier returns INVALID. Follow the [90-second judge route](docs/DORAHACKS-JUDGE-PATH.md).
+> **AI may propose an action; only Verigate decides whether the agent has the authority to execute it.**
 
 ## At a glance
 
-**In plain words.** An agent can produce a plausible payment or tool request, but that does not prove it is authorized. Verigate sits outside the model and checks identity, scope, policy limits, and the exact action before a supported executor can act.
+**In plain words.** AI agents are starting to pay bills, book services and call business systems on our behalf. Today the only safeguard is hoping the AI behaves. Verigate is a guard that sits *outside* the AI: you set the rules once (how much, to whom, for what), the AI can only *propose* an action, and Verigate decides.
 
 **What you get**
 
-- **Enforced limits.** At a supported Verigate execution boundary, actions outside the granted scope are rejected even when the request or destination is modified.
+- **Limits that actually hold.** An agent cannot go beyond its rules, even if it is tricked or makes a mistake.
 - **One-time permissions.** Every approved action gets a signed permission that works once and stops working if any detail, such as the destination, is changed.
 - **A receipt nobody can quietly edit.** An auditor, customer, insurer or partner can check it on their own, offline, with only a public key.
 
-**Who it is for.** Companies and teams building or operating AI agents that handle money or privileged actions. Relevant workflows include agent payments, x402, EVM/Solana execution, business APIs, and MCP tools; adapter coverage differs by path and is documented in Current state. Buyers get spend/permission controls, an audit trail, and evidence for the question "who authorized this exact action?". Verigate is infrastructure for developers, not an end-user app.
+**Who it is for.** Companies and teams that build or run AI agents handling money or privileged actions (payments, x402, EVM, Solana, business APIs, MCP tools): spend control, an audit trail, and proof when someone asks "who allowed this?". Ordinary people benefit indirectly, through the products they use: an assistant that holds your card can be held to a hard limit, and there is evidence if something is disputed. Verigate is infrastructure for developers, not an end-user app.
 
 [![Verigate explainer: AI proposes, Verigate decides](docs/media/verigate-explainer.gif)](docs/media/verigate-explainer.mp4)
 
@@ -28,11 +26,11 @@ Verigate is a deterministic authority layer for AI-agent payments and privileged
 
 - **Try it in 60 seconds.** `python examples/genesis_demo.py` runs the full lifecycle, verifies the proof, then tampers with it and shows INVALID.
 - **Verify a proof without Verigate.** `pip install verigate-verify`, then `verigate-verify proof.json --public-key issuer.pub` ([PyPI](https://pypi.org/project/verigate-verify/), source in `packaging/verigate-verify`).
-- **Primary judge demo (terminal).** The full authority lifecycle, offline-verifiable proof, and rejection of tampered evidence:
+- **Technical demo (terminal).** The full authority lifecycle, execution, a portable proof, and rejection of a tampered proof:
 
 [View the technical demo](docs/media/verigate-demo.mp4)
 
-- **Status.** Working open-source protocol implementation (MIT). The latest recorded full Python suite is **626 passed, 4 skipped**; the Anna UI E2E suite is **61/61**, and the latest Anna listing refresh CI completed all three jobs successfully ([CI run](https://github.com/rudimentall1/verigate/actions/runs/42624530607)). The generic Verigate API is not a hosted multi-tenant service: see [Current state](#current-state), [docs/security-configuration.md](docs/security-configuration.md) and [docs/threat-model.md](docs/threat-model.md).
+- **Status.** Working open-source protocol implementation (MIT). The latest recorded full Python suite is **626 passed, 4 skipped**; the Anna UI E2E suite is **61/61**, and the latest Anna listing refresh CI completed all three jobs successfully ([CI run](https://github.com/rudimentall1/verigate/actions/runs/42623793063)). The generic Verigate API is not a hosted multi-tenant service: see [Current state](#current-state), [docs/security-configuration.md](docs/security-configuration.md) and [docs/threat-model.md](docs/threat-model.md).
 
 ### Anna application integration
 
@@ -64,9 +62,9 @@ PORTABLE PROOF
 ANY THIRD PARTY → VALID / INVALID
 ```
 
-## The judge-level proof
+## Portable authority proof
 
-The strongest Verigate demonstration is not an ALLOW/BLOCK screen. It is the complete lifecycle:
+The complete Verigate authority lifecycle is independently verifiable:
 
 ```text
 Give Verigate an agent action.
@@ -108,7 +106,7 @@ This repository contains a runnable Genesis 2.0 authority lifecycle and its veri
 |---|---|
 | Policy engine (caps, allowlists, rate limits, new-payee/daily limits) | **Real.** Deterministic rules, no statistical "risk scores." Covered by the full automated suite. |
 | Ed25519 signing + independent verification | **Real.** Standard `cryptography` library primitives, not a custom crypto scheme. Tampering is detected, not just claimed. |
-| x402 header parsing | **Real**, for the `exact` scheme with `extra.name` asset identification. Refuses to guess decimals for an unrecognized asset/network pair rather than silently misjudging an amount — extend `x402/parser.py:_KNOWN_DECIMALS` as you verify more pairs. |
+| x402 header parsing | **Real**, for the `exact` scheme with `extra.name` asset identification. Refuses to guess decimals for an unrecognized asset/network pair rather than silently parsing an amount incorrectly — extend `x402/parser.py:_KNOWN_DECIMALS` as you verify more pairs. |
 | Arc Mainnet / USDC | **Implemented as a first-party integration.** Chain ID 5042, read-only RPC verification, canonical USDC ERC-20 validation, exact 6-decimal transfer encoding and a signed identity/capability authorization endpoint. The connected wallet remains the signer; Verigate does not custody funds. **The Verigate service is not deployed on Arc by this code change.** See `docs/arc-mainnet-integration.md`. |
 | Audit log / rate limiting / daily-spend tracking | **Real**, SQLite-backed, single-process. For multiple replicas, point every process at shared storage or swap in a real database — the `Storage` interface is small. |
 | FastAPI HTTP layer | **Real, with access control**: API-key auth (default-deny once `VERIGATE_API_KEYS` is set), tenant-scoped credentials (`VERIGATE_TENANT_API_KEYS`) and optional mandatory signed intents (`VERIGATE_REQUIRE_SIGNED_INTENT`). **Not yet load-tested or deployed as a hosted service.** Runs with `uvicorn api.main:app`; see `docs/security-configuration.md`. |
@@ -163,7 +161,7 @@ pip install -r requirements.txt
 # Run the full automated suite
 PYTHONPATH=. python3 -m unittest discover -s tests -v
 
-# Run the Genesis 2.0 judge-grade lifecycle + portable proof + tamper demo
+# Run the Genesis 2.0 authority lifecycle + portable proof + tamper demo
 PYTHONPATH=. python3 examples/genesis_demo.py
 
 # Legacy payment / attestation walkthrough
@@ -230,11 +228,11 @@ PYTHONPATH=. python3 cli.py verify attestation.json
 PYTHONPATH=. python3 cli.py history --agent trading-agent-001
 ```
 
-### Judge demo UI
+### Demo UI
 
 The browser UI lives at **http://localhost:8000/demo/**. It is a presentation layer over explicit demo endpoints; opening the page never implicitly enables live execution.
 
-The canonical judge proof is the Genesis 2.0 command above. The UI is the visual execution/enforcement layer, not the source of truth.
+The canonical proof demonstration is the Genesis 2.0 command above. The UI is the visual execution/enforcement layer, not the source of truth.
 
 For a safe local proof of execution-side enforcement:
 
@@ -255,7 +253,7 @@ For the explicit Solana Devnet demo, use:
 
 The endpoints are:
 
-- `GET /demo/` — static judge UI, safe to serve by default.
+- `GET /demo/` — static demo UI, safe to serve by default.
 - `GET /v1/demo/tamper` — deterministic enforcement proof; enabled by `VERIGATE_ENABLE_DEMO_TAMPER=true`.
 - `GET /v1/demo/live` — real Solana Devnet execution; requires explicit `VERIGATE_ENABLE_DEMO_ENDPOINTS=true`.
 
@@ -408,7 +406,7 @@ Payment and x402 remain backward-compatible adapters while this general authorit
 
 The core Genesis 2.0 protocol is now in proof/demo hardening rather than feature accumulation.
 
-1. **Judge-grade presentation** — make the lifecycle, execution enforcement, portable proof and tamper rejection obvious in one short demo.
+1. **Demonstration clarity** — make the lifecycle, execution enforcement, portable proof and tamper rejection obvious in one short demo.
 2. **Protocol conformance** — formalize the exact `verigate-authority-proof-v1` validity contract and publish adversarial conformance vectors.
 3. **Hosted authority infrastructure** — multi-tenant key management, attestor lifecycle, governance operations and offline-verifiable evidence at service scale.
 

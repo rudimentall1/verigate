@@ -165,7 +165,6 @@ The local Anna UI E2E harness exercises the real App bundle and Python Executa s
 | Source repository | https://github.com/rudimentall1/verigate |
 | Anna App source and manifest | https://github.com/rudimentall1/verigate/tree/main/anna |
 | Anna integration guide and acceptance evidence | https://github.com/rudimentall1/verigate/blob/main/anna/README.md |
-| Judge route | https://github.com/rudimentall1/verigate/blob/main/docs/DORAHACKS-JUDGE-PATH.md |
 | Threat model | https://github.com/rudimentall1/verigate/blob/main/docs/threat-model.md |
 | Privacy policy | https://github.com/rudimentall1/verigate/blob/main/PRIVACY.md |
 | Portable proof specification | https://github.com/rudimentall1/verigate/blob/main/docs/verigate-authority-proof-v1.md |
@@ -193,7 +192,7 @@ Keep the team size at one and do not invent partners, users, customers, audits, 
 
 ## Founding Builder program readiness — operator note, not listing copy
 
-The Anna Founding Builder Program is **not a Top-3 winner-takes-all judging contest**. According to the official rules, qualification requires an approved and Marketplace-published App plus at least **200 Qualified App MAU in one calendar month** during the September 1–November 30, 2026 qualification window. A Qualified App Run must be initiated by a signed-in Anna user, complete the App's primary function, and return a meaningful result. Developer/QA accounts, failed or cancelled runs, bots, and artificial usage do not count.
+The Anna Founding Builder Program is a monthly grant program. According to the official rules, qualification requires an approved and Marketplace-published App plus at least **200 Qualified App MAU in one calendar month** during the September 1–November 30, 2026 qualification window. A Qualified App Run must be initiated by a signed-in Anna user, complete the App's primary function, and return a meaningful result. Developer/QA accounts, failed or cancelled runs, bots, and artificial usage do not count.
 
 As of 2026-11-09, Verigate's App is still Draft and has no evidenced Qualified App MAU. Therefore **Verigate is not yet qualified**. The immediate business bottleneck is Marketplace approval and genuine user adoption, not more protocol features or a more aggressive prize claim.
 
