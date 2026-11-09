@@ -2,7 +2,7 @@
 
 **Updated:** 2026-11-09
 **Canonical source:** https://github.com/rudimentall1/verigate
-**Current repository head:** 97c3a78843279430182f2009845aab7b54648ea4
+**DoraHacks listing/link-refresh merge commit:** 45cfc4c107949756fdf2acd2d36423f9721db1bd
 
 > This is the canonical replacement copy for the external DoraHacks project page. Pushing this file updates the repository only; it does not edit the DoraHacks website record.
 
@@ -48,7 +48,7 @@ Live Anna Runtime testing confirmed:
 
 The current Anna platform draft is App **0.1.28** (App ID 851, version ID **2082**) with bundled production Executa **0.1.16** (Executa ID **1314**, version ID **1042**). App 0.1.28 is a listing/metadata refresh of the 0.1.27 runtime: it retains wallet-authorization lifecycle hardening and changes no runtime or policy behavior. The App bundle is ready (3 files, 91,055 bytes; content hash 67f237c123a07e6c09900acd5fe5238c60e96b43ccf8ff8ea4b14e0826b6bec6).
 
-The latest recorded full Python suite is **626 passed / 4 skipped**; the Anna UI E2E suite is **61/61**. The current main snapshot 97c3a78843279430182f2009845aab7b54648ea4 passed all three GitHub Actions jobs ([CI run 42621451294](https://github.com/rudimentall1/verigate/actions/runs/42621451294)). The four-platform Executa 0.1.16 reproducible build and extracted-package smoke tests also passed for Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel x86_64 ([build run 42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453)).
+The latest recorded full Python suite is **626 passed / 4 skipped**; the Anna UI E2E suite is **61/61**. The DoraHacks listing/link-refresh merge commit 45cfc4c107949756fdf2acd2d36423f9721db1bd passed all three main-branch GitHub Actions jobs ([CI run 42623793063](https://github.com/rudimentall1/verigate/actions/runs/42623793063)). The four-platform Executa 0.1.16 reproducible build and extracted-package smoke tests also passed for Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel x86_64 ([build run 42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453)).
 
 ## Current status and limitations
 
@@ -68,11 +68,11 @@ The latest recorded full Python suite is **626 passed / 4 skipped**; the Anna UI
 | Anna integration and runtime evidence | https://github.com/rudimentall1/verigate/blob/main/anna/README.md |
 | Explainer video | https://github.com/rudimentall1/verigate/blob/main/docs/media/verigate-explainer.mp4 |
 | Technical demo video | https://github.com/rudimentall1/verigate/blob/main/docs/media/verigate-demo.mp4 |
-| Current source CI (3/3) | https://github.com/rudimentall1/verigate/actions/runs/42621451294 |
+| Current source CI (3/3) | https://github.com/rudimentall1/verigate/actions/runs/42623793063 |
 | Four-platform Executa 0.1.16 build evidence | https://github.com/rudimentall1/verigate/actions/runs/42571400453 |
 | Privacy policy | https://github.com/rudimentall1/verigate/blob/main/PRIVACY.md |
 | Threat model | https://github.com/rudimentall1/verigate/blob/main/docs/threat-model.md |
-| Latest repository snapshot | https://github.com/rudimentall1/verigate/commit/97c3a78843279430182f2009845aab7b54648ea4 |
+| DoraHacks listing/link-refresh merge commit | https://github.com/rudimentall1/verigate/commit/45cfc4c107949756fdf2acd2d36423f9721db1bd |
 
 **Release link policy:** use the four-platform build evidence for Executa 0.1.16. The latest public tagged release remains 0.1.12 and is not the version bundled by the current App. No public 0.1.16 GitHub release exists yet.
 
