@@ -397,3 +397,42 @@ All four native matrix jobs passed the double-build SHA-256 gate, package creati
 - Reproducible binary build pipeline is now CI-verified on all four target platforms.
 
 **Release decision unchanged:** App 0.1.21 remains pending review and unpublished. No App or Executa version bump is warranted for this build-only fix.
+
+
+## Latest authoritative update — 2026-11-09 (App 0.1.27 / Executa 0.1.16)
+
+This update supersedes the older 2026-11-08 release decisions above. Those entries remain as historical audit evidence.
+
+### Current Anna platform versions
+
+- App: `verigate-authority`, App ID **851**, immutable version **0.1.27**, version ID **2078**. Platform status: **draft**, `is_published=false`, `review_candidate_version=null`. No Marketplace release or review submission.
+- Bundled production Executa: ID **1314**, version **0.1.16**, version ID **1042**. The App bundle pins this current Executa version.
+- App ID 382 (the old account) was not changed.
+
+### Live Runtime acceptance actually observed
+
+The live tests span immutable App 0.1.25 and 0.1.26; App 0.1.27 is the subsequently uploaded lifecycle-hardening candidate.
+
+- Anna host Sampling returned a real interpretation and separate contextual risk review for a 25 USDC Base payment; the App showed the summary and deterministic ALLOW.
+- The Ed25519 Decision Receipt was verified and bound to the exact visible payment and installation principal.
+- The user explicitly confirmed the payment. Anna issued an Ed25519-verified, one-time Execution Authorization bound to the exact recipient, USDC, Base, amount, invoice resource and native-USDC transfer envelope.
+- ExecutionRouter consumed the permission before the connected wallet was asked to sign. MetaMask displayed the expected transfer. The user deliberately denied the signature because the test wallet was empty. There was no transaction hash, broadcast or on-chain payment.
+- App 0.1.27 hardens the UI's post-consumption state, clears stale authorization data on renewal, prevents duplicate issuance while a permission remains active, and fails closed on an unknown consume outcome.
+
+### Source, CI and binary evidence
+
+- Latest source branch head at this checkpoint: `fe3cbd99db24eee8e13237467f11b6122abc124a` (`fix/anna-sampling-capability`).
+- GitHub CI run [42596367889](https://github.com/rudimentall1/verigate/actions/runs/42596367889) completed successfully: `test`, `contracts`, and `anna-ui` all passed.
+- Latest recorded full Python suite: **626 passed, 4 skipped**. Anna UI E2E after lifecycle hardening: **61/61 passed**.
+- Executa 0.1.16 four-platform reproducible build [42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453) succeeded on commit `a74f660e32f354aea22ca9f541e28b7e6abbc04a`. Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel each passed the double-build hash gate, packaging and extracted-package smoke test. Artifacts: Linux `13653825748`, Windows `13653551988`, macOS Intel `13653338828`, macOS ARM64 `13653038854`. The workflow's GitHub Release job was skipped; these are workflow artifacts, not a published GitHub Release.
+- The latest public GitHub Executa release is still 0.1.12. Releases 0.1.13 and 0.1.14 are drafts; 0.1.16 is not a public GitHub Release.
+
+### Remaining release gates
+
+- No successful wallet signature, transaction hash, broadcast, on-chain inclusion, confirmation depth or finality has been demonstrated.
+- A production CHAIN_VERIFIER identity/key and its governance lifecycle are not integrated into the normal Anna UI flow; reorg monitoring/reversal is not implemented there.
+- Live replay testing of the App-scope approval and a Cloud workspace persistence/restart/reinstall test remain outstanding.
+- App 0.1.27 is draft and not Marketplace-published. Do not state otherwise.
+- The project is not a universal wallet firewall; only the integrated Verigate App/ExecutionRouter path is covered.
+
+**Release decision:** the current App 0.1.27 / Executa 0.1.16 source/runtime candidate has green source CI and four-platform binary build evidence. Preserve its draft status until the remaining live-runtime and release gates are deliberately completed.
