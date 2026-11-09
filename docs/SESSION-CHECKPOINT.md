@@ -609,3 +609,40 @@ All four native platform jobs completed success. Each runner executed the full P
 - Independent `apps status` and `apps versions` reads confirm `status=draft`, `is_published=false`, `review_candidate_version=null`, no review message, and version 0.1.27 present as ID 2078. No Marketplace release or review submission was performed.
 - GitHub Actions for code commit `3775de350ee1195c651f4011dfaae8ced33f0d55` completed **3/3 PASS**: `anna-ui`, `test`, `contracts`. Run: `https://github.com/rudimentall1/verigate/actions/runs/42596023372`.
 - Bundled Executa remains pinned at tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, Executa ID 1314, version ID 1042 / version 0.1.16. No Executa republish occurred. Old App ID 382 remains untouched.
+
+## Current repository and listing refresh — 2026-11-09
+
+### Source of truth
+
+- Active current source branch: `fix/anna-sampling-capability`, head `fe3cbd99db24eee8e13237467f11b6122abc124a`.
+- Default branch `main` was at `109c5f0e6d7fb7cb462e9feaa18936993a6a1e7d` before this documentation refresh. The feature branch was 21 commits ahead and 1 commit behind main (the PR #29 squash merge); do not confuse branch-head validation with a main-branch release.
+- PR #29 (Sampling capability declaration) is merged. The current branch contains subsequent App/Executa updates through App 0.1.27 / Executa 0.1.16.
+
+### Current platform state
+
+- Anna App ID 851: immutable version **0.1.27**, version ID **2078**, status **draft**, not review-submitted and not Marketplace-published.
+- Bundled Executa ID **1314**, version **0.1.16**, version ID **1042**.
+- The live Cloud test chain is documented in `anna/README.md` and `docs/ANNA-RELEASE-GATE.md`: live Anna interpretation/contextual review, deterministic ALLOW, Ed25519 Decision Receipt, exact-action one-time permission, ExecutionRouter consumption, MetaMask hand-off, intentional signature denial. No transaction hash or broadcast occurred.
+- The 0.1.27 changes harden stale/unknown UI consume states; live wallet-sign/broadcast testing of 0.1.27 itself is not claimed.
+
+### Build and test evidence
+
+- Latest source CI: [42596367889](https://github.com/rudimentall1/verigate/actions/runs/42596367889), 3/3 jobs passed on `fe3cbd99`.
+- Full Python suite: **626 passed, 4 skipped**; Anna UI E2E: **61/61 passed**.
+- Executa 0.1.16 four-platform reproducibility/package/smoke workflow: [42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453). All four platforms passed. GitHub Release job was skipped; no public 0.1.16 release exists.
+
+### Link and submission cleanup
+
+- `anna/app.json` listing image URLs now use the canonical `raw.githubusercontent.com/.../main/anna/assets/listing/` path rather than pinning to commit `471a9f6`.
+- `anna/README.md` now distinguishes App-level schema-4 permissions from the Executa's `llm.sample` host capability and records actual Cloud acceptance/remaining limitations.
+- `CHANGELOG.md` labels 0.1.19 and 0.1.18 entries as historical candidates instead of leaving them under Unreleased.
+- `README.md` test counts and Anna product status refreshed.
+- `docs/DORAHACKS-SUBMISSION.md` is the canonical replacement copy for the stale external DoraHacks listing, with working source, demo, privacy, threat-model, CI and build links. The DoraHacks website listing itself is external and is not modified by a GitHub repository commit.
+- Listing images still use filenames prefixed `v019`; the image content has not been recaptured for 0.1.27. Use the current screenshot files as existing listing art only, not as fresh 0.1.27 runtime captures.
+
+### Remaining work
+
+- Merge the current branch/source changes and this documentation refresh into `main` after exact-head CI.
+- Replace v019 listing screenshots with real captures from the current App Runtime before claiming they depict 0.1.27.
+- Do not publish a GitHub Release for Executa 0.1.16 or submit/release the Anna App without the intended release step and review.
+- No successful wallet signature, broadcast, chain finality, independent CHAIN_VERIFIER, reorg handling, live App-scope replay test or Cloud persistence/restart test is claimed.
