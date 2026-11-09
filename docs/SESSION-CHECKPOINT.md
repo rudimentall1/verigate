@@ -569,3 +569,13 @@ All four native platform jobs completed success. Each runner executed the full P
 ### Deployment boundary
 - This is a local source candidate only. Anna App ID 851 remains on deployed App version 0.1.25; no new bundle was uploaded, no review candidate was created, and nothing was released or published.
 - GitHub Actions CI for source candidate `c098b64a8d244a84e70c14ac5538c4999cffe4fc` completed successfully: `anna-ui`, `test`, and `contracts` all passed. Run: `https://github.com/rudimentall1/verigate/actions/runs/42588118515`.
+
+## Anna Cloud upload - App 0.1.26 - 2026-11-09
+
+- Uploaded and froze Anna App ID 851 (`verigate-authority`) as immutable App version 0.1.26, version ID 2075.
+- Server-reported bundle: `ready`, 3 files, 89,210 bytes. Content hash: `2414e72d606e0eccf5cd5c0ef0d04cfeefd9dc32b95a5c29f7bd0d897d14c89a`.
+- Frozen bundled Executa remains tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, Executa ID 1314, version ID 1042, version 0.1.16. The publish command used `--skip-executa-publish` and an explicit tool ID override; no new Executa was published.
+- Independent `apps status` and `apps versions` reads confirmed server status `draft`, `is_published=false`, `review_candidate_version=null`, no review message, and version 0.1.26 present as ID 2075. No `apps release` or `apps submit-review` command was run. Old App ID 382 was not touched.
+- Pre-upload checks: Anna CLI 0.1.64 strict Schema 4 validation passed. GitHub Actions for source commit `633922a032750f6da981b3c3e0d96bfc53f982df`: `anna-ui`, `test`, and `contracts` all completed successfully. Run: `https://github.com/rudimentall1/verigate/actions/runs/42588602972`.
+- The CLI created the remote 0.1.26 cut but left the local `anna/app.json` version at 0.1.25. The local version field is corrected to 0.1.26 in this checkpoint commit so repository metadata matches Anna Cloud.
+- Next step: open App 0.1.26 in Anna Runtime and run the targeted no-funds/no-send acceptance checks for the UI wording changes. A real wallet submission is not needed for this verification.
