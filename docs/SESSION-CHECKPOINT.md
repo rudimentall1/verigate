@@ -603,7 +603,9 @@ All four native platform jobs completed success. Each runner executed the full P
 - Targeted replay/ambiguity test: lost consume response is treated as unknown; no wallet request or automatic retry.
 - Targeted live-like sequence test: after wallet denial, a fresh authorization gets a new ID and restores the correct button/status labels.
 
-### Deployment boundary
-- Anna App ID 851 remains on immutable version 0.1.26 (version ID 2075), status `draft`; no Marketplace release or review submission was performed.
-- Version 0.1.27 is a local candidate only at this checkpoint. It must pass new GitHub Actions CI before being uploaded as one consolidated Draft.
-- Bundled Executa remains pinned at tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, version 0.1.16. Old App ID 382 remains untouched.
+### Deployment acceptance - Anna Cloud App 0.1.27
+- Uploaded and froze App ID 851 (`verigate-authority`) as immutable App version **0.1.27**, version ID **2078**.
+- Bundle status: `ready`, 3 files, 91,055 bytes. Content hash: `2942856f668806b1386c56f3842c9f638db53543c16609a8db7b9df87a5f7d92`.
+- Independent `apps status` and `apps versions` reads confirm `status=draft`, `is_published=false`, `review_candidate_version=null`, no review message, and version 0.1.27 present as ID 2078. No Marketplace release or review submission was performed.
+- GitHub Actions for code commit `3775de350ee1195c651f4011dfaae8ced33f0d55` completed **3/3 PASS**: `anna-ui`, `test`, `contracts`. Run: `https://github.com/rudimentall1/verigate/actions/runs/42596023372`.
+- Bundled Executa remains pinned at tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, Executa ID 1314, version ID 1042 / version 0.1.16. No Executa republish occurred. Old App ID 382 remains untouched.
