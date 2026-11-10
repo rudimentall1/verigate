@@ -12,12 +12,18 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
 
       - name: Install test dependencies
         run: pip install -r requirements.txt
 
       - name: Run full test suite
         run: PYTHONPATH=. python3 -m unittest discover -s tests -v
+
+      - name: Cross-language Agent SDK and Arc wallet client test
+        run: PYTHONPATH=. node --test tests/agent-sdk-arc-client.test.mjs
 
       - name: Run the end-to-end demo
         run: PYTHONPATH=. python3 demo.py
