@@ -150,6 +150,13 @@ class ArcApiTest(unittest.TestCase):
                     authorization, server_public_key
                 )
                 self.assertTrue(valid, reason)
+                at_expiry, expiry_reason = verify_execution_authorization(
+                    authorization,
+                    server_public_key,
+                    verification_time=authorization["payload"]["expires_at"],
+                )
+                self.assertFalse(at_expiry)
+                self.assertEqual(expiry_reason, "execution authorization expired")
                 self.assertEqual(body["arc_network"]["chain_id"], ARC_CHAIN_ID)
                 self.assertEqual(body["arc_authority"]["registration_transaction"]["to"].lower(), body["arc_authority"]["contract_address"].lower())
                 self.assertIsNone(body["wallet_transaction"])
