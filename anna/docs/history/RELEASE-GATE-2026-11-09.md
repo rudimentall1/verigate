@@ -1,5 +1,7 @@
 > **Historical record (archived 2026-11-09).** This file preserves the full release-gate history and superseded snapshots. The current authoritative status is in [RELEASE-STATUS.md](../RELEASE-STATUS.md).
 
+> **Evidence correction — 2026-11-10:** Later in this historical snapshot, statements that ExecutionRouter consumed a live permission and MetaMask displayed a transfer are withdrawn. The user has confirmed that no wallet was connected during these tests. The reviewed 10 November Runtime recording shows policy decisions and an in-App confirmation dialog that the user deliberately cancelled; it does not show a connected wallet, live router consumption or wallet submission. Use [the current release status](../RELEASE-STATUS.md) for the corrected evidence boundary.
+
 # Verigate Authority — latest Anna release gate 2026-11-08
 
 > The older Current authoritative state below is superseded by the latest update appended at the end of this file.

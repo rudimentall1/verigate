@@ -85,35 +85,45 @@ cd anna && npx --yes @anna-ai/cli@0.1.64 validate --strict
 
 The Anna UI E2E harness runs the real App bundle and real Python Executa subprocess. Its host-side Sampling fixture simulates the Anna reverse-RPC response without calling Anna's paid LLM service or consuming Anna CU quota. UI coverage includes quota-exhausted fallback, Russian and English free text, decimal-dot and decimal-comma amounts, ambiguous thousands separators, conflicting form/request values, and the rule that degraded previews cannot issue execution authority. The wire-level `tests/test_anna_sampling_roundtrip.py` independently verifies the v2 Sampling handshake, `sampling/createMessage` frame and invoke-context propagation. These tests prove the local integration path; they do **not** prove Cloud Agent install or platform-side LLM availability.
 
-## Real Anna Runtime acceptance — 2026-11-09
+## Live Anna Runtime evidence — 2026-11-10
 
-The following results were observed in the actual Anna Runtime, not inferred from the local fixture-based harness. Live runtime tests were performed on immutable App versions 0.1.25 and 0.1.26. App 0.1.27 introduced the later wallet-state hardening; current App 0.1.28 carries that same runtime forward with refreshed listing media only.
+The reviewed Runtime recordings demonstrate the interpretation and policy-decision path. They do **not** demonstrate a connected wallet or an on-chain payment.
 
 | Layer | Observed result | Boundary |
 |---|---|---|
-| Anna host LLM | Parsed the plain-language request, extracted 25 USDC / Base / recipient / invoice 1042 and returned a separate contextual risk review | Live Sampling response confirmed |
-| Deterministic policy | Returned ALLOW and the App accepted the Ed25519-signed Decision Receipt bound to the exact visible fields and installation principal | No funds sent |
-| Permission issuance | User explicitly confirmed the action; the App displayed an Ed25519-verified, one-time Execution Authorization bound to the exact payment and Base USDC transfer envelope | A fresh permission is required after expiry or consumption |
-| ExecutionRouter | The next controlled attempt consumed the one-time permission before the wallet was opened | Consumed permissions cannot be retried |
-| Connected wallet | MetaMask showed the 25 USDC Base transfer for the authorized recipient; the user deliberately denied the signature because the test wallet was empty | No transaction hash, broadcast, or on-chain transfer |
+| Anna host LLM | Interpreted the natural-language payment request and returned contextual risk findings | Observed in Anna Runtime |
+| Deterministic policy | Returned ALLOW for 25 USDC on Base; returned BLOCK with `asset_not_allowed` for 25 DAI | Observed in Anna Runtime |
+| Decision Receipt | The App verified the Ed25519-signed receipt before displaying the decision | Receipt integrity only; not execution evidence |
+| AI risk escalation | Prompt-injection request produced WARN with `prompt_injection` and `urgency_pressure` flags | Observed in Anna Runtime |
+| App confirmation | The exact payment and warning rules were shown in the in-App confirmation dialog. The user deliberately selected Cancel | Expected cancellation; no App approval was written |
+| Execution Authorization | The 10 November recording does not show successful issuance of a one-time Execution Authorization | Automated UI/Executa tests cover successful issuance; live issuance is not claimed from this recording |
+| ExecutionRouter / wallet | No wallet was connected in the recorded tests. No wallet signature, router consumption, transaction hash, broadcast, on-chain inclusion or settlement is claimed | Live wallet hand-off remains unverified |
+
+Earlier release notes described a MetaMask prompt and ExecutionRouter consumption as live Runtime results. Those claims are withdrawn: the user has confirmed that no wallet has ever been connected during these tests. The 10 November recording also does not display an immutable App version identifier, so it must not be presented as proof that App 0.1.28 itself passed live Runtime acceptance.
 
 ### Current Anna platform version
 
 - Current App ID 851, immutable App version **0.1.28** (version ID **2082**); bundle status `ready`, 3 files / 91,055 bytes, content hash `67f237c123a07e6c09900acd5fe5238c60e96b43ccf8ff8ea4b14e0826b6bec6`. Platform status is **draft**, not Marketplace-published and not submitted for review.
 - Bundled production Executa ID 1314, version **0.1.16** (version ID 1042).
-- App 0.1.27 introduced UI lifecycle hardening: verified router consumption is shown immediately; stale authorization content and button labels are cleared on renewal; an unverified/lost consume response is treated as **unknown**, hides the wallet action and requires a fresh policy check instead of assuming the permission remains unused. App 0.1.28 retains this runtime unchanged; its only change is the listing/metadata refresh.
-- Anna UI E2E: **61/61 passed**. Listing-refresh source commit dbdef40be648391d37bdaa48a5de074474dea2a1 passed Python, Contracts, Anna UI E2E, strict schema-4 validation and Linux Executa smoke: [CI run](https://github.com/rudimentall1/verigate/actions/runs/42619825112). The DoraHacks listing/link-refresh merge commit 45cfc4c107949756fdf2acd2d36423f9721db1bd passed all three main-branch CI jobs: [main CI run](https://github.com/rudimentall1/verigate/actions/runs/42624530607).
-- Executa 0.1.16 reproducible build: all four native targets built twice with matching hashes, packaged and passed extracted-package smoke tests: [four-platform build run](https://github.com/rudimentall1/verigate/actions/runs/42571400453). The workflow's GitHub Release job was skipped; these are workflow artifacts, not a public GitHub Release.
-- The 0.1.28 listing uses five live Runtime captures: ALLOW, WARN with the dynamic-authority limit disclosed, hard-cap BLOCK, missing amount, and a one-time permission ready for wallet hand-off. The fifth image shows `Not consumed`; it is not a claim of completed wallet submission. All six raw media URLs (cover plus five screenshots) returned HTTP 200 after merge.
+- A source-only App **0.1.29** candidate adds explicit cancellation-state handling and ALLOW/WARN cancellation E2E tests. It has not been cut or uploaded; the platform still serves Draft 0.1.28.
+- App 0.1.28 is a listing/metadata refresh. It carries forward the 0.1.27 runtime unchanged.
+- Local Anna UI E2E tests exercise the actual App bundle and Python Executa with a scripted Anna Sampling host; the wallet path uses a test EIP-1193 provider. These are automated integration tests, not a live connected-wallet test.
+
+### Automated and build evidence
+
+- Full Python suite: **626 passed, 4 skipped** (latest recorded main-branch result).
+- Anna UI E2E: **61/61 passed** before the cancellation regression tests added in the current PR.
+- App 0.1.27 lifecycle hardening and App 0.1.28 listing source passed exact-source CI: [run 42619825112](https://github.com/rudimentall1/verigate/actions/runs/42619825112).
+- Four-platform Executa 0.1.16 reproducible build, packaging and extracted-package smoke tests passed for Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel x86_64: [run 42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453). These are workflow artifacts, not a public GitHub Release.
 
 ### Still unverified — do not overclaim
 
-- A successful wallet signature and transaction broadcast; the real user test intentionally cancelled at the wallet prompt.
-- Independent on-chain inclusion, confirmation depth, finality, or reorg monitoring.
-- A separate production CHAIN_VERIFIER key/governance lifecycle integrated into the normal Anna UI flow.
-- A live replay attempt against the App-scope approval and Cloud workspace persistence across a restart/reinstall.
-- Marketplace approval or publication. A successful draft runtime test is not Marketplace release evidence.
-
+- Successful live issuance of an App-scoped Execution Authorization in the current 0.1.28 Runtime.
+- Availability of an injected EIP-1193 wallet provider in a fresh Anna Cloud Agent session, live ExecutionRouter consumption and wallet submission.
+- Independent on-chain inclusion, confirmation depth, finality or reorg monitoring.
+- Cloud persistence across restart/reinstall and a live replay attempt against App-scope approval.
+- Marketplace approval or publication.
+- Independent third-party security audit, hosted multi-tenant service, production KMS/HSM custody or key-rotation service.
 
 ## Capability-bound execution authorization
 
