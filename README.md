@@ -30,7 +30,7 @@ AI agents can propose consequential actions. Verigate decides whether the agent 
 
 [View the technical demo](docs/media/verigate-demo.mp4)
 
-- **Status.** Working open-source protocol implementation (MIT). The latest recorded full Python suite is **626 passed, 4 skipped**; the Anna UI E2E suite is **61/61**, and the latest Anna listing refresh CI completed all three jobs successfully ([CI run](https://github.com/rudimentall1/verigate/actions/runs/42623793063)). The generic Verigate API is not a hosted multi-tenant service: see [Current state](#current-state), [docs/security-configuration.md](docs/security-configuration.md) and [docs/threat-model.md](docs/threat-model.md).
+- **Status.** Working open-source authorization protocol (MIT). The latest GitHub Actions run passed all three CI jobs: **603 Python unittest cases**, **63/63 Anna UI E2E tests**, contract E2E tests, strict Anna schema-4 validation and Linux Executa 0.1.16 build/smoke ([CI run](https://github.com/rudimentall1/verigate/actions/runs/42786256350)). Anna App 0.1.28 remains Draft; repository main now prepares source candidate 0.1.29, not uploaded to Anna. The generic Verigate API is not a hosted multi-tenant service: see [Current state](#current-state), [docs/security-configuration.md](docs/security-configuration.md) and [docs/threat-model.md](docs/threat-model.md).
 
 ### Anna application integration
 
