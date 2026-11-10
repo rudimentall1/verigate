@@ -49,8 +49,11 @@ authorization, execution-side enforcement, evidence, and independent verificatio
 - **Storage.** SQLite, single process. Multiple replicas need shared storage or a real database.
 - **Availability.** The API has not been load-tested and has no volumetric DoS protection;
   deploy behind a reverse proxy.
-- **Open by default.** Without `VERIGATE_API_KEYS` or `VERIGATE_REQUIRE_AUTH` the API is open
-  and demo routes exist behind flags. Use the baseline in `docs/security-configuration.md`.
+- **Open development mode.** A direct Python launch remains open unless
+  `VERIGATE_API_KEYS` or `VERIGATE_REQUIRE_AUTH` is configured, and demo routes
+  exist behind flags. The Docker image defaults to mandatory API authentication
+  and signed-intent enforcement; Compose requires an API key and binds to loopback.
+  Use the baseline in `docs/security-configuration.md` for remote deployments.
 - **Policy quality.** Verigate enforces the configured policy; it does not judge whether the
   policy is wise.
 - **No independent audit yet.**

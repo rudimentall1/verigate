@@ -263,20 +263,29 @@ The endpoints are:
 
 The UI itself remains available even when execution endpoints are disabled, so a deployed instance does not silently become a transaction broadcaster just because `/demo/` is reachable.
 
-Or with Docker:
+Or with Docker. The container requires API authentication and signed intents by default.
+Compose binds the API to localhost only; it does not expose the port to your LAN or the public Internet.
 
 ```bash
-docker compose up --build
+export VERIGATE_API_KEYS="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+docker compose up --build -d
 ```
+
+Use the generated key for protected routes:
 
 ```bash
 curl -X POST http://localhost:8000/v1/check \
+  -H "Authorization: Bearer $VERIGATE_API_KEYS" \
   -H "Content-Type: application/json" \
   -d '{"agent_id": "trading-agent-001", "payee": "0xMerchantABC",
        "asset": "USDC", "network": "base", "amount": 10, "sign": true}'
 
+# Health and public-key discovery remain public.
+curl http://localhost:8000/health
 curl http://localhost:8000/v1/public-key
 ```
+
+To expose a deployment remotely, keep authentication enabled and place it behind a TLS-terminating reverse proxy with explicit network access controls. Do not remove the loopback binding as a substitute for those controls.
 
 ---
 

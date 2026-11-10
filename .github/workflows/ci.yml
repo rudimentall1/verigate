@@ -72,3 +72,72 @@ jobs:
           python anna/build_binary.py
           python anna/smoke_binary.py anna/executas/verigate-authority/dist/verigate-authority "0.1.16"
           python anna/package_binary.py linux-x86_64 "0.1.16"
+
+  container:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify Compose refuses to start without an API key
+        run: |
+          if env -u VERIGATE_API_KEYS docker compose config --quiet; then
+            echo "::error::Compose accepted a missing VERIGATE_API_KEYS value"
+            exit 1
+          fi
+
+      - name: Validate protected Compose configuration
+        env:
+          VERIGATE_API_KEYS: ci-validation-only
+        run: |
+          docker compose config --format json > "$RUNNER_TEMP/verigate-compose.json"
+          python3 - "$RUNNER_TEMP/verigate-compose.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              service = json.load(handle)["services"]["verigate"]
+
+          ports = service["ports"]
+          assert any(
+              port.get("host_ip") == "127.0.0.1"
+              and str(port.get("published")) == "8000"
+              and int(port.get("target")) == 8000
+              for port in ports
+          ), ports
+          env = service["environment"]
+          assert env["VERIGATE_API_KEYS"] == "ci-validation-only"
+          assert env["VERIGATE_REQUIRE_AUTH"] == "1"
+          assert env["VERIGATE_REQUIRE_SIGNED_INTENT"] == "1"
+          PY
+
+      - name: Build production container image
+        run: docker build --pull --tag verigate:ci .
+
+      - name: Smoke-test container API authentication
+        env:
+          VERIGATE_API_KEYS: ci-validation-only
+        run: |
+          docker run --detach --name verigate-ci \
+            --publish 127.0.0.1:18000:8000 \
+            --env "VERIGATE_API_KEYS=${VERIGATE_API_KEYS}" \
+            verigate:ci
+          trap 'docker rm --force verigate-ci >/dev/null 2>&1 || true' EXIT
+
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18000/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+
+          without_key=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            http://127.0.0.1:18000/v1/execution/networks)
+          test "$without_key" = "401"
+
+          with_key=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${VERIGATE_API_KEYS}" \
+            http://127.0.0.1:18000/v1/execution/networks)
+          test "$with_key" = "200"
