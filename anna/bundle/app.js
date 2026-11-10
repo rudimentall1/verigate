@@ -1542,7 +1542,12 @@ async function executeWithConnectedWallet() {
           phase,
           error_code: errorCode,
           error_message: originalMessage,
-          sender
+          sender,
+          network,
+          chain_id: expectedTx.chain_id,
+          to: String(expectedTx.to).toLowerCase(),
+          value_wei: expectedTx.value_wei,
+          data: String(expectedTx.data).toLowerCase()
         });
         const outcomeArgs = {
           authorization_id: authorization.payload?.authorization_id,
