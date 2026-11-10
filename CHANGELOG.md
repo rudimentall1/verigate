@@ -1,5 +1,15 @@
 # Changelog
 
+## Anna App 0.1.29 / Executa 0.1.16
+
+### Permission cancellation state
+
+- Clear the pending execution status and summary when a user deliberately cancels ALLOW permission creation or WARN review.
+- Make the cancellation result explicit: no App-scope approval was written, no one-time Execution Authorization was created, and no funds were sent.
+- Add Anna UI E2E coverage for cancellation of both ALLOW and WARN confirmation flows.
+- This is a source candidate only. App 0.1.29 has not been cut, uploaded to Anna, submitted for review or published.
+
+
 ## Anna App 0.1.28 / Executa 0.1.16
 
 ### Anna listing refresh
