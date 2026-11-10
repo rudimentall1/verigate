@@ -36,6 +36,18 @@ Use the skills from `~/.agents/skills/` when the corresponding command is reques
 - Never claim live execution was verified unless it was actually run and confirmed.
 - Keep hackathon-specific code isolated under `hackathons/` or adapters.
 
+## Anna live-runtime evidence — mandatory context
+
+Before changing Anna, read:
+- `anna/docs/RELEASE-STATUS.md`
+- `anna/docs/history/SESSION-CHECKPOINT-2026-11-10-LIVE-METAMASK.md`
+
+The 9 November 2026 user-supplied recording proves a real Brave + MetaMask EIP-1193 wallet hand-off for 25 USDC on Base. Verigate issued and verified a one-time ExecutionAuthorization; ExecutionRouter consumed it before the real MetaMask signature prompt. The user denied the MetaMask signature, and Anna displayed `MetaMask Tx Signature: User denied transaction signature.`
+
+This is a successful live wallet hand-off / Router-consumption negative-path test. It is **not** a successful payment: no returned transaction hash, broadcast or on-chain settlement is shown. The exact immutable App version is not visible in the recording.
+
+Never repeat the false claim that no wallet was connected or that MetaMask hand-off was never tested. Never inflate the recording into a successful payment. Distinguish it from automated tests that use a mocked EIP-1193 provider. The 10 November in-App cancellation recording is a separate test.
+
 ## Verification priorities
 
 When touching authorization/enforcement, verify:
