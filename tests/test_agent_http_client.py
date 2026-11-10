@@ -71,6 +71,25 @@ class AgentHttpClientTest(unittest.TestCase):
         self.assertIsNone(result["consumption"])
         open_url.assert_called_once()
 
+    def test_warn_decision_never_consumes_even_if_response_contains_authorization(self):
+        warn = {
+            "decision_receipt": {"payload": {"decision": "WARN"}},
+            "execution_authorization": {"payload": {"authorization_id": "unexpected"}},
+        }
+        with patch("integrations.http_client.urlopen", return_value=FakeResponse(warn)) as open_url:
+            result = VerigateClient("http://localhost").authorize_and_consume({"agent_id": "agent"})
+        self.assertFalse(result["authorized"])
+        self.assertIsNone(result["consumption"])
+        open_url.assert_called_once()
+
+    def test_missing_or_unknown_decision_never_consumes(self):
+        malformed = {"execution_authorization": {"payload": {"authorization_id": "unexpected"}}}
+        with patch("integrations.http_client.urlopen", return_value=FakeResponse(malformed)) as open_url:
+            result = VerigateClient("http://localhost").authorize_and_consume({"agent_id": "agent"})
+        self.assertFalse(result["authorized"])
+        self.assertIsNone(result["consumption"])
+        open_url.assert_called_once()
+
     def test_api_error_preserves_status_and_detail(self):
         error = HTTPError(
             "https://api.example/v1/actions/authorize",
