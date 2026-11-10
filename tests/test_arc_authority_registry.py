@@ -407,8 +407,8 @@ def test_full_registration_and_consumption_confirmation_verify_registry_state():
         REGISTER_SELECTOR
         + authorization_id
         + intent_hash
-        + _address_word(executor)
-        + _word(valid_until)
+        + word(int(executor, 16))
+        + word(valid_until)
     )
     consumption_calldata = CONSUME_SELECTOR + authorization_id + intent_hash
 
