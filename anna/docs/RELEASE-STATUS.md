@@ -1,6 +1,6 @@
 # Anna App — current release status
 
-**Updated:** 2026-11-09  
+**Updated:** 2026-11-10  
 **App:** verigate-authority · ID **851** · version **0.1.28** · version ID **2082**  
 **Bundled Executa:** ID **1314** · version **0.1.16** · version ID **1042**
 
@@ -11,6 +11,7 @@
 - App 0.1.28 is a listing/metadata refresh. It carries forward the App 0.1.27 runtime without changing policy or wallet behavior.
 - App 0.1.27 introduced wallet lifecycle hardening: the UI reflects verified router consumption, clears stale authorization state on renewal, prevents duplicate issuance while a permission is active, and fails closed when a consume result is unknown.
 - Bundled production Executa remains 0.1.16. App 0.1.28 did not publish or replace the Executa.
+- A source-only App **0.1.29** candidate now contains the cancellation-state fix and regression tests. It has not been cut, uploaded to Anna, submitted for review or published; platform version 0.1.28 remains the current Draft.
 
 ## What has been observed in Anna Runtime
 
