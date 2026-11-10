@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class PaymentIntentRequest(BaseModel):
@@ -21,6 +23,73 @@ class X402HeaderRequest(BaseModel):
     sign: bool = True
 
 
+class CapabilityAuthorizationRequest(PaymentIntentRequest):
+    capability_id: str = Field(..., min_length=1, examples=["cap-trader-001"])
+
+
+class ActionAuthorizationRequest(BaseModel):
+    identity_id: str = Field(..., min_length=1)
+    capability_id: str = Field(..., min_length=1)
+    agent_id: str = Field(..., min_length=1)
+    agent_signature: str = Field(..., min_length=1)
+    intent_id: str = Field(..., min_length=1)
+    timestamp: float
+    action_type: str = Field(..., min_length=1, examples=["mcp.tool.call"])
+    target: str = Field(..., min_length=1, examples=["github.create_issue"])
+    resource: str = ""
+    amount: float | None = Field(None, gt=0)
+    amount_exact: str | None = None
+    asset: str | None = None
+    network: str | None = None
+    purpose: str = ""
+    declared_context: dict = Field(default_factory=dict)
+    parent_intent_id: str | None = None
+    requested_capability: str | None = None
+    constraints: dict = Field(default_factory=dict)
+    metadata: dict = Field(default_factory=dict)
+
+    @field_validator("amount_exact")
+    @classmethod
+    def validate_amount_exact(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            amount = Decimal(value)
+        except Exception as exc:
+            raise ValueError("amount_exact must be a valid decimal") from exc
+        if not amount.is_finite() or amount <= 0:
+            raise ValueError("amount_exact must be finite and positive")
+        return format(amount, "f")
+
+
+class IdentityAuthorizationRequest(BaseModel):
+    identity_id: str = Field(..., min_length=1)
+    capability_id: str = Field(..., min_length=1)
+    agent_id: str = Field(..., min_length=1)
+    agent_signature: str = Field(..., min_length=1)
+    intent_id: str = Field(..., min_length=1)
+    timestamp: float
+    payee: str = Field(..., min_length=1)
+    asset: str = Field(..., min_length=1)
+    network: str = Field(..., min_length=1)
+    amount: float = Field(..., gt=0)
+    resource: str = ""
+    metadata: dict = Field(default_factory=dict)
+
+
+class ValtaChatCompletionProxyRequest(BaseModel):
+    """One signed Valta Chat Completions request for the in-process proxy route."""
+
+    agent_id: str = Field(..., min_length=1)
+    identity_id: str = Field(..., min_length=1)
+    capability_id: str = Field(..., min_length=1)
+    agent_signature: str = Field(..., min_length=1)
+    intent_id: str = Field(..., min_length=1)
+    timestamp: float = Field(..., gt=0)
+    run_id: str = Field(..., min_length=1, max_length=200)
+    request: dict = Field(..., description="OpenAI-compatible Chat Completions JSON body")
+
+
 class RuleMatchResponse(BaseModel):
     rule: str
     severity: str
@@ -31,6 +100,11 @@ class DecisionResponse(BaseModel):
     intent_id: str
     agent_id: str
     decision: str
+    # Must match every key GuardrailDecision.as_dict() signs, or a client
+    # who only has this HTTP response can never reconstruct the exact
+    # bytes that were signed -- silently breaking "verify independently,
+    # without trusting our server" for every /v1/check response.
+    context_sha256: str = ""
     matched_rules: list[RuleMatchResponse]
     evaluated_at: float
 
@@ -69,6 +143,73 @@ class AuthorizationResponse(BaseModel):
     execution_authorization: ExecutionAuthorizationResponse | None = None
 
 
+class AdversarialVerificationRequest(BaseModel):
+    authorization: ExecutionAuthorizationResponse
+
+
+class AdversarialAttackResponse(BaseModel):
+    attack_id: str
+    passed: bool
+    description: str
+    reason: str
+
+
+class AdversarialVerificationResponse(BaseModel):
+    baseline_valid: bool
+    baseline_reason: str
+    attacks: list[AdversarialAttackResponse]
+    all_blocked: bool
+
+
+class AuthorityResetRequest(BaseModel):
+    reset: dict
+
+
+class MultiPartyAuthorityResetRequest(BaseModel):
+    action: dict
+    approvals: list[dict]
+
+
+class AuthorityResetResponse(BaseModel):
+    reset: dict
+    snapshot: dict
+    snapshot_sha256: str
+
+
+class MultiPartyAuthorityResetResponse(BaseModel):
+    reset: dict
+    snapshot: dict
+    snapshot_sha256: str
+    governance_policy_sha256: str
+
+
+class GovernedPolicyPublishRequest(BaseModel):
+    policy: dict
+    governance_action: dict
+    approvals: list[dict]
+
+
+class GovernedPolicyPublishResponse(BaseModel):
+    policy: dict
+    governance_action: dict
+    approvals: list[dict]
+    governance_policy_sha256: str
+
+
+class GovernedPolicyControlRequest(BaseModel):
+    governance_action: dict
+    approvals: list[dict]
+
+
+class GovernedPolicyControlResponse(BaseModel):
+    policy_id: str
+    active_policy_sha256: str
+    frozen: bool
+    governance_action: dict
+    approvals: list[dict]
+    governance_policy_sha256: str
+
+
 class ExecutionConsumeRequest(BaseModel):
     authorization: ExecutionAuthorizationResponse
 
@@ -76,3 +217,40 @@ class ExecutionConsumeRequest(BaseModel):
 class ExecutionConsumeResponse(BaseModel):
     execute: bool
     reason: str
+
+
+class OutcomeAttestationRequest(BaseModel):
+    attestation: dict
+
+
+class OutcomeAttestationResponse(BaseModel):
+    valid: bool
+    reason: str
+    claim: dict
+    claim_sha256: str
+    attestation_id: str
+    attestation_sha256: str
+    authority_event: dict | None = None
+    claim_verification: dict
+
+
+class OutcomeEvidenceResponse(BaseModel):
+    authorization_id: str
+    claims: list[dict]
+    attestations: list[dict]
+
+
+class AttestorGovernanceRequest(BaseModel):
+    action: dict
+    approvals: list[dict]
+
+
+class AttestorGovernanceResponse(BaseModel):
+    status: str
+    attestor: dict | None
+    governance_action: dict
+
+
+class AttestorResponse(BaseModel):
+    attestor: dict
+    governance_history: list[dict]

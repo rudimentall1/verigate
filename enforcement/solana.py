@@ -34,12 +34,20 @@ class SolanaExecutionAdapter(ExecutionAdapter):
             raise ValueError("invalid Solana transaction encoding")
         return {"encoding": "base64", "serialized_transaction": raw}
 
-    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+    def consume(
+        self,
+        authorization: dict[str, Any],
+        *,
+        verification_time: int | None = None,
+    ) -> tuple[bool, str]:
         try:
             self._transaction(authorization["payload"]["action"])
         except (KeyError, TypeError, ValueError) as exc:
             return False, str(exc)
-        return self.gate.consume(authorization)
+        return self.gate.consume(
+            authorization,
+            verification_time=verification_time,
+        )
 
     def execute(
         self,

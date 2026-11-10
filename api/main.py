@@ -4,69 +4,273 @@ Endpoints:
   POST /v1/check
   POST /v1/check/x402
   POST /v1/authorize
+  POST /v1/authorize/capability
+  POST /v1/authorize/identity
+  POST /v1/actions/authorize
   POST /v1/authorize/x402
+  GET  /v1/integrations/arc/status
+  POST /v1/integrations/arc/authorize
   POST /v1/execution/consume
+  POST /v1/outcomes/attest
+  GET  /v1/evidence/outcome/{authorization_id}
   GET  /v1/execution/networks
+  GET  /v1/authority/capabilities/{id}
   POST /v1/verify
   GET  /v1/agents/{id}/history
   GET  /health
   GET  /v1/public-key
+  GET  /v1/governance/public-key
+  GET  /v1/governance/policy
+  POST /v1/authority/reset
+  POST /v1/authority/reset/multi
+  POST /v1/policies/governed/publish
+  GET  /v1/policies/governed/{policy_sha256}
+  POST /v1/policies/governed/freeze
+  POST /v1/policies/governed/rollback
 """
 from __future__ import annotations
 
+import json
+import math
 import os
+import re
+import subprocess
+import sys
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 
+from api.auth import ApiKeyMiddleware
+from api.tenancy import (
+    TenantMiddleware,
+    TenantScopedStorage,
+    issuer_private_key,
+    issuer_public_key,
+    tenant_key_mode,
+)
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
 from attest.verify import verify_attestation
+from attest.receipt import verify_execution_authorization
+from core.adversarial import AdversarialVerificationPlane
+from core.attestor import AttestorAuthorityService
+from core.authority import AuthorityGraph
+from core.authority_state import DynamicAuthorityService
 from core.engine import GuardrailEngine
-from core.models import PaymentIntent
+from core.evidence import EvidenceGraph
+from core.evidence_service import EvidenceGraphService
+from core.evidence_manifest import build_manifest, verify_manifest
+from core.outcome import OutcomeAttestationService
+from core.governance import (
+    AuthorityGovernanceService,
+    GovernanceMember,
+    GovernancePolicy,
+    MultiPartyAuthorityGovernanceService,
+)
+from core.models import ActionIntent, PaymentIntent
 from core.policy import Policy
+from core.policy_version import (
+    GovernedPolicyControlService,
+    GovernedPolicyVersionRegistry,
+)
 from core.storage import Storage
+from adapters.valta import (
+    ACTION_TYPE as VALTA_ACTION_TYPE,
+    ValtaProxyClient,
+    ValtaProxyError,
+    ValtaProxyExecutionAdapter,
+    action_for_chat_completion,
+    canonical_request_bytes,
+)
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
+from enforcement.evm_rpc import EvmRpcError
+from integrations.arc_authority_registry import ArcAuthorityRegistry, ArcAuthorityRegistryError
+from integrations.arc import (
+    ARC_CHAIN,
+    ARC_CHAIN_ID,
+    ARC_USDC_ADDRESS,
+    ArcIntegrationError,
+    ArcMainnetIntegration,
+    validate_arc_usdc_transfer,
+)
 from x402.parser import X402ParseError, offer_to_intent, parse_payment_required_header
 
 from .schemas import (
     AttestationResponse,
     AuthorizationResponse,
+    AdversarialVerificationRequest,
+    AdversarialVerificationResponse,
+    AuthorityResetRequest,
+    AuthorityResetResponse,
+    MultiPartyAuthorityResetRequest,
+    MultiPartyAuthorityResetResponse,
+    ActionAuthorizationRequest,
+    CapabilityAuthorizationRequest,
+    IdentityAuthorizationRequest,
     DecisionResponse,
     ExecutionConsumeRequest,
     ExecutionConsumeResponse,
+    OutcomeAttestationRequest,
+    OutcomeAttestationResponse,
+    OutcomeEvidenceResponse,
+    AttestorGovernanceRequest,
+    AttestorGovernanceResponse,
+    AttestorResponse,
     PaymentIntentRequest,
     VerifyRequest,
     VerifyResponse,
+    GovernedPolicyPublishRequest,
+    GovernedPolicyPublishResponse,
+    GovernedPolicyControlRequest,
+    GovernedPolicyControlResponse,
     X402HeaderRequest,
+    ValtaChatCompletionProxyRequest,
 )
 
 POLICY_PATH = os.environ.get("VERIGATE_POLICY", "policies/default.yaml")
 DB_PATH = os.environ.get("VERIGATE_DB", "data/verigate.db")
 PRIVATE_KEY_PATH = os.environ.get("VERIGATE_PRIVATE_KEY", "keys/issuer.key")
 PUBLIC_KEY_PATH = os.environ.get("VERIGATE_PUBLIC_KEY", "keys/issuer.pub")
+GOVERNANCE_PRIVATE_KEY_PATH = os.environ.get(
+    "VERIGATE_GOVERNANCE_PRIVATE_KEY",
+    "keys/governance.key",
+)
+GOVERNANCE_PUBLIC_KEY_PATH = os.environ.get(
+    "VERIGATE_GOVERNANCE_PUBLIC_KEY",
+    "keys/governance.pub",
+)
+GOVERNANCE_POLICY_PATH = os.environ.get(
+    "VERIGATE_GOVERNANCE_POLICY",
+    "config/governance-policy.json",
+)
+REQUIRE_GOVERNED_POLICY = os.environ.get(
+    "VERIGATE_REQUIRE_GOVERNED_POLICY",
+    "",
+).lower() in {"1", "true", "yes"}
+OUTCOME_ATTESTORS_JSON = os.environ.get("VERIGATE_OUTCOME_ATTESTORS", "")
+ALLOW_UNGOVERNED_ATTESTOR_BOOTSTRAP = os.environ.get(
+    "VERIGATE_ALLOW_UNGOVERNED_ATTESTOR_BOOTSTRAP", ""
+).lower() in {"1", "true", "yes"}
+
+
+def _require_signed_intent() -> bool:
+    """When set, executable authority is issued only for agent-signed intents.
+
+    Read at request time so operators can flip it without code changes and
+    tests can toggle it deterministically.
+    """
+    return os.environ.get("VERIGATE_REQUIRE_SIGNED_INTENT", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
 
 app = FastAPI(
     title="Verigate",
-    description="A verifiable policy gate for autonomous agent payments (x402 and beyond).",
+    description="Agent Authority Control Plane for autonomous agents: identity, capability, governance, authorization, execution and evidence.",
     version="0.1.0",
 )
 
+app.add_middleware(ApiKeyMiddleware)
+app.add_middleware(TenantMiddleware)
+
+UI_DIR = Path(__file__).resolve().parent.parent / "ui"
+app.mount("/demo", StaticFiles(directory=UI_DIR, html=True), name="demo-ui")
+
 _policy: Policy | None = None
-_storage: Storage | None = None
+_storage: Storage | TenantScopedStorage | None = None
 _engine: GuardrailEngine | None = None
+_governance_policy: GovernancePolicy | None = None
+
+
+def _load_governance_policy() -> GovernancePolicy:
+    policy_path = Path(GOVERNANCE_POLICY_PATH)
+    if policy_path.exists():
+        data = json.loads(policy_path.read_text(encoding="utf-8"))
+        return GovernancePolicy.from_dict(data)
+    public_key = load_public_key(GOVERNANCE_PUBLIC_KEY_PATH)
+    policy = GovernancePolicy(
+        policy_id="verigate-local-single-governor",
+        version=1,
+        threshold=1,
+        members=(GovernanceMember.from_public_key(public_key, "governor"),),
+        allowed_actions=(
+            "AUTHORITY_RESET",
+            "ATTESTOR_REGISTER",
+            "ATTESTOR_ACTIVATE",
+            "ATTESTOR_ROTATE",
+            "ATTESTOR_REVOKE",
+            "ATTESTOR_EXPIRE",
+        ),
+    )
+    policy.validate()
+    return policy
+
+
+def _load_outcome_attestors() -> None:
+    if not OUTCOME_ATTESTORS_JSON:
+        return
+    if not ALLOW_UNGOVERNED_ATTESTOR_BOOTSTRAP:
+        raise RuntimeError(
+            "VERIGATE_OUTCOME_ATTESTORS requires explicit "
+            "VERIGATE_ALLOW_UNGOVERNED_ATTESTOR_BOOTSTRAP=true; "
+            "use /v1/governance/attestors for governed lifecycle"
+        )
+    assert _storage is not None
+    data = json.loads(OUTCOME_ATTESTORS_JSON)
+    if not isinstance(data, list):
+        raise ValueError("VERIGATE_OUTCOME_ATTESTORS must be a JSON array")
+    service = OutcomeAttestationService(
+        _storage,
+        issuer_public_key(PUBLIC_KEY_PATH),
+    )
+    for item in data:
+        if not isinstance(item, dict):
+            raise ValueError("each configured outcome attestor must be an object")
+        attestor_id = item["attestor_id"]
+        existing = _storage.outcome_attestor(attestor_id)
+        if existing is None:
+            service.register_attestor(
+                attestor_id=attestor_id,
+                public_key_b64=item["public_key_b64"],
+                attestor_type=item["attestor_type"],
+            )
+            continue
+        if (
+            existing["public_key_b64"] != item["public_key_b64"]
+            or existing["attestor_type"] != item["attestor_type"]
+            or existing["status"] != "ACTIVE"
+        ):
+            raise ValueError(
+                f"configured outcome attestor '{attestor_id}' conflicts with stored key"
+            )
 
 
 @app.on_event("startup")
 def _startup() -> None:
-    global _policy, _storage, _engine
+    global _policy, _storage, _engine, _governance_policy
     if not Path(PRIVATE_KEY_PATH).exists():
         generate_keypair(PRIVATE_KEY_PATH, PUBLIC_KEY_PATH)
+    if not Path(GOVERNANCE_PRIVATE_KEY_PATH).exists():
+        generate_keypair(
+            GOVERNANCE_PRIVATE_KEY_PATH,
+            GOVERNANCE_PUBLIC_KEY_PATH,
+        )
     _policy = Policy.load(POLICY_PATH)
-    _storage = Storage(DB_PATH)
-    _engine = GuardrailEngine(_policy, _storage)
+    _storage = TenantScopedStorage(DB_PATH) if tenant_key_mode() else Storage(DB_PATH)
+    _load_outcome_attestors()
+    _engine = GuardrailEngine(
+        _policy,
+        _storage,
+        policy_source_ref=POLICY_PATH,
+        require_governed_policy=REQUIRE_GOVERNED_POLICY,
+    )
+    _governance_policy = _load_governance_policy()
 
 
 @app.get("/health")
@@ -74,16 +278,89 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+_DEMO_ROOT = Path(__file__).resolve().parent.parent
+ENABLE_DEMO_ENDPOINTS = os.environ.get("VERIGATE_ENABLE_DEMO_ENDPOINTS", "").lower() in {"1", "true", "yes"}
+ENABLE_DEMO_TAMPER = os.environ.get("VERIGATE_ENABLE_DEMO_TAMPER", "").lower() in {"1", "true", "yes"}
+
+
+def _require_demo_endpoints(*, live: bool = False) -> None:
+    enabled = ENABLE_DEMO_ENDPOINTS if live else (ENABLE_DEMO_ENDPOINTS or ENABLE_DEMO_TAMPER)
+    if not enabled:
+        raise HTTPException(status_code=404, detail="demo endpoint is disabled")
+
+
+def _run_demo_script(script: str, timeout: int = 45) -> str:
+    result = subprocess.run(
+        [sys.executable, script],
+        cwd=_DEMO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+    return result.stdout + ("\n" + result.stderr if result.stderr else "")
+
+
+@app.get("/v1/demo/genesis")
+def demo_genesis() -> dict:
+    _require_demo_endpoints()
+    try:
+        output = _run_demo_script("examples/genesis_demo.py", timeout=60)
+    except subprocess.TimeoutExpired as exc:
+        return {"passed": False, "error": "Genesis demo timed out", "output": str(exc)}
+    passed = "GENESIS 2.0 DEMO: PASS" in output and "RESULT: VALID" in output and "RESULT: INVALID" in output
+    return {"passed": passed, "output": output[-12000:]}
+
+
+@app.get("/v1/demo/tamper")
+def demo_tamper() -> dict:
+    _require_demo_endpoints()
+    output = _run_demo_script("demo_tamper_enforcement.py", timeout=20)
+    blocked = "VERIGATE: BLOCK" in output and "Broadcasts: 0" in output
+    broadcasts = 0 if "Broadcasts: 0" in output else None
+    return {"blocked": blocked, "broadcasts": broadcasts, "output": output[-5000:]}
+
+
+@app.get("/v1/demo/live")
+def demo_live() -> dict:
+    _require_demo_endpoints(live=True)
+    try:
+        output = _run_demo_script("demo_live_solana_devnet.py", timeout=50)
+    except subprocess.TimeoutExpired as exc:
+        return {"confirmed": False, "error": "Devnet execution timed out", "output": str(exc)}
+    match = re.search(r"https://explorer\.solana\.com/tx/([^\s]+)\?cluster=devnet", output)
+    confirmed = "RESULT: REAL DEVNET BROADCAST -> SUBMITTED -> CONFIRMED" in output
+    return {
+        "confirmed": confirmed,
+        "signature": match.group(1) if match else None,
+        "explorer": match.group(0) if match else None,
+        "output": output[-7000:],
+    }
+
+
 @app.get("/v1/public-key", response_class=PlainTextResponse)
 def public_key() -> str:
-    return Path(PUBLIC_KEY_PATH).read_text()
+    # Not Path(PUBLIC_KEY_PATH).read_text(): that would always return the
+    # default tenant's key, ignoring X-Verigate-Tenant, even though signing
+    # already resolves per tenant via issuer_private_key().
+    from cryptography.hazmat.primitives import serialization
+    pem = issuer_public_key(PUBLIC_KEY_PATH).public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return pem.decode("ascii")
+
+
+@app.get("/v1/governance/public-key", response_class=PlainTextResponse)
+def governance_public_key() -> str:
+    return Path(GOVERNANCE_PUBLIC_KEY_PATH).read_text()
 
 
 def _decide_and_maybe_sign(intent: PaymentIntent, sign: bool) -> dict:
     assert _engine is not None and _storage is not None
     decision = _engine.evaluate(intent)
     if sign:
-        priv = load_private_key(PRIVATE_KEY_PATH)
+        priv = issuer_private_key(PRIVATE_KEY_PATH)
         attestation = sign_decision(decision, priv)
         _storage.update_signature(intent.intent_id, attestation.signature_b64)
         return attestation.as_dict()
@@ -109,6 +386,266 @@ def check_x402(req: X402HeaderRequest) -> dict:
     return _decide_and_maybe_sign(intent, req.sign)
 
 
+@app.get("/v1/integrations/arc/status")
+def arc_mainnet_status() -> dict:
+    """Verify the live Arc mainnet RPC and canonical USDC ERC-20 interface."""
+    try:
+        return ArcMainnetIntegration().status()
+    except (ArcIntegrationError, EvmRpcError) as exc:
+        raise HTTPException(status_code=503, detail=f"Arc mainnet verification failed: {exc}") from exc
+
+
+@app.post("/v1/integrations/arc/authorize")
+def authorize_arc_payment(req: ActionAuthorizationRequest) -> dict:
+    """Authorize an exact Arc USDC transfer through Verigate's identity/capability plane."""
+    assert _engine is not None
+
+    if req.network != ARC_CHAIN or req.asset != "USDC" or req.action_type != "payment":
+        raise HTTPException(
+            status_code=400,
+            detail="Arc integration requires action_type=payment, network=arc and asset=USDC",
+        )
+    if req.amount is None and req.amount_exact is None:
+        raise HTTPException(status_code=400, detail="Arc payment requires amount or amount_exact")
+
+    try:
+        amount = Decimal(req.amount_exact) if req.amount_exact is not None else Decimal(str(req.amount))
+        metadata = req.metadata
+        if metadata.get("network_family") != "evm":
+            raise ArcIntegrationError("Arc payment metadata must declare network_family=evm")
+        arc_metadata = metadata.get("arc")
+        if not isinstance(arc_metadata, dict) or (
+            arc_metadata.get("chain_id") != ARC_CHAIN_ID
+            or arc_metadata.get("asset") != "USDC"
+            or str(arc_metadata.get("token_address", "")).lower() != ARC_USDC_ADDRESS.lower()
+            or arc_metadata.get("token_decimals") != 6
+        ):
+            raise ArcIntegrationError("Arc network/token metadata does not match canonical mainnet USDC")
+        transaction = metadata.get("evm_transaction")
+        if not isinstance(transaction, dict):
+            raise ArcIntegrationError("metadata.evm_transaction is required")
+        validate_arc_usdc_transfer(
+            transaction,
+            sender=transaction.get("from"),
+            recipient=req.target,
+            amount=amount,
+        )
+        network_status = ArcMainnetIntegration().status()
+    except (ArcIntegrationError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except EvmRpcError as exc:
+        raise HTTPException(status_code=503, detail=f"Arc mainnet verification failed: {exc}") from exc
+
+    action = ActionIntent(
+        agent_id=req.agent_id,
+        action_type=req.action_type,
+        target=req.target,
+        resource=req.resource,
+        amount=amount,
+        amount_exact=req.amount_exact,
+        asset=req.asset,
+        network=req.network,
+        purpose=req.purpose,
+        declared_context=req.declared_context,
+        parent_intent_id=req.parent_intent_id,
+        requested_capability=req.requested_capability,
+        constraints=req.constraints,
+        metadata=req.metadata,
+        intent_id=req.intent_id,
+        timestamp=req.timestamp,
+    )
+    try:
+        artifacts = _engine.authorize_action(
+            action,
+            req.capability_id,
+            req.identity_id,
+            req.agent_signature,
+            issuer_private_key(PRIVATE_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    authorization = artifacts.get("execution_authorization")
+    arc_authority = None
+    if authorization is not None:
+        try:
+            registry = ArcAuthorityRegistry()
+            deployment = registry.verify_deployment()
+            registration = registry.prepare_registration_transaction(authorization)
+            arc_authority = {**deployment, **registration}
+        except ArcAuthorityRegistryError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Verigate Arc authority registry is not ready: {exc}",
+            ) from exc
+
+    return {
+        **artifacts,
+        "arc_network": network_status,
+        "arc_authority": arc_authority,
+        "wallet_transaction": None,
+        "execution_order": [
+            "sign and broadcast arc_authority.registration_transaction with the configured executor wallet",
+            "confirm its transaction hash at /v1/integrations/arc/registration/confirm",
+            "sign and broadcast the returned consume_transaction with the same wallet",
+            "confirm its transaction hash at /v1/integrations/arc/consume/confirm",
+            "only after execute=true, sign and broadcast the returned wallet_transaction payment on Arc",
+        ],
+    }
+
+
+
+
+def _verified_arc_execution_authorization(
+    authorization: dict,
+    *,
+    verification_time: int | None = None,
+) -> dict:
+    if not isinstance(authorization, dict):
+        raise HTTPException(status_code=400, detail="authorization object is required")
+
+    valid, reason = verify_execution_authorization(
+        authorization,
+        issuer_public_key(PUBLIC_KEY_PATH),
+        verification_time=verification_time,
+    )
+    if not valid:
+        raise HTTPException(status_code=403, detail=f"invalid Verigate execution authorization: {reason}")
+
+    payload = authorization.get("payload", {})
+    action = payload.get("action", {})
+    if action.get("network") != ARC_CHAIN or action.get("action_type") != "payment":
+        raise HTTPException(status_code=400, detail="Arc registry flow requires an Arc payment authorization")
+
+    metadata = action.get("metadata", {})
+    if not isinstance(metadata.get("evm_transaction"), dict):
+        raise HTTPException(status_code=400, detail="signed Arc payment transaction is missing")
+
+    return payload
+
+
+def _preverify_arc_execution_authorization(authorization: dict) -> dict:
+    if not isinstance(authorization, dict):
+        raise HTTPException(status_code=400, detail="authorization object is required")
+
+    payload = authorization.get("payload")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=403, detail="invalid Verigate execution authorization: invalid payload")
+
+    issued_at = payload.get("issued_at")
+    if isinstance(issued_at, bool) or not isinstance(issued_at, int):
+        raise HTTPException(status_code=403, detail="invalid Verigate execution authorization: invalid issued_at")
+
+    return _verified_arc_execution_authorization(
+        authorization,
+        verification_time=issued_at,
+    )
+
+
+@app.post("/v1/integrations/arc/registration/confirm")
+def confirm_arc_registration(req: dict) -> dict:
+    authorization = req.get("authorization")
+    transaction_hash = req.get("registration_tx_hash")
+
+    try:
+        _preverify_arc_execution_authorization(authorization)
+        registry = ArcAuthorityRegistry()
+        verification_time = registry.registration_verification_time(
+            authorization, transaction_hash
+        )
+        _verified_arc_execution_authorization(
+            authorization,
+            verification_time=verification_time,
+        )
+        result = registry.confirm_registration(authorization, transaction_hash)
+    except ArcAuthorityRegistryError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return result
+
+
+@app.post("/v1/integrations/arc/consume/confirm")
+def confirm_arc_consumption(req: dict) -> dict:
+    authorization = req.get("authorization")
+    registration_tx_hash = req.get("registration_tx_hash")
+    consumption_tx_hash = req.get("consume_tx_hash")
+
+    try:
+        _preverify_arc_execution_authorization(authorization)
+        registry = ArcAuthorityRegistry()
+        verification_time = registry.registration_verification_time(
+            authorization, registration_tx_hash
+        )
+        payload = _verified_arc_execution_authorization(
+            authorization,
+            verification_time=verification_time,
+        )
+        registration = registry.confirm_registration(authorization, registration_tx_hash)
+        consumption = registry.confirm_consumption(authorization, consumption_tx_hash)
+    except ArcAuthorityRegistryError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    assert _storage is not None
+    router = ExecutionRouter(
+        NetworkRegistry(),
+        _storage,
+        issuer_public_key(PUBLIC_KEY_PATH),
+    )
+    execute, reason = router.consume(
+        authorization,
+        verification_time=consumption["block_timestamp"],
+    )
+
+    evidence = {
+        "chain_id": ARC_CHAIN_ID,
+        "contract_address": registry.contract_address,
+        "executor": registry.executor_address,
+        "authorization_id": registration["authorization_id"],
+        "intent_hash": registration["intent_hash"],
+        "registration": {
+            "transaction_ref": registration["transaction_ref"],
+            "block_ref": registration["block_ref"],
+        },
+        "consumption": {
+            "transaction_ref": consumption["transaction_ref"],
+            "block_ref": consumption["block_ref"],
+        },
+    }
+
+    if not execute:
+        return {
+            "execute": False,
+            "reason": reason,
+            "arc_authority_evidence": evidence,
+            "wallet_transaction": None,
+        }
+
+    action = payload["action"]
+    evm_tx = action["metadata"]["evm_transaction"]
+    wallet_transaction = {
+        "chainId": hex(int(evm_tx["chain_id"])),
+        "from": evm_tx["from"],
+        "to": evm_tx["to"],
+        "data": evm_tx["data"],
+        "value": hex(int(evm_tx["value_wei"])),
+    }
+
+    return {
+        "execute": True,
+        "reason": "Verigate authorization verified and consumed on Arc Mainnet",
+        "arc_authority_evidence": evidence,
+        "wallet_transaction": wallet_transaction,
+        "execution_order": [
+            "Arc registry registration confirmed",
+            "Arc registry consumption confirmed",
+            "Verigate local one-time authorization consumed",
+            "connected wallet may now sign and broadcast wallet_transaction",
+        ],
+    }
+
 @app.post("/v1/authorize", response_model=AuthorizationResponse)
 def authorize(req: PaymentIntentRequest) -> dict:
     assert _engine is not None
@@ -116,7 +653,101 @@ def authorize(req: PaymentIntentRequest) -> dict:
         agent_id=req.agent_id, payee=req.payee, asset=req.asset, network=req.network,
         amount=req.amount, resource=req.resource,
     )
-    return _engine.authorize(intent, load_private_key(PRIVATE_KEY_PATH))
+    return _engine.authorize(intent, issuer_private_key(PRIVATE_KEY_PATH))
+
+
+@app.post("/v1/authorize/capability", response_model=AuthorizationResponse)
+def authorize_with_capability(req: CapabilityAuthorizationRequest) -> dict:
+    if _require_signed_intent():
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "unsigned capability authorization is disabled "
+                "(VERIGATE_REQUIRE_SIGNED_INTENT); use /v1/authorize/identity "
+                "or /v1/actions/authorize with an agent-signed intent"
+            ),
+        )
+    assert _engine is not None
+    intent = PaymentIntent(
+        agent_id=req.agent_id, payee=req.payee, asset=req.asset, network=req.network,
+        amount=req.amount, resource=req.resource,
+    )
+    try:
+        return _engine.authorize_with_capability(
+            intent,
+            req.capability_id,
+            issuer_private_key(PRIVATE_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.post("/v1/authorize/identity", response_model=AuthorizationResponse)
+def authorize_with_identity(req: IdentityAuthorizationRequest) -> dict:
+    assert _engine is not None
+    intent = PaymentIntent(
+        agent_id=req.agent_id,
+        payee=req.payee,
+        asset=req.asset,
+        network=req.network,
+        amount=req.amount,
+        resource=req.resource,
+        metadata=req.metadata,
+        intent_id=req.intent_id,
+        timestamp=req.timestamp,
+    )
+    try:
+        return _engine.authorize_with_identity(
+            intent,
+            req.capability_id,
+            req.identity_id,
+            req.agent_signature,
+            issuer_private_key(PRIVATE_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.post("/v1/actions/authorize", response_model=AuthorizationResponse)
+def authorize_action(req: ActionAuthorizationRequest) -> dict:
+    """Canonical protocol-agnostic authority issuance endpoint."""
+    assert _engine is not None
+    action = ActionIntent(
+        agent_id=req.agent_id,
+        action_type=req.action_type,
+        target=req.target,
+        resource=req.resource,
+        amount=(Decimal(req.amount_exact) if req.amount_exact is not None else req.amount),
+        amount_exact=req.amount_exact,
+        asset=req.asset,
+        network=req.network,
+        purpose=req.purpose,
+        declared_context=req.declared_context,
+        parent_intent_id=req.parent_intent_id,
+        requested_capability=req.requested_capability,
+        constraints=req.constraints,
+        metadata=req.metadata,
+        intent_id=req.intent_id,
+        timestamp=req.timestamp,
+    )
+    try:
+        return _engine.authorize_action(
+            action,
+            req.capability_id,
+            req.identity_id,
+            req.agent_signature,
+            issuer_private_key(PRIVATE_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/v1/authorize/x402", response_model=AuthorizationResponse)
@@ -127,25 +758,326 @@ def authorize_x402(req: X402HeaderRequest) -> dict:
         intent = offer_to_intent(offers[0], agent_id=req.agent_id)
     except X402ParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _engine.authorize(intent, load_private_key(PRIVATE_KEY_PATH))
+    return _engine.authorize(intent, issuer_private_key(PRIVATE_KEY_PATH))
 
 
 @app.post("/v1/execution/consume", response_model=ExecutionConsumeResponse)
 def consume_execution(req: ExecutionConsumeRequest) -> dict:
     """Consume a signed execution capability through the universal router."""
     assert _storage is not None
+    authorization = req.authorization.model_dump()
+    action = authorization.get("payload", {}).get("action", {})
+    if action.get("network") == ARC_CHAIN:
+        raise HTTPException(
+            status_code=409,
+            detail="Arc execution requires confirmed on-chain registration and consumption; use /v1/integrations/arc/consume/confirm",
+        )
+
     router = ExecutionRouter(
         NetworkRegistry(),
         _storage,
-        load_public_key(PUBLIC_KEY_PATH),
+        issuer_public_key(PUBLIC_KEY_PATH),
     )
-    ok, reason = router.consume(req.authorization.model_dump())
+    ok, reason = router.consume(authorization)
     return {"execute": ok, "reason": reason}
+
+
+@app.post("/v1/integrations/valta/chat/completions")
+def valta_chat_completions(req: ValtaChatCompletionProxyRequest):
+    """Authorize an exact Valta request, consume once, then forward it."""
+    assert _engine is not None and _storage is not None
+
+    # Shared global Valta credentials across tenants are deliberately disabled.
+    if tenant_key_mode():
+        raise HTTPException(
+            status_code=503,
+            detail="Valta integration is disabled in tenant-key mode until per-tenant Valta virtual-key mapping is configured",
+        )
+
+    virtual_key = os.environ.get("VALTA_VIRTUAL_KEY", "")
+    if not virtual_key.startswith("vk_live_"):
+        raise HTTPException(
+            status_code=503,
+            detail="Valta integration is disabled: VALTA_VIRTUAL_KEY is not configured",
+        )
+    try:
+        valta_timeout = float(os.environ.get("VALTA_PROXY_TIMEOUT_SECONDS", "30"))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="VALTA_PROXY_TIMEOUT_SECONDS must be numeric") from exc
+    if not math.isfinite(valta_timeout) or valta_timeout <= 0:
+        raise HTTPException(status_code=503, detail="VALTA_PROXY_TIMEOUT_SECONDS must be finite and positive")
+
+    try:
+        request_body = canonical_request_bytes(req.request)
+        action = action_for_chat_completion(
+            agent_id=req.agent_id,
+            run_id=req.run_id,
+            request=req.request,
+            intent_id=req.intent_id,
+            timestamp=req.timestamp,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        artifacts = _engine.authorize_action(
+            action,
+            req.capability_id,
+            req.identity_id,
+            req.agent_signature,
+            issuer_private_key(PRIVATE_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    receipt = artifacts["decision_receipt"]
+    authorization = artifacts.get("execution_authorization")
+    decision = receipt["payload"]["decision"]["decision"]
+    if authorization is None:
+        status = "approval_required" if decision == "WARN" else "blocked"
+        code = 409 if decision == "WARN" else 403
+        return JSONResponse(
+            status_code=code,
+            content={
+                "status": status,
+                "decision": decision,
+                "decision_receipt": receipt,
+                "execution_authorization": None,
+                "valta_response": None,
+            },
+        )
+
+    try:
+        client = ValtaProxyClient(virtual_key, timeout=valta_timeout)
+        adapter = ValtaProxyExecutionAdapter(request_body, req.run_id, client)
+        router = ExecutionRouter(
+            NetworkRegistry(),
+            _storage,
+            issuer_public_key(PUBLIC_KEY_PATH),
+            generic_adapters={VALTA_ACTION_TYPE: adapter},
+        )
+        # The adapter owns the validated body and client; the router still
+        # verifies the artifact and consumes its one-time nonce before sending.
+        valta_response = router.execute(authorization, lambda _authorization: None)
+    except ValtaProxyError as exc:
+        if exc.outcome_unknown:
+            status_code = 504
+        elif exc.status_code is not None and (400 <= exc.status_code < 500 or exc.status_code == 503):
+            # Preserve Valta's explicit denial/rate-limit status for callers.
+            status_code = exc.status_code
+        else:
+            status_code = 502
+        allowed_error_fields = {
+            "approved", "reason", "id", "message", "plan", "limit",
+            "upgradeTo", "upgradeUrl", "error",
+        }
+        upstream_response = (
+            {key: value for key, value in exc.response.items() if key in allowed_error_fields}
+            if isinstance(exc.response, dict)
+            else None
+        )
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "status": "upstream_outcome_unknown" if exc.outcome_unknown else "upstream_error",
+                "decision": decision,
+                "decision_receipt": receipt,
+                "execution_authorization": authorization,
+                "upstream_status": exc.status_code,
+                "upstream_response": upstream_response,
+                "error": str(exc),
+                "retry_allowed": False,
+            },
+        )
+    except (PermissionError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return {
+        "status": "executed",
+        "decision": decision,
+        "decision_receipt": receipt,
+        "execution_authorization": authorization,
+        "valta_response": valta_response,
+    }
+
+
+@app.post(
+    "/v1/governance/attestors",
+    response_model=AttestorGovernanceResponse,
+)
+def govern_attestor(req: AttestorGovernanceRequest) -> dict:
+    assert _storage is not None and _governance_policy is not None
+    try:
+        return AttestorAuthorityService(_storage).apply(
+            req.action,
+            req.approvals,
+            _governance_policy,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get(
+    "/v1/governance/attestors/{attestor_id}",
+    response_model=AttestorResponse,
+)
+def get_attestor(attestor_id: str) -> dict:
+    assert _storage is not None
+    attestor = _storage.outcome_attestor(attestor_id)
+    if attestor is None:
+        raise HTTPException(status_code=404, detail="attestor not found")
+    return {
+        "attestor": attestor,
+        "governance_history": _storage.attestor_governance_actions(attestor_id),
+    }
+
+
+@app.post(
+    "/v1/outcomes/attest",
+    response_model=OutcomeAttestationResponse,
+)
+def attest_outcome(req: OutcomeAttestationRequest) -> dict:
+    """Record an independently signed execution outcome."""
+    assert _storage is not None
+    try:
+        return OutcomeAttestationService(
+            _storage,
+            issuer_public_key(PUBLIC_KEY_PATH),
+        ).verify_and_record(req.attestation)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (KeyError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get(
+    "/v1/evidence/outcome/{authorization_id}",
+    response_model=OutcomeEvidenceResponse,
+)
+def outcome_evidence(authorization_id: str) -> dict:
+    assert _storage is not None
+    claims = _storage.outcome_claims_by_authorization(authorization_id)
+    return {
+        "authorization_id": authorization_id,
+        "claims": claims,
+        "attestations": [
+            att
+            for claim in claims
+            for att in _storage.outcome_attestations_by_claim(
+                claim["claim_id"]
+            )
+        ],
+    }
 
 
 @app.get("/v1/execution/networks")
 def execution_networks() -> list[dict]:
     return NetworkRegistry().as_dict()
+
+
+@app.get("/v1/authority/graph/{node_type}/{node_id}")
+def authority_graph_node(node_type: str, node_id: str, direction: str = "both") -> dict:
+    """Query durable authority provenance around one graph node."""
+    assert _storage is not None
+    if direction not in {"in", "out", "both"}:
+        raise HTTPException(status_code=400, detail="direction must be in, out, or both")
+    graph = AuthorityGraph(_storage)
+    incoming = graph.incoming(node_type, node_id) if direction in {"in", "both"} else []
+    outgoing = graph.outgoing(node_type, node_id) if direction in {"out", "both"} else []
+    return {
+        "node": {"type": node_type, "id": node_id},
+        "direction": direction,
+        "incoming": incoming,
+        "outgoing": outgoing,
+    }
+
+
+@app.get("/v1/authority/capabilities/{capability_id}")
+def authority_capability(capability_id: str) -> dict:
+    """Explain the authority provenance of one capability."""
+    assert _storage is not None
+    try:
+        explanation = AuthorityGraph(_storage).explain(capability_id)
+        capability = _storage.capability(capability_id)
+        if capability is not None:
+            dynamic = DynamicAuthorityService(_storage).explain(
+                capability.agent_id,
+                capability.capability_id,
+            )
+            explanation["dynamic_authority"] = dynamic
+        return explanation
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/v1/governance/policy")
+def governance_policy() -> dict:
+    assert _governance_policy is not None
+    return {
+        **_governance_policy.as_dict(),
+        "policy_sha256": _governance_policy.digest,
+    }
+
+
+@app.post(
+    "/v1/authority/reset",
+    response_model=AuthorityResetResponse,
+)
+def authority_reset(req: AuthorityResetRequest) -> dict:
+    assert _storage is not None
+    if _governance_policy is not None and _governance_policy.threshold >= 2:
+        raise HTTPException(
+            status_code=503,
+            detail="legacy single-governor recovery is disabled when multi-party governance is configured",
+        )
+    try:
+        return AuthorityGovernanceService(_storage).reset(
+            req.reset,
+            load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post(
+    "/v1/authority/reset/multi",
+    response_model=MultiPartyAuthorityResetResponse,
+)
+def authority_reset_multiparty(req: MultiPartyAuthorityResetRequest) -> dict:
+    assert _storage is not None and _governance_policy is not None
+    if _governance_policy.threshold < 2:
+        raise HTTPException(
+            status_code=503,
+            detail="multi-party governance policy is not configured",
+        )
+    try:
+        return MultiPartyAuthorityGovernanceService(_storage).reset(
+            req.action,
+            req.approvals,
+            _governance_policy,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/v1/execution/receipts/{authorization_id}")
@@ -159,9 +1091,238 @@ def execution_receipt(authorization_id: str) -> dict:
 
 @app.post("/v1/verify", response_model=VerifyResponse)
 def verify(req: VerifyRequest) -> dict:
-    pub = load_public_key(PUBLIC_KEY_PATH)
+    pub = issuer_public_key(PUBLIC_KEY_PATH)
     ok, reason = verify_attestation(req.model_dump(), pub)
     return {"valid": ok, "reason": reason}
+
+
+@app.post(
+    "/v1/policies/governed/publish",
+    response_model=GovernedPolicyPublishResponse,
+)
+def publish_governed_policy(req: GovernedPolicyPublishRequest) -> dict:
+    assert _storage is not None and _governance_policy is not None
+    if _governance_policy.threshold < 2:
+        raise HTTPException(
+            status_code=503,
+            detail="multi-party governance policy is not configured",
+        )
+    if "POLICY_CHANGE" not in _governance_policy.allowed_actions:
+        raise HTTPException(
+            status_code=403,
+            detail="governance policy does not allow policy changes",
+        )
+    try:
+        return GovernedPolicyVersionRegistry(_storage).publish(
+            req.policy,
+            req.governance_action,
+            req.approvals,
+            _governance_policy,
+            issuer_public_key(PUBLIC_KEY_PATH),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/v1/policies/governed/{policy_sha256}")
+def governed_policy(policy_sha256: str) -> dict:
+    assert _storage is not None
+    envelope = _storage.governed_policy_change_by_sha(policy_sha256)
+    if envelope is None:
+        raise HTTPException(status_code=404, detail="governed policy version not found")
+    return envelope
+
+
+@app.get("/v1/policies/governed/control/{policy_id}")
+def governed_policy_control(policy_id: str) -> dict:
+    assert _storage is not None
+    control = _storage.policy_control(policy_id)
+    if control is None:
+        raise HTTPException(status_code=404, detail="policy control state not found")
+    return control
+
+
+@app.post(
+    "/v1/policies/governed/freeze",
+    response_model=GovernedPolicyControlResponse,
+)
+def freeze_governed_policy(req: GovernedPolicyControlRequest) -> dict:
+    assert _storage is not None and _governance_policy is not None
+    if _governance_policy.threshold < 2:
+        raise HTTPException(
+            status_code=503,
+            detail="multi-party governance policy is not configured",
+        )
+    if "POLICY_FREEZE" not in _governance_policy.allowed_actions:
+        raise HTTPException(
+            status_code=403,
+            detail="governance policy does not allow policy freeze",
+        )
+    try:
+        action = req.governance_action
+        if action.get("action") != "POLICY_FREEZE":
+            raise PermissionError("unsupported policy control action")
+        return GovernedPolicyControlService(_storage).apply(
+            action,
+            req.approvals,
+            _governance_policy,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post(
+    "/v1/policies/governed/rollback",
+    response_model=GovernedPolicyControlResponse,
+)
+def rollback_governed_policy(req: GovernedPolicyControlRequest) -> dict:
+    assert _storage is not None and _governance_policy is not None
+    if _governance_policy.threshold < 2:
+        raise HTTPException(
+            status_code=503,
+            detail="multi-party governance policy is not configured",
+        )
+    if "POLICY_ROLLBACK" not in _governance_policy.allowed_actions:
+        raise HTTPException(
+            status_code=403,
+            detail="governance policy does not allow policy rollback",
+        )
+    try:
+        action = req.governance_action
+        if action.get("action") != "POLICY_ROLLBACK":
+            raise PermissionError("unsupported policy control action")
+        return GovernedPolicyControlService(_storage).apply(
+            action,
+            req.approvals,
+            _governance_policy,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/v1/policies/{policy_sha256}")
+def policy_version(policy_sha256: str) -> dict:
+    assert _storage is not None
+    artifact = _storage.policy_version_by_sha(policy_sha256)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="policy version not found")
+    return artifact
+
+
+@app.post("/v1/verify/adversarial", response_model=AdversarialVerificationResponse)
+def verify_adversarial(req: AdversarialVerificationRequest) -> dict:
+    public_key = issuer_public_key(PUBLIC_KEY_PATH)
+    authorization = req.authorization.model_dump()
+    baseline_valid, baseline_reason = verify_execution_authorization(
+        authorization,
+        public_key,
+    )
+    attacks = AdversarialVerificationPlane.run(
+        authorization,
+        public_key,
+    )
+    all_blocked = all(result.passed for result in attacks)
+    return {
+        "baseline_valid": baseline_valid,
+        "baseline_reason": baseline_reason,
+        "attacks": [
+            {
+                "attack_id": result.attack_id,
+                "passed": result.passed,
+                "description": result.description,
+                "reason": result.reason,
+            }
+            for result in attacks
+        ],
+        "all_blocked": all_blocked,
+    }
+
+
+@app.get("/v1/evidence/manifest/{authorization_id}")
+def evidence_manifest(authorization_id: str) -> dict:
+    """Export a signed, portable evidence package for offline verification."""
+    assert _storage is not None
+    try:
+        graph = EvidenceGraph(
+            _storage,
+            issuer_public_key(PUBLIC_KEY_PATH),
+            load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
+        ).build(authorization_id)
+        return build_manifest(graph, issuer_private_key(PRIVATE_KEY_PATH))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/v1/evidence/manifest/verify")
+def verify_evidence_manifest(manifest: dict, trusted_issuer_public_key_b64: str | None = None) -> dict:
+    """Verify a portable evidence package without reading Verigate storage."""
+    return verify_manifest(manifest, trusted_issuer_public_key_b64)
+
+
+@app.post("/v1/evidence/graph/{authorization_id}/snapshot")
+def snapshot_evidence_graph(authorization_id: str) -> dict:
+    """Persist an immutable, content-addressed evidence graph snapshot."""
+    assert _storage is not None
+    try:
+        graph = EvidenceGraph(
+            _storage,
+            issuer_public_key(PUBLIC_KEY_PATH),
+            load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
+        )
+        return EvidenceGraphService(_storage, graph).snapshot(authorization_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/v1/evidence/graph/{authorization_id}/snapshots")
+def evidence_graph_snapshots(authorization_id: str, limit: int = 50) -> dict:
+    assert _storage is not None
+    return {
+        "authorization_id": authorization_id,
+        "snapshots": _storage.evidence_graph_snapshots(authorization_id, limit=limit),
+    }
+
+
+@app.get("/v1/evidence/graph/snapshot/{snapshot_id}")
+def evidence_graph_snapshot(snapshot_id: str) -> dict:
+    assert _storage is not None
+    snapshot = _storage.evidence_graph_snapshot(snapshot_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="evidence graph snapshot not found")
+    valid, reason = EvidenceGraphService.verify_snapshot(snapshot)
+    return {**snapshot, "verification": {"valid": valid, "reason": reason}}
+
+
+@app.get("/v1/evidence/authorization/{authorization_id}")
+def evidence_authorization(authorization_id: str) -> dict:
+    assert _storage is not None
+    try:
+        return EvidenceGraph(
+            _storage,
+            issuer_public_key(PUBLIC_KEY_PATH),
+            load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
+        ).build(authorization_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/v1/evidence/intent/{intent_id}")
+def evidence_intent(intent_id: str) -> dict:
+    assert _storage is not None
+    try:
+        return EvidenceGraph(
+            _storage,
+            issuer_public_key(PUBLIC_KEY_PATH),
+            load_public_key(GOVERNANCE_PUBLIC_KEY_PATH),
+        ).build_by_intent(intent_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/v1/agents/{agent_id}/history")

@@ -58,13 +58,21 @@ class EVMExecutionAdapter(ExecutionAdapter):
             result["signed_raw_transaction"] = signed_raw_transaction
         return result
 
-    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+    def consume(
+        self,
+        authorization: dict[str, Any],
+        *,
+        verification_time: int | None = None,
+    ) -> tuple[bool, str]:
         action = authorization["payload"]["action"]
         try:
             self._transaction(action)
         except (KeyError, TypeError, ValueError) as exc:
             return False, str(exc)
-        return self.gate.consume(authorization)
+        return self.gate.consume(
+            authorization,
+            verification_time=verification_time,
+        )
 
     def execute(
         self,

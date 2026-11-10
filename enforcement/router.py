@@ -106,9 +106,17 @@ class ExecutionRouter:
 
         raise UnsupportedNetworkError(f"unsupported execution network: {network}")
 
-    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+    def consume(
+        self,
+        authorization: dict[str, Any],
+        *,
+        verification_time: int | None = None,
+    ) -> tuple[bool, str]:
         try:
-            return self._adapter(authorization).consume(authorization)
+            return self._adapter(authorization).consume(
+                authorization,
+                verification_time=verification_time,
+            )
         except (KeyError, TypeError, ValueError, UnsupportedNetworkError) as exc:
             return False, str(exc)
 

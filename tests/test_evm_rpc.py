@@ -96,3 +96,32 @@ class EvmRpcExecutionIntegrationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_get_block_by_number_uses_canonical_json_rpc_method():
+    import json
+
+    calls = []
+
+    def transport(endpoint, payload, headers, timeout):
+        calls.append(json.loads(payload))
+        return (
+            b'{"jsonrpc":"2.0","id":1,"result":'
+            b'{"number":"0x100","timestamp":"0x67200000","hash":"0xabc"}}'
+        )
+
+    client = EvmRpcClient("https://example.invalid", transport=transport)
+    block = client.get_block_by_number("0x100")
+
+    assert block["number"] == "0x100"
+    assert block["timestamp"] == "0x67200000"
+    assert calls[0]["method"] == "eth_getBlockByNumber"
+    assert calls[0]["params"] == ["0x100", False]
+
+
+def test_get_block_by_number_rejects_invalid_block_number():
+    import pytest
+
+    client = EvmRpcClient("https://example.invalid")
+    with pytest.raises(ValueError):
+        client.get_block_by_number("100")

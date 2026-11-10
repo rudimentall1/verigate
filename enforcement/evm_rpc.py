@@ -47,6 +47,27 @@ class EvmRpcClient:
             raise EvmRpcError(f"EVM RPC error: {body['error']}")
         return body.get("result")
 
+    def get_code(self, address: str, block_tag: str = "latest") -> str:
+        result = self._request("eth_getCode", [address, block_tag])
+        if not isinstance(result, str) or not result.startswith("0x"):
+            raise EvmRpcError("eth_getCode returned invalid result")
+        return result
+
+    def get_storage_at(self, address: str, slot: str, block_tag: str = "latest") -> str:
+        result = self._request("eth_getStorageAt", [address, slot, block_tag])
+        if not isinstance(result, str) or not result.startswith("0x"):
+            raise EvmRpcError("eth_getStorageAt returned invalid result")
+        return result
+
+    def block_number(self) -> int:
+        result = self._request("eth_blockNumber", [])
+        if not isinstance(result, str) or not result.startswith("0x"):
+            raise EvmRpcError("eth_blockNumber returned invalid result")
+        try:
+            return int(result, 16)
+        except ValueError as exc:
+            raise EvmRpcError("eth_blockNumber returned invalid hex") from exc
+
     def chain_id(self) -> int:
         result = self._request("eth_chainId", [])
         if not isinstance(result, str) or not result.startswith("0x"):
@@ -55,6 +76,30 @@ class EvmRpcClient:
             return int(result, 16)
         except ValueError as exc:
             raise EvmRpcError("eth_chainId returned invalid hex") from exc
+
+    def gas_price_wei(self) -> int:
+        result = self._request("eth_gasPrice", [])
+        if not isinstance(result, str) or not result.startswith("0x"):
+            raise EvmRpcError("eth_gasPrice returned invalid result")
+        try:
+            return int(result, 16)
+        except ValueError as exc:
+            raise EvmRpcError("eth_gasPrice returned invalid hex") from exc
+
+    def eth_call(self, to: str, data: str, block_tag: str = "latest") -> str:
+        if not isinstance(to, str) or not to.startswith("0x") or len(to) != 42:
+            raise ValueError("eth_call target must be a 20-byte EVM address")
+        if (
+            not isinstance(data, str)
+            or not data.startswith("0x")
+            or len(data[2:]) % 2
+            or any(char not in "0123456789abcdefABCDEF" for char in data[2:])
+        ):
+            raise ValueError("eth_call data must be 0x-prefixed even-length hex")
+        result = self._request("eth_call", [{"to": to, "data": data}, block_tag])
+        if not isinstance(result, str) or not result.startswith("0x"):
+            raise EvmRpcError("eth_call returned invalid result")
+        return result
 
     def send_raw_transaction(self, signed_raw_transaction: str) -> str:
         if (
@@ -68,6 +113,37 @@ class EvmRpcClient:
         result = self._request("eth_sendRawTransaction", [signed_raw_transaction])
         if not isinstance(result, str) or not result.startswith("0x"):
             raise EvmRpcError("eth_sendRawTransaction returned no transaction hash")
+        return result
+
+    def get_transaction_by_hash(self, transaction_hash: str) -> dict[str, Any] | None:
+        if (
+            not isinstance(transaction_hash, str)
+            or len(transaction_hash) != 66
+            or not transaction_hash.startswith("0x")
+            or any(c not in "0123456789abcdefABCDEF" for c in transaction_hash[2:])
+        ):
+            raise ValueError("invalid EVM transaction hash")
+        result = self._request("eth_getTransactionByHash", [transaction_hash])
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            raise EvmRpcError("eth_getTransactionByHash returned invalid result")
+        return result
+
+    def get_block_by_number(self, block_number: str) -> dict[str, Any] | None:
+        if (
+            not isinstance(block_number, str)
+            or not block_number.startswith("0x")
+            or len(block_number) <= 2
+            or any(c not in "0123456789abcdefABCDEF" for c in block_number[2:])
+        ):
+            raise ValueError("invalid EVM block number")
+
+        result = self._request("eth_getBlockByNumber", [block_number, False])
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            raise EvmRpcError("eth_getBlockByNumber returned invalid result")
         return result
 
     def get_transaction_receipt(self, transaction_hash: str) -> dict[str, Any] | None:

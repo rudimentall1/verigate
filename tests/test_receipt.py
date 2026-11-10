@@ -1,9 +1,11 @@
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import tempfile
 import unittest
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import sign_receipt, verify_receipt, verify_execution_authorization
+from attest.verify import verify_attestation
 from core.models import ActionIntent, Decision, GuardrailDecision, PaymentIntent
 from core.engine import GuardrailEngine
 from core.policy import Policy
@@ -49,7 +51,7 @@ class AuthorizationReceiptTest(unittest.TestCase):
         self.assertTrue(ok, reason)
 
 
-    def test_engine_authorize_produces_and_persists_receipt(self):
+    def test_engine_authorize_produces_decision_receipt_without_execution_authority(self):
         policy_path = Path(self.tmpdir.name) / "policy.yaml"
         policy_path.write_text("allowed_networks: [base]\nallowed_assets: [USDC]\n", encoding="utf-8")
         policy = Policy.load(policy_path)
@@ -65,10 +67,7 @@ class AuthorizationReceiptTest(unittest.TestCase):
             execution = result["execution_authorization"]
             self.assertEqual(receipt["payload"]["intent"]["action_type"], "payment")
             self.assertEqual(receipt["payload"]["policy_sha256"], policy.digest)
-            self.assertIsNotNone(execution)
-            self.assertEqual(execution["payload"]["action"], receipt["payload"]["intent"])
-            self.assertEqual(len(execution["payload"]["action_sha256"]), 64)
-            self.assertTrue(verify_execution_authorization(execution, load_public_key(self.pub))[0])
+            self.assertIsNone(execution)
             self.assertEqual(storage.count_intent(intent.intent_id), 1)
             row = storage._conn.execute(
                 "SELECT signature FROM audit_log WHERE intent_id = ?", (intent.intent_id,)
@@ -135,3 +134,33 @@ class AuthorizationReceiptTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_decision_receipt_rejects_context_fingerprint_drift():
+    key = Ed25519PrivateKey.generate()
+    action = ActionIntent(agent_id="agent", action_type="api.request", target="payments", purpose="invoice")
+    decision = GuardrailDecision(action.intent_id, action.agent_id, Decision.ALLOW, (), context_digest=action.context_digest)
+    receipt = sign_receipt(action, decision, "a" * 64, key).as_dict()
+    receipt["payload"]["decision"]["context_sha256"] = "b" * 64
+    ok, reason = verify_receipt(receipt, key.public_key())
+    assert not ok
+    assert "context fingerprint" in reason
+
+def test_independent_attestation_verifier_accepts_unicode_payload():
+    import base64
+    import json
+
+    key = Ed25519PrivateKey.generate()
+    payload = {"action": "перевод", "metadata": {"label": "café", "symbol": "β"}}
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    attestation = {
+        "payload": payload,
+        "signature": base64.b64encode(key.sign(canonical)).decode("ascii"),
+        "algorithm": "Ed25519",
+    }
+
+    ok, reason = verify_attestation(attestation, key.public_key())
+    assert ok, reason
+

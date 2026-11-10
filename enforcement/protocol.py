@@ -12,7 +12,12 @@ class ExecutionAdapter(Protocol):
     the adapter has accepted the one-time ExecutionAuthorization.
     """
 
-    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+    def consume(
+        self,
+        authorization: dict[str, Any],
+        *,
+        verification_time: int | None = None,
+    ) -> tuple[bool, str]:
         ...
 
     def execute(

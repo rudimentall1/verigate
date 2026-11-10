@@ -1,0 +1,156 @@
+"""Portable, signed Evidence Manifest and offline verification.
+
+The manifest is a deterministic export of the authority lifecycle for one
+consequential action. It is deliberately independent of SQLite and the API so
+an auditor can verify integrity without access to Verigate itself.
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+from typing import Any
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+
+from core.proof_engine import canonical, digest
+from core.proof_protocol import build_authority_assertions, assertion_set_digest
+from core.proof_profiles import assurance_claims
+from core.proof_validators import validate_profile
+
+
+def _node_leaf(node: dict[str, Any]) -> str:
+    return hashlib.sha256(("node:" + node["sha256"]).encode("ascii")).hexdigest()
+
+
+def _edge_leaf(edge: dict[str, str]) -> str:
+    return hashlib.sha256(("edge:" + digest(edge)).encode("ascii")).hexdigest()
+
+
+def merkle_root(leaves: list[str]) -> str:
+    if not leaves:
+        return hashlib.sha256(b"VERIGATE-EVIDENCE-MERKLE:v1:empty").hexdigest()
+    level = sorted(leaves)
+    while len(level) > 1:
+        if len(level) % 2:
+            level.append(level[-1])
+        level = [
+            hashlib.sha256(("pair:" + level[i] + ":" + level[i + 1]).encode("ascii")).hexdigest()
+            for i in range(0, len(level), 2)
+        ]
+    return level[0]
+
+
+def graph_root(graph: dict[str, Any]) -> str:
+    leaves = [_node_leaf(node) for node in graph.get("nodes", [])]
+    leaves.extend(_edge_leaf(edge) for edge in graph.get("edges", []))
+    return merkle_root(leaves)
+
+
+
+
+def _manifest_payload(graph: dict[str, Any], proof_profile: str = "integrity") -> dict[str, Any]:
+    return {
+        "manifest_version": 1,
+        "proof_profile": proof_profile,
+        "authorization_id": graph["authorization_id"],
+        "intent_id": graph["intent_id"],
+        "agent_id": graph["agent_id"],
+        "graph_version": graph.get("graph_version", 1),
+        "nodes": graph.get("nodes", []),
+        "edges": graph.get("edges", []),
+        "verification": graph.get("verification", {}),
+        "audit": graph.get("audit", {}),
+        "root_digest": graph_root(graph),
+        "historical_authority": graph.get("historical_authority", {}),
+    }
+
+
+def build_manifest(
+    graph: dict[str, Any],
+    private_key: Ed25519PrivateKey,
+    proof_profile: str = "integrity",
+) -> dict[str, Any]:
+    payload = _manifest_payload(graph, proof_profile)
+    if proof_profile == "authority_lifecycle":
+        # Assertions are signed as part of the manifest itself, so the
+        # independent verifier does not need the ProofPackage envelope.
+        provisional = {"payload": payload}
+        assertions = build_authority_assertions(provisional)
+        payload["authority_assertions"] = assertions
+        payload["authority_assertions_sha256"] = assertion_set_digest(assertions)
+    profile_ok, profile_reason = validate_profile(payload, proof_profile)
+    if not profile_ok:
+        raise ValueError(profile_reason)
+    signature = base64.b64encode(private_key.sign(canonical(payload))).decode("ascii")
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    return {
+        "payload": payload,
+        "signature": signature,
+        "algorithm": "Ed25519",
+        "issuer_public_key_b64": base64.b64encode(public_key).decode("ascii"),
+    }
+
+
+def _verify_nodes(payload: dict[str, Any]) -> tuple[bool, str]:
+    nodes = payload.get("nodes")
+    edges = payload.get("edges")
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        return False, "manifest graph is malformed"
+    node_refs: set[str] = set()
+    for node in nodes:
+        if not isinstance(node, dict) or not all(k in node for k in ("type", "id", "sha256", "data")):
+            return False, "manifest contains malformed node"
+        if digest(node["data"]) != node["sha256"]:
+            return False, f"node digest mismatch: {node.get('type')}:{node.get('id')}"
+        ref = f"{node['type']}:{node['id']}"
+        if ref in node_refs:
+            return False, f"duplicate node: {ref}"
+        node_refs.add(ref)
+    for edge in edges:
+        if not isinstance(edge, dict) or not all(k in edge for k in ("from", "relation", "to")):
+            return False, "manifest contains malformed edge"
+        if edge["from"] not in node_refs or edge["to"] not in node_refs:
+            return False, "manifest contains dangling edge"
+    return True, "all graph nodes and edges are internally consistent"
+
+
+def verify_manifest(
+    manifest: dict[str, Any],
+    trusted_public_key_b64: str | None = None,
+) -> dict[str, Any]:
+    from core.proof_engine import verify_signed_proof
+
+    result = verify_signed_proof(
+        manifest,
+        trusted_public_key_b64=trusted_public_key_b64,
+        node_validator=_verify_nodes,
+        profile_validator=validate_profile,
+        root_calculator=graph_root,
+        assurance_claims=assurance_claims,
+    )
+    response = {
+        "valid": result.valid,
+        "reason": result.reason,
+    }
+    if result.root_digest is not None:
+        response["root_digest"] = result.root_digest
+    if result.invalid_evidence:
+        response["invalid_evidence"] = list(result.invalid_evidence)
+    if result.assurance is not None:
+        response["assurance"] = result.assurance
+    if result.valid:
+        payload = manifest["payload"]
+        response.update({
+            "node_count": len(payload["nodes"]),
+            "edge_count": len(payload["edges"]),
+            "embedded_issuer_trusted": trusted_public_key_b64 is not None,
+            "invalid_evidence": [],
+        })
+    elif result.reason != "evidence verification failed" and result.invalid_evidence:
+        response["invalid_evidence"] = list(result.invalid_evidence)
+    return response

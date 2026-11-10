@@ -22,25 +22,42 @@ class ExecutionGate(ExecutionAdapter):
         self.storage = storage
         self.public_key = public_key
 
-    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
-        """Verify and consume an authorization exactly once.
-
-        This method does not perform the side effect itself. Callers must only
-        execute after it returns (True, ...). Nonce consumption is persistent
-        and protected by a UNIQUE database constraint.
-        """
+    def validate(
+        self,
+        authorization: dict[str, Any],
+        *,
+        verification_time: int | None = None,
+    ) -> tuple[bool, str]:
+        """Verify using local time or trusted on-chain inclusion time."""
         ok, reason = verify_execution_authorization(
             authorization,
             self.public_key,
+            verification_time=verification_time,
         )
         if not ok:
             return False, reason
 
         payload = authorization["payload"]
-        action = payload["action"]
-        if int(payload["issued_at"]) > int(time.time()):
+        now = int(time.time()) if verification_time is None else verification_time
+        if int(payload["issued_at"]) > now:
             return False, "execution authorization is not active yet"
+        return True, "execution authorization valid"
 
+    def consume(
+        self,
+        authorization: dict[str, Any],
+        *,
+        verification_time: int | None = None,
+    ) -> tuple[bool, str]:
+        """Verify and consume an authorization exactly once."""
+        ok, reason = self.validate(
+            authorization,
+            verification_time=verification_time,
+        )
+        if not ok:
+            return False, reason
+
+        payload = authorization["payload"]
         consumed = self.storage.consume_execution_nonce(
             nonce=payload["nonce"],
             authorization_id=payload["authorization_id"],
