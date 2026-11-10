@@ -5,6 +5,7 @@ These documents are retained for historical traceability. They describe older ve
 - [App 0.1.10 release readiness](0.1.10-RELEASE-READINESS.md)
 - [App 0.1.11 / Executa 0.1.10 execution authorization integration](0.1.11-EXECUTION-AUTH-INTEGRATION.md)
 - [App 0.1.12 / Executa 0.1.11 wallet execution](0.1.12-WALLET-EXECUTION.md)
+- [Live MetaMask integration checkpoint — 9 November 2026](SESSION-CHECKPOINT-2026-11-10-LIVE-METAMASK.md) — real Brave/MetaMask hand-off, ExecutionRouter consumption and user-denied signature result.
 - [Full historical Anna release-gate log through App 0.1.28](RELEASE-GATE-2026-11-09.md)
 
 For the current authoritative state, use [RELEASE-STATUS.md](../RELEASE-STATUS.md).
