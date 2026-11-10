@@ -1177,7 +1177,14 @@ async function prepareExecutionAuthorization() {
     return;
   }
   if (!confirmed) {
-    setBusy(false, "Permission creation was cancelled. No approval was written.");
+    const cancellationMessage = isWarningReview
+      ? "Warning review cancelled. No approval was written."
+      : "Permission creation was cancelled. No approval was written.";
+    $("execution-status").textContent = cancellationMessage;
+    $("execution-summary").textContent = isWarningReview
+      ? "You cancelled the warning review. No one-time execution permission was created, and no funds were sent."
+      : "You cancelled permission creation. No one-time execution permission was created, and no funds were sent.";
+    setBusy(false, cancellationMessage);
     return;
   }
 
