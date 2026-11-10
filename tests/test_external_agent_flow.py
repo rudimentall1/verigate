@@ -1,6 +1,7 @@
 import tempfile
 import time
 import unittest
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -53,7 +54,8 @@ class ExternalAgentFlowTest(unittest.TestCase):
             action_type="payment",
             target=target,
             resource="invoice:flow-test",
-            amount=1.0,
+            amount=Decimal("1.0"),
+            amount_exact="1.0",
             asset="USDC",
             network="base",
             intent_id=intent_id or f"external-agent-{time.time_ns()}",
