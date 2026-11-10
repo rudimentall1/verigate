@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
-from attest.receipt import verify_execution_receipt
+from attest.receipt import sign_execution_receipt, verify_execution_receipt
 from core.authorization import AuthorizationService
 from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 from core.storage import Storage
@@ -123,6 +123,90 @@ class ExecutionReceiptTest(unittest.TestCase):
         value = receipt.as_dict()
         value["payload"]["transaction_ref"] = "0xevil"
         self.assertFalse(verify_execution_receipt(value, load_public_key(self.public))[0])
+
+
+    def test_wallet_outcome_receipts_are_signed_and_status_specific(self):
+        auth = self._authorization(
+            "base",
+            {"evm_transaction": {"chain_id": 8453, "to": "0xMerchant", "value_wei": 0, "data": "0x"}},
+        )
+        cases = (
+            ("REJECTED", "wallet_request", 4001, "User rejected transaction signature"),
+            ("ABORTED", "pre_wallet_request", None, "Wallet account changed before submission"),
+            ("ABORTED", "router_response_unknown", None, "Router response was lost; wallet was not called"),
+            ("UNKNOWN", "wallet_request", 4900, "Wallet connection was lost while awaiting submission"),
+        )
+        for status, phase, error_code, message in cases:
+            with self.subTest(status=status, phase=phase):
+                receipt = sign_execution_receipt(
+                    auth,
+                    status=status,
+                    transaction_ref=None,
+                    executor="anna-eip1193-wallet",
+                    private_key=load_private_key(self.private),
+                    error=message,
+                    submission_data={
+                        "source": "anna_eip1193_wallet",
+                        "phase": phase,
+                        "error_code": error_code,
+                        "sender": "0x" + "11" * 20,
+                    },
+                ).as_dict()
+                self.assertEqual(receipt["payload"]["transaction_ref"], None)
+                self.assertTrue(
+                    verify_execution_receipt(receipt, load_public_key(self.public), auth)[0]
+                )
+
+    def test_wallet_outcome_receipt_rejects_false_status_claims(self):
+        auth = self._authorization(
+            "base",
+            {"evm_transaction": {"chain_id": 8453, "to": "0xMerchant", "value_wei": 0, "data": "0x"}},
+        )
+        invalid_cases = (
+            ("REJECTED", "wallet_request", 4900),
+            ("UNKNOWN", "wallet_request", 4001),
+            ("ABORTED", "wallet_request", None),
+            ("REJECTED", "pre_wallet_request", 4001),
+        )
+        for status, phase, error_code in invalid_cases:
+            with self.subTest(status=status, phase=phase, error_code=error_code):
+                with self.assertRaises(ValueError):
+                    sign_execution_receipt(
+                        auth,
+                        status=status,
+                        transaction_ref=None,
+                        executor="anna-eip1193-wallet",
+                        private_key=load_private_key(self.private),
+                        error="wallet outcome",
+                        submission_data={
+                            "source": "anna_eip1193_wallet",
+                            "phase": phase,
+                            "error_code": error_code,
+                        },
+                    )
+
+    def test_wallet_outcome_receipt_tampering_fails_verification(self):
+        auth = self._authorization(
+            "base",
+            {"evm_transaction": {"chain_id": 8453, "to": "0xMerchant", "value_wei": 0, "data": "0x"}},
+        )
+        receipt = sign_execution_receipt(
+            auth,
+            status="REJECTED",
+            transaction_ref=None,
+            executor="anna-eip1193-wallet",
+            private_key=load_private_key(self.private),
+            error="User rejected transaction signature",
+            submission_data={
+                "source": "anna_eip1193_wallet",
+                "phase": "wallet_request",
+                "error_code": 4001,
+            },
+        ).as_dict()
+        receipt["payload"]["submission_data"]["error_code"] = 4100
+        ok, reason = verify_execution_receipt(receipt, load_public_key(self.public), auth)
+        self.assertFalse(ok)
+        self.assertNotEqual(reason, "valid execution receipt")
 
 
 if __name__ == "__main__":
