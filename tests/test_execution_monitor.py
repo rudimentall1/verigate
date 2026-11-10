@@ -116,8 +116,10 @@ class ExecutionMonitorTest(unittest.TestCase):
         calls = []
         monitor = ExecutionMonitor({
             "base": type("Provider", (), {
-                "confirm_transaction": lambda self, ref: calls.append(ref)
+                "confirm_transaction": lambda self, ref: (
+                    calls.append(ref)
                     or {"state": "CONFIRMED", "transaction_ref": ref}
+                )
             })()
         })
         for status in ("REJECTED", "ABORTED", "UNKNOWN"):
