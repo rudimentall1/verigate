@@ -7,7 +7,9 @@ the protected side effect on the caller's behalf.
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
+from urllib.parse import urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -44,14 +46,21 @@ class VerigateClient:
         if not isinstance(base_url, str) or not base_url.strip():
             raise ValueError("base_url must be a non-empty URL")
         normalized = base_url.strip().rstrip("/")
-        if not normalized.startswith(("http://", "https://")):
-            raise ValueError("base_url must start with http:// or https://")
-        if timeout <= 0:
-            raise ValueError("timeout must be greater than zero")
+        parsed_url = urlsplit(normalized)
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.hostname:
+            raise ValueError("base_url must be an absolute http:// or https:// URL")
+        if parsed_url.username or parsed_url.password or parsed_url.query or parsed_url.fragment:
+            raise ValueError("base_url must not contain credentials, query parameters or fragments")
+        try:
+            timeout_value = float(timeout)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("timeout must be a finite number greater than zero") from exc
+        if not math.isfinite(timeout_value) or timeout_value <= 0:
+            raise ValueError("timeout must be a finite number greater than zero")
         self.base_url = normalized
         self.api_key = api_key
         self.tenant_id = tenant_id
-        self.timeout = float(timeout)
+        self.timeout = timeout_value
 
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         if not path.startswith("/") or ".." in path.split("/"):
