@@ -14,16 +14,17 @@
 
 ## What has been observed in Anna Runtime
 
-Live Runtime tests were performed on immutable App versions **0.1.25** and **0.1.26**, not on a successful payment from App 0.1.28. The observed flow included:
+The reviewed recordings from 9–10 November demonstrate the Anna interpretation and policy-preview path:
 
-1. Anna host Sampling interpreted a natural-language payment request and returned contextual risk review.
-2. Verigate produced a deterministic policy decision and the App verified the Ed25519 Decision Receipt.
-3. The user explicitly confirmed the exact payment.
-4. Verigate issued a one-time Execution Authorization bound to the payment.
-5. ExecutionRouter consumed the authorization before the wallet prompt.
-6. MetaMask displayed the 25 USDC Base transfer. The user cancelled because the test wallet was empty.
+1. Anna host Sampling interpreted natural-language payment requests and returned contextual risk findings.
+2. Verigate returned deterministic ALLOW, BLOCK and WARN decisions.
+3. The App verified Ed25519-signed Decision Receipts before displaying results.
+4. A prompt-injection request escalated to WARN with `prompt_injection` and `urgency_pressure` flags.
+5. The App displayed the explicit payment/warning confirmation dialog. In the 10 November recording, the user deliberately selected Cancel; no App-scope approval was written and no permission was created in that attempt.
 
-**No wallet signature, transaction hash, broadcast, on-chain inclusion or settlement occurred.** App 0.1.27 hardened the lifecycle after these Runtime tests; 0.1.28 retains that runtime and refreshes listing media.
+**No wallet was connected in these tests.** No live ExecutionRouter consumption, wallet signature, transaction hash, broadcast, on-chain inclusion or settlement is claimed. Earlier text in this file describing MetaMask display and router consumption was inaccurate and is withdrawn.
+
+The 10 November recording does not display an immutable App version identifier. It therefore does not establish live Runtime acceptance of App 0.1.28. App 0.1.28 remains the Draft listing refresh described above; its runtime is inherited from 0.1.27.
 
 ## Automated and build evidence
 
