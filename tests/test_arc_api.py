@@ -395,6 +395,13 @@ class ArcApiTest(unittest.TestCase):
                 self.assertTrue(valid, reason)
                 expired, _ = verify_execution_authorization(authorization, server_public_key)
                 self.assertFalse(expired, "authorization must be expired by real server time")
+                at_expiry, expiry_reason = verify_execution_authorization(
+                    authorization,
+                    server_public_key,
+                    verification_time=authorization["payload"]["expires_at"],
+                )
+                self.assertFalse(at_expiry, "authorization must be invalid at the exact expiry second")
+                self.assertEqual(expiry_reason, "execution authorization expired")
 
                 bypass = client.post(
                     "/v1/execution/consume",
