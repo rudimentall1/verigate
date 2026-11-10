@@ -44,7 +44,10 @@ class ExecutionGate(ExecutionAdapter):
         execute after it returns (True, ...). Nonce consumption is persistent
         and protected by a UNIQUE database constraint.
         """
-        ok, reason = self.validate(authorization, verification_time=verification_time)
+        if verification_time is None:
+            ok, reason = self.validate(authorization)
+        else:
+            ok, reason = self.validate(authorization, verification_time=verification_time)
         if not ok:
             return False, reason
 
