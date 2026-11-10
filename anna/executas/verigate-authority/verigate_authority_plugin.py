@@ -34,7 +34,7 @@ _storage = StorageClient()
 _route_response = make_response_router(_sampling, _storage)
 _loop = None
 
-VERSION = "0.1.16"
+VERSION = "0.1.17"
 _POLICY_PATH = _BUNDLE_ROOT / "policies" / "anna.yaml"
 
 # Anna Executa protocol 2.0: negotiate APS support in `initialize`; keep
@@ -158,6 +158,26 @@ MANIFEST = {
                 {"name": "transaction_hash", "type": "string", "description": "Exact 32-byte transaction hash returned by the connected wallet.", "required": True},
                 {"name": "sender", "type": "string", "description": "Connected wallet address used for this submission.", "required": True},
                 {"name": "confirmation_nonce", "type": "string", "description": "One-time App UI approval created after the wallet returned the transaction hash.", "required": True}
+            ],
+        },
+        {
+            "name": "verigate_record_wallet_outcome_receipt",
+            "description": (
+                "Persist an Ed25519-signed Anna self-report for an already-consumed wallet authorization. "
+                "REJECTED is accepted only for EIP-1193 error 4001; ABORTED is accepted only when the wallet "
+                "request was not started or a lost Router response is proven consumed in the nonce ledger; "
+                "UNKNOWN records an ambiguous eth_sendTransaction result. This is not wallet-signed evidence "
+                "or independent chain confirmation. Requires a fresh exact App-scope approval."
+            ),
+            "timeout": 30,
+            "parameters": [
+                {"name": "authorization_id", "type": "string", "description": "Previously issued and Router-consumed authorization ID.", "required": True},
+                {"name": "outcome", "type": "string", "description": "One of REJECTED, ABORTED or UNKNOWN.", "required": True},
+                {"name": "phase", "type": "string", "description": "wallet_request, pre_wallet_request or router_response_unknown.", "required": True},
+                {"name": "error_code", "type": "integer", "description": "EIP-1193 provider error code, or null when unavailable.", "required": False},
+                {"name": "error_message", "type": "string", "description": "Bounded wallet/runtime error description observed by Anna.", "required": True},
+                {"name": "sender", "type": "string", "description": "Connected EVM sender address, or empty when account access was unavailable.", "required": False, "default": ""},
+                {"name": "confirmation_nonce", "type": "string", "description": "Fresh one-time App-scope approval for this exact wallet outcome.", "required": True}
             ],
         },
         {
@@ -1109,6 +1129,221 @@ async def _verigate_record_wallet_submission_receipt(args: dict) -> dict:
         return {"success": False, "error": f"wallet submission receipt not recorded: {exc}"}
 
 
+
+async def _verigate_record_wallet_outcome_receipt(args: dict) -> dict:
+    """Record a signed, authorization-bound EIP-1193 outcome self-report."""
+    authorization_id = args.get("authorization_id")
+    outcome = args.get("outcome")
+    phase = args.get("phase")
+    error_code = args.get("error_code")
+    error_message = args.get("error_message")
+    sender = args.get("sender") or None
+
+    if not isinstance(authorization_id, str) or re.fullmatch(r"[0-9a-fA-F]{64}", authorization_id) is None:
+        return {"success": False, "error": "authorization_id must be a 32-byte hex identifier"}
+    if outcome not in {"REJECTED", "ABORTED", "UNKNOWN"}:
+        return {"success": False, "error": "outcome must be REJECTED, ABORTED or UNKNOWN"}
+    if error_code is not None and (
+        isinstance(error_code, bool) or not isinstance(error_code, int)
+    ):
+        return {"success": False, "error": "error_code must be an integer or null"}
+    if not isinstance(error_message, str) or not error_message.strip() or len(error_message) > 500:
+        return {"success": False, "error": "error_message must be 1-500 characters"}
+    error_message = error_message.strip()
+    if sender is not None:
+        if not isinstance(sender, str) or re.fullmatch(r"0x[0-9a-fA-F]{40}", sender) is None:
+            return {"success": False, "error": "sender must be a 20-byte EVM address or empty"}
+        sender = sender.lower()
+
+    if outcome == "REJECTED" and (phase != "wallet_request" or error_code != 4001):
+        return {"success": False, "error": "REJECTED requires EIP-1193 error 4001 during eth_sendTransaction"}
+    if outcome == "ABORTED" and phase not in {"pre_wallet_request", "router_response_unknown"}:
+        return {"success": False, "error": "ABORTED requires a verified pre-wallet abort phase"}
+    if outcome == "UNKNOWN" and (phase != "wallet_request" or error_code == 4001):
+        return {"success": False, "error": "UNKNOWN requires an ambiguous eth_sendTransaction outcome, not a user rejection"}
+
+    authorization_id = authorization_id.lower()
+    try:
+        from attest.keys import load_public_key
+        from attest.receipt import (
+            sign_execution_receipt,
+            verify_execution_authorization,
+            verify_execution_receipt,
+        )
+        from enforcement.evm import EVMExecutionAdapter
+
+        engine, private_key = _get_state()
+        stored = engine.storage.authorization_by_id(authorization_id)
+        if not isinstance(stored, dict) or not isinstance(stored.get("execution_authorization"), dict):
+            raise LookupError("stored Execution Authorization was not found")
+        authorization = stored["execution_authorization"]
+        payload = authorization.get("payload")
+        if not isinstance(payload, dict) or payload.get("authorization_id") != authorization_id:
+            raise PermissionError("stored Execution Authorization identity mismatch")
+
+        # A negative receipt is valid only after ExecutionRouter consumed the
+        # exact signed nonce. A caller-provided status or authorization ID is
+        # insufficient to establish that boundary.
+        nonce_record = engine.storage.execution_nonce_by_authorization(
+            authorization_id, payload.get("nonce", "")
+        )
+        if nonce_record is None:
+            raise PermissionError("ExecutionRouter has not consumed this authorization")
+        if (
+            nonce_record.get("intent_id") != payload.get("intent_id")
+            or nonce_record.get("agent_id") != payload.get("agent_id")
+        ):
+            raise PermissionError("consumed execution nonce does not match the stored authorization")
+        consumed_at = nonce_record.get("consumed_at")
+        if isinstance(consumed_at, bool) or not isinstance(consumed_at, (int, float)):
+            raise PermissionError("consumed execution nonce has no valid timestamp")
+        verification_time = int(consumed_at)
+        issued_at = payload.get("issued_at")
+        expires_at = payload.get("expires_at")
+        if (
+            isinstance(issued_at, bool) or not isinstance(issued_at, int)
+            or isinstance(expires_at, bool) or not isinstance(expires_at, int)
+            or verification_time < issued_at or verification_time > expires_at
+        ):
+            raise PermissionError("authorization was not consumed within its signed validity window")
+
+        public_key = load_public_key(_resolve_data_dir() / "issuer.pub")
+        valid, reason = verify_execution_authorization(
+            authorization, public_key, verification_time=verification_time
+        )
+        if not valid:
+            raise PermissionError(f"stored Execution Authorization is invalid: {reason}")
+
+        action = payload.get("action")
+        if not isinstance(action, dict):
+            raise ValueError("stored authorization has no action")
+        network = str(action.get("network") or "").lower()
+        asset = str(action.get("asset") or "").upper()
+        if network not in _EVM_USDC_NETWORKS or asset != "USDC":
+            raise ValueError("wallet outcome receipts are supported only for native USDC on Base and Ethereum")
+
+        transaction = EVMExecutionAdapter._transaction(action)
+        expected_transaction = _build_anna_evm_transaction(
+            network, asset, action.get("target"), action.get("amount")
+        )
+        if expected_transaction is None or transaction != expected_transaction:
+            raise ValueError("stored EVM transaction does not match the authorized USDC payment")
+        if transaction.get("chain_id") != _EVM_USDC_NETWORKS[network]["chain_id"]:
+            raise ValueError("stored EVM chain does not match the authorized network")
+
+        submission_data = {
+            "source": "anna_eip1193_wallet",
+            "phase": phase,
+            "error_code": error_code,
+            "sender": sender,
+            "network": network,
+            "chain_id": transaction["chain_id"],
+            "to": str(transaction["to"]).lower(),
+            "value_wei": transaction["value_wei"],
+            "calldata_sha256": hashlib.sha256(
+                str(transaction["data"]).lower().encode("ascii")
+            ).hexdigest(),
+        }
+        approval = {
+            "kind": "wallet_outcome_receipt",
+            "authorization_id": authorization_id,
+            "outcome": outcome,
+            "phase": phase,
+            "error_code": error_code,
+            "error_message": error_message,
+            "sender": sender,
+            "network": network,
+            "chain_id": transaction["chain_id"],
+            "to": str(transaction["to"]).lower(),
+            "value_wei": transaction["value_wei"],
+            "data": str(transaction["data"]).lower(),
+        }
+        await _consume_app_approval(args.get("confirmation_nonce"), approval)
+
+        existing = engine.storage.execution_receipt_by_authorization(authorization_id)
+        if existing is not None:
+            existing_valid, existing_reason = verify_execution_receipt(
+                existing, public_key, authorization
+            )
+            if not existing_valid:
+                raise PermissionError(f"stored execution receipt is invalid: {existing_reason}")
+            if (
+                existing.get("payload", {}).get("status") != outcome
+                or existing.get("payload", {}).get("transaction_ref") is not None
+                or existing.get("payload", {}).get("submission_data") != submission_data
+                or existing.get("payload", {}).get("error") != error_message
+            ):
+                raise PermissionError("a different execution outcome receipt is already recorded for this authorization")
+            return {
+                "success": True,
+                "data": {
+                    "authorization_id": authorization_id,
+                    "execution_status": outcome,
+                    "wallet_submission_recorded": False,
+                    "transaction_submitted": False,
+                    "execution_receipt": existing,
+                    "receipt_verified": True,
+                    "receipt_trust_scope": "wallet_outcome_self_report",
+                    "independent_chain_confirmation": False,
+                    "idempotent": True,
+                },
+            }
+
+        receipt = sign_execution_receipt(
+            authorization,
+            status=outcome,
+            transaction_ref=None,
+            executor="anna-eip1193-wallet",
+            private_key=private_key,
+            error=error_message,
+            submission_data=submission_data,
+        ).as_dict()
+        try:
+            engine.storage.record_execution_receipt(receipt)
+        except ValueError:
+            raced = engine.storage.execution_receipt_by_authorization(authorization_id)
+            if raced is None:
+                raise
+            raced_valid, raced_reason = verify_execution_receipt(
+                raced, public_key, authorization
+            )
+            if (
+                not raced_valid
+                or raced.get("payload", {}).get("status") != outcome
+                or raced.get("payload", {}).get("transaction_ref") is not None
+                or raced.get("payload", {}).get("submission_data") != submission_data
+                or raced.get("payload", {}).get("error") != error_message
+            ):
+                raise PermissionError(
+                    f"conflicting execution outcome receipt won the persistence race: {raced_reason}"
+                )
+            receipt = raced
+
+        receipt_valid, receipt_reason = verify_execution_receipt(
+            receipt, public_key, authorization
+        )
+        if not receipt_valid:
+            raise PermissionError(f"new execution outcome receipt failed verification: {receipt_reason}")
+        return {
+            "success": True,
+            "data": {
+                "authorization_id": authorization_id,
+                "execution_status": outcome,
+                "wallet_submission_recorded": False,
+                "transaction_submitted": False,
+                "execution_receipt": receipt,
+                "receipt_verified": True,
+                "receipt_trust_scope": "wallet_outcome_self_report",
+                "independent_chain_confirmation": False,
+                "idempotent": False,
+            },
+        }
+    except StorageError as exc:
+        return {"success": False, "error": f"execution outcome receipt storage unavailable: {exc.message}"}
+    except (OSError, KeyError, TypeError, ValueError, RuntimeError, PermissionError, LookupError) as exc:
+        return {"success": False, "error": f"wallet outcome receipt not recorded: {exc}"}
+
+
 def _verigate_verify_decision_receipt(args: dict) -> dict:
     raw = args.get("receipt_json")
     if not isinstance(raw, str) or not raw.strip():
@@ -1218,6 +1453,7 @@ def invoke(tool: str, args: dict) -> dict:
         "verigate_authorize_payment",
         "verigate_consume_execution_authorization",
         "verigate_record_wallet_submission_receipt",
+        "verigate_record_wallet_outcome_receipt",
     ):
         raise RpcError(-32603, "privileged execution methods must run through the async App-context approval gate")
     if tool == "verigate_ai_review":
@@ -1228,6 +1464,7 @@ def invoke(tool: str, args: dict) -> dict:
         "verigate_verify_execution_authorization",
         "verigate_consume_execution_authorization",
         "verigate_record_wallet_submission_receipt",
+        "verigate_record_wallet_outcome_receipt",
         "verigate_policy_summary",
         "verigate_verify_decision_receipt",
     ):
@@ -1242,6 +1479,8 @@ def invoke(tool: str, args: dict) -> dict:
         raise RpcError(-32603, "wallet submission must run through the async App-context approval gate")
     if tool == "verigate_record_wallet_submission_receipt":
         raise RpcError(-32603, "wallet submission receipts must run through the async App-context approval gate")
+    if tool == "verigate_record_wallet_outcome_receipt":
+        raise RpcError(-32603, "wallet outcome receipts must run through the async App-context approval gate")
     if tool == "verigate_policy_summary":
         return _verigate_policy_summary(args)
     return _verigate_verify_decision_receipt(args)
@@ -1275,6 +1514,8 @@ async def _handle_invoke(req_id, params: dict) -> None:
                 result = await _verigate_consume_execution_authorization(args)
             elif tool == "verigate_record_wallet_submission_receipt":
                 result = await _verigate_record_wallet_submission_receipt(args)
+            elif tool == "verigate_record_wallet_outcome_receipt":
+                result = await _verigate_record_wallet_outcome_receipt(args)
             else:
                 result = await asyncio.to_thread(invoke, tool, args)
         _ok(req_id, result)
