@@ -24,6 +24,7 @@ AI agents can propose consequential actions. Verigate decides whether the agent 
 
 ### For developers
 
+- **Connect an external agent.** Start with [External Agent Quickstart](docs/EXTERNAL_AGENT_QUICKSTART.md) and the runnable [Python example](examples/external-agent/agent.py); the client fails closed on API and transport errors.
 - **Try it in 60 seconds.** `python examples/genesis_demo.py` runs the full lifecycle, verifies the proof, then tampers with it and shows INVALID.
 - **Verify a proof without Verigate.** `pip install verigate-verify`, then `verigate-verify proof.json --public-key issuer.pub` ([PyPI](https://pypi.org/project/verigate-verify/), source in `packaging/verigate-verify`).
 - **Technical demo (terminal).** The full authority lifecycle, execution, a portable proof, and rejection of a tampered proof:
@@ -111,7 +112,7 @@ This repository contains a runnable Genesis 2.0 authority lifecycle and its veri
 | Policy engine (caps, allowlists, rate limits, new-payee/daily limits) | **Real.** Deterministic rules, no statistical "risk scores." Covered by the full automated suite. |
 | Ed25519 signing + independent verification | **Real.** Standard `cryptography` library primitives, not a custom crypto scheme. Tampering is detected, not just claimed. |
 | x402 header parsing | **Real**, for the `exact` scheme with `extra.name` asset identification. Refuses to guess decimals for an unrecognized asset/network pair rather than silently parsing an amount incorrectly — extend `x402/parser.py:_KNOWN_DECIMALS` as you verify more pairs. |
-| Arc Mainnet / USDC | **Implemented as a first-party integration.** Chain ID 5042, read-only RPC verification, canonical USDC ERC-20 validation, exact 6-decimal transfer encoding and a signed identity/capability authorization endpoint. The connected wallet remains the signer; Verigate does not custody funds. **The Verigate service is not deployed on Arc by this code change.** See `docs/arc-mainnet-integration.md`. |
+| Arc Mainnet / USDC | **Implemented as a first-party integration.** Chain ID 5042, read-only RPC verification, canonical USDC ERC-20 validation, exact 6-decimal transfer encoding and a signed identity/capability authorization endpoint. The connected wallet remains the signer; Verigate does not custody funds. **The Arc Authority Registry contract is deployed on Arc Mainnet.** The Verigate API is a separate service and is not provided as a hosted multi-tenant endpoint by this repository. See `docs/arc-mainnet-integration.md`. |
 | Audit log / rate limiting / daily-spend tracking | **Real**, SQLite-backed, single-process. For multiple replicas, point every process at shared storage or swap in a real database — the `Storage` interface is small. |
 | FastAPI HTTP layer | **Real, with access control**: API-key auth (default-deny once `VERIGATE_API_KEYS` is set), tenant-scoped credentials (`VERIGATE_TENANT_API_KEYS`) and optional mandatory signed intents (`VERIGATE_REQUIRE_SIGNED_INTENT`). **Not yet load-tested or deployed as a hosted service.** Runs with `uvicorn api.main:app`; see `docs/security-configuration.md`. |
 | AP2 / other payment-rail adapters | **Not built.** The architecture reserves the seam (`core.models.PaymentIntent` is rail-agnostic) but only x402 has a working parser today. |
