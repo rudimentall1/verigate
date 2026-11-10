@@ -72,6 +72,12 @@ class ExecutaManifestTest(unittest.TestCase):
             "authorization_id", "transaction_hash", "sender", "confirmation_nonce"
         )))
         self.assertIn("self-report", submitted["description"])
+        outcome = next(t for t in manifest["tools"] if t["name"] == "verigate_record_wallet_outcome_receipt")
+        outcome_params = {p["name"]: p for p in outcome["parameters"]}
+        self.assertTrue(all(outcome_params[name]["required"] for name in (
+            "authorization_id", "outcome", "phase", "error_message", "confirmation_nonce"
+        )))
+        self.assertIn("EIP-1193 error 4001", outcome["description"])
 
     def test_initialize_negotiates_v2_sampling_and_storage(self):
         result = self.plugin.handle({"method": "initialize", "params": {"protocolVersion": "2.0"}})
@@ -99,6 +105,7 @@ class ExecutaManifestTest(unittest.TestCase):
             "verigate_authorize_payment",
             "verigate_consume_execution_authorization",
             "verigate_record_wallet_submission_receipt",
+            "verigate_record_wallet_outcome_receipt",
         ):
             with self.subTest(tool=tool), self.assertRaises(self.plugin.RpcError):
                 self.plugin.handle({"method": "invoke", "params": {
