@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import math
 import os
+import re
 import stat
 import time
 from decimal import Decimal
@@ -98,15 +100,20 @@ def build_arc_enrollment_package(
     identity = public_identity(private_key, agent_id)
     if not isinstance(capability_id, str) or not capability_id.strip() or len(capability_id) > 128:
         raise ValueError("capability_id must be a non-empty string of at most 128 characters")
-    if not isinstance(allowed_targets, list) or not allowed_targets:
-        raise ValueError("allowed_targets must be a non-empty list")
+    if (
+        not isinstance(allowed_targets, list)
+        or not allowed_targets
+        or any(not isinstance(target, str) or re.fullmatch(r"0x[0-9a-fA-F]{40}", target) is None for target in allowed_targets)
+        or len(set(allowed_targets)) != len(allowed_targets)
+    ):
+        raise ValueError("allowed_targets must be a non-empty list of unique EVM addresses")
     amount = Decimal(str(max_per_action_usdc))
     if not amount.is_finite() or amount <= 0:
         raise ValueError("max_per_action_usdc must be finite and greater than zero")
     issued = time.time() if issued_at is None else float(issued_at)
     expiry = float(expires_at)
-    if not (expiry > issued):
-        raise ValueError("expires_at must be later than issued_at")
+    if not math.isfinite(issued) or not math.isfinite(expiry) or not (expiry > issued):
+        raise ValueError("issued_at and expires_at must be finite, with expiry later than issuance")
     return {
         "schema_version": 1,
         "agent_id": identity["agent_id"],
@@ -136,8 +143,13 @@ def build_arc_payment_authorization_request(
     amount = Decimal(str(amount_usdc))
     if not amount.is_finite() or amount <= 0:
         raise ValueError("amount_usdc must be finite and greater than zero")
+    if not isinstance(agent_id, str) or not agent_id.strip() or len(agent_id) > 128:
+        raise ValueError("agent_id must be a non-empty string of at most 128 characters")
     if not identity_id or not capability_id:
         raise ValueError("identity_id and capability_id are required")
+    expected_identity_id = public_identity(private_key, agent_id)["identity_id"]
+    if identity_id != expected_identity_id:
+        raise ValueError("identity_id does not match this agent private key")
     metadata = arc_payment_metadata(sender, recipient, amount)
     action = ActionIntent(
         agent_id=agent_id,

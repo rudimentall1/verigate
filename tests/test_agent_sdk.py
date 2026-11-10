@@ -108,5 +108,35 @@ class AgentSdkTest(unittest.TestCase):
         self.assertEqual(request["metadata"]["evm_transaction"]["data"][-64:], format(1250000, "064x"))
 
 
+    def test_rejects_identity_id_not_derived_from_signing_key(self):
+        key = Ed25519PrivateKey.generate()
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            build_arc_payment_authorization_request(
+                key,
+                agent_id="sdk-agent",
+                identity_id="0" * 64,
+                capability_id="sdk-agent-arc-cap-v1",
+                sender=SENDER,
+                recipient=RECIPIENT,
+                amount_usdc="1",
+            )
+
+    def test_enrollment_builder_rejects_invalid_targets_and_non_finite_expiry(self):
+        key = Ed25519PrivateKey.generate()
+        common = {
+            "agent_id": "sdk-agent",
+            "capability_id": "sdk-agent-arc-cap-v1",
+            "max_per_action_usdc": "25",
+            "issued_at": 1000,
+            "expires_at": 2000,
+        }
+        with self.assertRaisesRegex(ValueError, "unique EVM addresses"):
+            build_arc_enrollment_package(key, allowed_targets=["*"], **common)
+        with self.assertRaisesRegex(ValueError, "finite"):
+            build_arc_enrollment_package(
+                key, allowed_targets=[RECIPIENT], **{**common, "expires_at": float("inf")}
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
