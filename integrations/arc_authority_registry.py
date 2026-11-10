@@ -279,7 +279,8 @@ class ArcAuthorityRegistry:
             )
 
         try:
-            block = self.rpc.get_block_by_number(block_number)
+            block_number_int = int(block_number, 16)
+            block = self.rpc.get_block_by_number(block_number_int)
         except (EvmRpcError, AttributeError, TypeError, ValueError) as exc:
             raise ArcAuthorityRegistryError(
                 f"could not verify transaction inclusion block: {exc}"

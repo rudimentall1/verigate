@@ -216,7 +216,7 @@ def test_inclusion_block_expiry_check_accepts_pre_expiry_block():
 
     class BlockRpc:
         def get_block_by_number(self, number):
-            assert number == "0x100"
+            assert number == 256
             return {
                 "number": "0x100",
                 "timestamp": "0x64",
