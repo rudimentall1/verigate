@@ -143,6 +143,10 @@ class ArcApiTest(unittest.TestCase):
                 "intent_hash": "0x" + "ab" * 32,
                 "transaction_ref": tx_hash,
                 "block_ref": "0x100",
+                "consume_transaction": {
+                    "to": "0x4444444444444444444444444444444444444444",
+                    "data": "0x5678",
+                },
             },
         ), patch.object(
             main.ArcAuthorityRegistry,
