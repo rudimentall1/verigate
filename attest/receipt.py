@@ -358,7 +358,7 @@ def verify_execution_authorization(auth: dict[str, Any], public_key: Ed25519Publ
         now = int(time.time()) if verification_time is None else verification_time
         if isinstance(now, bool) or not isinstance(now, int):
             return False, "invalid execution authorization verification time"
-        if expires_at < now:
+        if expires_at <= now:
             return False, "execution authorization expired"
         if expires_at <= issued_at:
             return False, "invalid execution authorization lifetime"

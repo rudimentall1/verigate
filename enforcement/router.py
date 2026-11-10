@@ -134,8 +134,8 @@ class ExecutionRouter:
 
         raise UnsupportedNetworkError(f"unsupported execution network: {network}")
 
-    def _verify_authorization(self, authorization: dict[str, Any]) -> None:
-        valid, reason = verify_execution_authorization(authorization, self.public_key)
+    def _verify_authorization(self, authorization: dict[str, Any], verification_time: int | None = None) -> None:
+        valid, reason = verify_execution_authorization(authorization, self.public_key, verification_time=verification_time)
         if not valid:
             raise ValueError(f"execution authorization rejected: {reason}")
 
@@ -197,11 +197,14 @@ class ExecutionRouter:
         if not ok:
             raise ValueError(reason)
 
-    def _validate_adapter(self, adapter: ExecutionAdapter, authorization: dict[str, Any]) -> None:
+    def _validate_adapter(self, adapter: ExecutionAdapter, authorization: dict[str, Any], verification_time: int | None = None) -> None:
         validate = getattr(adapter, "validate", None)
         if not callable(validate):
             raise ValueError("execution adapter lacks the validation contract")
-        ok, reason = validate(authorization)
+        if verification_time is None:
+            ok, reason = validate(authorization)
+        else:
+            ok, reason = validate(authorization, verification_time=verification_time)
         if not ok:
             raise ValueError(reason)
 
@@ -217,14 +220,14 @@ class ExecutionRouter:
             return False, "execution authorization already consumed"
         return True, "execution authorization consumed"
 
-    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+    def consume(self, authorization: dict[str, Any], *, verification_time: int | None = None) -> tuple[bool, str]:
         try:
             # The router owns the one-time execution capability. Adapters may
             # validate their own execution prerequisites but cannot forge nonce
             # consumption by returning a synthetic success value.
-            self._verify_authorization(authorization)
+            self._verify_authorization(authorization, verification_time=verification_time)
             adapter = self._adapter(authorization)
-            self._validate_adapter(adapter, authorization)
+            self._validate_adapter(adapter, authorization, verification_time=verification_time)
             self._verify_execution_path(authorization, adapter)
             self._verify_external_state(authorization)
             return self._consume_authorization_once(authorization)
