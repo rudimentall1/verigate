@@ -37,6 +37,9 @@ jobs:
       - name: Install contract tooling
         run: npm ci
 
+      - name: Arc wallet client workflow tests
+        run: npm run test:arc-client
+
       - name: Atomic-state end-to-end test
         run: npm run test:atomic
 
