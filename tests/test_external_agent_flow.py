@@ -75,7 +75,7 @@ class ExternalAgentFlowTest(unittest.TestCase):
             authorized = client.post("/v1/actions/authorize", json=self._signed_request())
             self.assertEqual(authorized.status_code, 200, authorized.text)
             body = authorized.json()
-            self.assertEqual(body["decision_receipt"]["payload"]["decision"], "ALLOW")
+            self.assertEqual(body["decision_receipt"]["payload"]["decision"]["decision"], "ALLOW")
             authorization = body["execution_authorization"]
             self.assertIsNotNone(authorization)
 
