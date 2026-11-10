@@ -15,17 +15,28 @@
 
 ## What has been observed in Anna Runtime
 
-The reviewed recordings from 9–10 November demonstrate the Anna interpretation and policy-preview path:
+Two distinct live Runtime recordings must be kept separate.
 
-1. Anna host Sampling interpreted natural-language payment requests and returned contextual risk findings.
-2. Verigate returned deterministic ALLOW, BLOCK and WARN decisions.
-3. The App verified Ed25519-signed Decision Receipts before displaying results.
-4. A prompt-injection request escalated to WARN with `prompt_injection` and `urgency_pressure` flags.
-5. The App displayed the explicit payment/warning confirmation dialog. In the 10 November recording, the user deliberately selected Cancel; no App-scope approval was written and no permission was created in that attempt.
+### 9 November — live MetaMask wallet hand-off
 
-**No wallet was connected in these tests.** No live ExecutionRouter consumption, wallet signature, transaction hash, broadcast, on-chain inclusion or settlement is claimed. Earlier text in this file describing MetaMask display and router consumption was inaccurate and is withdrawn.
+The user's recording `2026-11-09 15-05-43.mp4` demonstrates a real Anna Runtime session in Brave with the user's MetaMask extension:
 
-The 10 November recording does not display an immutable App version identifier. It therefore does not establish live Runtime acceptance of App 0.1.29. The recording predates the 0.1.29 cut and remains evidence only for the interpretation and policy-preview path.
+1. Anna host Sampling interpreted a request to pay 25 USDC on Base to `0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed` for invoice 1042.
+2. Verigate returned ALLOW and the App verified the Ed25519 Decision Receipt.
+3. The App issued and verified a one-time Execution Authorization bound to that exact payment.
+4. The user selected Send with connected wallet. The live MetaMask extension opened the exact 25 USDC Base transaction.
+5. ExecutionRouter had already consumed the one-time permission before MetaMask asked for the signature. The App displayed that the permission was consumed and could not be retried.
+6. The user denied the MetaMask signature. The App displayed `MetaMask Tx Signature: User denied transaction signature.`
+
+**This is a successful live wallet hand-off and Router-consumption test, ending in an intentional user rejection at the wallet-signature step.** It proves that the real provider was available, the exact transaction reached MetaMask, and the consumed permission was not reusable. It does not prove a successful signature, transaction hash, broadcast or settlement.
+
+The recording does not display an immutable App version identifier. Do not attribute it specifically to 0.1.29.
+
+### 10 November — in-App cancellation regression
+
+A separate recording shows the user deliberately cancelling the App's ALLOW/WARN permission confirmation. No App-scope approval was written and no Execution Authorization was created in that attempt. This cancellation path is covered by the 0.1.29 regression tests.
+
+The earlier statement that no wallet was connected during the Anna Runtime tests was incorrect and is superseded by the 9 November MetaMask recording. The private source recording is documented in [the live MetaMask checkpoint](history/SESSION-CHECKPOINT-2026-11-10-LIVE-METAMASK.md).
 
 ## Automated and build evidence
 
@@ -38,9 +49,9 @@ The 10 November recording does not display an immutable App version identifier. 
 
 ## Remaining limits and release gates
 
-- Availability of an injected EIP-1193 wallet provider in a fresh Anna Cloud Agent session remains unverified. Cloud persistence across restart/reinstall also remains unverified.
+- Availability and lifecycle persistence of an injected EIP-1193 provider in a fresh Anna Cloud Agent/Linux session remain unverified. The 9 November Brave + MetaMask live hand-off is proven separately; it must not be described as untested.
 - Native USDC wallet hand-off is implemented for Base and Ethereum. Solana policy checks and signed authorizations exist, but Solana wallet submission is not included in this App.
-- The rolling 24-hour budget counts non-BLOCK authorization records, not chain-confirmed transfers. A cancelled or rejected wallet prompt does not automatically release the reservation.
+- The 9 November recording ends with the user denying the MetaMask signature after ExecutionRouter consumed the one-time authorization. This intentionally burns that permission; a fresh policy check and new permission are required. The rolling 24-hour budget counts non-BLOCK authorization records, not chain-confirmed transfers.
 - Accounting is scoped to one persistent Executa installation. Separate Cloud Agent workspaces or issuer keys are not aggregated into one account-wide budget.
 - The App gates the supported Verigate App/ExecutionRouter path. It is not a universal firewall for external wallets or actions that bypass that router.
 - No independent third-party security audit, hosted multi-tenant service, production KMS/HSM custody or key-rotation service is shipped.
@@ -51,6 +62,7 @@ The 10 November recording does not display an immutable App version identifier. 
 
 - [Anna App implementation and Runtime acceptance notes](../README.md)
 - [Anna documentation index](README.md)
+- [Live MetaMask integration checkpoint — 9 November evidence](history/SESSION-CHECKPOINT-2026-11-10-LIVE-METAMASK.md)
 - [Historical release-gate record](history/RELEASE-GATE-2026-11-09.md)
 - [Repository threat model](../../docs/threat-model.md)
 - [Anna release CI](https://github.com/rudimentall1/verigate/actions)
