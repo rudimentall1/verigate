@@ -106,8 +106,11 @@ class VerigateClient:
     def authorize_and_consume(self, signed_intent: dict[str, Any]) -> dict[str, Any]:
         """Authorize and consume once; never execute the protected side effect."""
         authorization_result = self.authorize_action(signed_intent)
+        receipt = authorization_result.get("decision_receipt")
+        receipt_payload = receipt.get("payload") if isinstance(receipt, dict) else None
+        decision = receipt_payload.get("decision") if isinstance(receipt_payload, dict) else None
         execution_authorization = authorization_result.get("execution_authorization")
-        if not execution_authorization:
+        if decision != "ALLOW" or not isinstance(execution_authorization, dict):
             return {
                 "authorized": False,
                 "authorization": authorization_result,
