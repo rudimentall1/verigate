@@ -32,6 +32,17 @@ async function ensureArc(provider) {
   );
 }
 
+async function ensureExecutorAccount(provider, transaction) {
+  const expected = transaction?.from;
+  assert(typeof expected === "string", "registry transaction executor is missing");
+  const accounts = await provider.request({ method: "eth_accounts" });
+  assert(Array.isArray(accounts), "wallet did not return its connected accounts");
+  assert(
+    accounts.some(account => typeof account === "string" && account.toLowerCase() === expected.toLowerCase()),
+    `connect the configured Verigate executor wallet (${expected}) before continuing`,
+  );
+}
+
 async function postJson(fetchImpl, url, body, headers) {
   const response = await fetchImpl(url, {
     method: "POST",
@@ -96,6 +107,7 @@ export async function authorizeArcPayment({
   assert(authorization && typeof authorization === "object", "Verigate did not return a signed execution authorization");
   assert(registrationTx, "Verigate did not return an Arc registration transaction");
 
+  await ensureExecutorAccount(provider, registrationTx);
   const registrationHash = await provider.request({
     method: "eth_sendTransaction",
     params: [txForWallet(registrationTx)],
@@ -112,6 +124,7 @@ export async function authorizeArcPayment({
   const consumeTx = registered.consume_transaction;
   assert(consumeTx, "Verigate did not return the Arc consumption transaction");
 
+  await ensureExecutorAccount(provider, consumeTx);
   const consumeHash = await provider.request({
     method: "eth_sendTransaction",
     params: [txForWallet(consumeTx)],
@@ -147,6 +160,7 @@ export async function authorizeArcPayment({
  */
 export async function broadcastAuthorizedArcPayment({ provider, walletTransaction }) {
   await ensureArc(provider);
+  await ensureExecutorAccount(provider, walletTransaction);
   return provider.request({
     method: "eth_sendTransaction",
     params: [txForWallet(walletTransaction)],

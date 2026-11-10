@@ -6,8 +6,9 @@ import {
   ARC_CHAIN_HEX,
 } from "../integrations/arc-client.mjs";
 
+const executor = "0x1111111111111111111111111111111111111111";
 const authorization = { payload: { authorization_id: "0xabc" }, signature: "signed" };
-const registrationTx = { chainId: ARC_CHAIN_HEX, from: "0x111", to: "0x222", data: "0xaaaa", value: "0x0" };
+const registrationTx = { chainId: ARC_CHAIN_HEX, from: executor, to: "0x222", data: "0xaaaa", value: "0x0" };
 const consumeTx = { ...registrationTx, data: "0xbbbb" };
 const paymentTx = { ...registrationTx, to: "0x333", data: "0xcccc" };
 
@@ -18,6 +19,7 @@ function fixture({ execute = true } = {}) {
     async request(args) {
       calls.push({ provider: args });
       if (args.method === "eth_chainId") return ARC_CHAIN_HEX;
+      if (args.method === "eth_accounts") return [executor];
       if (args.method === "eth_sendTransaction") return ["0xreg", "0xconsume", "0xpayment"][requestCount++];
       if (args.method === "eth_getTransactionReceipt") return { status: "0x1" };
       throw new Error("unexpected provider method " + args.method);
@@ -84,6 +86,26 @@ test("refuses a wallet connected to a different chain before API or signing call
     /Arc Mainnet/,
   );
   assert.equal(f.calls.some(x => x.url), false);
+});
+
+test("refuses to sign registry transactions from a wallet other than the configured executor", async () => {
+  const f = fixture();
+  f.provider.request = async args => {
+    f.calls.push({ provider: args });
+    if (args.method === "eth_chainId") return ARC_CHAIN_HEX;
+    if (args.method === "eth_accounts") return ["0x9999999999999999999999999999999999999999"];
+    throw new Error("must not continue");
+  };
+  await assert.rejects(
+    authorizeArcPayment({
+      provider: f.provider,
+      apiBaseUrl: "https://verigate.example",
+      authorizationRequest: {},
+      fetchImpl: f.fetchImpl,
+    }),
+    /configured Verigate executor wallet/,
+  );
+  assert.equal(f.calls.some(x => x.provider?.method === "eth_sendTransaction"), false);
 });
 
 test("fails closed when Verigate rejects the on-chain consumption", async () => {
