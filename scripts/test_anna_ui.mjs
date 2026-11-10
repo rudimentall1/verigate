@@ -218,7 +218,14 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
           samplingHandler: { interpret, explain }
         });
         if (method === "verigate_consume_execution_authorization" && consumeInvokeDropsResponse) {
-          throw new Error("Simulated transport loss after ExecutionRouter consumed the permission");
+          const error = new Error("Anna could not confirm the Executa response after dispatch.");
+          error.code = "executa_unavailable";
+          error.details = {
+            reason: "no_ack",
+            invoke_id: "anna-consume-no-ack-001",
+            client_id: "anna-ui-test-client"
+          };
+          throw error;
         }
         if (method === "verigate_policy_summary" && tamperPolicySummaryPrincipal) {
           if (result?.data) result.data.accounting_principal_id = "anna-installation:" + "f".repeat(64);
@@ -971,6 +978,8 @@ await test("lost consume response is treated as unknown and never leaves a retry
   ok(ui.text("execution-status").includes("ABORTED ExecutionReceipt"), "lost consume response is classified only after the nonce ledger proves Router consumption");
   ok(ui.text("execution-status").includes("Anna installation self-report"), "lost-response receipt is explicitly scoped as Anna self-report");
   eq(ui.calls.tools.includes("verigate_record_wallet_outcome_receipt"), true, "lost consume response attempts a signed outcome record");
+  ok(ui.text("error").includes("reason=no_ack"), "Anna no_ack reason is retained");
+  ok(ui.text("error").includes("invoke_id=anna-consume-no-ack-001"), "Anna invoke_id is retained for support correlation");
   eq(ui.shown("wallet-execute-btn"), false, "no retry button remains after ambiguous consume");
   eq(walletCalls.some((call) => call.method === "eth_sendTransaction"), false, "wallet is not called without confirmed consume response");
   const consumeCalls = ui.calls.tools.filter((method) => method === "verigate_consume_execution_authorization");
