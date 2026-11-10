@@ -29,7 +29,7 @@ class FakeResponse:
 class AgentHttpClientTest(unittest.TestCase):
     def test_authorize_action_posts_signed_intent_with_auth_and_tenant_headers(self):
         response = {
-            "decision_receipt": {"payload": {"decision": "ALLOW"}},
+            "decision_receipt": {"payload": {"decision": {"decision": "ALLOW"}}},
             "execution_authorization": {"payload": {}},
         }
         with patch("integrations.http_client.urlopen", return_value=FakeResponse(response)) as open_url:
@@ -62,7 +62,7 @@ class AgentHttpClientTest(unittest.TestCase):
 
     def test_authorize_and_consume_does_not_consume_when_no_authorization_is_issued(self):
         denied = {
-            "decision_receipt": {"payload": {"decision": "BLOCK"}},
+            "decision_receipt": {"payload": {"decision": {"decision": "BLOCK"}}},
             "execution_authorization": None,
         }
         with patch("integrations.http_client.urlopen", return_value=FakeResponse(denied)) as open_url:
@@ -73,7 +73,7 @@ class AgentHttpClientTest(unittest.TestCase):
 
     def test_warn_decision_never_consumes_even_if_response_contains_authorization(self):
         warn = {
-            "decision_receipt": {"payload": {"decision": "WARN"}},
+            "decision_receipt": {"payload": {"decision": {"decision": "WARN"}}},
             "execution_authorization": {"payload": {"authorization_id": "unexpected"}},
         }
         with patch("integrations.http_client.urlopen", return_value=FakeResponse(warn)) as open_url:
