@@ -70,6 +70,8 @@ Wallet outcome receipts are Ed25519-signed by the Anna installation issuer. They
 - `UNKNOWN`: the wallet request started, but the result is ambiguous and no valid transaction hash was returned.
 - `SUBMITTED`: the wallet returned a transaction hash and Anna recorded it. This remains executor self-report, not chain confirmation.
 
+Only `SUBMITTED` receipts are eligible for network polling. `ExecutionMonitor` returns `REJECTED`, `ABORTED` and `UNKNOWN` as terminal local outcomes without querying an RPC provider; `ExecutionRouter.confirm_execution_receipt` does not transition them. Regression coverage asserts that these statuses never trigger chain polling.
+
 ## 5. Pre-release inspection gates
 
 Use the official [Anna App Backend Tool Executa Pre-Release Inspection Guide](https://forum.anna.partners/t/anna-app-backend-tool-executa-pre-release-inspection-guide/380) as the release checklist. Its status vocabulary is mandatory:
