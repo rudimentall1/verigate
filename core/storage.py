@@ -383,7 +383,14 @@ CREATE INDEX IF NOT EXISTS idx_outcome_attestations_claim
 
 
 class Storage:
-    """SQLite persistence with process-local synchronization."""
+    """SQLite persistence with thread- and process-safe write coordination.
+
+    The RLock serializes access to this instance's shared connection within
+    one process. Independent Storage instances and OS processes coordinate
+    through SQLite's WAL writer locking and BEGIN IMMEDIATE transactions.
+    UNIQUE constraints remain the final replay guard for single-use records
+    such as execution nonces.
+    """
 
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
