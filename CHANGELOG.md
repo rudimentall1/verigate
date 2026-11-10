@@ -1,5 +1,18 @@
 # Changelog
 
+## Anna App 0.1.30 / Executa 0.1.17
+
+### Signed wallet outcome receipts and Anna invoke diagnostics
+
+- Preserve the existing one-time ExecutionRouter hand-off and signed SUBMITTED receipt path.
+- Add installation-signed REJECTED, ABORTED and UNKNOWN wallet outcome receipts. REJECTED requires EIP-1193 error 4001 during `eth_sendTransaction`; ABORTED requires a proven pre-wallet abort or a consumed Router nonce after a lost response; ambiguous wallet-send errors are UNKNOWN.
+- Bind each outcome to a fresh one-time App-scope approval containing the exact authorization, outcome, phase, error, sender, network and transaction envelope.
+- Verify the stored Execution Authorization, consumed nonce, expiry, native-USDC network and exact transfer before persisting a negative receipt. Reject conflicting receipts and preserve idempotent exact retries.
+- Explicitly label negative receipts as Anna installation self-reports, not wallet signatures or independent chain confirmation.
+- Preserve Anna `invoke_id`, `client_id` and `reason` diagnostics, including the current `no_ack` response shape. Never retry an ambiguous consumed authorization.
+- Add Python receipt/authorization tests and Anna UI E2E coverage for user rejection, pre-wallet abort, ambiguous wallet outcomes, lost consume responses and correlation identifiers.
+- Source candidate only: App 0.1.30 / Executa 0.1.17 has not been uploaded to Anna Console, cut as an immutable version, submitted for review or published. Current immutable Draft remains App 0.1.29 / Executa 0.1.16.
+
 ## Anna App 0.1.29 / Executa 0.1.16
 
 ### Permission cancellation state

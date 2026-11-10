@@ -447,6 +447,52 @@ class ExecutionReceipt:
         return {"payload": self.payload, "signature": self.signature, "algorithm": self.algorithm}
 
 
+_EXECUTION_RECEIPT_STATUSES = {
+    "SUBMITTED", "CONFIRMED", "FAILED", "REJECTED", "ABORTED", "UNKNOWN"
+}
+
+
+def _validate_execution_receipt_status(
+    *,
+    status: str,
+    transaction_ref: str | None,
+    error: str | None,
+    submission_data: dict[str, Any] | None,
+) -> None:
+    """Validate status semantics before signing and after receipt verification.
+
+    Wallet outcomes are installation-signed records of what Anna observed from
+    its EIP-1193 provider. They are not wallet-signed statements or chain proof.
+    """
+    if status not in _EXECUTION_RECEIPT_STATUSES:
+        raise ValueError("invalid execution receipt status")
+    if status not in {"REJECTED", "ABORTED", "UNKNOWN"}:
+        return
+    if transaction_ref is not None:
+        raise ValueError("wallet outcome receipts must not contain a transaction reference")
+    if not isinstance(error, str) or not error.strip():
+        raise ValueError("wallet outcome receipts require an error description")
+    if not isinstance(submission_data, dict):
+        raise ValueError("wallet outcome receipts require signed provider outcome data")
+    if submission_data.get("source") != "anna_eip1193_wallet":
+        raise ValueError("wallet outcome receipt has an unsupported evidence source")
+    error_code = submission_data.get("error_code")
+    if error_code is not None and (
+        isinstance(error_code, bool) or not isinstance(error_code, int)
+    ):
+        raise ValueError("wallet outcome error_code must be an integer or null")
+    phase = submission_data.get("phase")
+    if status == "REJECTED":
+        if phase != "wallet_request" or error_code != 4001:
+            raise ValueError("REJECTED requires EIP-1193 error 4001 during eth_sendTransaction")
+    elif status == "ABORTED":
+        if phase not in {"pre_wallet_request", "router_response_unknown"}:
+            raise ValueError("ABORTED requires a verified pre-wallet abort phase")
+    elif status == "UNKNOWN":
+        if phase != "wallet_request" or error_code == 4001:
+            raise ValueError("UNKNOWN requires an ambiguous eth_sendTransaction outcome, not a user rejection")
+
+
 def execution_receipt_payload(
     authorization: dict[str, Any],
     *,
@@ -466,8 +512,12 @@ def execution_receipt_payload(
     if submission_data is not None and not isinstance(submission_data, dict):
         raise ValueError("submission_data must be an object")
     action = auth_payload["action"]
-    if status not in {"SUBMITTED", "CONFIRMED", "FAILED"}:
-        raise ValueError("invalid execution receipt status")
+    _validate_execution_receipt_status(
+        status=status,
+        transaction_ref=transaction_ref,
+        error=error,
+        submission_data=submission_data,
+    )
     return {
         "execution_receipt_version": 1,
         "receipt_id": receipt_id or str(uuid.uuid4()),
@@ -553,8 +603,15 @@ def verify_execution_receipt(
         payload = receipt["payload"]
         if payload["execution_receipt_version"] != 1:
             return False, "unsupported execution receipt version"
-        if payload["status"] not in {"SUBMITTED", "CONFIRMED", "FAILED"}:
-            return False, "invalid execution receipt status"
+        try:
+            _validate_execution_receipt_status(
+                status=payload["status"],
+                transaction_ref=payload.get("transaction_ref"),
+                error=payload.get("error"),
+                submission_data=payload.get("submission_data"),
+            )
+        except ValueError as exc:
+            return False, str(exc)
         if not payload["receipt_id"] or not payload["authorization_id"] or not payload["intent_id"]:
             return False, "invalid execution receipt identity"
         authorization_sha256 = payload.get("authorization_sha256")

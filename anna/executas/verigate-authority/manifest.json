@@ -1,7 +1,7 @@
 {
   "name": "verigate-authority",
   "display_name": "Verigate Authority",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Checks agent payment authority and can issue a capability-bound, one-time signed Execution Authorization for an external wallet or executor. Anna does not hold wallet keys or broadcast transactions; execution must pass through a Verigate enforcement adapter.",
   "author": "rudimentall1",
   "homepage": "https://github.com/rudimentall1/verigate",
@@ -237,6 +237,56 @@
           "name": "confirmation_nonce",
           "type": "string",
           "description": "One-time App UI approval created after the wallet returned the transaction hash.",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "verigate_record_wallet_outcome_receipt",
+      "description": "Persist an Ed25519-signed Anna self-report for an already-consumed wallet authorization. REJECTED is accepted only for EIP-1193 error 4001; ABORTED is accepted only when the wallet request was not started or a lost Router response is proven consumed in the nonce ledger; UNKNOWN records an ambiguous eth_sendTransaction result. This is not wallet-signed evidence or independent chain confirmation. Requires a fresh exact App-scope approval.",
+      "timeout": 30,
+      "parameters": [
+        {
+          "name": "authorization_id",
+          "type": "string",
+          "description": "Previously issued and Router-consumed authorization ID.",
+          "required": true
+        },
+        {
+          "name": "outcome",
+          "type": "string",
+          "description": "One of REJECTED, ABORTED or UNKNOWN.",
+          "required": true
+        },
+        {
+          "name": "phase",
+          "type": "string",
+          "description": "wallet_request, pre_wallet_request or router_response_unknown.",
+          "required": true
+        },
+        {
+          "name": "error_code",
+          "type": "integer",
+          "description": "EIP-1193 provider error code, or null when unavailable.",
+          "required": false
+        },
+        {
+          "name": "error_message",
+          "type": "string",
+          "description": "Bounded wallet/runtime error description observed by Anna.",
+          "required": true
+        },
+        {
+          "name": "sender",
+          "type": "string",
+          "description": "Connected EVM sender address, or empty when account access was unavailable.",
+          "required": false,
+          "default": ""
+        },
+        {
+          "name": "confirmation_nonce",
+          "type": "string",
+          "description": "Fresh one-time App-scope approval for this exact wallet outcome.",
           "required": true
         }
       ]

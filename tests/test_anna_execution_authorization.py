@@ -192,6 +192,45 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
             "confirmation_nonce": nonce,
         }
 
+    def _wallet_outcome_args(
+        self,
+        authorization,
+        *,
+        outcome="REJECTED",
+        phase="wallet_request",
+        error_code=4001,
+        error_message="User rejected transaction signature",
+        sender="0x" + "11" * 20,
+    ):
+        action = authorization["payload"]["action"]
+        transaction = EVMExecutionAdapter._transaction(action)
+        normalized_sender = sender.lower() if sender else None
+        nonce = self._approval(
+            "wallet_outcome_receipt",
+            authorization_id=authorization["payload"]["authorization_id"],
+            outcome=outcome,
+            phase=phase,
+            error_code=error_code,
+            error_message=error_message,
+            sender=normalized_sender,
+            network=action["network"],
+            chain_id=transaction["chain_id"],
+            to=transaction["to"].lower(),
+            value_wei=transaction["value_wei"],
+            data=transaction["data"].lower(),
+        )
+        args = {
+            "authorization_id": authorization["payload"]["authorization_id"],
+            "outcome": outcome,
+            "phase": phase,
+            "error_message": error_message,
+            "sender": sender or "",
+            "confirmation_nonce": nonce,
+        }
+        if error_code is not None:
+            args["error_code"] = error_code
+        return args
+
     def test_permission_requires_app_scoped_user_confirmation(self):
         args = self._args(confirmation_nonce=self._nonce())
         result = asyncio.run(plugin._verigate_authorize_payment(args))
@@ -499,6 +538,165 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
         )
         self.assertFalse(rejected_conflict["success"])
         self.assertIn("different execution receipt", rejected_conflict["error"])
+
+    def test_user_rejection_records_signed_rejected_receipt_after_router_consumption(self):
+        result = self._authorize()
+        self.assertTrue(result["success"], result)
+        authorization = result["data"]["execution_authorization"]
+        consumed = asyncio.run(plugin._verigate_consume_execution_authorization(
+            self._wallet_consume_args(authorization)
+        ))
+        self.assertTrue(consumed["success"], consumed)
+
+        args = self._wallet_outcome_args(authorization)
+        recorded = asyncio.run(plugin._verigate_record_wallet_outcome_receipt(args))
+        self.assertTrue(recorded["success"], recorded)
+        data = recorded["data"]
+        receipt = data["execution_receipt"]
+        self.assertEqual(data["execution_status"], "REJECTED")
+        self.assertFalse(data["transaction_submitted"])
+        self.assertEqual(data["receipt_trust_scope"], "wallet_outcome_self_report")
+        self.assertFalse(data["independent_chain_confirmation"])
+        self.assertIsNone(receipt["payload"]["transaction_ref"])
+        self.assertEqual(receipt["payload"]["submission_data"]["error_code"], 4001)
+        self.assertEqual(receipt["payload"]["submission_data"]["phase"], "wallet_request")
+
+        from attest.receipt import verify_execution_receipt
+        public_key = load_public_key(Path(self.tmp.name) / "issuer.pub")
+        self.assertTrue(verify_execution_receipt(receipt, public_key, authorization)[0])
+        engine, _ = plugin._get_state()
+        self.assertEqual(
+            engine.storage.execution_receipt_by_authorization(
+                authorization["payload"]["authorization_id"]
+            ),
+            receipt,
+        )
+
+    def test_wallet_outcome_rejects_forged_status_and_missing_router_consumption(self):
+        result = self._authorize()
+        self.assertTrue(result["success"], result)
+        authorization = result["data"]["execution_authorization"]
+
+        before_consume = asyncio.run(plugin._verigate_record_wallet_outcome_receipt(
+            self._wallet_outcome_args(authorization)
+        ))
+        self.assertFalse(before_consume["success"])
+        self.assertIn("has not consumed", before_consume["error"])
+
+        consumed = asyncio.run(plugin._verigate_consume_execution_authorization(
+            self._wallet_consume_args(authorization)
+        ))
+        self.assertTrue(consumed["success"], consumed)
+
+        forged_rejection = asyncio.run(plugin._verigate_record_wallet_outcome_receipt(
+            self._wallet_outcome_args(
+                authorization,
+                outcome="REJECTED",
+                phase="wallet_request",
+                error_code=4900,
+            )
+        ))
+        self.assertFalse(forged_rejection["success"])
+        self.assertIn("requires EIP-1193 error 4001", forged_rejection["error"])
+
+        forged_unknown = asyncio.run(plugin._verigate_record_wallet_outcome_receipt(
+            self._wallet_outcome_args(
+                authorization,
+                outcome="UNKNOWN",
+                phase="wallet_request",
+                error_code=4001,
+            )
+        ))
+        self.assertFalse(forged_unknown["success"])
+        self.assertIn("ambiguous eth_sendTransaction", forged_unknown["error"])
+
+        forged_abort = asyncio.run(plugin._verigate_record_wallet_outcome_receipt(
+            self._wallet_outcome_args(
+                authorization,
+                outcome="ABORTED",
+                phase="wallet_request",
+                error_code=None,
+            )
+        ))
+        self.assertFalse(forged_abort["success"])
+        self.assertIn("verified pre-wallet abort", forged_abort["error"])
+
+    def test_lost_router_response_can_be_recorded_as_aborted_only_if_nonce_exists(self):
+        result = self._authorize()
+        self.assertTrue(result["success"], result)
+        authorization = result["data"]["execution_authorization"]
+        consumed = asyncio.run(plugin._verigate_consume_execution_authorization(
+            self._wallet_consume_args(authorization)
+        ))
+        self.assertTrue(consumed["success"], consumed)
+
+        args = self._wallet_outcome_args(
+            authorization,
+            outcome="ABORTED",
+            phase="router_response_unknown",
+            error_code=None,
+            error_message="Router response was lost before the wallet request started",
+        )
+        recorded = asyncio.run(plugin._verigate_record_wallet_outcome_receipt(args))
+        self.assertTrue(recorded["success"], recorded)
+        self.assertEqual(recorded["data"]["execution_status"], "ABORTED")
+        self.assertFalse(recorded["data"]["transaction_submitted"])
+        self.assertTrue(recorded["data"]["receipt_verified"])
+
+    def test_unknown_wallet_error_is_not_misclassified_as_user_rejection(self):
+        result = self._authorize()
+        self.assertTrue(result["success"], result)
+        authorization = result["data"]["execution_authorization"]
+        consumed = asyncio.run(plugin._verigate_consume_execution_authorization(
+            self._wallet_consume_args(authorization)
+        ))
+        self.assertTrue(consumed["success"], consumed)
+
+        args = self._wallet_outcome_args(
+            authorization,
+            outcome="UNKNOWN",
+            phase="wallet_request",
+            error_code=4900,
+            error_message="Provider disconnected while awaiting transaction submission",
+        )
+        recorded = asyncio.run(plugin._verigate_record_wallet_outcome_receipt(args))
+        self.assertTrue(recorded["success"], recorded)
+        self.assertEqual(recorded["data"]["execution_status"], "UNKNOWN")
+        self.assertFalse(recorded["data"]["transaction_submitted"])
+
+    def test_wallet_outcome_approval_binds_error_and_is_idempotent(self):
+        result = self._authorize()
+        self.assertTrue(result["success"], result)
+        authorization = result["data"]["execution_authorization"]
+        consumed = asyncio.run(plugin._verigate_consume_execution_authorization(
+            self._wallet_consume_args(authorization)
+        ))
+        self.assertTrue(consumed["success"], consumed)
+
+        args = self._wallet_outcome_args(authorization)
+        tampered = dict(args, error_message="Different error from the user-approved record")
+        rejected = asyncio.run(plugin._verigate_record_wallet_outcome_receipt(tampered))
+        self.assertFalse(rejected["success"])
+        self.assertIn("does not match error_message", rejected["error"])
+
+        first = asyncio.run(plugin._verigate_record_wallet_outcome_receipt(args))
+        self.assertTrue(first["success"], first)
+        replay_args = self._wallet_outcome_args(authorization)
+        replay = asyncio.run(plugin._verigate_record_wallet_outcome_receipt(replay_args))
+        self.assertTrue(replay["success"], replay)
+        self.assertTrue(replay["data"]["idempotent"])
+        self.assertEqual(
+            replay["data"]["execution_receipt"],
+            first["data"]["execution_receipt"],
+        )
+
+        conflict = self._wallet_outcome_args(
+            authorization,
+            error_message="Another rejection reason",
+        )
+        rejected_conflict = asyncio.run(plugin._verigate_record_wallet_outcome_receipt(conflict))
+        self.assertFalse(rejected_conflict["success"])
+        self.assertIn("different execution outcome receipt", rejected_conflict["error"])
 
     def test_warn_and_block_never_get_execution_authority(self):
         warn = self._authorize(amount=300)

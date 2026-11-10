@@ -218,7 +218,14 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
           samplingHandler: { interpret, explain }
         });
         if (method === "verigate_consume_execution_authorization" && consumeInvokeDropsResponse) {
-          throw new Error("Simulated transport loss after ExecutionRouter consumed the permission");
+          const error = new Error("Anna could not confirm the Executa response after dispatch.");
+          error.code = "executa_unavailable";
+          error.details = {
+            reason: "no_ack",
+            invoke_id: "anna-consume-no-ack-001",
+            client_id: "anna-ui-test-client"
+          };
+          throw error;
         }
         if (method === "verigate_policy_summary" && tamperPolicySummaryPrincipal) {
           if (result?.data) result.data.accounting_principal_id = "anna-installation:" + "f".repeat(64);
@@ -882,8 +889,8 @@ await test("wallet network drift after consumption prevents submission", async (
   await ui.clickWallet();
   ok(ui.calls.tools.includes("verigate_consume_execution_authorization"), "router consumed the permission");
   eq(walletCalls.some(x => x.method === "eth_sendTransaction"), false, "no send on changed chain");
-  ok(ui.text("execution-status").includes("consumed"), "consumption is disclosed");
-  ok(ui.text("execution-status").includes("network changed"), "network drift is disclosed");
+  ok(ui.text("execution-status").includes("ABORTED ExecutionReceipt"), "pre-wallet network drift is signed as ABORTED");
+  ok(ui.text("error").includes("network changed"), "network drift reason remains visible");
 });
 
 await test("wallet rejection consumes the old permission and a fresh authorization resets every UI state", async () => {
@@ -904,10 +911,17 @@ await test("wallet rejection consumes the old permission and a fresh authorizati
   ok(ui.text("execution-status").includes("Permission consumed by ExecutionRouter"), "status switches immediately after ExecutionRouter consumption");
   eq(ui.text("wallet-execute-btn"), "Permission consumed", "button label matches the pending consumed state");
   ok(typeof rejectWalletSend === "function", "wallet signature request is pending after consume");
-  rejectWalletSend(new Error("User denied transaction signature"));
-  for (let i = 0; i < 200 && !ui.text("execution-status").includes("consumed, but wallet submission did not complete"); i++) await sleep(10);
-  ok(ui.text("execution-status").includes("consumed, but wallet submission did not complete"), "wallet denial is reported after permission consumption");
-  ok(ui.text("execution-status").includes("User denied transaction signature"), "wallet denial reason is preserved");
+  const rejection = new Error("User denied transaction signature");
+  rejection.code = 4001;
+  rejectWalletSend(rejection);
+  for (let i = 0; i < 200 && !ui.text("execution-status").includes("REJECTED ExecutionReceipt"); i++) await sleep(10);
+  ok(ui.text("execution-status").includes("REJECTED ExecutionReceipt"), "EIP-1193 4001 creates a signed REJECTED receipt");
+  ok(ui.text("execution-status").includes("explicitly rejected"), "explicit wallet rejection is distinguished");
+  ok(ui.text("execution-status").includes("Anna installation self-report"), "receipt trust scope is not misrepresented as wallet signature");
+  eq(ui.calls.tools.includes("verigate_record_wallet_outcome_receipt"), true, "wallet rejection is persisted through the new Executa tool");
+  eq(ui.calls.storage[2].value.kind, "wallet_outcome_receipt", "outcome uses its own one-time App approval");
+  eq(ui.calls.storage[2].value.outcome, "REJECTED", "App approval binds the rejection status");
+  eq(ui.calls.storage[2].value.error_code, 4001, "App approval binds EIP-1193 rejection code");
   eq(ui.shown("wallet-execute-btn"), false, "consumed permission cannot be submitted again");
   eq(ui.$("execution-btn").disabled, false, "fresh authorization remains available after a new policy recheck is required");
 
@@ -920,6 +934,30 @@ await test("wallet rejection consumes the old permission and a fresh authorizati
   eq(ui.text("wallet-execute-btn"), "Send with connected wallet", "new authorization resets the stale consumed label");
   eq(ui.$("wallet-execute-btn").disabled, false, "new authorization restores an enabled wallet action");
   ok(ui.text("execution-status").includes("Not consumed"), "new authorization starts in the unconsumed state");
+});
+
+await test("ambiguous wallet RPC failure records UNKNOWN, not REJECTED", async () => {
+  const ui = await launch({});
+  ui.window.ethereum = {
+    request: async ({ method }) => {
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_sendTransaction") {
+        const error = new Error("Provider disconnected while awaiting transaction submission");
+        error.code = 4900;
+        throw error;
+      }
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.click();
+  await ui.clickExecution();
+  await ui.clickWallet();
+  ok(ui.text("execution-status").includes("UNKNOWN ExecutionReceipt"), "ambiguous send request gets UNKNOWN receipt");
+  ok(ui.text("execution-status").includes("outcome is UNKNOWN"), "UI warns that no hash was returned");
+  eq(ui.calls.storage[2].value.outcome, "UNKNOWN", "App approval binds UNKNOWN");
+  eq(ui.calls.storage[2].value.error_code, 4900, "App approval binds provider disconnect code");
+  eq(ui.calls.tools.includes("verigate_record_wallet_outcome_receipt"), true, "UNKNOWN receipt is signed by Executa");
 });
 
 await test("lost consume response is treated as unknown and never leaves a retryable permission", async () => {
@@ -937,8 +975,11 @@ await test("lost consume response is treated as unknown and never leaves a retry
   await ui.click();
   await ui.clickExecution();
   await ui.clickWallet();
-  ok(ui.text("execution-status").includes("could not confirm whether ExecutionRouter consumed"), "ambiguous consume response is not reported as unused");
-  ok(ui.text("execution-status").includes("Do not retry it"), "ambiguous authorization is fail-closed");
+  ok(ui.text("execution-status").includes("ABORTED ExecutionReceipt"), "lost consume response is classified only after the nonce ledger proves Router consumption");
+  ok(ui.text("execution-status").includes("Anna installation self-report"), "lost-response receipt is explicitly scoped as Anna self-report");
+  eq(ui.calls.tools.includes("verigate_record_wallet_outcome_receipt"), true, "lost consume response attempts a signed outcome record");
+  ok(ui.text("error").includes("reason=no_ack"), "Anna no_ack reason is retained");
+  ok(ui.text("error").includes("invoke_id=anna-consume-no-ack-001"), "Anna invoke_id is retained for support correlation");
   eq(ui.shown("wallet-execute-btn"), false, "no retry button remains after ambiguous consume");
   eq(walletCalls.some((call) => call.method === "eth_sendTransaction"), false, "wallet is not called without confirmed consume response");
   const consumeCalls = ui.calls.tools.filter((method) => method === "verigate_consume_execution_authorization");
