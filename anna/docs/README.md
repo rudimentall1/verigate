@@ -5,6 +5,7 @@ This directory contains current Anna-specific operational documentation. The int
 ## Current
 
 - [Release status](RELEASE-STATUS.md) — current App/Executa versions, actual Runtime evidence, release state and unverified limits.
+- [Live MetaMask integration checkpoint](history/SESSION-CHECKPOINT-2026-11-10-LIVE-METAMASK.md) — 9 November real MetaMask hand-off, ExecutionRouter consumption and user-denied signature outcome.
 
 ## History
 
