@@ -117,7 +117,8 @@ class VerigateClient:
         authorization_result = self.authorize_action(signed_intent)
         receipt = authorization_result.get("decision_receipt")
         receipt_payload = receipt.get("payload") if isinstance(receipt, dict) else None
-        decision = receipt_payload.get("decision") if isinstance(receipt_payload, dict) else None
+        decision_record = receipt_payload.get("decision") if isinstance(receipt_payload, dict) else None
+        decision = decision_record.get("decision") if isinstance(decision_record, dict) else None
         execution_authorization = authorization_result.get("execution_authorization")
         if decision != "ALLOW" or not isinstance(execution_authorization, dict) or not execution_authorization:
             return {
