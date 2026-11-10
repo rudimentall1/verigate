@@ -41,6 +41,9 @@ Use the skills from `~/.agents/skills/` when the corresponding command is reques
 Before changing Anna, read:
 - `anna/docs/RELEASE-STATUS.md`
 - `anna/docs/history/SESSION-CHECKPOINT-2026-11-10-LIVE-METAMASK.md`
+- `anna/docs/ANNA-PLATFORM-COMPATIBILITY-2026-11-10.md`
+
+Use the platform compatibility review as the current source for schema-4, Executa, APS, Agent Session and `tools.invoke` failure semantics. Do not copy legacy host API declarations from older Anna tutorials into a schema-4 App.
 
 The 9 November 2026 user-supplied recording proves a real Brave + MetaMask EIP-1193 wallet hand-off for 25 USDC on Base. Verigate issued and verified a one-time ExecutionAuthorization; ExecutionRouter consumed it before the real MetaMask signature prompt. The user denied the MetaMask signature, and Anna displayed `MetaMask Tx Signature: User denied transaction signature.`
 
