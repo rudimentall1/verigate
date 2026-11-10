@@ -203,30 +203,38 @@ class ArcApiTest(unittest.TestCase):
 
                 registration_hash = "0x" + "11" * 32
                 consumption_hash = "0x" + "22" * 32
-                registration = client.post(
-                    "/v1/integrations/arc/registration/confirm",
-                    json={
-                        "authorization": authorization,
-                        "registration_tx_hash": registration_hash,
-                    },
-                )
-                self.assertEqual(registration.status_code, 200, registration.text)
-                self.assertTrue(registration.json()["registered"])
-                self.assertEqual(
-                    registration.json()["consume_transaction"]["to"].lower(),
-                    body["arc_authority"]["contract_address"].lower(),
-                )
+                # Confirmation must use the canonical Arc inclusion timestamp,
+                # not wall-clock time at the later HTTP confirmation request.
+                # Simulate both confirmations arriving after expiry even though
+                # the mocked registration and consumption blocks are pre-expiry.
+                with patch(
+                    "attest.receipt.time.time",
+                    return_value=authorization["payload"]["expires_at"] + 1,
+                ):
+                    registration = client.post(
+                        "/v1/integrations/arc/registration/confirm",
+                        json={
+                            "authorization": authorization,
+                            "registration_tx_hash": registration_hash,
+                        },
+                    )
+                    self.assertEqual(registration.status_code, 200, registration.text)
+                    self.assertTrue(registration.json()["registered"])
+                    self.assertEqual(
+                        registration.json()["consume_transaction"]["to"].lower(),
+                        body["arc_authority"]["contract_address"].lower(),
+                    )
 
-                consumption = client.post(
-                    "/v1/integrations/arc/consume/confirm",
-                    json={
-                        "authorization": authorization,
-                        "registration_tx_hash": registration_hash,
-                        "consume_tx_hash": consumption_hash,
-                    },
-                )
-                self.assertEqual(consumption.status_code, 200, consumption.text)
-                result = consumption.json()
+                    consumption = client.post(
+                        "/v1/integrations/arc/consume/confirm",
+                        json={
+                            "authorization": authorization,
+                            "registration_tx_hash": registration_hash,
+                            "consume_tx_hash": consumption_hash,
+                        },
+                    )
+                    self.assertEqual(consumption.status_code, 200, consumption.text)
+                    result = consumption.json()
                 self.assertTrue(result["execute"])
                 self.assertEqual(
                     result["arc_authority_evidence"]["registration"]["transaction_ref"],
