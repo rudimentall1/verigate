@@ -105,6 +105,7 @@ Earlier release notes described a MetaMask prompt and ExecutionRouter consumptio
 
 - Current App ID 851, immutable App version **0.1.28** (version ID **2082**); bundle status `ready`, 3 files / 91,055 bytes, content hash `67f237c123a07e6c09900acd5fe5238c60e96b43ccf8ff8ea4b14e0826b6bec6`. Platform status is **draft**, not Marketplace-published and not submitted for review.
 - Bundled production Executa ID 1314, version **0.1.16** (version ID 1042).
+- A source-only App **0.1.29** candidate adds explicit cancellation-state handling and ALLOW/WARN cancellation E2E tests. It has not been cut or uploaded; the platform still serves Draft 0.1.28.
 - App 0.1.28 is a listing/metadata refresh. It carries forward the 0.1.27 runtime unchanged.
 - Local Anna UI E2E tests exercise the actual App bundle and Python Executa with a scripted Anna Sampling host; the wallet path uses a test EIP-1193 provider. These are automated integration tests, not a live connected-wallet test.
 
