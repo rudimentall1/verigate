@@ -57,7 +57,10 @@ def main() -> int:
         return 2
 
     receipt = result["authorization"].get("decision_receipt", {}).get("payload", {})
-    print(f"Decision: {receipt.get('decision', 'UNKNOWN')}")
+    decision = receipt.get("decision", {})
+    if isinstance(decision, dict):
+        decision = decision.get("decision", "UNKNOWN")
+    print(f"Decision: {decision}")
     if not result["authorized"]:
         print("Protected operation was not executed.")
         return 1
