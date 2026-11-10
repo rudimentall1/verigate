@@ -111,10 +111,11 @@ Earlier release notes described a MetaMask prompt and ExecutionRouter consumptio
 
 ### Automated and build evidence
 
-- Full Python suite: **626 passed, 4 skipped** (latest recorded main-branch result).
-- Anna UI E2E: **61/61 passed** before the cancellation regression tests added in the current PR.
+- GitHub Actions Python unittest suite: **603 passed**.
+- Anna UI E2E: **63/63 passed**, including explicit ALLOW and WARN cancellation regression tests.
 - App 0.1.27 lifecycle hardening and App 0.1.28 listing source passed exact-source CI: [run 42619825112](https://github.com/rudimentall1/verigate/actions/runs/42619825112).
 - Four-platform Executa 0.1.16 reproducible build, packaging and extracted-package smoke tests passed for Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel x86_64: [run 42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453). These are workflow artifacts, not a public GitHub Release.
+- The cancellation-state fix passed all three CI jobs, including Python, Contracts, Anna UI 63/63, strict schema-4 validation and Linux Executa 0.1.16 build/smoke: [run 42786256350](https://github.com/rudimentall1/verigate/actions/runs/42786256350).
 
 ### Still unverified — do not overclaim
 
