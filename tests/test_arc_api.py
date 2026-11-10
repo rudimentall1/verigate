@@ -123,7 +123,14 @@ class ArcApiTest(unittest.TestCase):
             "metadata": metadata,
         }
 
-        with patch.object(main.ArcMainnetIntegration, "status", return_value=ARC_STATUS):
+        with patch.object(main.ArcMainnetIntegration, "status", return_value=ARC_STATUS), patch.object(
+            main.ArcAuthorityRegistry, "verify_deployment", return_value={"verified": True, "chain_id": ARC_CHAIN_ID}
+        ), patch.object(
+            main.ArcAuthorityRegistry, "prepare_registration_transaction", return_value={
+                "contract_address": "0x4444444444444444444444444444444444444444",
+                "registration_transaction": {"to": "0x4444444444444444444444444444444444444444", "data": "0x1234"},
+            }
+        ):
             with TestClient(main.app) as client:
                 main._storage.register_identity(identity)
                 main._storage.register_capability(capability)
@@ -144,24 +151,17 @@ class ArcApiTest(unittest.TestCase):
                 )
                 self.assertTrue(valid, reason)
                 self.assertEqual(body["arc_network"]["chain_id"], ARC_CHAIN_ID)
-                self.assertEqual(body["wallet_transaction"]["to"], ARC_USDC_ADDRESS)
-                self.assertEqual(body["wallet_transaction"]["from"], SENDER)
-                self.assertEqual(body["wallet_transaction"]["chainId"], hex(ARC_CHAIN_ID))
-                self.assertEqual(body["wallet_transaction"]["value"], "0x0")
+                self.assertEqual(body["arc_authority"]["registration_transaction"]["to"].lower(), body["arc_authority"]["contract_address"].lower())
+                self.assertIsNone(body["wallet_transaction"])
+                self.assertIn("/v1/integrations/arc/registration/confirm", " ".join(body["execution_order"]))
 
+                # The generic consume route must not bypass the Arc registry.
                 consumed = client.post(
                     "/v1/execution/consume",
                     json={"authorization": authorization},
                 )
-                self.assertEqual(consumed.status_code, 200)
-                self.assertTrue(consumed.json()["execute"], consumed.json()["reason"])
-
-                replay = client.post(
-                    "/v1/execution/consume",
-                    json={"authorization": authorization},
-                )
-                self.assertEqual(replay.status_code, 200)
-                self.assertFalse(replay.json()["execute"])
+                self.assertEqual(consumed.status_code, 409)
+                self.assertIn("on-chain registration", consumed.json()["detail"])
 
     def test_arc_endpoint_rejects_non_arc_payment_before_network_or_identity_checks(self):
         request = {

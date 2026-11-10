@@ -774,12 +774,19 @@ def authorize_x402(req: X402HeaderRequest) -> dict:
 def consume_execution(req: ExecutionConsumeRequest) -> dict:
     """Consume a signed execution capability through the universal router."""
     assert _storage is not None
+    authorization = req.authorization.model_dump()
+    action = authorization.get("payload", {}).get("action", {})
+    if action.get("network") == ARC_CHAIN:
+        raise HTTPException(
+            status_code=409,
+            detail="Arc execution requires confirmed on-chain registration and consumption; use /v1/integrations/arc/consume/confirm",
+        )
     router = ExecutionRouter(
         NetworkRegistry(),
         _storage,
         issuer_public_key(PUBLIC_KEY_PATH),
     )
-    ok, reason = router.consume(req.authorization.model_dump())
+    ok, reason = router.consume(authorization)
     return {"execute": ok, "reason": reason}
 
 
