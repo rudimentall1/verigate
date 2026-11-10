@@ -1070,9 +1070,15 @@ function requestUserConfirmation({ title, message, confirmLabel = "Confirm" }) {
 
 function errorDetail(error) {
   if (typeof error === "string") return error;
-  const code = error?.code ?? error?.data?.code ?? error?.status ?? error?.response?.status ?? error?.data?.status;
-  const message = error?.message || error?.data?.message || error?.response?.data?.message || String(error || "Unknown host error");
-  return (code !== undefined ? "[" + code + "] " : "") + message;
+  const hostFailure = extractHostFailure(error);
+  const code = error?.code ?? error?.data?.code ?? error?.status ??
+    error?.response?.status ?? error?.data?.status ?? hostFailure.code;
+  const message = hostFailure.message || error?.message ||
+    error?.data?.message || error?.response?.data?.message ||
+    String(error || "Unknown host error");
+  const trace = hostFailure.traceText;
+  return (code !== undefined && code !== null ? "[" + code + "] " : "") +
+    message + (trace ? " " + trace : "");
 }
 
 async function storeAppApproval(kind, fields) {
@@ -1514,7 +1520,9 @@ async function executeWithConnectedWallet() {
       ". This is executor self-report, not on-chain confirmation. Explorer: " + networkConfig.explorer + submittedTxHash;
     setBusy(false, "Wallet submission recorded as SUBMITTED. This app has not independently verified on-chain inclusion or finality.");
   } catch (error) {
-    const originalMessage = String(error?.message || error || "Wallet execution failed").slice(0, 500);
+    // Anna's invoke errors can carry invoke_id/client_id/reason under details.
+    // Preserve that correlation data in the signed outcome receipt and UI.
+    const originalMessage = errorDetail(error).slice(0, 500);
     let recordedOutcome = null;
     let outcomeReceiptError = null;
 
