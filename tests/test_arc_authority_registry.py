@@ -335,7 +335,7 @@ def test_inclusion_block_rejects_timestamp_before_issuance():
 
 
 class ArcAuthorityRegistryFlowTest(unittest.TestCase):
-    def test_full_registration_and_consumption_confirmation_verify_registry_state():
+    def test_full_registration_and_consumption_confirmation_verify_registry_state(self):
         from integrations.arc_authority_registry import (
             CONSUMED_EVENT,
             GET_AUTHORIZATION_SELECTOR,
