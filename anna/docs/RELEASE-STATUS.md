@@ -29,10 +29,11 @@ The 10 November recording does not display an immutable App version identifier. 
 
 ## Automated and build evidence
 
-- Full Python suite: **626 passed, 4 skipped**.
-- Anna UI E2E: **61/61 passed**.
+- GitHub Actions Python unittest suite: **603 passed**.
+- Anna UI E2E: **63/63 passed**, including ALLOW and WARN cancellation regression tests.
 - Exact-source CI for the App 0.1.27 lifecycle hardening and App 0.1.28 listing source: [run 42619825112](https://github.com/rudimentall1/verigate/actions/runs/42619825112), all three jobs passed.
 - Four-platform Executa 0.1.16 reproducible build, packaging and extracted-package smoke tests: [run 42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453). Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel x86_64 passed. These are workflow artifacts, not a public GitHub Release.
+- Source-only App 0.1.29 candidate CI passed all three jobs: Python (603), Contracts, Anna UI (63/63), strict schema-4 validation and Linux Executa build/smoke: [run 42786256350](https://github.com/rudimentall1/verigate/actions/runs/42786256350). The Anna platform itself remains Draft 0.1.28.
 
 ## Remaining limits and release gates
 
