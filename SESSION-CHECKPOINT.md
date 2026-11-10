@@ -11,7 +11,7 @@
 - Pull request: [#38 Integrate Arc on-chain authority registry](https://github.com/rudimentall1/verigate/pull/38)
 - PR state at audit: Draft, not merged.
 - Do not merge, deploy, redeploy the Registry, close PRs, or modify the server without explicit user approval.
-- The Arc branch is not synchronized with `main`. GitHub compare at audit time reported **22 commits ahead, 5 behind**, merge base `be9b496d20496b794906b56388f170a0b7622c1b`; `main` was `c562bf911a7c5956b261ca47ac243f219da4e843`. Reconcile the five incoming commits before merge. Do not assume the branch is current with main.
+- The Arc branch is not synchronized with `main`. GitHub compare after checkpoint/doc commits reported **24 commits ahead, 7 behind**, merge base `be9b496d20496b794906b56388f170a0b7622c1b`; `main` was `1b2a79ac6aa79aa0e717d240338d63a666f0f940`. Reconcile the seven incoming commits before merge. Do not assume the branch is current with main.
 
 ## 2. Arc network and deployed Registry configuration
 
