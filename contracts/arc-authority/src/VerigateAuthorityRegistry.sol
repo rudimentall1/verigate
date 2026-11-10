@@ -103,7 +103,7 @@ contract VerigateAuthorityRegistry {
         require(auth.registeredAt != 0, "Unknown authorization");
         require(!auth.revoked, "Authorization revoked");
         require(!auth.consumed, "Already consumed");
-        require(block.timestamp <= auth.validUntil, "Authorization expired");
+        require(block.timestamp < auth.validUntil, "Authorization expired");
         require(msg.sender == auth.executor, "Wrong executor");
         require(intentHash == auth.intentHash, "Intent hash mismatch");
 

@@ -40,6 +40,9 @@ jobs:
       - name: Atomic-state end-to-end test
         run: npm run test:atomic
 
+      - name: Compile Arc Authority Registry
+        run: npm run compile:arc-authority
+
       - name: Guard access-control test
         run: npm run test:guard
 
