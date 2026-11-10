@@ -119,7 +119,7 @@ class VerigateClient:
         receipt_payload = receipt.get("payload") if isinstance(receipt, dict) else None
         decision = receipt_payload.get("decision") if isinstance(receipt_payload, dict) else None
         execution_authorization = authorization_result.get("execution_authorization")
-        if decision != "ALLOW" or not isinstance(execution_authorization, dict):
+        if decision != "ALLOW" or not isinstance(execution_authorization, dict) or not execution_authorization:
             return {
                 "authorized": False,
                 "authorization": authorization_result,
