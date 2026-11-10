@@ -333,165 +333,168 @@ def test_inclusion_block_rejects_timestamp_before_issuance():
         )
 
 
-def test_full_registration_and_consumption_confirmation_verify_registry_state():
-    from integrations.arc_authority_registry import (
-        CONSUMED_EVENT,
-        GET_AUTHORIZATION_SELECTOR,
-        REGISTERED_EVENT,
-        ArcAuthorityRegistry,
-    )
 
-    registry_address = DEFAULT_REGISTRY.lower()
-    executor = DEFAULT_EXECUTOR.lower()
-    authorization = {
-        "payload": {
-            "authorization_id": "ab" * 32,
-            "issued_at": 90,
-            "expires_at": 2000,
-            "intent_id": "arc-registry-flow",
-        },
-        "signature": "test-signature",
-        "algorithm": "Ed25519",
-    }
-
-    registry = ArcAuthorityRegistry.__new__(ArcAuthorityRegistry)
-    registry.contract_address = registry_address
-    registry.executor_address = executor
-    authorization_id, intent_hash, valid_until = registry._authorization_values(
-        authorization, require_unexpired=False
-    )
-
-    registration_hash = "0x" + "11" * 32
-    consumption_hash = "0x" + "22" * 32
-    registration_block_hash = "0x" + "33" * 32
-    consumption_block_hash = "0x" + "44" * 32
-
-    def word(value):
-        return format(value, "064x")
-
-    def topic_address(address):
-        return "0x" + address[2:].rjust(64, "0")
-
-    registration_log = {
-        "address": registry_address,
-        "topics": [
-            REGISTERED_EVENT + "0" * 56,
-            "0x" + authorization_id,
-            "0x" + intent_hash,
-            topic_address(executor),
-        ],
-        "data": "0x" + word(valid_until) + word(int(executor, 16)),
-    }
-    consumption_log = {
-        "address": registry_address,
-        "topics": [
-            CONSUMED_EVENT + "0" * 56,
-            "0x" + authorization_id,
-            "0x" + intent_hash,
-            topic_address(executor),
-        ],
-        "data": "0x",
-    }
-
-    def make_transaction(tx_hash, calldata):
-        return {
-            "hash": tx_hash,
-            "chainId": hex(ARC_CHAIN_ID),
-            "to": registry_address,
-            "from": executor,
-            "input": calldata,
-            "value": "0x0",
+class ArcAuthorityRegistryFlowTest(unittest.TestCase):
+    def test_full_registration_and_consumption_confirmation_verify_registry_state():
+        from integrations.arc_authority_registry import (
+            CONSUMED_EVENT,
+            GET_AUTHORIZATION_SELECTOR,
+            REGISTERED_EVENT,
+            ArcAuthorityRegistry,
+        )
+    
+        registry_address = DEFAULT_REGISTRY.lower()
+        executor = DEFAULT_EXECUTOR.lower()
+        authorization = {
+            "payload": {
+                "authorization_id": "ab" * 32,
+                "issued_at": 90,
+                "expires_at": 2000,
+                "intent_id": "arc-registry-flow",
+            },
+            "signature": "test-signature",
+            "algorithm": "Ed25519",
         }
-
-    registration_calldata = (
-        REGISTER_SELECTOR
-        + authorization_id
-        + intent_hash
-        + word(int(executor, 16))
-        + word(valid_until)
-    )
-    consumption_calldata = CONSUME_SELECTOR + authorization_id + intent_hash
-
-    class FlowRpc:
-        consumed = False
-
-        def chain_id(self):
-            return ARC_CHAIN_ID
-
-        def get_code(self, _):
-            return "0x60006000"
-
-        def eth_call(self, _, data):
-            if data == "0x8da5cb5b":
-                return "0x" + "0" * 24 + executor[2:]
-            if data == GET_AUTHORIZATION_SELECTOR + authorization_id:
-                return "0x" + "".join(
-                    [
-                        intent_hash,
-                        word(int(executor, 16)),
-                        word(valid_until),
-                        word(100),
-                        word(int(self.consumed)),
-                        word(0),
-                    ]
-                )
-            raise AssertionError(f"Unexpected eth_call: {data}")
-
-        def get_transaction_receipt(self, tx_hash):
-            if tx_hash == registration_hash:
-                return {
-                    "transactionHash": registration_hash,
-                    "status": "0x1",
-                    "to": registry_address,
-                    "from": executor,
-                    "blockNumber": "0x64",
-                    "blockHash": registration_block_hash,
-                    "logs": [registration_log],
-                }
-            if tx_hash == consumption_hash:
-                return {
-                    "transactionHash": consumption_hash,
-                    "status": "0x1",
-                    "to": registry_address,
-                    "from": executor,
-                    "blockNumber": "0x65",
-                    "blockHash": consumption_block_hash,
-                    "logs": [consumption_log],
-                }
-            return None
-
-        def get_transaction_by_hash(self, tx_hash):
-            if tx_hash == registration_hash:
-                return make_transaction(registration_hash, registration_calldata)
-            if tx_hash == consumption_hash:
-                return make_transaction(consumption_hash, consumption_calldata)
-            return None
-
-        def get_block_by_number(self, number):
-            if number == 100:
-                return {
-                    "number": "0x64",
-                    "timestamp": "0x64",
-                    "hash": registration_block_hash,
-                }
-            if number == 101:
-                return {
-                    "number": "0x65",
-                    "timestamp": "0x65",
-                    "hash": consumption_block_hash,
-                }
-            return None
-
-    rpc = FlowRpc()
-    registry.rpc = rpc
-
-    registration = registry.confirm_registration(authorization, registration_hash)
-    assert registration["registered"] is True
-    assert registration["authorization_id"] == "0x" + authorization_id
-    assert registration["consume_transaction"]["data"] == consumption_calldata
-
-    rpc.consumed = True
-    consumption = registry.confirm_consumption(authorization, consumption_hash)
-    assert consumption["consumed"] is True
-    assert consumption["transaction_ref"] == consumption_hash
-    assert consumption["block_timestamp"] == 101
+    
+        registry = ArcAuthorityRegistry.__new__(ArcAuthorityRegistry)
+        registry.contract_address = registry_address
+        registry.executor_address = executor
+        authorization_id, intent_hash, valid_until = registry._authorization_values(
+            authorization, require_unexpired=False
+        )
+    
+        registration_hash = "0x" + "11" * 32
+        consumption_hash = "0x" + "22" * 32
+        registration_block_hash = "0x" + "33" * 32
+        consumption_block_hash = "0x" + "44" * 32
+    
+        def word(value):
+            return format(value, "064x")
+    
+        def topic_address(address):
+            return "0x" + address[2:].rjust(64, "0")
+    
+        registration_log = {
+            "address": registry_address,
+            "topics": [
+                REGISTERED_EVENT + "0" * 56,
+                "0x" + authorization_id,
+                "0x" + intent_hash,
+                topic_address(executor),
+            ],
+            "data": "0x" + word(valid_until) + word(int(executor, 16)),
+        }
+        consumption_log = {
+            "address": registry_address,
+            "topics": [
+                CONSUMED_EVENT + "0" * 56,
+                "0x" + authorization_id,
+                "0x" + intent_hash,
+                topic_address(executor),
+            ],
+            "data": "0x",
+        }
+    
+        def make_transaction(tx_hash, calldata):
+            return {
+                "hash": tx_hash,
+                "chainId": hex(ARC_CHAIN_ID),
+                "to": registry_address,
+                "from": executor,
+                "input": calldata,
+                "value": "0x0",
+            }
+    
+        registration_calldata = (
+            REGISTER_SELECTOR
+            + authorization_id
+            + intent_hash
+            + word(int(executor, 16))
+            + word(valid_until)
+        )
+        consumption_calldata = CONSUME_SELECTOR + authorization_id + intent_hash
+    
+        class FlowRpc:
+            consumed = False
+    
+            def chain_id(self):
+                return ARC_CHAIN_ID
+    
+            def get_code(self, _):
+                return "0x60006000"
+    
+            def eth_call(self, _, data):
+                if data == "0x8da5cb5b":
+                    return "0x" + "0" * 24 + executor[2:]
+                if data == GET_AUTHORIZATION_SELECTOR + authorization_id:
+                    return "0x" + "".join(
+                        [
+                            intent_hash,
+                            word(int(executor, 16)),
+                            word(valid_until),
+                            word(100),
+                            word(int(self.consumed)),
+                            word(0),
+                        ]
+                    )
+                raise AssertionError(f"Unexpected eth_call: {data}")
+    
+            def get_transaction_receipt(self, tx_hash):
+                if tx_hash == registration_hash:
+                    return {
+                        "transactionHash": registration_hash,
+                        "status": "0x1",
+                        "to": registry_address,
+                        "from": executor,
+                        "blockNumber": "0x64",
+                        "blockHash": registration_block_hash,
+                        "logs": [registration_log],
+                    }
+                if tx_hash == consumption_hash:
+                    return {
+                        "transactionHash": consumption_hash,
+                        "status": "0x1",
+                        "to": registry_address,
+                        "from": executor,
+                        "blockNumber": "0x65",
+                        "blockHash": consumption_block_hash,
+                        "logs": [consumption_log],
+                    }
+                return None
+    
+            def get_transaction_by_hash(self, tx_hash):
+                if tx_hash == registration_hash:
+                    return make_transaction(registration_hash, registration_calldata)
+                if tx_hash == consumption_hash:
+                    return make_transaction(consumption_hash, consumption_calldata)
+                return None
+    
+            def get_block_by_number(self, number):
+                if number == 100:
+                    return {
+                        "number": "0x64",
+                        "timestamp": "0x64",
+                        "hash": registration_block_hash,
+                    }
+                if number == 101:
+                    return {
+                        "number": "0x65",
+                        "timestamp": "0x65",
+                        "hash": consumption_block_hash,
+                    }
+                return None
+    
+        rpc = FlowRpc()
+        registry.rpc = rpc
+    
+        registration = registry.confirm_registration(authorization, registration_hash)
+        assert registration["registered"] is True
+        assert registration["authorization_id"] == "0x" + authorization_id
+        assert registration["consume_transaction"]["data"] == consumption_calldata
+    
+        rpc.consumed = True
+        consumption = registry.confirm_consumption(authorization, consumption_hash)
+        assert consumption["consumed"] is True
+        assert consumption["transaction_ref"] == consumption_hash
+        assert consumption["block_timestamp"] == 101
+    
