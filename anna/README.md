@@ -103,23 +103,24 @@ Earlier release notes described a MetaMask prompt and ExecutionRouter consumptio
 
 ### Current Anna platform version
 
-- Current App ID 851, immutable App version **0.1.28** (version ID **2082**); bundle status `ready`, 3 files / 91,055 bytes, content hash `67f237c123a07e6c09900acd5fe5238c60e96b43ccf8ff8ea4b14e0826b6bec6`. Platform status is **draft**, not Marketplace-published and not submitted for review.
-- Bundled production Executa ID 1314, version **0.1.16** (version ID 1042).
-- A source-only App **0.1.29** candidate adds explicit cancellation-state handling and ALLOW/WARN cancellation E2E tests. It has not been cut or uploaded; the platform still serves Draft 0.1.28.
-- App 0.1.28 is a listing/metadata refresh. It carries forward the 0.1.27 runtime unchanged.
-- Local Anna UI E2E tests exercise the actual App bundle and Python Executa with a scripted Anna Sampling host; the wallet path uses a test EIP-1193 provider. These are automated integration tests, not a live connected-wallet test.
+- Current App ID 851, immutable App version **0.1.29** (version ID **2097**); bundle status `ready`, 3 files / 93,108 bytes. Platform status is **Draft**, not Marketplace-published and not submitted for review.
+- Bundled production Executa ID 1314, version **0.1.16** (version ID 1042); the 0.1.29 cut reused its four cached platform binaries.
+- App 0.1.29 includes explicit ALLOW/WARN cancellation-state handling and regression tests. It was uploaded as the mutable working draft and cut as immutable Draft version ID 2097 on 10 November 2026; it has not been released to end users.
+- App 0.1.28 was a listing/metadata refresh over the 0.1.27 runtime.
+- Local Anna UI E2E tests exercise the App bundle and Python Executa with a scripted Anna Sampling host; wallet behavior uses a mocked EIP-1193 provider. These are automated integration tests, not a live connected-wallet test.
 
 ### Automated and build evidence
 
 - GitHub Actions Python unittest suite: **603 passed**.
 - Anna UI E2E: **63/63 passed**, including explicit ALLOW and WARN cancellation regression tests.
+- Local targeted Anna Python suite rerun on 10 November: **75 passed, 32 subtests passed**; Anna schema-4 strict validation passed.
 - App 0.1.27 lifecycle hardening and App 0.1.28 listing source passed exact-source CI: [run 42619825112](https://github.com/rudimentall1/verigate/actions/runs/42619825112).
 - Four-platform Executa 0.1.16 reproducible build, packaging and extracted-package smoke tests passed for Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel x86_64: [run 42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453). These are workflow artifacts, not a public GitHub Release.
 - The cancellation-state fix passed all three CI jobs, including Python, Contracts, Anna UI 63/63, strict schema-4 validation and Linux Executa 0.1.16 build/smoke: [run 42786256350](https://github.com/rudimentall1/verigate/actions/runs/42786256350).
 
 ### Still unverified — do not overclaim
 
-- Successful live issuance of an App-scoped Execution Authorization in the current 0.1.28 Runtime.
+- Successful live issuance of an App-scoped Execution Authorization in the 0.1.29 Anna Runtime.
 - Availability of an injected EIP-1193 wallet provider in a fresh Anna Cloud Agent session, live ExecutionRouter consumption and wallet submission.
 - Independent on-chain inclusion, confirmation depth, finality or reorg monitoring.
 - Cloud persistence across restart/reinstall and a live replay attempt against App-scope approval.
