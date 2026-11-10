@@ -1356,6 +1356,8 @@ async function executeWithConnectedWallet() {
   let consumed = false;
   let consumeAttempted = false;
   let submittedTxHash = null;
+  let walletSender = null;
+  let walletRequestStarted = false;
   try {
     setBusy(true, "Checking the connected wallet before confirmation…");
     let activeChain = String(await provider.request({ method: "eth_chainId" })).toLowerCase();
@@ -1374,6 +1376,7 @@ async function executeWithConnectedWallet() {
     if (typeof from !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(from)) {
       throw new Error("The wallet did not return a valid account.");
     }
+    walletSender = from.toLowerCase();
     const confirmWallet = await requestUserConfirmation({
       title: "Confirm wallet submission",
       message:
@@ -1447,6 +1450,9 @@ async function executeWithConnectedWallet() {
         finalAccounts[0].toLowerCase() !== from.toLowerCase()) {
       throw new Error("The active wallet account changed after permission consumption. No transaction was sent; request a fresh permission.");
     }
+    // From this point onward, an exception other than EIP-1193 4001
+    // cannot prove that the transaction was not broadcast.
+    walletRequestStarted = true;
     const txHash = await provider.request({
       method: "eth_sendTransaction",
       params: [{
@@ -1508,25 +1514,117 @@ async function executeWithConnectedWallet() {
       ". This is executor self-report, not on-chain confirmation. Explorer: " + networkConfig.explorer + submittedTxHash;
     setBusy(false, "Wallet submission recorded as SUBMITTED. This app has not independently verified on-chain inclusion or finality.");
   } catch (error) {
-    if (consumed) {
+    const originalMessage = String(error?.message || error || "Wallet execution failed").slice(0, 500);
+    let recordedOutcome = null;
+    let outcomeReceiptError = null;
+
+    if (!submittedTxHash && (consumed || consumeAttempted)) {
+      // If the consume response was lost, the Executa must prove nonce
+      // consumption from durable storage before signing an ABORTED receipt.
+      // Once eth_sendTransaction starts, only code 4001 proves explicit
+      // rejection; every other error is an ambiguous UNKNOWN outcome.
+      const phase = !consumed && consumeAttempted
+        ? "router_response_unknown"
+        : walletRequestStarted
+          ? "wallet_request"
+          : "pre_wallet_request";
+      const errorCode = Number.isInteger(error?.code) ? error.code : null;
+      const outcome = phase === "router_response_unknown" || phase === "pre_wallet_request"
+        ? "ABORTED"
+        : errorCode === 4001
+          ? "REJECTED"
+          : "UNKNOWN";
+      try {
+        const sender = walletSender || null;
+        const { nonce: outcomeNonce } = await storeAppApproval("wallet_outcome_receipt", {
+          authorization_id: authorization.payload?.authorization_id,
+          outcome,
+          phase,
+          error_code: errorCode,
+          error_message: originalMessage,
+          sender
+        });
+        const outcomeArgs = {
+          authorization_id: authorization.payload?.authorization_id,
+          outcome,
+          phase,
+          error_message: originalMessage,
+          sender: sender || "",
+          confirmation_nonce: outcomeNonce
+        };
+        if (errorCode !== null) outcomeArgs.error_code = errorCode;
+        const outcomeResponse = await state.anna.tools.invoke({
+          tool_id: TOOL_ID,
+          method: "verigate_record_wallet_outcome_receipt",
+          args: outcomeArgs
+        });
+        const outcomeOuter = unwrapToolResult(outcomeResponse);
+        const outcomeData = toolDataOrDirect(outcomeOuter, (candidate) =>
+          candidate.authorization_id === authorization.payload?.authorization_id &&
+          candidate.execution_status === outcome &&
+          candidate.receipt_verified === true &&
+          candidate.receipt_trust_scope === "wallet_outcome_self_report" &&
+          candidate.independent_chain_confirmation === false &&
+          candidate.transaction_submitted === false &&
+          candidate.execution_receipt?.payload?.status === outcome
+        );
+        const outcomeReceipt = outcomeData?.execution_receipt;
+        if (!outcomeData ||
+            outcomeData.authorization_id !== authorization.payload?.authorization_id ||
+            outcomeData.execution_status !== outcome ||
+            outcomeData.receipt_verified !== true ||
+            outcomeData.receipt_trust_scope !== "wallet_outcome_self_report" ||
+            outcomeData.independent_chain_confirmation !== false ||
+            outcomeData.transaction_submitted !== false ||
+            outcomeReceipt?.payload?.status !== outcome ||
+            outcomeReceipt?.payload?.transaction_ref !== null) {
+          throw new Error(outcomeOuter?.error || "Verigate did not verify and persist the signed wallet outcome receipt.");
+        }
+        recordedOutcome = outcome;
+      } catch (receiptError) {
+        outcomeReceiptError = String(receiptError?.message || receiptError || "unknown receipt error").slice(0, 400);
+      }
+    }
+
+    if (submittedTxHash) {
       state.lastExecutionAuthorization = null;
       $("wallet-execute-btn").style.display = "none";
-      $("execution-status").textContent = submittedTxHash
-        ? "The wallet returned transaction hash " + submittedTxHash + ", but Verigate could not finish persisting its signed receipt: " +
-          (error?.message || String(error)) + ". Check the explorer before taking any further action; do not resubmit this payment."
-        : "The one-time permission was consumed, but wallet submission did not complete or could not be verified: " +
-          (error?.message || String(error)) + ". Check wallet activity. A fresh policy check and new permission are required before another attempt.";
-    } else if (consumeAttempted) {
-      // The Executa may have consumed the permission before the response was lost.
-      // Fail closed locally and require a fresh policy check instead of offering a retry.
+      $("execution-status").textContent =
+        "The wallet returned transaction hash " + submittedTxHash + ", but Verigate could not finish persisting its signed submission receipt: " +
+        originalMessage + ". Check the explorer before taking any further action; do not resubmit this payment.";
+    } else if (recordedOutcome) {
+      state.lastExecutionAuthorization = null;
+      $("wallet-execute-btn").style.display = "none";
+      const statusMessage = recordedOutcome === "REJECTED"
+        ? "MetaMask explicitly rejected the signature request (EIP-1193 4001)."
+        : recordedOutcome === "ABORTED"
+          ? "Wallet submission was aborted before eth_sendTransaction was started."
+          : "The wallet submission outcome is UNKNOWN. The wallet request started, but no transaction hash was returned.";
+      $("execution-status").textContent =
+        "Verigate stored a signed " + recordedOutcome + " ExecutionReceipt for authorization " +
+        authorization.payload?.authorization_id + ". " + statusMessage +
+        " Evidence scope: Anna installation self-report, not wallet signature or chain confirmation. " +
+        "A fresh policy check and new permission are required before another attempt.";
+    } else if (consumed || consumeAttempted) {
       state.lastExecutionAuthorization = null;
       $("wallet-execute-btn").disabled = true;
       $("wallet-execute-btn").style.display = "none";
-      $("wallet-execute-btn").textContent = "Authorization status unknown";
-      $("execution-status").textContent = "Verigate could not confirm whether ExecutionRouter consumed this permission. Do not retry it. Run a fresh policy check and create a new permission.";
+      $("wallet-execute-btn").textContent = "Outcome receipt unavailable";
+      $("execution-status").textContent =
+        "The one-time permission may have been consumed, but Anna could not record a signed wallet outcome receipt. " +
+        (outcomeReceiptError || originalMessage) +
+        ". Check wallet activity and the chain before taking any further action. Do not retry this authorization.";
     }
-    showError(error?.message || String(error));
-    setBusy(false, consumed ? (submittedTxHash ? "Wallet returned a transaction hash. Do not retry until its status is checked." : "Permission consumed. No retry is possible with this authorization.") : consumeAttempted ? "Permission consumption could not be confirmed. Do not retry this authorization; run a fresh policy check." : "Wallet execution did not start. The permission remains unused.");
+    showError(outcomeReceiptError
+      ? originalMessage + " | Signed outcome receipt was not recorded: " + outcomeReceiptError
+      : originalMessage);
+    setBusy(false, submittedTxHash
+      ? "Wallet returned a transaction hash. Do not retry until its status is checked."
+      : recordedOutcome
+        ? "Wallet outcome recorded as " + recordedOutcome + ". The one-time permission cannot be reused."
+        : consumed || consumeAttempted
+          ? "Permission consumption/outcome must be checked. Do not retry this authorization."
+          : "Wallet execution did not start. The permission remains unused.");
   }
 }
 
