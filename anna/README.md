@@ -85,43 +85,63 @@ cd anna && npx --yes @anna-ai/cli@0.1.64 validate --strict
 
 The Anna UI E2E harness runs the real App bundle and real Python Executa subprocess. Its host-side Sampling fixture simulates the Anna reverse-RPC response without calling Anna's paid LLM service or consuming Anna CU quota. UI coverage includes quota-exhausted fallback, Russian and English free text, decimal-dot and decimal-comma amounts, ambiguous thousands separators, conflicting form/request values, and the rule that degraded previews cannot issue execution authority. The wire-level `tests/test_anna_sampling_roundtrip.py` independently verifies the v2 Sampling handshake, `sampling/createMessage` frame and invoke-context propagation. These tests prove the local integration path; they do **not** prove Cloud Agent install or platform-side LLM availability.
 
-## Live Anna Runtime evidence — 2026-11-10
+## Live Anna Runtime evidence — 9–10 November 2026
 
-The reviewed Runtime recordings demonstrate the interpretation and policy-decision path. They do **not** demonstrate a connected wallet or an on-chain payment.
+Two different live tests were performed and must not be conflated.
+
+### 9 November — real MetaMask wallet hand-off
+
+The user supplied a 12-minute screen recording (`2026-11-09 15-05-43.mp4`, 1920×1080, 30 fps). Its relevant frames show the real Anna Runtime in Brave with the user's MetaMask extension:
+
+- Anna interpreted a request to pay **25 USDC on Base** to `0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed` for invoice 1042.
+- Verigate returned **ALLOW** and the App verified the Ed25519 Decision Receipt.
+- A one-time Execution Authorization was issued, verified and bound to the exact transfer.
+- The user selected **Send with connected wallet**. The real MetaMask extension opened the exact 25 USDC Base transaction, showing Wallet 1 and the intended recipient.
+- **ExecutionRouter consumed the permission before the wallet signature prompt.** The App then stated that the permission was consumed and could not be retried.
+- The user denied the MetaMask signature. The App displayed: `MetaMask Tx Signature: User denied transaction signature.`
+
+This proves a live EIP-1193 provider, real MetaMask transaction hand-off and one-time ExecutionRouter consumption. The recorded attempt ends with an intentional signature rejection. It does **not** show a successful wallet signature, transaction hash, broadcast, on-chain inclusion or settlement. Because the permission was already consumed, the user must obtain a fresh authorization before another attempt.
+
+The recording does not show an immutable App version identifier, so it is not evidence that App 0.1.29 itself has passed live acceptance. The original recording is retained in the user's private file library and is not published in this repository. Its full evidence classification and SHA-256 are in [the live MetaMask checkpoint](docs/history/SESSION-CHECKPOINT-2026-11-10-LIVE-METAMASK.md).
+
+### 10 November — in-App cancellation regression
+
+A separate Runtime recording shows the user deliberately cancelling the in-App ALLOW/WARN permission confirmation. No App-scope approval was written and no Execution Authorization was created in that attempt. This is the cancellation behavior now covered by App 0.1.29 regression tests.
+
+The prior claim that no wallet had ever been connected in Anna Runtime is withdrawn. It was contradicted by the 9 November live MetaMask recording.
 
 | Layer | Observed result | Boundary |
 |---|---|---|
 | Anna host LLM | Interpreted the natural-language payment request and returned contextual risk findings | Observed in Anna Runtime |
-| Deterministic policy | Returned ALLOW for 25 USDC on Base; returned BLOCK with `asset_not_allowed` for 25 DAI | Observed in Anna Runtime |
-| Decision Receipt | The App verified the Ed25519-signed receipt before displaying the decision | Receipt integrity only; not execution evidence |
-| AI risk escalation | Prompt-injection request produced WARN with `prompt_injection` and `urgency_pressure` flags | Observed in Anna Runtime |
-| App confirmation | The exact payment and warning rules were shown in the in-App confirmation dialog. The user deliberately selected Cancel | Expected cancellation; no App approval was written |
-| Execution Authorization | The 10 November recording does not show successful issuance of a one-time Execution Authorization | Automated UI/Executa tests cover successful issuance; live issuance is not claimed from this recording |
-| ExecutionRouter / wallet | No wallet was connected in the recorded tests. No wallet signature, router consumption, transaction hash, broadcast, on-chain inclusion or settlement is claimed | Live wallet hand-off remains unverified |
-
-Earlier release notes described a MetaMask prompt and ExecutionRouter consumption as live Runtime results. Those claims are withdrawn: the user has confirmed that no wallet has ever been connected during these tests. The 10 November recording also does not display an immutable App version identifier, so it must not be presented as proof that App 0.1.28 itself passed live Runtime acceptance.
+| Deterministic policy | Returned ALLOW for the 25 USDC Base request | Observed in Anna Runtime |
+| Decision Receipt | Ed25519 signature verified | Receipt integrity; not transaction settlement |
+| Execution Authorization | Issued and verified for the exact payment | One-time permission |
+| ExecutionRouter | Consumed the permission before MetaMask signature | Real Runtime observation; permission cannot be reused |
+| MetaMask | Real injected extension displayed the exact 25 USDC Base transaction | Live EIP-1193 wallet hand-off |
+| Wallet signature | User denied the signature request | Expected negative-path outcome; no successful signature |
+| Transaction / chain | No transaction hash, broadcast or chain inclusion is shown | No payment success or settlement is claimed |
 
 ### Current Anna platform version
 
 - Current App ID 851, immutable App version **0.1.29** (version ID **2097**); bundle status `ready`, 3 files / 93,108 bytes. Platform status is **Draft**, not Marketplace-published and not submitted for review.
 - Bundled production Executa ID 1314, version **0.1.16** (version ID 1042); the 0.1.29 cut reused its four cached platform binaries.
 - App 0.1.29 includes explicit ALLOW/WARN cancellation-state handling and regression tests. It was uploaded as the mutable working draft and cut as immutable Draft version ID 2097 on 10 November 2026; it has not been released to end users.
-- App 0.1.28 was a listing/metadata refresh over the 0.1.27 runtime.
-- Local Anna UI E2E tests exercise the App bundle and Python Executa with a scripted Anna Sampling host; wallet behavior uses a mocked EIP-1193 provider. These are automated integration tests, not a live connected-wallet test.
+- The 9 November MetaMask recording predates the 0.1.29 cut and does not identify an immutable App version. It must not be represented as a test of 0.1.29.
 
 ### Automated and build evidence
 
 - GitHub Actions Python unittest suite: **603 passed**.
-- Anna UI E2E: **63/63 passed**, including explicit ALLOW and WARN cancellation regression tests.
+- Anna UI E2E: **63/63 passed**, including ALLOW and WARN cancellation regression tests.
 - Local targeted Anna Python suite rerun on 10 November: **75 passed, 32 subtests passed**; Anna schema-4 strict validation passed.
 - App 0.1.27 lifecycle hardening and App 0.1.28 listing source passed exact-source CI: [run 42619825112](https://github.com/rudimentall1/verigate/actions/runs/42619825112).
-- Four-platform Executa 0.1.16 reproducible build, packaging and extracted-package smoke tests passed for Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel x86_64: [run 42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453). These are workflow artifacts, not a public GitHub Release.
-- The cancellation-state fix passed all three CI jobs, including Python, Contracts, Anna UI 63/63, strict schema-4 validation and Linux Executa 0.1.16 build/smoke: [run 42786256350](https://github.com/rudimentall1/verigate/actions/runs/42786256350).
+- Four-platform Executa 0.1.16 reproducible build, packaging and extracted-package smoke tests passed for Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel x86_64: [run 42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453).
+- App 0.1.29 source CI passed all three jobs: Python (603), Contracts, Anna UI (63/63), strict schema-4 validation and Linux Executa build/smoke: [run 42786256350](https://github.com/rudimentall1/verigate/actions/runs/42786256350).
 
 ### Still unverified — do not overclaim
 
-- Successful live issuance of an App-scoped Execution Authorization in the 0.1.29 Anna Runtime.
-- Availability of an injected EIP-1193 wallet provider in a fresh Anna Cloud Agent session, live ExecutionRouter consumption and wallet submission.
+- The 9 November recording proves live permission issuance and ExecutionRouter consumption in Anna Runtime, but its immutable App version identifier is not visible. Live acceptance of the exact 0.1.29 platform cut still needs version-bound verification.
+- Availability and lifecycle persistence of the injected EIP-1193 provider in a fresh Anna Cloud Agent/Linux session.
+- A user-approved MetaMask signature, wallet-returned transaction hash, signed `SUBMITTED` ExecutionReceipt and successful wallet broadcast. The 9 November user deliberately denied MetaMask signing.
 - Independent on-chain inclusion, confirmation depth, finality or reorg monitoring.
 - Cloud persistence across restart/reinstall and a live replay attempt against App-scope approval.
 - Marketplace approval or publication.
@@ -189,5 +209,6 @@ not CONFIRMED. The app does not claim finality from a wallet response.
 
 - [Current release status and verified limitations](docs/RELEASE-STATUS.md)
 - [Anna documentation index](docs/README.md)
+- [Live MetaMask integration checkpoint](docs/history/SESSION-CHECKPOINT-2026-11-10-LIVE-METAMASK.md)
 - [Historical release records](docs/history/README.md)
 - [Repository-wide documentation index](../docs/README.md)
