@@ -8,7 +8,7 @@
 
 - Repository: `rudimentall1/verigate`
 - Working branch: `integration/arc-authority`
-- Branch HEAD at this checkpoint: `419b851df8bc8fc9df6ef83493d2d2fb1eb945df`
+- Code HEAD audited for this checkpoint and latest CI: `419b851df8bc8fc9df6ef83493d2d2fb1eb945df`. The checkpoint-only documentation commit is newer; no application code changed in that documentation update.
 - Pull request: [#38 Integrate Arc on-chain authority registry](https://github.com/rudimentall1/verigate/pull/38)
 - PR state: open, Draft, not merged.
 - Do not merge, deploy, redeploy the Registry, close the PR, or modify the server without explicit user approval.
@@ -19,7 +19,7 @@ Compared on 2026-11-10:
 - `main` HEAD: `8d689a6e0b20687152048e7c6b70c2fb780781c2`
 - `integration/arc-authority` HEAD: `419b851df8bc8fc9df6ef83493d2d2fb1eb945df`
 - Merge base: `be9b496d20496b794906b56388f170a0b7622c1b`
-- Branch status: diverged; Arc branch is **26 commits ahead and 13 behind** current `main`.
+- At audited code HEAD `419b851df8bc8fc9df6ef83493d2d2fb1eb945df`, branch status was diverged: **26 commits ahead and 13 behind** current `main`. The subsequent checkpoint-only commit adds one documentation commit on the Arc branch. Re-run compare before merge rather than relying on a static count.
 - Do not describe the branch as based on the current main HEAD. PR body wording saying it is based directly on current main is stale.
 - Reconcile the 13 incoming commits before proposing a merge. Do not merge as part of this task.
 
@@ -33,7 +33,7 @@ Server comparison supplied by the user on 2026-11-10:
 - Server has `SESSION_CHECKPOINT.md` (underscore), dated 2026-11-07. It is stale and describes the older investigation stage.
 - GitHub branch has `SESSION-CHECKPOINT.md` (hyphen), this file.
 - Merge base between server HEAD and GitHub branch HEAD: `5febe08f3be58d78aaabfbc7e60b54bc3ca55750`.
-- `git rev-list --left-right --count HEAD...FETCH_HEAD` from the server returned `1 509`: one commit unique to the server history and 509 commits unique to the GitHub branch history after that merge base.
+- Comparing the server snapshot to audited code HEAD `419b851df8bc8fc9df6ef83493d2d2fb1eb945df`, `git rev-list --left-right --count HEAD...FETCH_HEAD` returned `1 509`: one commit unique to the server history and 509 commits unique to that GitHub code history after that merge base. The later checkpoint-only GitHub commit is additional documentation history, not an application-code sync.
 - Tree comparison reported 276 changed files, 35,612 insertions and 3,944 deletions. This is a broad repository-version divergence, not merely a checkpoint filename difference.
 - These server-versus-GitHub numbers are a different comparison from the GitHub branch-versus-main numbers above. Never mix them.
 - No server files, branches, services or deployments were changed during this comparison. The only server-side action was fetching the GitHub branch and running read-only Git inspection commands.
