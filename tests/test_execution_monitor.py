@@ -112,6 +112,29 @@ class ExecutionMonitorTest(unittest.TestCase):
         with self.assertRaises(UnsupportedNetworkError):
             ExecutionMonitor({}).check(receipt.as_dict())
 
+    def test_wallet_outcome_receipts_are_terminal_and_never_query_chain(self):
+        calls = []
+        monitor = ExecutionMonitor({
+            "base": type("Provider", (), {
+                "confirm_transaction": lambda self, ref: calls.append(ref)
+                    or {"state": "CONFIRMED", "transaction_ref": ref}
+            })()
+        })
+        for status in ("REJECTED", "ABORTED", "UNKNOWN"):
+            with self.subTest(status=status):
+                result = monitor.check({
+                    "payload": {
+                        "status": status,
+                        "transaction_ref": None,
+                        "network": "base",
+                    }
+                })
+                self.assertEqual(result, {
+                    "state": status,
+                    "transaction_ref": None,
+                })
+        self.assertEqual(calls, [], "negative/ambiguous wallet outcomes must not be polled as chain transactions")
+
     def test_terminal_receipt_does_not_query_provider(self):
         receipt = self._receipt()
         confirmed = self.router.confirm_execution_receipt(
