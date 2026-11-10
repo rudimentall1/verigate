@@ -276,6 +276,27 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
       }
       await sleep(30);
     },
+    async cancelExecution({ expectWarnings = false } = {}) {
+      $("execution-btn").click();
+      for (let i = 0; i < 200; i++) {
+        if ($("approval-dialog").hasAttribute("open")) break;
+        await sleep(10);
+      }
+      if (!$("approval-dialog").hasAttribute("open")) throw new Error("in-app execution confirmation did not open");
+      const message = $("approval-message").textContent;
+      if (!message.includes("25 USDC") || !message.includes("Recipient:")) {
+        throw new Error("execution confirmation does not show the exact payment details");
+      }
+      if (expectWarnings && !message.includes("Warnings to review:")) {
+        throw new Error("WARN confirmation does not show the exact warning rules");
+      }
+      $("approval-cancel").click();
+      for (let i = 0; i < 200; i++) {
+        if ($("execution-status").textContent.toLowerCase().includes("cancelled")) break;
+        await sleep(10);
+      }
+      await sleep(30);
+    },
     async clickWallet({ stopAtConsume = false } = {}) {
       $("wallet-execute-btn").click();
       for (let i = 0; i < 200; i++) {
@@ -485,6 +506,37 @@ await test("WARN shows exact warning rules and requires a separate App-scope rev
   ok(ui.text("execution-json").includes("anna_warning_review"), "review evidence is included in the signed permission");
   ok(ui.calls.tools.includes("verigate_verify_execution_authorization"), "reviewed permission is cryptographically verified");
   ok(!ui.shown("error"), "reviewed WARN flow succeeds");
+});
+
+await test("cancelling ALLOW permission confirmation clears pending state without writing approval", async () => {
+  const ui = await launch({});
+  await ui.click();
+  eq(ui.text("decision"), "ALLOW");
+  await ui.cancelExecution();
+  eq(ui.text("execution-status"), "Permission creation was cancelled. No approval was written.");
+  ok(ui.text("execution-summary").includes("No one-time execution permission was created"), "cancelled ALLOW flow explains that no permission exists");
+  eq(ui.calls.storage.length, 0, "cancel does not write App-scope approval");
+  eq(ui.appStorage.size, 0, "no approval record remains in App storage");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "authorization tool is not called after cancellation");
+  eq(ui.text("execution-json"), "", "no execution authorization is displayed");
+  eq(ui.shown("wallet-execute-btn"), false, "wallet hand-off stays hidden without a permission");
+  eq(ui.$("execution-btn").disabled, false, "user may deliberately retry after cancellation");
+});
+
+await test("cancelling WARN review clears pending state and leaves no App approval", async () => {
+  const flag = { code: "prompt_injection", message: "Prompt injection requires manual review" };
+  const ui = await launch({ interpret: interpretJson({ ...GOOD, risk_flags: [flag] }) });
+  await ui.click();
+  eq(ui.text("decision"), "WARN");
+  await ui.cancelExecution({ expectWarnings: true });
+  eq(ui.text("execution-status"), "Warning review cancelled. No approval was written.");
+  ok(ui.text("execution-summary").includes("No one-time execution permission was created"), "cancelled WARN flow explains that no permission exists");
+  eq(ui.calls.storage.length, 0, "cancel does not write App-scope warning approval");
+  eq(ui.appStorage.size, 0, "no warning approval record remains in App storage");
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "authorization tool is not called after warning cancellation");
+  eq(ui.text("execution-json"), "", "no execution authorization is displayed");
+  eq(ui.shown("wallet-execute-btn"), false, "wallet hand-off stays hidden without a permission");
+  eq(ui.$("execution-btn").disabled, false, "user may deliberately retry after cancellation");
 });
 
 await test("WARN above the dynamic authority ceiling remains non-executable", async () => {
