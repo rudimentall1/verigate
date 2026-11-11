@@ -10,7 +10,12 @@ from api.main import app
 
 class ApiAuthTest(unittest.TestCase):
     def setUp(self):
-        self._saved = {k: os.environ.get(k) for k in ("VERIGATE_API_KEYS", "VERIGATE_REQUIRE_AUTH")}
+        self._saved = {k: os.environ.get(k) for k in (
+            "VERIGATE_API_KEYS", "VERIGATE_REQUIRE_AUTH",
+            "VERIGATE_ENV", "VERIGATE_ALLOW_INSECURE_DEV_MODE", "VERIGATE_REQUIRE_SIGNED_INTENT",
+        )}
+        os.environ["VERIGATE_ENV"] = "development"
+        os.environ["VERIGATE_ALLOW_INSECURE_DEV_MODE"] = "1"
         self.client = TestClient(app)
 
     def tearDown(self):
@@ -19,6 +24,20 @@ class ApiAuthTest(unittest.TestCase):
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
+
+    def test_unconfigured_api_defaults_closed(self):
+        os.environ.pop("VERIGATE_API_KEYS", None)
+        os.environ.pop("VERIGATE_REQUIRE_AUTH", None)
+        os.environ.pop("VERIGATE_ENV", None)
+        os.environ.pop("VERIGATE_ALLOW_INSECURE_DEV_MODE", None)
+        self.assertEqual(self.client.get("/v1/execution/networks").status_code, 401)
+
+    def test_insecure_mode_requires_explicit_development_opt_in(self):
+        os.environ.pop("VERIGATE_API_KEYS", None)
+        os.environ.pop("VERIGATE_REQUIRE_AUTH", None)
+        os.environ["VERIGATE_ENV"] = "development"
+        os.environ["VERIGATE_ALLOW_INSECURE_DEV_MODE"] = "1"
+        self.assertNotEqual(self.client.get("/v1/execution/networks").status_code, 401)
 
     def test_protected_route_rejects_missing_and_wrong_key(self):
         os.environ["VERIGATE_API_KEYS"] = "secret-one"
@@ -59,6 +78,13 @@ class ApiAuthTest(unittest.TestCase):
             self.client.get("/v1/execution/networks", headers={"X-API-Key": "zzzz"}).status_code, 401)
         self.assertEqual(self.client.get("/v1/execution/networks").status_code, 401)
 
+
+    def test_signed_intents_are_mandatory_outside_development_opt_in(self):
+        from api.main import _require_signed_intent
+        os.environ["VERIGATE_ENV"] = "production"
+        os.environ["VERIGATE_ALLOW_INSECURE_DEV_MODE"] = "1"
+        os.environ["VERIGATE_REQUIRE_SIGNED_INTENT"] = "0"
+        self.assertTrue(_require_signed_intent())
 
 if __name__ == "__main__":
     unittest.main()
