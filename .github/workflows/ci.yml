@@ -107,6 +107,7 @@ jobs:
       - name: Validate protected Compose configuration
         env:
           VERIGATE_API_KEYS: ci-validation-only
+          VERIGATE_KEY_PASSPHRASE: ci-only-test-passphrase-32-characters
         run: |
           docker compose config --format json > "$RUNNER_TEMP/verigate-compose.json"
           python3 - "$RUNNER_TEMP/verigate-compose.json" <<'PY'
@@ -138,6 +139,7 @@ jobs:
       - name: Smoke-test container API authentication
         env:
           VERIGATE_API_KEYS: ci-validation-only
+          VERIGATE_KEY_PASSPHRASE: ci-only-test-passphrase-32-characters
         run: |
           docker run --detach --name verigate-ci \
             --publish 127.0.0.1:18000:8000 \
