@@ -2,6 +2,7 @@
 
 The host is emulated over stdio; no Anna account, CU quota, or network call is used.
 """
+import asyncio
 import json
 import os
 import queue
@@ -146,6 +147,72 @@ class AnnaSamplingRoundTripTest(unittest.TestCase):
                     proc.stdout.close()
                 if proc.stderr and not proc.stderr.closed:
                     proc.stderr.close()
+
+
+
+class AnnaStorageTransportFailureTest(unittest.IsolatedAsyncioTestCase):
+    async def test_timed_out_request_discards_late_host_response(self):
+        sys.path.insert(0, str(ROOT / "anna" / "executas" / "verigate-authority"))
+        from executa_sdk.storage import StorageClient, StorageError, STORAGE_ERR_TIMEOUT
+
+        frames = []
+        client = StorageClient(write_frame=frames.append)
+
+        with self.assertRaises(StorageError) as raised:
+            await client.get("verigate/approvals/test", scope="app", timeout=0.001)
+
+        self.assertEqual(raised.exception.code, STORAGE_ERR_TIMEOUT)
+        self.assertEqual(len(frames), 1)
+        request_id = frames[0]["id"]
+        self.assertNotIn(request_id, client._pending)
+
+        # A host reply arriving after the client deadline is stale and must
+        # not resolve a later invocation or resurrect the expired request.
+        handled = client.dispatch_response({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {"value": {"approved": True}, "exists": True},
+        })
+        self.assertFalse(handled)
+        self.assertEqual(client._pending, {})
+
+    async def test_conditional_delete_conflict_is_preserved_as_storage_error(self):
+        sys.path.insert(0, str(ROOT / "anna" / "executas" / "verigate-authority"))
+        from executa_sdk.storage import (
+            StorageClient,
+            StorageError,
+            STORAGE_ERR_PRECONDITION_FAILED,
+        )
+
+        frames = []
+        client = StorageClient(write_frame=frames.append)
+        task = asyncio.create_task(client.delete(
+            "verigate/approvals/test",
+            scope="app",
+            if_match="etag-read",
+            timeout=1.0,
+        ))
+        for _ in range(20):
+            if frames:
+                break
+            await asyncio.sleep(0)
+        self.assertEqual(len(frames), 1)
+        request = frames[0]
+        self.assertEqual(request["method"], "storage/delete")
+        self.assertEqual(request["params"]["if_match"], "etag-read")
+
+        self.assertTrue(client.dispatch_response({
+            "jsonrpc": "2.0",
+            "id": request["id"],
+            "error": {
+                "code": STORAGE_ERR_PRECONDITION_FAILED,
+                "message": "ETag does not match",
+            },
+        }))
+        with self.assertRaises(StorageError) as raised:
+            await task
+        self.assertEqual(raised.exception.code, STORAGE_ERR_PRECONDITION_FAILED)
+        self.assertIn("ETag does not match", raised.exception.message)
 
 
 if __name__ == "__main__":
