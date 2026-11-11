@@ -8,6 +8,7 @@ from integrations.arc_authority_registry import (
     DEFAULT_REGISTRY,
     REGISTER_SELECTOR,
     CONSUME_SELECTOR,
+    ISSUER_SELECTOR,
     ArcAuthorityRegistry,
 )
 
@@ -27,9 +28,13 @@ class FakeRpc:
     def get_code(self, address):
         return "0x60006000"
 
+    issuer_enabled = True
+
     def eth_call(self, to, data):
         if data == "0x8da5cb5b":
             return "0x" + "0" * 24 + DEFAULT_EXECUTOR[2:].lower()
+        if data.startswith(ISSUER_SELECTOR):
+            return "0x" + format(int(self.issuer_enabled), "064x")
         raise AssertionError(f"Unexpected eth_call: {data}")
 
 
@@ -54,6 +59,13 @@ class ArcAuthorityRegistryEncodingTest(unittest.TestCase):
         self.assertEqual(result["chain_id"], 5042)
         self.assertEqual(result["contract_address"].lower(), DEFAULT_REGISTRY.lower())
         self.assertEqual(result["owner"], DEFAULT_EXECUTOR.lower())
+
+    def test_deployment_verification_rejects_disabled_executor_issuer(self):
+        rpc = FakeRpc()
+        rpc.issuer_enabled = False
+        registry = ArcAuthorityRegistry(rpc=rpc, expected_code_hash=_test_runtime_hash())
+        with self.assertRaisesRegex(Exception, "not an enabled Registry issuer"):
+            registry.verify_deployment()
 
     def test_deployment_verification_rejects_missing_runtime_hash_pin(self):
         registry = ArcAuthorityRegistry(rpc=FakeRpc(), expected_code_hash="")
@@ -483,6 +495,8 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
             def eth_call(self, _, data):
                 if data == "0x8da5cb5b":
                     return "0x" + "0" * 24 + executor[2:]
+                if data.startswith(ISSUER_SELECTOR):
+                    return "0x" + format(1, "064x")
                 if data == GET_AUTHORIZATION_SELECTOR + authorization_id:
                     return "0x" + "".join(
                         [
