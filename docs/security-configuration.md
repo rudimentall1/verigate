@@ -1,8 +1,8 @@
 ﻿# Security configuration
 
-Verigate is open by default so the demo and tests run with zero setup. For any
-real deployment, turn on the controls below. Every flag is read from the
-environment; boolean flags accept `1`, `true` or `yes`.
+Verigate's direct Python development launch remains open by default so local demos and tests run with zero setup. The Docker image is stricter: it requires API authentication and signed intents by default. Docker Compose also requires VERIGATE_API_KEYS at startup and binds port 8000 to 127.0.0.1 only. Do not remove those controls to expose a remote service.
+
+For any real deployment, apply the full baseline below. Every flag is read from the environment; boolean flags accept 1, true or yes.
 
 ## Recommended production baseline
 
