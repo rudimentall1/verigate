@@ -24,8 +24,8 @@ REGISTER_SELECTOR = "0xb267748a"
 CONSUME_SELECTOR = "0xbad56b75"
 GET_AUTHORIZATION_SELECTOR = "0x215a973e"
 
-REGISTERED_EVENT = "0x8c01e044"
-CONSUMED_EVENT = "0xc808a06a"
+REGISTERED_EVENT = "0x8c01e0448f1fba237a495cb1a83dd24d1bb4b496ec1cd15c82b1130bea6b2110"
+CONSUMED_EVENT = "0xc808a06a8c1f6acae09e23ef9e49a8992381e788e5bd3908c48c900aa43dd564"
 
 _ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _TX_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
@@ -401,7 +401,7 @@ class ArcAuthorityRegistry:
             topics = [str(x).lower() for x in log.get("topics", [])]
             if (
                 len(topics) >= 4
-                and topics[0].startswith(event_signature.lower())
+                and topics[0] == event_signature.lower()
                 and topics[1:4] == expected[1:4]
             ):
                 return log
