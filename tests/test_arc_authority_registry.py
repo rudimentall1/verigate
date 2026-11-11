@@ -334,6 +334,8 @@ def test_inclusion_block_rejects_timestamp_equal_to_expiry():
             if block is not None and isinstance(block.get("number"), int):
                 block = {**block, "number": hex(block["number"])}
             return block
+
+        def get_block_by_number(self, number):
             return {
                 "number": number,
                 "timestamp": "0x64",
@@ -365,6 +367,8 @@ def test_inclusion_block_rejects_timestamp_before_issuance():
             if block is not None and isinstance(block.get("number"), int):
                 block = {**block, "number": hex(block["number"])}
             return block
+
+        def get_block_by_number(self, number):
             return {
                 "number": number,
                 "timestamp": "0x64",
