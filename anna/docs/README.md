@@ -5,6 +5,7 @@ This directory contains current Anna-specific operational documentation. The int
 ## Current
 
 - [Release status](RELEASE-STATUS.md) — current App/Executa versions, actual Runtime evidence, release state and unverified limits.
+- [Executa 0.1.18 build verification](EXECUTA-0.1.18-BUILD-VERIFICATION.md) — four-platform CI build, downloaded artifact inspection, SHA-256 verification and the remaining Anna Console gate.
 - [Anna platform compatibility review](ANNA-PLATFORM-COMPATIBILITY-2026-11-10.md) — current schema-4, Executa, APS, Agent Session and invoke failure guidance with implementation decisions.
 - [Live MetaMask integration checkpoint](history/SESSION-CHECKPOINT-2026-11-10-LIVE-METAMASK.md) — 9 November real MetaMask hand-off, ExecutionRouter consumption and user-denied signature outcome.
 
