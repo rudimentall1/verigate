@@ -106,7 +106,7 @@ Transaction 0xd781e8b04b5ca89c3a34fcec50a6636049f7647d2b0e1b2bb64d5b1ee54daadf b
 
 ## 7. Remaining open pull requests — audit status
 
-There are 4 open PRs remaining:
+There are 5 open PRs remaining:
 
 - **#37 — Snapshot complete server Verigate project. CLOSED as historical snapshot.** Its Valta, governance, evidence, tenancy and authority-graph modules were byte-for-byte identical to main. Its API/schema/storage/engine files were older than main; backup files and generated Solidity artifacts were not ported. Branch retained.
 - **#16 — Anna router-gated EVM wallet execution. CLOSED as superseded by current main.** Anna App, Executa, authority, persistence, receipt and binary packaging sources in main are newer or equivalent. Real Anna Cloud Agent acceptance and durable Cloud persistence remain unverified.
@@ -160,3 +160,14 @@ PR #19 was closed as superseded by #54. PR #18 was closed because its response-e
 The exact source heads of PR #53 and PR #54 passed all four CI jobs before their squash merges. A separate CI result for the resulting main branch after the latest squash commits has not yet been independently checked. Do not claim post-merge main CI is green solely from the PR-head runs.
 
 The Arc Mainnet read-only deployment verification script remains unexecuted. No Desktop Commander device was connected in this session, so no production server command was run. No deployment, key change or transaction broadcast occurred.
+
+
+## 12. Arc Mainnet read-only verification workflow — pending
+
+PR #55: https://github.com/rudimentall1/verigate/pull/55  
+Branch: `verify/arc-mainnet-readonly-2026-11-11`  
+Latest branch head: `10fc288527ce1766ca22c3cf14de22c418778a6b`.
+
+The workflow runs `npm run verify:arc-deployment` against the known Arc Mainnet Registry and executor. It performs read-only RPC calls only: chain ID, deployed runtime bytecode, owner, enabled issuer and finalized head. It uses no signer, private key, transaction submission or deployment.
+
+A dedicated workflow file and a one-time conditional CI job were added on the PR branch to make the live verification result inspectable. GitHub's current connector has not surfaced a workflow run for this branch yet. Therefore the live verification is still **not run/verified** from this session. PR #55 remains Draft and must not be merged until a visible PASS is recorded. A runtime mismatch or unsupported finalized tag must remain a hard failure.
