@@ -150,9 +150,9 @@ const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resourc
 async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
-  if (showModalThrows) {
-    window.document.getElementById("approval-dialog").showModal = () => {
-      throw new Error("modal dialogs are unsupported in this embedded webview");
+  if (showModalThrows && window.HTMLDialogElement) {
+    window.HTMLDialogElement.prototype.showModal = () => {
+      throw new Error("native modal dialogs are unsupported in this embedded webview");
     };
   }
   const appStorage = new Map();
@@ -269,10 +269,10 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
     async clickExecution() {
       $("execution-btn").click();
       for (let i = 0; i < 200; i++) {
-        if ($("approval-dialog").hasAttribute("open")) break;
+        if (!$("approval-overlay").hidden) break;
         await sleep(10);
       }
-      if (!$("approval-dialog").hasAttribute("open")) throw new Error("in-app execution confirmation did not open");
+      if ($("approval-overlay").hidden) throw new Error("in-app execution confirmation overlay did not open");
       if (!$("approval-message").textContent.includes("25 USDC") || !$("approval-message").textContent.includes("Recipient:")) {
         throw new Error("execution confirmation does not show the exact payment details");
       }
@@ -286,10 +286,10 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
     async cancelExecution({ expectWarnings = false } = {}) {
       $("execution-btn").click();
       for (let i = 0; i < 200; i++) {
-        if ($("approval-dialog").hasAttribute("open")) break;
+        if (!$("approval-overlay").hidden) break;
         await sleep(10);
       }
-      if (!$("approval-dialog").hasAttribute("open")) throw new Error("in-app execution confirmation did not open");
+      if ($("approval-overlay").hidden) throw new Error("in-app execution confirmation overlay did not open");
       const message = $("approval-message").textContent;
       if (!message.includes("25 USDC") || !message.includes("Recipient:")) {
         throw new Error("execution confirmation does not show the exact payment details");
@@ -307,10 +307,10 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
     async clickWallet({ stopAtConsume = false } = {}) {
       $("wallet-execute-btn").click();
       for (let i = 0; i < 200; i++) {
-        if ($("approval-dialog").hasAttribute("open")) break;
+        if (!$("approval-overlay").hidden) break;
         await sleep(10);
       }
-      if (!$("approval-dialog").hasAttribute("open")) throw new Error("in-app wallet confirmation did not open");
+      if ($("approval-overlay").hidden) throw new Error("in-app wallet confirmation overlay did not open");
       if (!$("approval-message").textContent.includes("25 USDC") || !$("approval-message").textContent.includes("Wallet:")) {
         throw new Error("wallet confirmation does not show the exact transfer and wallet");
       }
@@ -562,7 +562,7 @@ await test("WARN above the dynamic authority ceiling remains non-executable", as
   eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "no review or authorization call can bypass the ceiling");
 });
 
-await test("embedded webview showModal failure falls back to explicit non-modal confirmation", async () => {
+await test("embedded webview confirmation uses overlay without native modal API", async () => {
   const ui = await launch({ showModalThrows: true });
   await ui.click();
   eq(ui.text("decision"), "ALLOW");
@@ -724,7 +724,7 @@ await test("repeated permission clicks cannot create duplicate approvals", async
     if (ui.$("approval-dialog").hasAttribute("open")) break;
     await sleep(10);
   }
-  ok(ui.$("approval-dialog").hasAttribute("open"), "confirmation opened");
+  ok(!ui.$("approval-overlay").hidden, "confirmation overlay opened");
   ok(ui.$("execution-btn").disabled, "execution control is locked while confirmation is pending");
   ui.$("execution-btn").click();
   ui.$("approval-accept").click();
@@ -744,7 +744,7 @@ await test("canceling the in-app permission dialog creates no approval", async (
     if (ui.$("approval-dialog").hasAttribute("open")) break;
     await sleep(10);
   }
-  ok(ui.$("approval-dialog").hasAttribute("open"), "in-app dialog opened");
+  ok(!ui.$("approval-overlay").hidden, "in-app confirmation overlay opened");
   ui.$("approval-cancel").click();
   await sleep(40);
   eq(ui.calls.storage.length, 0, "cancel does not write an App approval");
@@ -863,7 +863,7 @@ await test("canceling wallet confirmation leaves the permission unused", async (
     if (ui.$("approval-dialog").hasAttribute("open")) break;
     await sleep(10);
   }
-  ok(ui.$("approval-dialog").hasAttribute("open"), "wallet confirmation opened");
+  ok(!ui.$("approval-overlay").hidden, "wallet confirmation overlay opened");
   ui.$("approval-cancel").click();
   await sleep(40);
   eq(ui.calls.storage.length, 1, "cancel does not write the wallet-submission approval");
