@@ -242,6 +242,8 @@ def test_inclusion_block_expiry_check_accepts_pre_expiry_block():
             if block is not None and isinstance(block.get("number"), int):
                 block = {**block, "number": hex(block["number"])}
             return block
+
+        def get_block_by_number(self, number):
             assert number == 256
             return {
                 "number": "0x100",
@@ -272,6 +274,8 @@ def test_inclusion_block_expiry_check_rejects_post_expiry_block():
             if block is not None and isinstance(block.get("number"), int):
                 block = {**block, "number": hex(block["number"])}
             return block
+
+        def get_block_by_number(self, number):
             return {
                 "number": number,
                 "timestamp": "0x65",
@@ -302,6 +306,8 @@ def test_inclusion_block_expiry_check_fails_closed_without_block():
             if block is not None and isinstance(block.get("number"), int):
                 block = {**block, "number": hex(block["number"])}
             return block
+
+        def get_block_by_number(self, number):
             return None
 
     registry = ArcAuthorityRegistry.__new__(ArcAuthorityRegistry)
@@ -523,6 +529,8 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
                     "timestamp": "0x65",
                     "hash": consumption_block_hash,
                 }
+
+            def get_block_by_number(self, number):
                 if number == 100:
                     return {
                         "number": "0x64",
