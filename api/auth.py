@@ -1,16 +1,12 @@
 """API-key authentication for the Verigate HTTP surface.
 
-Default-deny: once VERIGATE_API_KEYS is configured, every route requires a
-key except the explicit public allowlist below (public keys, health, and the
-two offline verification endpoints, whose whole point is that a third party
-can call them without an account).
+Protected routes deny by default. Only the explicit public allowlist below
+(public keys, health and offline verification) is unauthenticated. A local
+development bypass requires both VERIGATE_ENV=development and
+VERIGATE_ALLOW_INSECURE_DEV_MODE=1.
 
-Keys are read from the environment on every request so rotation needs no
-restart. Each entry is either a plain key or ``sha256:<hex>`` so deployments
-need not keep raw keys in their environment. Comparison is constant-time.
-
-VERIGATE_REQUIRE_AUTH=1 makes an unconfigured deployment refuse every
-non-public request (fail closed) instead of running open.
+Keys are read from the environment on every request. Each entry is either a
+plain key or sha256:<hex>; comparisons use constant-time digest checks.
 """
 from __future__ import annotations
 
