@@ -1,17 +1,57 @@
 # Anna App — current release status
 
-**Updated:** 2026-11-10  
-**App:** verigate-authority · ID **851** · immutable Draft version **0.1.29** · version ID **2097**  
-**Bundled Executa:** ID **1314** · version **0.1.16** · version ID **1042**
+**Updated:** 2026-11-11  
+**Repository source candidate:** commit `6eca3bd782fe54ca798ac3fd66a54acde61b41fc` on `main`  
+**Source candidate:** Anna App **0.1.30** · bundled Executa **0.1.17**  
+**Last recorded Anna Console state (10 November):** immutable Draft App **0.1.29** · version ID **2097** · App ID **851**; bundled Executa **0.1.16** · version ID **1042** · Executa ID **1314**
 
-## Release state
+## Current source candidate — 11 November
 
-- The immutable App 0.1.29 bundle is ready (3 files, 93,108 bytes); Anna Console confirms version ID **2097**.
-- Anna platform state is **Draft**. The App is not Marketplace-published and has not been submitted for review.
-- App 0.1.28 was a listing/metadata refresh over the App 0.1.27 runtime.
-- App 0.1.27 introduced wallet lifecycle hardening: the UI reflects verified router consumption, clears stale authorization state on renewal, prevents duplicate issuance while a permission is active, and fails closed when a consume result is unknown.
-- App 0.1.29 adds explicit ALLOW/WARN cancellation-state handling and regression coverage. It is cut as an immutable Draft, not released to end users.
-- Bundled production Executa remains 0.1.16 (Executa ID 1314, version ID 1042); all four platform binaries were already cached and no new Executa version was created.
+PR [#44](https://github.com/rudimentall1/verigate/pull/44) is merged into `main`. Its source candidate is App 0.1.30 / Executa 0.1.17. The source manifest requires bundled Executa >= 0.1.17.
+
+The source candidate is **not** an immutable Anna Console version. The last recorded Console snapshot remains the 0.1.29 / 0.1.16 Draft above. Do not claim that 0.1.30 / 0.1.17 is uploaded, cut, approved, Marketplace-published or installed in a Cloud Agent.
+
+### Exact-source main CI
+
+[GitHub Actions run 42874904974](https://github.com/rudimentall1/verigate/actions/runs/42874904974) ran on the merged `main` commit and completed successfully. All three jobs passed:
+
+- Python unittest suite: **613 tests passed**; demo and API app smoke checks passed.
+- Anna UI: strict schema-4 validation passed; **64/64 UI flow tests passed**.
+- Contracts: atomic-state end-to-end and access-control tests passed.
+- Linux Executa 0.1.17 was built, packaged, extracted and smoke-tested. The log records a successful `describe`, ALLOW decision, signed receipt, one-time App-scope approval consumption, one-time wallet-handoff consumption, and persisted/verified SUBMITTED receipt.
+
+This proves the merged source and the Linux CI path. It does not prove a fresh Anna Cloud Agent installation, a live invocation in Anna, or a successful on-chain payment.
+
+### Executa 0.1.17 platform packages
+
+The four-target workflow completed successfully in [run 42959224224](https://github.com/rudimentall1/verigate/actions/runs/42959224224), against source commit `6eca3bd782fe54ca798ac3fd66a54acde61b41fc`, with input `version=0.1.17` and `publish_release=false`.
+
+For **each** target, the workflow:
+- built the executable twice and reported `REPRODUCIBILITY PASS`;
+- packaged version 0.1.17 and extracted the resulting release archive;
+- ran the extracted entrypoint through `describe`, ALLOW decision, signed receipt, one-time App-scope approval, one-time wallet hand-off and persisted/verified SUBMITTED receipt;
+- verified the package SHA-256 against its generated `.sha256` sidecar, then uploaded the package and checksum sidecar as a workflow artifact.
+
+The four downloaded workflow artifacts were independently inspected here: each contains exactly one platform release archive and its checksum sidecar; each archive contains a root `manifest.json` declaring version **0.1.17** and the expected platform entrypoint. The SHA-256 recomputed over every downloaded archive matched both its sidecar and the workflow smoke-test log.
+
+| Target | Artifact ID | Entry point | Release archive SHA-256 |
+|---|---:|---|---|
+| Linux x86_64 | `13827958251` | `verigate-authority` | `358c3f37c9750010a6f37bcddb9506b55cee0cec933e5be9d2d1b5cc09517010` |
+| Windows x86_64 | `13828342753` | `verigate-authority.exe` | `b19024bbfd1546539a4e149856908159ba7b85fb91b055b4b302d70e8587f05e` |
+| macOS ARM64 | `13828337795` | `verigate-authority` | `89cb4f2c0c0c67b63b0f37a2b3fe24252a2166b11c499435f3ecf6ce7a7988f4` |
+| macOS Intel x86_64 | `13827999561` | `verigate-authority` | `1a1e6e0b5865e4aa594a3eea62bb97d66462a4471fe4e6913e4d890ab49ba81e` |
+
+These are **workflow artifacts, not a published GitHub Release**. GitHub reports their expiration as **9 February 2027**. The release job was skipped as intended. The newest GitHub Release listing still shows draft Executa **0.1.14**; no 0.1.17 release was published. Do not confuse the downloadable workflow artifacts with a permanent release or with an Anna Console bundle.
+
+## Anna Console state
+
+The last recorded Console inspection on 10 November confirmed:
+
+- App ID **851**, immutable Draft version **0.1.29**, version ID **2097**.
+- Bundled Executa ID **1314**, version **0.1.16**, version ID **1042**.
+- The App was in **Draft** state, not Marketplace-published and not submitted for review.
+
+This snapshot predates PR #44. Recheck the Console before changing or cutting any immutable version. Do not overwrite or remove the existing Draft as part of source-level work.
 
 ## What has been observed in Anna Runtime
 
@@ -30,26 +70,41 @@ The user's recording `2026-11-09 15-05-43.mp4` demonstrates a real Anna Runtime 
 
 **This is a successful live wallet hand-off and Router-consumption test, ending in an intentional user rejection at the wallet-signature step.** It proves that the real provider was available, the exact transaction reached MetaMask, and the consumed permission was not reusable. It does not prove a successful signature, transaction hash, broadcast or settlement.
 
-The recording does not display an immutable App version identifier. Do not attribute it specifically to 0.1.29.
+The recording does not display an immutable App version identifier. Do not attribute it specifically to 0.1.29 or 0.1.30.
 
 ### 10 November — in-App cancellation regression
 
-A separate recording shows the user deliberately cancelling the App's ALLOW/WARN permission confirmation. No App-scope approval was written and no Execution Authorization was created in that attempt. This cancellation path is covered by the 0.1.29 regression tests.
+A separate recording shows the user deliberately cancelling the App's ALLOW/WARN permission confirmation. No App-scope approval was written and no Execution Authorization was created in that attempt. This cancellation path is covered by the UI regression tests.
 
 The earlier statement that no wallet was connected during the Anna Runtime tests was incorrect and is superseded by the 9 November MetaMask recording. The private source recording is documented in [the live MetaMask checkpoint](history/SESSION-CHECKPOINT-2026-11-10-LIVE-METAMASK.md).
 
-## Automated and build evidence
+## What PR #44 adds
 
-- GitHub Actions Python unittest suite: **603 passed**.
-- Anna UI E2E: **63/63 passed**, including ALLOW and WARN cancellation regression tests.
-- Local targeted Anna Python suite rerun against the release checkout: **75 passed, 32 subtests passed**; strict schema-4 validation passed. These local checks do not prove live Cloud Agent or wallet execution.
-- Exact-source CI for the App 0.1.27 lifecycle hardening and App 0.1.28 listing source: [run 42619825112](https://github.com/rudimentall1/verigate/actions/runs/42619825112), all three jobs passed.
-- Four-platform Executa 0.1.16 reproducible build, packaging and extracted-package smoke tests: [run 42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453). Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel x86_64 passed. These are workflow artifacts, not a public GitHub Release.
-- App 0.1.29 source CI passed all three jobs: Python (603), Contracts, Anna UI (63/63), strict schema-4 validation and Linux Executa build/smoke: [run 42786256350](https://github.com/rudimentall1/verigate/actions/runs/42786256350). Anna Console subsequently cut immutable Draft version ID 2097; no release/publish action was taken.
+App 0.1.30 / Executa 0.1.17 adds authorization-bound signed wallet outcome receipts and preserves Anna invoke correlation diagnostics:
 
-## Remaining limits and release gates
+- `REJECTED`: only EIP-1193 error 4001 during `eth_sendTransaction`.
+- `ABORTED`: only a proven pre-wallet abort, or a lost Router response for which the durable nonce ledger proves that the exact authorization was consumed.
+- `UNKNOWN`: the wallet request started, but the result is ambiguous and no valid transaction hash was returned.
+- `SUBMITTED`: existing path retained when the wallet returns a transaction hash.
 
-- Availability and lifecycle persistence of an injected EIP-1193 provider in a fresh Anna Cloud Agent/Linux session remain unverified. The 9 November Brave + MetaMask live hand-off is proven separately; it must not be described as untested.
+Negative receipts are signed by the Anna installation issuer and explicitly identified as executor self-reports, not wallet-signed evidence or independent chain confirmation. Each receipt is bound to the exact authorization and a fresh one-time App-scope approval. Ambiguous `no_ack` results are not treated as proof that the operation did not execute; the UI preserves `invoke_id`, `client_id`, `command_id` and `reason`.
+
+Only SUBMITTED receipts are eligible for provider polling. REJECTED, ABORTED and UNKNOWN remain terminal local outcomes and do not trigger chain RPC polling. The source tests and CI cover these rules; no claim of live Cloud Agent validation is made.
+
+## Remaining release gates
+
+| Gate | Status | Evidence / next action |
+|---|---|---|
+| Merged source and main CI | **PASS** | [Run 42874904974](https://github.com/rudimentall1/verigate/actions/runs/42874904974): 613 Python tests, 64/64 UI, Contracts, schema-4 validation and Linux 0.1.17 binary smoke test. |
+| Linux Executa 0.1.17 archive | **PASS in CI** | Extracted package smoke test completed successfully in the same run. |
+| Four-platform Executa 0.1.17 archives | **PASS** | [Run 42959224224](https://github.com/rudimentall1/verigate/actions/runs/42959224224): all four reproducible builds, extracted-package smoke tests, artifact uploads and independent SHA-256/manifest checks passed. Workflow artifacts expire 9 February 2027. |
+| Fresh Anna Cloud Agent installation and invoke | **BLOCKED / not evidenced** | Install the candidate in a fresh Cloud Agent and verify tool registration, `describe`, safe invoke, App-scope APS KV/ETag operations, and failure/late-result behavior. |
+| Anna Console immutable cut | **NOT DONE** | Recheck the current Console state, then cut App 0.1.30 with the intended Executa 0.1.17 bundle only after the preceding evidence is accepted. |
+| Anna review / Marketplace publication | **NOT DONE** | No review submission or publication is evidenced. |
+| Successful signed wallet submission / on-chain settlement | **NOT PROVEN** | The 9 November live recording ends with the user rejecting MetaMask's signature. No transaction hash, broadcast or settlement is proven by that recording or CI. |
+
+## Product and security boundaries
+
 - Native USDC wallet hand-off is implemented for Base and Ethereum. Solana policy checks and signed authorizations exist, but Solana wallet submission is not included in this App.
 - The 9 November recording ends with the user denying the MetaMask signature after ExecutionRouter consumed the one-time authorization. This intentionally burns that permission; a fresh policy check and new permission are required. The rolling 24-hour budget counts non-BLOCK authorization records, not chain-confirmed transfers.
 - Accounting is scoped to one persistent Executa installation. Separate Cloud Agent workspaces or issuer keys are not aggregated into one account-wide budget.
@@ -62,6 +117,7 @@ The earlier statement that no wallet was connected during the Anna Runtime tests
 
 - [Anna App implementation and Runtime acceptance notes](../README.md)
 - [Anna documentation index](README.md)
+- [Anna platform compatibility review — 10 November 2026](ANNA-PLATFORM-COMPATIBILITY-2026-11-10.md)
 - [Live MetaMask integration checkpoint — 9 November evidence](history/SESSION-CHECKPOINT-2026-11-10-LIVE-METAMASK.md)
 - [Historical release-gate record](history/RELEASE-GATE-2026-11-09.md)
 - [Repository threat model](../../docs/threat-model.md)
