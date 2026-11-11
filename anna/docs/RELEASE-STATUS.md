@@ -1,5 +1,8 @@
 # Anna App — current release status
 
+> **Latest source/build update — 11 November 2026:** PR #52 is merged. Current `main` source commit is `1afe3a4f35f945cc458cc705d59b400441e480cd`; source manifest now requires bundled Executa >= `0.1.18`. Four Executa 0.1.18 platform packages were built and smoke-tested successfully in [workflow run 42989643581](https://github.com/rudimentall1/verigate/actions/runs/42989643581), then downloaded and independently checked for artifact and package SHA-256 integrity and versioned manifests. Full evidence: [Executa 0.1.18 build verification](EXECUTA-0.1.18-BUILD-VERIFICATION.md). **Anna Console has not yet been updated:** the last recorded immutable Draft remains App 0.1.30 / Executa 0.1.17. The new source requirement and old Console bundle are therefore not yet synchronized. No 0.1.18 GitHub Release was published.
+
+
 **Updated:** 2026-11-11  
 **Anna App / Executa source:** commit `6eca3bd782fe54ca798ac3fd66a54acde61b41fc`  
 **Source candidate:** Anna App **0.1.30** · bundled Executa **0.1.17**  
