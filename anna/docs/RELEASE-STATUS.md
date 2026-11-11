@@ -67,6 +67,35 @@ The exact source checkout at commit `6365bb9983baa90fb2912a93fc7bcd938a4d8220` w
 
 The Cloud Agent test is a separate gate. The authenticated developer CLI can read/write Developer Console state, but the available developer credential receives HTTP 401 from the user-runtime endpoints `GET /api/v1/apps/installed` and `GET /api/v1/agents`. The CLI does not expose the user-facing App-install flow. No Cloud Agent install or invocation is claimed from these Developer API calls. Use the signed-in Anna web UI / authorized user session to install the immutable Draft on a test Agent, then verify deployment status and run safe `describe` / `invoke` checks.
 
+
+### Windows QA — DOCX request matrix and full local suites, 11 November
+
+All local validation below used a separate clean temporary checkout of source commit `6365bb9983baa90fb2912a93fc7bcd938a4d8220`; neither of the user's existing working directories was changed.
+
+- Anna CLI **0.1.64** strict schema-4 validation: PASS.
+- Anna UI E2E: **64/64 passed** in 207.5 seconds. The real `bundle/app.js` and real Python Executa subprocess were exercised; only Anna host Sampling was scripted. This does not consume Anna CU and is not a live Cloud Agent run.
+- Python unittest suite on Windows / Python 3.10: **613 passed**, **4 skipped** because POSIX file-mode checks are not portable to Windows. The only emitted warning was a Starlette/httpx test-client deprecation warning.
+- All **18 exact request texts** from the user's `Запросы.docx` were replayed through the App UI + real Executa subprocess with isolated state for each case. The model interpretation was a scripted fixture matching the intended fields; the matrix validates policy/UI behavior, not actual natural-language comprehension by Anna's live LLM.
+
+| DOCX case | Observed result | Additional behavior |
+|---|---|---|
+| 0.000001, 1.37, 25, 49.99, 50 USDC on Base | **ALLOW** | All remain at or below the 50 USDC first-payee cap. |
+| 50.01 USDC on Base | **WARN** | First-payee cap exceeded; execution button disabled by PROBATION authority ceiling. |
+| 250.01, 300, 500 USDC on Base | **WARN** | Human-review threshold applies; execution remains disabled because current PROBATION authority is capped at 50 USDC/action. |
+| 600 USDC on Base | **BLOCK** | Per-transaction cap 500 USDC exceeded. |
+| 0 USDC on Base | **CLARIFY** | UI asks for a positive amount; no policy check is run. |
+| 25 USDC to `0xabc` | **BLOCK** | Invalid EVM recipient format. |
+| 25 DAI on Base | **BLOCK** | Only USDC is allowed by this App policy. |
+| 25 USDC with prompt-injection/override text | **WARN** | Explicit `prompt_injection` risk flag shown; policy cannot be relaxed by the model. |
+| Russian request for 13.75 USDC on Base | **ALLOW** | The scripted interpretation passed the exact fields to policy. |
+| 17.428913 USDC on Base | **ALLOW** | Exact six-decimal EVM amount preserved. |
+| 12.50 USDC on Ethereum | **ALLOW** | Supported EVM network. |
+| 10 USDC on Solana with `YOUR_SOLANA_WALLET_ADDRESS` | **BLOCK** | Placeholder is not a valid Solana Base58 address; no valid Solana address was supplied in the document. |
+
+**Important distinction:** policy WARN does not imply that Execution Authorization can be created. On a fresh installation, dynamic authority is **PROBATION / 50 USDC per action**. The App disables permission creation above that independent ceiling even where policy returns WARN for human review. Increasing that ceiling requires the documented verified authority progression; changing the AI response or approving the WARN cannot override it.
+
+These results do not close the Cloud Agent gate. They do not prove live Anna Sampling, actual Cloud Agent deployment, real APS storage/ETag behavior, live `describe`/ `invoke`, or a real injected EIP-1193 wallet session. The E2E wallet provider is simulated. The only recorded real MetaMask hand-off remains the 9 November attempt, which ended with the user rejecting the signature after ExecutionRouter consumed the permission.
+
 ## What has been observed in Anna Runtime
 
 Two distinct live Runtime recordings must be kept separate.
