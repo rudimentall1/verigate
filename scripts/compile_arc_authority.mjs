@@ -6,7 +6,7 @@ const sourcePath = "contracts/arc-authority/src/VerigateAuthorityRegistry.sol";
 const source = fs.readFileSync(sourcePath, "utf8");
 const input = {
   language: "Solidity",
-  sources: { "VerigateAuthorityRegistry.sol": { content: source } },
+  sources: { [sourcePath]: { content: source } },
   settings: {
     optimizer: { enabled: true, runs: 200 },
     outputSelection: {
@@ -24,7 +24,7 @@ if (errors.length) {
   process.exit(1);
 }
 
-const artifact = output.contracts?.["VerigateAuthorityRegistry.sol"]?.VerigateAuthorityRegistry;
+const artifact = output.contracts?.[sourcePath]?.VerigateAuthorityRegistry;
 if (!artifact?.evm?.bytecode?.object || !artifact?.evm?.deployedBytecode?.object) {
   throw new Error("Arc Authority Registry bytecode was not produced");
 }
