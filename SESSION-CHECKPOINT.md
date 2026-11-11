@@ -1,67 +1,135 @@
 # Verigate Session Checkpoint
 
-**Updated:** 2026-11-11
-**Current work branch:** release/arc-security-consolidation-2026-11-11
-**Default branch:** main
-**Primary objective:** safely consolidate the Arc Authority Registry integration, close production security gaps, and produce independently verifiable evidence.
+**Updated:** 2026-11-11  
+**Repository:** rudimentall1/verigate  
+**Current work branch:** release/arc-security-consolidation-2026-11-11  
+**Default branch:** main  
+**Consolidation PR:** https://github.com/rudimentall1/verigate/pull/53  
+**Current consolidation HEAD:** 57146a2e1e19b6cf48bdd915d2fd7cb9b0cc8ca0  
+**Main HEAD at branch creation:** 3731ae66c3ed9e8bd5ef36f0c00e48457db746c3
 
-## Immediate truth
-- Do not claim finality faster than Arc. Measure Verigate authorization latency separately from Arc consensus finality.
-- Do not claim the Arc Registry is a global USDC firewall. It records/consumes authority; direct out-of-band wallet transfers remain possible unless an on-chain account/guard constrains them.
-- Do not claim the Verigate Arc integration is already in main. PR #38 is open, Draft, and divergent.
-- Do not claim an independently verified Verigate-authorized Arc payment. Existing Guardian v3 payment evidence belongs to a separate project.
-- Do not claim Verigate is unhackable or independently audited.
+## 1. Current state
 
-## Branch and PR state from latest GitHub inspection
-- PR #38 Arc Authority Registry: head f00fca98ad20ea0b9bb052d01a36e8e77a11c9ad, 30 commits ahead / 40 behind main, mergeable=false.
-- PR #40 secure Docker defaults: head 868f75edb80189c18fbfa299effb6eb31dad91b1, 1 commit ahead / 35 behind main, mergeable=false.
-- PR #41 late Arc confirmation regression: head a81d96c8764dcfbe72bee6bf5c3196ad8370d521, based on Arc branch.
-- PR #42 external agent SDK: head ea64c89880e09e23ca4c324294de33733a8f9338, based on Arc branch.
-- Consolidation branch created from current main: release/arc-security-consolidation-2026-11-11.
-- No PR has been merged and no production server, contract, wallet or transaction has been changed in this session.
+The Arc Authority Registry integration and the external agent SDK changes have been ported onto a branch created from current main. The branch compares as **72 commits ahead, 0 behind**, with 46 changed files (4,773 additions / 155 deletions) at the latest comparison.
 
-## Arc branch implementation to port
-- Signed Arc payment intent, identity/capability/policy checks.
-- Registry registration and one-time consumption.
-- Arc-specific confirmation endpoints and generic-consume bypass rejection.
-- Full event topic comparison and regression tests.
-- Receipt, calldata, sender, destination, block hash/timestamp and Registry state checks.
-- Non-custodial EIP-1193 client with separate explicit payment broadcast.
-- External agent SDK/enrollment kit and late-confirmation regression from PR #41/#42.
-See PR #38, #41, #42 and docs/SECURITY-ARC-COMPLETION-PLAN.md.
+PR #53 is open and Draft. It has not been merged. The original PRs #38, #40, #41 and #42 remain unmerged; their stale/diverged branches were not blindly merged.
 
-## Critical security gaps
-1. Main direct Python launch remains open by default unless auth flags are set. Docker/Compose defaults are not yet hardened on main.
-2. Unsigned capability authority path remains available unless VERIGATE_REQUIRE_SIGNED_INTENT=1.
-3. Issuer private key is local-file based; no KMS/HSM or complete rotation system.
-4. Registry owner/issuer governance needs stronger operational controls (multisig/rotation/revocation).
-5. Runtime Registry bytecode hash is not pinned to a reproducible reviewed artifact.
-6. Explicit Arc finality/provider trust policy is incomplete.
-7. RPC is a trust boundary; independent provider/node cross-checks are incomplete.
-8. On-chain consumed/local failed recovery needs a documented, tested fresh-authorization workflow.
-9. Handler child effects and out-of-band wallet actions are outside the current execution boundary.
-10. No independent penetration test or external security audit.
+The current exact-head CI run is queued:
+- PR run: https://github.com/rudimentall1/verigate/actions/runs/42994567549
+- Push run: https://github.com/rudimentall1/verigate/actions/runs/42994561006
+- Exact head: 57146a2e1e19b6cf48bdd915d2fd7cb9b0cc8ca0
 
-## Performance target
-- Initial target: local authorization decision p95 below 100 ms under a documented benchmark.
-- Initial target: server-side pre-broadcast path p95 below 500 ms, excluding user confirmation, wallet signing, RPC inclusion and Arc consensus finality.
-- Arc settlement finality remains Arc's own protocol property. Never compare this with API latency as if they were the same metric.
-- These are targets only; no benchmark has yet been run.
+Earlier security-container-only commit 1272b99be169c871054ef9588ef06011784e7105 passed all four jobs, including the new container job (Docker build and API authentication smoke test): https://github.com/rudimentall1/verigate/actions/runs/42993439289. This does not validate the later Arc and security changes on the current HEAD.
 
-## Execution order
-1. Port secure container defaults from PR #40 while preserving current main CI and Anna version.
-2. Reconcile Arc PR #38 files onto this branch, preserving newer main changes.
-3. Port PR #41 and #42 after conflict review.
-4. Implement bytecode pinning, Arc finality policy, recovery semantics and adversarial tests.
-5. Run full CI on exact consolidation head.
-6. Review diff and create one consolidated PR to main.
-7. Merge only when exact-head checks pass; verify resulting main SHA and CI.
-8. Only then proceed to independently verify deployed Registry and perform explicitly approved live transactions.
+## 2. Arc integration now ported onto consolidation branch
 
-## Hard boundaries
-- No force-push.
-- No blind merge of divergent branches.
-- No production server deployment or restart.
+Ported from PR #38:
+- Arc Authority Registry Solidity contract.
+- Arc-specific authorization, registration confirmation and consumption confirmation API endpoints.
+- Signed Arc payment ActionIntent bound to sender, recipient, token, amount, chain and transfer calldata.
+- Identity, capability and deterministic policy checks before executable authority is issued.
+- Generic execution-consume route rejects Arc authorizations.
+- Transaction, receipt, calldata, sender, destination, event topic, Registry state, block hash and timestamp verification.
+- Local one-time authorization consumption only after on-chain Registry consumption is confirmed.
+- EIP-1193 wallet client; payment broadcast remains a separate explicit user action.
+- Agent SDK, enrollment script, Arc client, compilation script and regression tests.
+
+Ported from PR #41:
+- Late HTTP confirmation is accepted only when the canonical Arc inclusion timestamp was inside the signed authorization interval.
+- Evidence page now separates Registry deployment, Guardian v3 payment evidence and any future Verigate-authorized payment.
+
+Ported from PR #42:
+- Generic public-only agent enrollment package.
+- Operator-controlled enrollment/revocation script.
+- Dependency-free HTTP client.
+- Runnable external-agent example and quickstart.
+- Client fails closed on non-ALLOW, malformed responses, transport failures and unsuccessful one-time consumption.
+
+## 3. Arc finality
+
+The Registry verification path now:
+1. Fetches the receipt inclusion block by number.
+2. Verifies its hash against the receipt block hash.
+3. Fetches the RPC block tagged finalized.
+4. Requires the inclusion height to be at or below the finalized head.
+5. If the finalized head is the inclusion block itself, requires the hashes to match.
+
+This uses Arc's deterministic finality model rather than imposing an arbitrary 12/20-confirmation rule. If the RPC does not support or return a valid finalized block, the flow fails closed.
+
+Arc's deterministic finality is a property of Arc settlement. Verigate cannot honestly claim transaction finality faster than Arc. Our separate performance targets are:
+- local policy/identity/signature authority decision p95 <100 ms;
+- server-side pre-broadcast path p95 <500 ms excluding user approval, wallet signing, RPC inclusion and Arc consensus finality.
+
+These are targets only; no benchmark has yet been run.
+
+## 4. Runtime bytecode pinning
+
+The Arc Registry client now requires VERIGATE_ARC_REGISTRY_CODE_HASH and compares the Keccak-256 hash of deployed runtime bytecode to the configured expected hash. Missing or mismatched hash fails closed.
+
+Added:
+- pycryptodome dependency for Keccak-256 in the Python verification path.
+- compile script outputs the reproducible runtime bytecode hash.
+- scripts/verify_arc_deployment.mjs performs read-only checks: compile source, compare deployed runtime bytecode, verify chain ID, owner and finalized block, and print the exact environment variable value.
+
+**Not yet completed:** the read-only verification script has not been run against Arc Mainnet in this session. The actual runtime hash has not yet been independently recorded or installed in the production service environment. Do not claim bytecode pinning is operational until that hash is verified and configured.
+
+## 5. Production API and container security changes
+
+The consolidation branch now includes:
+- Protected API routes deny by default if API keys are not configured.
+- The only unauthenticated development mode requires both VERIGATE_ENV=development and VERIGATE_ALLOW_INSECURE_DEV_MODE=1.
+- Executable authority requires agent-signed intents outside that explicit development mode.
+- Docker image defaults to production mode, API authentication, signed intents and encrypted issuer keys.
+- Docker Compose requires API key and key passphrase and binds port 8000 to 127.0.0.1.
+- Local workspace artifacts are excluded from Docker build context.
+- Container CI validates the Compose config, builds the image and checks protected route 401 without key / 200 with key.
+- Tests cover default-deny and explicit development opt-in.
+
+The main branch is not yet changed. All of these changes remain in PR #53 until merge.
+
+## 6. Confirmed security limitations still open
+
+1. Issuer keys remain local-file based. Encrypted-at-rest storage does not protect a compromised running host. KMS/HSM or a dedicated signing service is not implemented.
+2. No complete issuer-key rotation and emergency-revocation workflow.
+3. Registry owner/issuer governance still needs multisig/timelock or equivalent operational protection.
+4. The Registry is not escrow and does not block direct out-of-band wallet transfers. It enforces the integrated Verigate client path only.
+5. Trusted handlers may create transitive child side effects outside the directly observed execution boundary.
+6. SQLite is single-process storage; multi-replica service operation needs shared transactional storage or a production database.
+7. Volumetric DoS and high-concurrency load testing have not been completed.
+8. RPC provider is still a trust boundary. The finalized tag and canonical block hash checks are implemented, but no live Arc RPC verification has been performed on this exact branch.
+9. No independent penetration test or third-party security audit has been completed.
+10. No Verigate-authorized Arc registration/consumption/USDC payment has been independently verified.
+
+## 7. Registry deployment facts and attribution
+
+Previously user-confirmed deployment facts:
+- Arc Mainnet, chain ID 5042.
+- Registry: 0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D.
+- Deployment tx: 0xe85784e81ca0069410e8555961c8403fa02adc1361c7455657106afc96855ebb.
+- Block: 30012679.
+- Owner/executor: 0x1429906b663608DB6aDeAb8F975B47aFbbe8c68C.
+
+These facts are user-confirmed historical deployment evidence. They have not been freshly reverified on Arc in this session.
+
+The transaction 0xd781e8b04b5ca89c3a34fcec50a6636049f7647d2b0e1b2bb64d5b1ee54daadf belongs to Agentic Wallet Guardian v3, not Verigate. Never attribute it to Verigate.
+
+## 8. Immediate next steps
+
+1. Inspect current exact-head CI run #42994567549 and fix all failures before adding further features.
+2. Run npm run verify:arc-deployment against Arc Mainnet; record the output and independently inspect the runtime hash. Do not deploy or send transactions.
+3. Configure VERIGATE_ARC_REGISTRY_CODE_HASH in the intended API environment only after independent verification.
+4. Add explicit tests for missing/unsupported finalized tag, receipt block above finalized head, finalized hash mismatch, and recovery after Registry consumed/local nonce failure.
+5. Add adversarial API tests for tenant confusion, unsigned capability, replay/race, identity tampering and direct execution bypass.
+6. Add a reproducible latency benchmark and report p50/p95/p99; do not weaken checks to hit the target.
+7. Review the entire PR #53 diff for accidental changes and unsupported claims.
+8. Merge PR #53 only when exact-head CI is green and the diff is reviewed. Verify the resulting main SHA and new main CI.
+9. After merge, independently verify Registry deployment and perform a live Verigate registration/consumption flow only with explicit operational approval. Payment broadcast requires separate explicit approval.
+
+## 9. Hard boundaries
+
+- No force-push and no blind merge of stale branches.
+- No production server deployment/restart.
 - No Registry redeployment or owner/issuer changes.
-- No private-key handling or wallet broadcast.
-- No claim that a transaction occurred without independently verifiable transaction evidence.
+- No private-key export or wallet broadcast.
+- No fabricated live payment evidence.
+- No claim of unhackable, fully audited, global wallet-firewall or faster-than-Arc-finality behavior.
