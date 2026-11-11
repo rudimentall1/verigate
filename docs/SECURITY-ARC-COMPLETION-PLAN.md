@@ -6,6 +6,23 @@
 
 ## Executive decision
 
+## Implementation status on consolidation branch (2026-11-11)
+
+Implemented in PR #53, pending exact-head CI and merge:
+- Protected API routes now fail closed by default; insecure access requires both explicit development environment flags.
+- Executable authorization requires signed agent intent outside explicit local development mode.
+- Production Docker defaults require API keys, encrypted issuer keys and signed intents; Compose requires secrets and loopback binding.
+- Arc registration/consumption checks require the inclusion block to be at or below the Arc RPC finalized head.
+- Arc Registry runtime bytecode hash is mandatory and verified with Keccak-256; configured executor must also be an enabled issuer.
+- Read-only deployment verification script compares compiled and deployed runtime code, checks owner/issuer and reads the finalized head.
+- Regression tests added for finality mismatch, unavailable finalized tag, code hash missing/mismatch, disabled issuer and API default-deny.
+
+Not yet independently completed:
+- The live Arc deployment verification script has not been run; the actual runtime hash is not yet confirmed or configured in the service environment.
+- Exact-head CI for the consolidated Arc/security branch is still queued/in progress.
+- On-chain-consumed/local-failure recovery, KMS/HSM, complete key rotation, multisig governance, full adapter confinement, load/DoS tests, independent penetration test and a live Verigate-authorized USDC payment remain open.
+
+
 Verigate is an authority-control plane, not a global wallet firewall. It can enforce policy only where every consequential side effect is forced through a trusted execution boundary. A compromised agent, host, issuer key, executor, wallet or alternate tool path can defeat controls that exist only in the Verigate API/client.
 
 The Arc Registry currently records and consumes signed authorization state. It does not escrow USDC, execute the payment, or prevent a wallet from sending a direct transfer outside the integrated Verigate path. Do not claim otherwise.
