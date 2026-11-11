@@ -171,3 +171,25 @@ Latest branch head: `10fc288527ce1766ca22c3cf14de22c418778a6b`.
 The workflow runs `npm run verify:arc-deployment` against the known Arc Mainnet Registry and executor. It performs read-only RPC calls only: chain ID, deployed runtime bytecode, owner, enabled issuer and finalized head. It uses no signer, private key, transaction submission or deployment.
 
 A dedicated workflow file and a one-time conditional CI job were added on the PR branch to make the live verification result inspectable. GitHub's current connector has not surfaced a workflow run for this branch yet. Therefore the live verification is still **not run/verified** from this session. PR #55 remains Draft and must not be merged until a visible PASS is recorded. A runtime mismatch or unsupported finalized tag must remain a hard failure.
+
+
+## 13. Checkpoint refresh — 2026-11-11 16:17 +05:00
+
+Verified against GitHub after the prior checkpoint:
+
+- Current `main` HEAD: `abb507b3e87131c6a87e6f3f4746c1e39ac4c7ef`.
+- Post-merge main CI run `43000194992`: **success**. This closes the earlier uncertainty about whether the squash-merged main passed CI.
+- PR #55 remains Draft at head `10fc288527ce1766ca22c3cf14de22c418778a6b`; it is 3 commits ahead and 2 behind main (merge base `d0f344e6ffa863f6a3ee0c19d62058232ce47f6b`).
+- PR #55 workflow runs:
+  - Dedicated read-only workflow run `43000038808`: failure.
+  - Main CI run `43000040926`: failure.
+  - Both were created and marked started/completed within approximately one second; GitHub Actions Jobs API returned zero jobs for the dedicated run, and the commit Check Runs API returned zero check runs for the PR head.
+  - Both run records identify the triggering event as `push`, not `pull_request`.
+- Inspected both workflow YAML files at PR head. The dedicated workflow declares push on the verification branch, path-filtered pull_request to main, and workflow_dispatch. The PR's ci.yml adds a conditional job requiring `github.event_name == 'pull_request'` and the exact head branch name. The actual recorded event for both failures was `push`, so that conditional job would not run on the recorded event. This explains why the conditional job is skipped for the ci.yml push run, but does **not** by itself explain why the dedicated push workflow produced no jobs and failed.
+- No runner logs or job logs exist for these two runs. Root cause of the pre-job failure remains **unknown**. Do not claim it is an Arc RPC/script failure, and do not change workflow configuration speculatively.
+- Current main `.github/workflows/ci.yml` was fetched and contains the four established jobs only; the temporary conditional Arc job exists on PR #55 branch, not on main.
+- No server connection or server command was used. No RPC verification, transaction, deployment, key change or production action occurred.
+
+### Next action
+
+Continue investigating GitHub Actions' pre-job failure for run `43000038808` using workflow/run/check-suite metadata and the commit/event history. Do not rerun or merge PR #55 until a concrete cause is established. Once a workflow job can actually start and pass, run the read-only Arc Mainnet verification and record runtime bytecode hash, owner, enabled issuer and finalized head. Keep live verification status **not run / not independently verified** until then.
