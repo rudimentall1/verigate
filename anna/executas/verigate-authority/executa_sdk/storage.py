@@ -199,6 +199,12 @@ class _BaseRpcClient:
                 STORAGE_ERR_TIMEOUT,
                 f"{method} timed out after {timeout}s",
             )
+        except asyncio.CancelledError:
+            # Caller cancellation is not a host response. Retire the request
+            # so a late reply cannot retain a dead pending entry.
+            with self._lock:
+                self._pending.pop(req_id, None)
+            raise
 
 
 # ─── Public clients ───────────────────────────────────────────────────
