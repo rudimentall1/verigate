@@ -40,3 +40,4 @@ if (!source.includes('block.timestamp < auth.validUntil')) {
 
 process.stdout.write("Arc Authority Registry Solidity compile: PASS\n");
 process.stdout.write("Required ABI and strict expiry boundary: PASS\n");
+process.stdout.write("Runtime bytecode hash: " + keccak256("0x" + artifact.evm.deployedBytecode.object) + "\n");
