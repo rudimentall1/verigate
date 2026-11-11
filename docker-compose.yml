@@ -9,8 +9,11 @@ services:
     environment:
       VERIGATE_POLICY: /app/policies/default.yaml
       VERIGATE_API_KEYS: "${VERIGATE_API_KEYS:?Set VERIGATE_API_KEYS before starting Verigate}"
+      VERIGATE_ENV: "production"
       VERIGATE_REQUIRE_AUTH: "1"
       VERIGATE_REQUIRE_SIGNED_INTENT: "1"
+      VERIGATE_REQUIRE_ENCRYPTED_KEY: "1"
+      VERIGATE_KEY_PASSPHRASE: "${VERIGATE_KEY_PASSPHRASE:?Set VERIGATE_KEY_PASSPHRASE before starting Verigate}"
 
 volumes:
   verigate-data:
