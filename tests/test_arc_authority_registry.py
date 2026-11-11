@@ -215,6 +215,10 @@ def test_inclusion_block_expiry_check_accepts_pre_expiry_block():
     from integrations.arc_authority_registry import ArcAuthorityRegistry
 
     class BlockRpc:
+        def get_block_by_tag(self, tag):
+            assert tag == "finalized"
+            return self.get_block_by_number(256)
+
         def get_block_by_number(self, number):
             assert number == 256
             return {
@@ -240,6 +244,10 @@ def test_inclusion_block_expiry_check_rejects_post_expiry_block():
     )
 
     class BlockRpc:
+        def get_block_by_tag(self, tag):
+            assert tag == "finalized"
+            return self.get_block_by_number(256)
+
         def get_block_by_number(self, number):
             return {
                 "number": number,
@@ -265,6 +273,10 @@ def test_inclusion_block_expiry_check_fails_closed_without_block():
     )
 
     class BlockRpc:
+        def get_block_by_tag(self, tag):
+            assert tag == "finalized"
+            return self.get_block_by_number(256)
+
         def get_block_by_number(self, number):
             return None
 
@@ -286,6 +298,10 @@ def test_inclusion_block_rejects_timestamp_equal_to_expiry():
     )
 
     class BlockRpc:
+        def get_block_by_tag(self, tag):
+            assert tag == "finalized"
+            return self.get_block_by_number(256)
+
         def get_block_by_number(self, number):
             return {
                 "number": number,
@@ -312,6 +328,10 @@ def test_inclusion_block_rejects_timestamp_before_issuance():
     from integrations.arc_authority_registry import ArcAuthorityRegistryError
 
     class BlockRpc:
+        def get_block_by_tag(self, tag):
+            assert tag == "finalized"
+            return self.get_block_by_number(256)
+
         def get_block_by_number(self, number):
             return {
                 "number": number,
@@ -469,7 +489,11 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
                     return make_transaction(consumption_hash, consumption_calldata)
                 return None
     
-            def get_block_by_number(self, number):
+            def get_block_by_tag(self, tag):
+            assert tag == "finalized"
+            return self.get_block_by_number(256)
+
+        def get_block_by_number(self, number):
                 if number == 100:
                     return {
                         "number": "0x64",
