@@ -185,6 +185,8 @@ class ArcAuthorityRegistry:
                 "contract_address": self.contract_address,
                 "owner": owner,
                 "executor": self.executor_address,
+                "issuer_enabled": True,
+                "runtime_code_hash": actual_code_hash,
             }
         except EvmRpcError as exc:
             raise ArcAuthorityRegistryError(f"Arc registry RPC verification failed: {exc}") from exc
