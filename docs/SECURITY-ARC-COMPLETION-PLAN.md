@@ -186,3 +186,10 @@ Diagnose the GitHub Actions pre-job failure for run `43000038808` from workflow/
 - PR CI [43012817755](https://github.com/rudimentall1/verigate/actions/runs/43012817755): test, contracts and container jobs passed; anna-ui was still completing the Linux Executa build when this note was written. Arc verification job failed as above.
 - Current lockfile resolves solc 0.8.37. The cause of mismatch is unknown; likely investigation must compare deployment-time compiler/version/settings, source revision, metadata and deployment artifact. Do not assume the cause.
 - No deploy, broadcast, server action, key change, or service configuration update occurred. Keep PR #55 Draft and do not pin a runtime hash or merge until bytecode discrepancy is explained and verification succeeds.
+
+
+### Final status for PR CI run 43012817755
+
+- Completed: `test` PASS, `contracts` PASS, `container` PASS, `anna-ui` PASS.
+- Failed: `Arc Mainnet deployment verification (read-only)`, solely at the runtime bytecode comparison described above.
+- Overall PR CI conclusion: FAILURE because the read-only Arc verification correctly fails closed on the mismatch.
