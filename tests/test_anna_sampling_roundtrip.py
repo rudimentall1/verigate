@@ -2,6 +2,7 @@
 
 The host is emulated over stdio; no Anna account, CU quota, or network call is used.
 """
+import asyncio
 import json
 import os
 import queue
