@@ -90,6 +90,7 @@ from adapters.valta import (
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
 from enforcement.evm_rpc import EvmRpcError
+from integrations.arc_authority_registry import ArcAuthorityRegistry, ArcAuthorityRegistryError
 from integrations.arc import (
     ARC_CHAIN,
     ARC_CHAIN_ID,
@@ -479,25 +480,177 @@ def authorize_arc_payment(req: ActionAuthorizationRequest) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     authorization = artifacts.get("execution_authorization")
-    wallet_transaction = None
+    arc_authority = None
     if authorization is not None:
-        tx = transaction
-        wallet_transaction = {
-            "chainId": hex(ARC_CHAIN_ID),
-            "from": tx["from"],
-            "to": tx["to"],
-            "data": tx["data"],
-            "value": hex(tx["value_wei"]),
-        }
+        try:
+            registry = ArcAuthorityRegistry()
+            deployment = registry.verify_deployment()
+            registration = registry.prepare_registration_transaction(authorization)
+            arc_authority = {**deployment, **registration}
+        except ArcAuthorityRegistryError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Verigate Arc authority registry is not ready: {exc}",
+            ) from exc
 
     return {
         **artifacts,
         "arc_network": network_status,
-        "wallet_transaction": wallet_transaction,
-        "execution_consume_endpoint": "/v1/execution/consume",
+        "arc_authority": arc_authority,
+        "wallet_transaction": None,
         "execution_order": [
-            "consume the exact execution_authorization at /v1/execution/consume",
-            "only if execute=true, ask the connected wallet to sign and broadcast wallet_transaction on Arc mainnet",
+            "sign and broadcast arc_authority.registration_transaction with the configured executor wallet",
+            "confirm its transaction hash at /v1/integrations/arc/registration/confirm",
+            "sign and broadcast the returned consume_transaction with the same wallet",
+            "confirm its transaction hash at /v1/integrations/arc/consume/confirm",
+            "only after execute=true, sign and broadcast the returned wallet_transaction payment on Arc",
+        ],
+    }
+
+
+def _verified_arc_execution_authorization(
+    authorization: dict,
+    *,
+    verification_time: int | None = None,
+) -> dict:
+    if not isinstance(authorization, dict):
+        raise HTTPException(status_code=400, detail="authorization object is required")
+
+    valid, reason = verify_execution_authorization(
+        authorization,
+        issuer_public_key(PUBLIC_KEY_PATH),
+        verification_time=verification_time,
+    )
+    if not valid:
+        raise HTTPException(status_code=403, detail=f"invalid Verigate execution authorization: {reason}")
+
+    payload = authorization.get("payload", {})
+    action = payload.get("action", {})
+    if action.get("network") != ARC_CHAIN or action.get("action_type") != "payment":
+        raise HTTPException(status_code=400, detail="Arc registry flow requires an Arc payment authorization")
+
+    metadata = action.get("metadata", {})
+    if not isinstance(metadata.get("evm_transaction"), dict):
+        raise HTTPException(status_code=400, detail="signed Arc payment transaction is missing")
+
+    return payload
+
+
+def _preverify_arc_execution_authorization(authorization: dict) -> dict:
+    if not isinstance(authorization, dict):
+        raise HTTPException(status_code=400, detail="authorization object is required")
+
+    payload = authorization.get("payload")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=403, detail="invalid Verigate execution authorization: invalid payload")
+
+    issued_at = payload.get("issued_at")
+    if isinstance(issued_at, bool) or not isinstance(issued_at, int):
+        raise HTTPException(status_code=403, detail="invalid Verigate execution authorization: invalid issued_at")
+
+    return _verified_arc_execution_authorization(
+        authorization,
+        verification_time=issued_at,
+    )
+
+
+@app.post("/v1/integrations/arc/registration/confirm")
+def confirm_arc_registration(req: dict) -> dict:
+    authorization = req.get("authorization")
+    transaction_hash = req.get("registration_tx_hash")
+
+    try:
+        _preverify_arc_execution_authorization(authorization)
+        registry = ArcAuthorityRegistry()
+        verification_time = registry.registration_verification_time(
+            authorization, transaction_hash
+        )
+        _verified_arc_execution_authorization(
+            authorization,
+            verification_time=verification_time,
+        )
+        result = registry.confirm_registration(authorization, transaction_hash)
+    except ArcAuthorityRegistryError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return result
+
+
+@app.post("/v1/integrations/arc/consume/confirm")
+def confirm_arc_consumption(req: dict) -> dict:
+    authorization = req.get("authorization")
+    registration_tx_hash = req.get("registration_tx_hash")
+    consumption_tx_hash = req.get("consume_tx_hash")
+
+    try:
+        _preverify_arc_execution_authorization(authorization)
+        registry = ArcAuthorityRegistry()
+        verification_time = registry.registration_verification_time(
+            authorization, registration_tx_hash
+        )
+        payload = _verified_arc_execution_authorization(
+            authorization,
+            verification_time=verification_time,
+        )
+        registration = registry.confirm_registration(authorization, registration_tx_hash)
+        consumption = registry.confirm_consumption(authorization, consumption_tx_hash)
+    except ArcAuthorityRegistryError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    assert _storage is not None
+    router = ExecutionRouter(
+        NetworkRegistry(),
+        _storage,
+        issuer_public_key(PUBLIC_KEY_PATH),
+    )
+    execute, reason = router.consume(
+        authorization,
+        verification_time=consumption["block_timestamp"],
+    )
+
+    evidence = {
+        "chain_id": ARC_CHAIN_ID,
+        "contract_address": registry.contract_address,
+        "executor": registry.executor_address,
+        "authorization_id": registration["authorization_id"],
+        "intent_hash": registration["intent_hash"],
+        "registration": {
+            "transaction_ref": registration["transaction_ref"],
+            "block_ref": registration["block_ref"],
+        },
+        "consumption": {
+            "transaction_ref": consumption["transaction_ref"],
+            "block_ref": consumption["block_ref"],
+        },
+    }
+
+    if not execute:
+        return {
+            "execute": False,
+            "reason": reason,
+            "arc_authority_evidence": evidence,
+            "wallet_transaction": None,
+        }
+
+    action = payload["action"]
+    evm_tx = action["metadata"]["evm_transaction"]
+    wallet_transaction = {
+        "chainId": hex(int(evm_tx["chain_id"])),
+        "from": evm_tx["from"],
+        "to": evm_tx["to"],
+        "data": evm_tx["data"],
+        "value": hex(int(evm_tx["value_wei"])),
+    }
+
+    return {
+        "execute": True,
+        "reason": "Verigate authorization verified and consumed on Arc Mainnet",
+        "arc_authority_evidence": evidence,
+        "wallet_transaction": wallet_transaction,
+        "execution_order": [
+            "Arc registry registration confirmed",
+            "Arc registry consumption confirmed",
+            "Verigate local one-time authorization consumed",
+            "connected wallet may now sign and broadcast wallet_transaction",
         ],
     }
 
@@ -621,12 +774,19 @@ def authorize_x402(req: X402HeaderRequest) -> dict:
 def consume_execution(req: ExecutionConsumeRequest) -> dict:
     """Consume a signed execution capability through the universal router."""
     assert _storage is not None
+    authorization = req.authorization.model_dump()
+    action = authorization.get("payload", {}).get("action", {})
+    if action.get("network") == ARC_CHAIN:
+        raise HTTPException(
+            status_code=409,
+            detail="Arc execution requires confirmed on-chain registration and consumption; use /v1/integrations/arc/consume/confirm",
+        )
     router = ExecutionRouter(
         NetworkRegistry(),
         _storage,
         issuer_public_key(PUBLIC_KEY_PATH),
     )
-    ok, reason = router.consume(req.authorization.model_dump())
+    ok, reason = router.consume(authorization)
     return {"execute": ok, "reason": reason}
 
 
