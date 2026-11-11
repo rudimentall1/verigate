@@ -721,7 +721,7 @@ await test("repeated permission clicks cannot create duplicate approvals", async
   await ui.click();
   ui.$("execution-btn").click();
   for (let i = 0; i < 200; i++) {
-    if (ui.$("approval-dialog").hasAttribute("open")) break;
+    if (!ui.$("approval-overlay").hidden) break;
     await sleep(10);
   }
   ok(!ui.$("approval-overlay").hidden, "confirmation overlay opened");
@@ -741,7 +741,7 @@ await test("canceling the in-app permission dialog creates no approval", async (
   await ui.click();
   ui.$("execution-btn").click();
   for (let i = 0; i < 200; i++) {
-    if (ui.$("approval-dialog").hasAttribute("open")) break;
+    if (!ui.$("approval-overlay").hidden) break;
     await sleep(10);
   }
   ok(!ui.$("approval-overlay").hidden, "in-app confirmation overlay opened");
@@ -860,7 +860,7 @@ await test("canceling wallet confirmation leaves the permission unused", async (
   await ui.clickExecution();
   ui.$("wallet-execute-btn").click();
   for (let i = 0; i < 200; i++) {
-    if (ui.$("approval-dialog").hasAttribute("open")) break;
+    if (!ui.$("approval-overlay").hidden) break;
     await sleep(10);
   }
   ok(!ui.$("approval-overlay").hidden, "wallet confirmation overlay opened");
