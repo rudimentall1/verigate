@@ -12,6 +12,8 @@ class ContainerSecurityDefaultsTest(unittest.TestCase):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("VERIGATE_REQUIRE_AUTH=1", dockerfile)
         self.assertIn("VERIGATE_REQUIRE_SIGNED_INTENT=1", dockerfile)
+        self.assertIn("VERIGATE_REQUIRE_ENCRYPTED_KEY=1", dockerfile)
+        self.assertIn("VERIGATE_ENV=production", dockerfile)
 
     def test_compose_requires_api_key_and_only_binds_loopback(self):
         compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
@@ -20,6 +22,9 @@ class ContainerSecurityDefaultsTest(unittest.TestCase):
         environment = service["environment"]
         self.assertEqual(environment["VERIGATE_REQUIRE_AUTH"], "1")
         self.assertEqual(environment["VERIGATE_REQUIRE_SIGNED_INTENT"], "1")
+        self.assertEqual(environment["VERIGATE_ENV"], "production")
+        self.assertEqual(environment["VERIGATE_REQUIRE_ENCRYPTED_KEY"], "1")
+        self.assertIn("?Set VERIGATE_KEY_PASSPHRASE", environment["VERIGATE_KEY_PASSPHRASE"])
         self.assertIn("?Set VERIGATE_API_KEYS", environment["VERIGATE_API_KEYS"])
 
     def test_docker_context_excludes_local_workspace_artifacts(self):
