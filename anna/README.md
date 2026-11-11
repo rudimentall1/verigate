@@ -123,11 +123,11 @@ The prior claim that no wallet had ever been connected in Anna Runtime is withdr
 
 ### Current Anna platform version — 11 November 2026
 
-- Current App ID **851**, immutable App version **0.1.30** (version ID **2109**); bundle status `ready`, 3 files / 95.9 KB. Platform status is **Draft**, not Marketplace-published and not submitted for review.
-- Bundled production Executa ID **1314**, version **0.1.17** (version ID **1063**), tool ID `tool-verigate-authority-verigate-authority-28x5jku8`. The 0.1.30 cut uploaded all four platform archives to Anna CDN.
-- Source candidate commit: `6365bb9983baa90fb2912a93fc7bcd938a4d8220`; App 0.1.30 / Executa 0.1.17 are the immutable Console cut. The App has not been released to Marketplace users.
-- Cloud Agent **#7883** is Online on Fly (region `sin`). Its plugin inventory shows the App-bound Executa **0.1.17 Running** with 9 tools. The live Dashboard used this Cloud Agent and received an Anna host-LLM contextual-review response through the bundled Executa before the deterministic Verigate policy result. A separate legacy Verigate tool ID at version 0.1.15 remains installed; App 0.1.30 is bound to the 0.1.17 tool ID.
-- Cloud Agent capacity is **1/1**. Live invocation is verified, but a separate clean Cloud Agent installation is not; no existing Agent was suspended, destroyed or changed.
+- Current App ID **851**, immutable App version **0.1.31** (version ID **2110**); bundle status `ready`, 3 files / 95.9 KB. Platform status is **Draft**, not Marketplace-published and not submitted for review.
+- Bundled production Executa ID **1314**, version **0.1.18** (version ID **1064**), tool ID `tool-verigate-authority-verigate-authority-28x5jku8`; Executa content hash `1ff69c5086c920ab3426444ce49b19fd588d893103979ccfde3f2fd3d9cae9b4`. The App 0.1.31 cut uploaded all four 0.1.18 platform archives to Anna CDN.
+- Source baseline at cut: `3731ae66c3ed9e8bd5ef36f0c00e48457db746c3`; App 0.1.31 / Executa 0.1.18 are immutable Console versions. Official CLI post-cut reads confirm the App remains Draft (`is_published=false`, no review candidate) and Executa remains app-bundled / unpublished.
+- The previously observed live Cloud Agent **#7883** invocation used the earlier App **0.1.30 / Executa 0.1.17**. A fresh installation/invocation using Executa 0.1.18 is not yet verified. The separate legacy Verigate tool ID at version 0.1.15 remains untouched.
+- Cloud Agent capacity was last observed at **1/1**. No existing Agent was suspended, destroyed or changed during the 0.1.31 upload.
 
 ### Automated and build evidence
 

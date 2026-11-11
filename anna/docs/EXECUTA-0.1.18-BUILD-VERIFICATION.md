@@ -32,12 +32,12 @@ The Linux/macOS packages contain a `.tar.gz` release archive plus checksum sidec
 - The workflow's `release` job was **skipped**, as requested by `publish_release=false`. No GitHub Release or public tag is claimed by this run.
 - The artifacts are GitHub Actions artifacts and expire **2027-02-09**.
 - This workflow does **not** upload the package to Anna CDN or update Anna Console.
-- The last recorded Anna Console state remains immutable Draft App **0.1.30** (version ID **2109**) with bundled Executa **0.1.17** (version ID **1063**). That Console state must be rechecked before any new immutable cut.
-- The source manifest on `main` now requires bundled Executa `>=0.1.18`. Therefore the old Console bundle does not satisfy the current source manifest requirement.
+- The 11 November Console upload is now confirmed: immutable Draft App **0.1.31** (version ID **2110**) with bundled Executa **0.1.18** (version ID **1064**). All four platform archives were uploaded to Anna CDN and the App cut completed successfully.
+- The App 0.1.31 Console cut now bundles Executa 0.1.18, satisfying the source manifest requirement `>=0.1.18`.
 
 ## Next release gate
 
-Create a new immutable Anna Console cut using App source version **0.1.30** with bundled Executa **0.1.18**, then verify the resulting Console version IDs, bundle content hash, platform archive selection, Cloud Agent installation/invocation, and live Runtime behavior. Do not call the Anna release complete until those checks pass.
+The immutable Console cut is complete. Remaining acceptance work is to verify a fresh Cloud Agent install/invocation using Executa **0.1.18**, inspect live Runtime behavior, and validate platform-side APS concurrency/ETag and failure/late-response semantics. The App remains Draft; no review submission or Marketplace release was performed.
 
 ## What this evidence does not prove
 

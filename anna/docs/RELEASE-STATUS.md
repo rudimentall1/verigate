@@ -1,14 +1,23 @@
 # Anna App — current release status
 
-> **Latest source/build update — 11 November 2026:** PR #52 is merged. Current `main` source commit is `1afe3a4f35f945cc458cc705d59b400441e480cd`; source manifest now requires bundled Executa >= `0.1.18`. Four Executa 0.1.18 platform packages were built and smoke-tested successfully in [workflow run 42989643581](https://github.com/rudimentall1/verigate/actions/runs/42989643581), then downloaded and independently checked for artifact and package SHA-256 integrity and versioned manifests. Full evidence: [Executa 0.1.18 build verification](EXECUTA-0.1.18-BUILD-VERIFICATION.md). **Anna Console has not yet been updated:** the last recorded immutable Draft remains App 0.1.30 / Executa 0.1.17. The new source requirement and old Console bundle are therefore not yet synchronized. No 0.1.18 GitHub Release was published.
+> **Latest verified Anna deployment — 11 November 2026:** App 0.1.31 (version ID 2110) and bundled Executa 0.1.18 (version ID 1064) have been uploaded to Anna Console from source baseline `3731ae66c3ed9e8bd5ef36f0c00e48457db746c3`. All four 0.1.18 binaries were uploaded; post-cut reads through the official Anna CLI confirm the App remains Draft (`is_published=false`, no review candidate) and the Executa remains app-bundled / unpublished. The 0.1.18 build and four-platform SHA-256 evidence is in [the build verification report](EXECUTA-0.1.18-BUILD-VERIFICATION.md). This is a successful immutable Console cut, not a Marketplace release or proof of a fresh Cloud Agent runtime on Executa 0.1.18.
 
 
 **Updated:** 2026-11-11  
-**Anna App / Executa source:** commit `1afe3a4f35f945cc458cc705d59b400441e480cd`  
-**Source candidate:** Anna App **0.1.30** · bundled Executa **0.1.18**  
-**Current Anna Console state (11 November):** immutable Draft App **0.1.30** · version ID **2109** · App ID **851**; bundled Executa **0.1.17** · version ID **1063** · Executa ID **1314**
+**Anna App source baseline at cut:** commit `3731ae66c3ed9e8bd5ef36f0c00e48457db746c3`
+**Source candidate:** Anna App **0.1.31** | bundled Executa **0.1.18**
+**Current Anna Console state (11 November):** immutable Draft App **0.1.31** | version ID **2110** | App ID **851**; bundled Executa **0.1.18** | version ID **1064** | Executa ID **1314**
 
-## Current source candidate — 11 November
+## Latest verified Anna Console cut — 11 November 2026
+
+- Source baseline: `3731ae66c3ed9e8bd5ef36f0c00e48457db746c3`; App source version **0.1.31**; bundled Executa source version **0.1.18**. The Anna manifest requires Executa `>=0.1.18`.
+- App ID **851**, slug `verigate-authority`: immutable App **0.1.31**, version ID **2110**. The official CLI staged working revision **12** (3 bundle files, 95.9 KB, status `ready`) and created the immutable cut successfully.
+- Executa ID **1314**, tool ID `tool-verigate-authority-verigate-authority-28x5jku8`: immutable Executa **0.1.18**, version ID **1064**, content hash `1ff69c5086c920ab3426444ce49b19fd588d893103979ccfde3f2fd3d9cae9b4`.
+- The cut uploaded **4 platform archives** to Anna CDN (darwin-arm64, darwin-x86_64, linux-x86_64, windows-x86_64; 4 uploaded, 0 cached). Each downloaded archive matched its `.sha256` sidecar before upload. The source package versions and platform targets were independently checked.
+- Post-cut official CLI reads confirm App status **draft**, `is_published=false`, `review_candidate_version=null`, `published_at=null`; Executa is **app_bundled** and `is_published=false`. The immutable versions are in Anna Console but are **not Marketplace-published** and were **not submitted for review**.
+- The prior live Cloud Agent #7883 evidence belongs to the earlier App 0.1.30 / Executa 0.1.17 cut. A fresh install/invocation using Executa 0.1.18 has **not** yet been verified. Live APS concurrency/ETag behavior and live failure/late-response semantics also remain open acceptance gates.
+
+## Historical source candidate — PR #44 / App 0.1.30 and Executa 0.1.17 — 11 November
 
 PR [#44](https://github.com/rudimentall1/verigate/pull/44) is merged into `main`. Its source candidate is App 0.1.30 / Executa 0.1.17. The source manifest requires bundled Executa >= 0.1.17.
 
