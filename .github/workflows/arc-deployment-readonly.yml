@@ -11,6 +11,16 @@ on:
       - "scripts/compile_arc_authority.mjs"
       - "package.json"
       - "package-lock.json"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/arc-deployment-readonly.yml"
+      - "contracts/arc-authority/src/VerigateAuthorityRegistry.sol"
+      - "scripts/verify_arc_deployment.mjs"
+      - "scripts/compile_arc_authority.mjs"
+      - "package.json"
+      - "package-lock.json"
   workflow_dispatch:
 
 permissions:
