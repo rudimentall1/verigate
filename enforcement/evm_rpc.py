@@ -156,6 +156,32 @@ class EvmRpcClient:
             raise EvmRpcError("eth_getBlockByNumber returned an invalid block hash")
         return result
 
+    def get_block_by_tag(self, tag: str) -> dict[str, Any] | None:
+        """Fetch an explicitly named canonical/finality block tag."""
+        if tag not in {"latest", "safe", "finalized"}:
+            raise ValueError("unsupported EVM block tag")
+        result = self._request("eth_getBlockByNumber", [tag, False])
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            raise EvmRpcError("eth_getBlockByNumber returned invalid tagged block")
+        number = result.get("number")
+        block_hash = result.get("hash")
+        if not isinstance(number, str) or not number.startswith("0x"):
+            raise EvmRpcError("tagged block has no valid block number")
+        if (
+            not isinstance(block_hash, str)
+            or len(block_hash) != 66
+            or not block_hash.startswith("0x")
+            or any(char not in "0123456789abcdefABCDEF" for char in block_hash[2:])
+        ):
+            raise EvmRpcError("tagged block has no valid block hash")
+        try:
+            int(number, 16)
+        except ValueError as exc:
+            raise EvmRpcError("tagged block has an invalid block number") from exc
+        return result
+
     def get_transaction_by_hash(self, transaction_hash: str) -> dict[str, Any] | None:
         if (
             not isinstance(transaction_hash, str)
