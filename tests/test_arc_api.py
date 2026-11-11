@@ -123,7 +123,45 @@ class ArcApiTest(unittest.TestCase):
             "metadata": metadata,
         }
 
-        with patch.object(main.ArcMainnetIntegration, "status", return_value=ARC_STATUS):
+        with patch.object(main.ArcMainnetIntegration, "status", return_value=ARC_STATUS), patch.object(
+            main.ArcAuthorityRegistry, "verify_deployment", return_value={"verified": True, "chain_id": ARC_CHAIN_ID}
+        ), patch.object(
+            main.ArcAuthorityRegistry, "prepare_registration_transaction", return_value={
+                "contract_address": "0x4444444444444444444444444444444444444444",
+                "registration_transaction": {"to": "0x4444444444444444444444444444444444444444", "data": "0x1234"},
+            }
+        ), patch.object(
+            main.ArcAuthorityRegistry,
+            "registration_verification_time",
+            side_effect=lambda auth, tx_hash: auth["payload"]["issued_at"] + 1,
+        ), patch.object(
+            main.ArcAuthorityRegistry,
+            "confirm_registration",
+            side_effect=lambda auth, tx_hash: {
+                "registered": True,
+                "authorization_id": "0x" + auth["payload"]["authorization_id"],
+                "intent_hash": "0x" + "ab" * 32,
+                "transaction_ref": tx_hash,
+                "block_ref": "0x100",
+                "consume_transaction": {
+                    "to": "0x4444444444444444444444444444444444444444",
+                    "data": "0x5678",
+                },
+            },
+        ), patch.object(
+            main.ArcAuthorityRegistry,
+            "confirm_consumption",
+            side_effect=lambda auth, tx_hash: {
+                "consumed": True,
+                "authorization_id": "0x" + auth["payload"]["authorization_id"],
+                "intent_hash": "0x" + "ab" * 32,
+                "transaction_ref": tx_hash,
+                "block_ref": "0x101",
+                "block_timestamp": auth["payload"]["issued_at"] + 2,
+            },
+        ), patch.object(
+            main.ExecutionRouter, "consume", return_value=(True, "execution authorization consumed")
+        ) as router_consume:
             with TestClient(main.app) as client:
                 main._storage.register_identity(identity)
                 main._storage.register_capability(capability)
@@ -143,25 +181,67 @@ class ArcApiTest(unittest.TestCase):
                     authorization, server_public_key
                 )
                 self.assertTrue(valid, reason)
+                at_expiry, expiry_reason = verify_execution_authorization(
+                    authorization,
+                    server_public_key,
+                    verification_time=authorization["payload"]["expires_at"],
+                )
+                self.assertFalse(at_expiry)
+                self.assertEqual(expiry_reason, "execution authorization expired")
                 self.assertEqual(body["arc_network"]["chain_id"], ARC_CHAIN_ID)
-                self.assertEqual(body["wallet_transaction"]["to"], ARC_USDC_ADDRESS)
-                self.assertEqual(body["wallet_transaction"]["from"], SENDER)
-                self.assertEqual(body["wallet_transaction"]["chainId"], hex(ARC_CHAIN_ID))
-                self.assertEqual(body["wallet_transaction"]["value"], "0x0")
+                self.assertEqual(body["arc_authority"]["registration_transaction"]["to"].lower(), body["arc_authority"]["contract_address"].lower())
+                self.assertIsNone(body["wallet_transaction"])
+                self.assertIn("/v1/integrations/arc/registration/confirm", " ".join(body["execution_order"]))
 
+                # The generic consume route must not bypass the Arc registry.
                 consumed = client.post(
                     "/v1/execution/consume",
                     json={"authorization": authorization},
                 )
-                self.assertEqual(consumed.status_code, 200)
-                self.assertTrue(consumed.json()["execute"], consumed.json()["reason"])
+                self.assertEqual(consumed.status_code, 409)
+                self.assertIn("on-chain registration", consumed.json()["detail"])
 
-                replay = client.post(
-                    "/v1/execution/consume",
-                    json={"authorization": authorization},
+                registration_hash = "0x" + "11" * 32
+                consumption_hash = "0x" + "22" * 32
+                registration = client.post(
+                    "/v1/integrations/arc/registration/confirm",
+                    json={
+                        "authorization": authorization,
+                        "registration_tx_hash": registration_hash,
+                    },
                 )
-                self.assertEqual(replay.status_code, 200)
-                self.assertFalse(replay.json()["execute"])
+                self.assertEqual(registration.status_code, 200, registration.text)
+                self.assertTrue(registration.json()["registered"])
+                self.assertEqual(
+                    registration.json()["consume_transaction"]["to"].lower(),
+                    body["arc_authority"]["contract_address"].lower(),
+                )
+
+                consumption = client.post(
+                    "/v1/integrations/arc/consume/confirm",
+                    json={
+                        "authorization": authorization,
+                        "registration_tx_hash": registration_hash,
+                        "consume_tx_hash": consumption_hash,
+                    },
+                )
+                self.assertEqual(consumption.status_code, 200, consumption.text)
+                result = consumption.json()
+                self.assertTrue(result["execute"])
+                self.assertEqual(
+                    result["arc_authority_evidence"]["registration"]["transaction_ref"],
+                    registration_hash,
+                )
+                self.assertEqual(
+                    result["arc_authority_evidence"]["consumption"]["transaction_ref"],
+                    consumption_hash,
+                )
+                self.assertIsNotNone(result["wallet_transaction"])
+                router_consume.assert_called_once()
+                self.assertEqual(
+                    router_consume.call_args.kwargs["verification_time"],
+                    authorization["payload"]["issued_at"] + 2,
+                )
 
     def test_arc_endpoint_rejects_non_arc_payment_before_network_or_identity_checks(self):
         request = {
