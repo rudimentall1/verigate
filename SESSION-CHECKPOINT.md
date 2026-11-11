@@ -193,3 +193,21 @@ Verified against GitHub after the prior checkpoint:
 ### Next action
 
 Continue investigating GitHub Actions' pre-job failure for run `43000038808` using workflow/run/check-suite metadata and the commit/event history. Do not rerun or merge PR #55 until a concrete cause is established. Once a workflow job can actually start and pass, run the read-only Arc Mainnet verification and record runtime bytecode hash, owner, enabled issuer and finalized head. Keep live verification status **not run / not independently verified** until then.
+
+
+## 14. Arc verification workflow diagnosis — 2026-11-11
+
+PR #55: https://github.com/rudimentall1/verigate/pull/55
+
+- The pre-job workflow failure was identified from the GitHub Actions annotation: unquoted `0x...` address values were parsed as YAML integers where workflow env values require strings.
+- Quoted both Registry and Executor addresses in both `.github/workflows/arc-deployment-readonly.yml` and the temporary Arc verification job in `.github/workflows/ci.yml`.
+- Latest PR branch head at this checkpoint: `777fb01f4e4a33e6417c94ee82e34bdeb58612d5`.
+- GitHub now creates runner jobs. Read-only verifier run: [43012817343](https://github.com/rudimentall1/verigate/actions/runs/43012817343); PR CI run: [43012817755](https://github.com/rudimentall1/verigate/actions/runs/43012817755).
+- The read-only verifier successfully installed dependencies, connected to Arc Mainnet chain ID 5042, retrieved deployed bytecode, then FAILED closed on exact runtime bytecode comparison:
+  - compiled source hash: `0x20ee1d407229f43acb985459db74d3d0ec6d6d25782b29f9e3baf72b51284597`
+  - deployed runtime hash: `0x6b229c049b9ba0007c318a10759a9827b5a798a4e511611872dcd4cf3973b160`
+- Therefore owner, enabled issuer and finalized-head checks were NOT reached by this verifier. Do not claim live deployment verification PASS; do not pin/configure the chain hash; do not weaken or bypass bytecode comparison.
+- PR CI run 43012817755: `test`, `contracts`, and `container` jobs passed; `anna-ui` was still running its Linux Executa binary build at checkpoint time. The separate Arc read-only job failed on the runtime mismatch.
+- Current source and verifier files are byte-identical to main; current lockfile resolves solc `0.8.37`. The cause of deployed/source runtime mismatch is NOT YET ESTABLISHED. Compiler settings/version, deployment-time source revision, metadata, and actual deployment artifact must be reconciled before any code or deployment change.
+- No contract deployment, transaction broadcast, key operation, server command, or runtime configuration change was performed.
+- Next action: recover the exact deployment-time source/compiler settings/artifact and compare against on-chain creation/runtime bytecode. Keep PR #55 Draft and do not merge until the discrepancy is explained and the read-only verification passes or is correctly redesigned around a reviewed deployment artifact.
