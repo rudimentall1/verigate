@@ -5,19 +5,20 @@
 **Current work branch:** release/arc-security-consolidation-2026-11-11  
 **Default branch:** main  
 **Consolidation PR:** https://github.com/rudimentall1/verigate/pull/53  
-**Current consolidation HEAD:** 57146a2e1e19b6cf48bdd915d2fd7cb9b0cc8ca0  
+**Current consolidation HEAD:** c9283e7cb78e8432d31123c29d48ae6b08bae036  
 **Main HEAD at branch creation:** 3731ae66c3ed9e8bd5ef36f0c00e48457db746c3
 
 ## 1. Current state
 
-The Arc Authority Registry integration and the external agent SDK changes have been ported onto a branch created from current main. The branch compares as **72 commits ahead, 0 behind**, with 46 changed files (4,773 additions / 155 deletions) at the latest comparison.
+The Arc Authority Registry integration and the external agent SDK changes have been ported onto a branch created from current main. The branch compares as **83 commits ahead, 0 behind**, with 46 changed files at the latest comparison.
 
 PR #53 is open and Draft. It has not been merged. The original PRs #38, #40, #41 and #42 remain unmerged; their stale/diverged branches were not blindly merged.
 
-The current exact-head CI run is queued:
-- PR run: https://github.com/rudimentall1/verigate/actions/runs/42994567549
-- Push run: https://github.com/rudimentall1/verigate/actions/runs/42994561006
-- Exact head: 57146a2e1e19b6cf48bdd915d2fd7cb9b0cc8ca0
+The current exact-head CI runs are queued:
+- PR run: https://github.com/rudimentall1/verigate/actions/runs/42994944975
+- Push run: https://github.com/rudimentall1/verigate/actions/runs/42994938029
+- Exact head: c9283e7cb78e8432d31123c29d48ae6b08bae036
+- PR #53 currently reports mergeable=false; do not merge while GitHub calculates/validates the branch and CI is pending.
 
 Earlier security-container-only commit 1272b99be169c871054ef9588ef06011784e7105 passed all four jobs, including the new container job (Docker build and API authentication smoke test): https://github.com/rudimentall1/verigate/actions/runs/42993439289. This does not validate the later Arc and security changes on the current HEAD.
 
@@ -54,7 +55,7 @@ The Registry verification path now:
 4. Requires the inclusion height to be at or below the finalized head.
 5. If the finalized head is the inclusion block itself, requires the hashes to match.
 
-This uses Arc's deterministic finality model rather than imposing an arbitrary 12/20-confirmation rule. If the RPC does not support or return a valid finalized block, the flow fails closed.
+This uses Arc's deterministic finality model rather than imposing an arbitrary 12/20-confirmation rule. If the RPC does not support or return a valid finalized block, the flow fails closed. Runtime bytecode is pinned by Keccak hash and the configured executor must be an enabled issuer.
 
 Arc's deterministic finality is a property of Arc settlement. Verigate cannot honestly claim transaction finality faster than Arc. Our separate performance targets are:
 - local policy/identity/signature authority decision p95 <100 ms;
@@ -64,7 +65,7 @@ These are targets only; no benchmark has yet been run.
 
 ## 4. Runtime bytecode pinning
 
-The Arc Registry client now requires VERIGATE_ARC_REGISTRY_CODE_HASH and compares the Keccak-256 hash of deployed runtime bytecode to the configured expected hash. Missing or mismatched hash fails closed.
+The Arc Registry client now requires VERIGATE_ARC_REGISTRY_CODE_HASH and compares the Keccak-256 hash of deployed runtime bytecode to the configured expected hash. Missing or mismatched hash fails closed. It also verifies that the configured executor is an enabled issuer.
 
 Added:
 - pycryptodome dependency for Keccak-256 in the Python verification path.
