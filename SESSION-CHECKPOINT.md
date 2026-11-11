@@ -211,3 +211,10 @@ PR #55: https://github.com/rudimentall1/verigate/pull/55
 - Current source and verifier files are byte-identical to main; current lockfile resolves solc `0.8.37`. The cause of deployed/source runtime mismatch is NOT YET ESTABLISHED. Compiler settings/version, deployment-time source revision, metadata, and actual deployment artifact must be reconciled before any code or deployment change.
 - No contract deployment, transaction broadcast, key operation, server command, or runtime configuration change was performed.
 - Next action: recover the exact deployment-time source/compiler settings/artifact and compare against on-chain creation/runtime bytecode. Keep PR #55 Draft and do not merge until the discrepancy is explained and the read-only verification passes or is correctly redesigned around a reviewed deployment artifact.
+
+
+### Final status for PR CI run 43012817755
+
+- Completed: `test` PASS, `contracts` PASS, `container` PASS, `anna-ui` PASS.
+- Failed: `Arc Mainnet deployment verification (read-only)`, solely at the runtime bytecode comparison described above.
+- Overall PR CI conclusion: FAILURE because the read-only Arc verification correctly fails closed on the mismatch.
