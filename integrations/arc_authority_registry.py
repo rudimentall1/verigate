@@ -172,7 +172,9 @@ class ArcAuthorityRegistry:
                 self.contract_address,
                 ISSUER_SELECTOR + _address_word(self.executor_address),
             )
-            if len(issuer_result) < 66 or int(issuer_result[-64:], 16) != 1:
+            if not isinstance(issuer_result, str) or not re.fullmatch(r"0x[0-9a-fA-F]{64}", issuer_result):
+                raise ArcAuthorityRegistryError("Registry issuers() returned invalid data")
+            if int(issuer_result, 16) != 1:
                 raise ArcAuthorityRegistryError(
                     "configured Arc executor is not an enabled Registry issuer"
                 )
