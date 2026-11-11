@@ -835,5 +835,62 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
         self.assertEqual(calls, [])
 
 
+    def test_app_scoped_approval_race_has_exactly_one_winner(self):
+        nonce = self._approval(
+            "payment_authorization",
+            agent_id="anna-test-agent",
+            payee=VALID_PAYEE,
+            asset="USDC",
+            network="base",
+            amount=25.0,
+            resource="invoice 1042",
+        )
+        expected = {
+            "kind": "payment_authorization",
+            "agent_id": "anna-test-agent",
+            "payee": VALID_PAYEE,
+            "asset": "USDC",
+            "network": "base",
+            "amount": 25.0,
+            "resource": "invoice 1042",
+        }
+
+        class RacingStorage(FakeAPSStorage):
+            def __init__(self, values):
+                super().__init__()
+                self.values = values
+                self.read_count = 0
+                self.both_read = asyncio.Event()
+
+            async def get(self, key, *, scope="app", timeout=10.0):
+                result = await super().get(key, scope=scope, timeout=timeout)
+                self.read_count += 1
+                if self.read_count == 2:
+                    self.both_read.set()
+                await asyncio.wait_for(self.both_read.wait(), timeout=1.0)
+                return result
+
+        async def run_race():
+            racing = RacingStorage(self.storage.values)
+            previous = plugin._storage
+            plugin._storage = racing
+            try:
+                return await asyncio.gather(
+                    plugin._consume_app_approval(nonce, expected),
+                    plugin._consume_app_approval(nonce, expected),
+                    return_exceptions=True,
+                )
+            finally:
+                plugin._storage = previous
+
+        results = asyncio.run(run_race())
+        successes = [item for item in results if isinstance(item, dict)]
+        failures = [item for item in results if isinstance(item, PermissionError)]
+        self.assertEqual(len(successes), 1, results)
+        self.assertEqual(len(failures), 1, results)
+        self.assertIn("could not be consumed exactly once", str(failures[0]))
+        self.assertNotIn(f"verigate/approvals/{nonce}", self.storage.values)
+
+
 if __name__ == "__main__":
     unittest.main()
