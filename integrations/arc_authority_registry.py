@@ -64,6 +64,15 @@ def _topic_address(value: str) -> str:
     return "0x" + _address_word(value)
 
 
+def _function_selector(signature: str) -> str:
+    hasher = keccak.new(digest_bits=256)
+    hasher.update(signature.encode("ascii"))
+    return "0x" + hasher.hexdigest()[:8]
+
+
+ISSUER_SELECTOR = _function_selector("issuers(address)")
+
+
 class ArcAuthorityRegistry:
     def __init__(
         self,
@@ -157,6 +166,15 @@ class ArcAuthorityRegistry:
             if owner != self.executor_address:
                 raise ArcAuthorityRegistryError(
                     f"registry owner mismatch: expected {self.executor_address}, received {owner}"
+                )
+
+            issuer_result = self.rpc.eth_call(
+                self.contract_address,
+                ISSUER_SELECTOR + _address_word(self.executor_address),
+            )
+            if len(issuer_result) < 66 or int(issuer_result[-64:], 16) != 1:
+                raise ArcAuthorityRegistryError(
+                    "configured Arc executor is not an enabled Registry issuer"
                 )
 
             return {
