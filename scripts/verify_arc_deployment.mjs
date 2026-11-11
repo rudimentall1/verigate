@@ -9,7 +9,7 @@ const sourcePath = "contracts/arc-authority/src/VerigateAuthorityRegistry.sol";
 const source = fs.readFileSync(sourcePath, "utf8");
 const input = {
   language: "Solidity",
-  sources: { "VerigateAuthorityRegistry.sol": { content: source } },
+  sources: { [sourcePath]: { content: source } },
   settings: {
     optimizer: { enabled: true, runs: 200 },
     outputSelection: { "*": { "*": ["abi", "evm.deployedBytecode.object"] } },
@@ -21,7 +21,7 @@ if (errors.length) {
   for (const error of errors) process.stderr.write(error.formattedMessage + "\n");
   process.exit(1);
 }
-const artifact = output.contracts?.["VerigateAuthorityRegistry.sol"]?.VerigateAuthorityRegistry;
+const artifact = output.contracts?.[sourcePath]?.VerigateAuthorityRegistry;
 const runtime = artifact?.evm?.deployedBytecode?.object;
 if (!runtime) throw new Error("Compiled runtime bytecode is missing");
 
