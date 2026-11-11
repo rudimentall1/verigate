@@ -1,45 +1,63 @@
 # Arc Mainnet evidence
 
-This page records the team's existing Arc Mainnet deployment and transaction evidence, and distinguishes it from Verigate's Arc integration.
+This page separates three different claims: the team's earlier Arc payment demo, Verigate's deployed Arc Authority Registry, and a Verigate-authorized payment. They are not interchangeable.
 
-## Existing live deployment: Agentic Wallet Guardian v3
+## Verigate Arc Authority Registry deployment
 
-The team deployed **Agentic Wallet Guardian v3** with a live Arc Mainnet USDC payment demo. This is a related project by the same team; it is not a deployment of the Verigate service.
+Verigate's Arc Authority Registry was deployed to Arc Mainnet.
+
+- Network: Arc Mainnet
+- Chain ID: `5042` (`0x13b2`)
+- Registry contract: `0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D`
+- Deployment transaction: `0xe85784e81ca0069410e8555961c8403fa02adc1361c7455657106afc96855ebb`
+- Deployment receipt status: `0x1` (successful)
+- Deployment block: `30012679`
+- On-chain owner: `0x1429906b663608DB6aDeAb8F975B47aFbbe8c68C`
+- RPC: https://rpc.mainnet.arc.io
+- Explorer: https://explorer.arc.io
+
+The deployment transaction and subsequent read-only RPC checks establish that the Registry contract has bytecode at the configured address, the connected RPC reports Arc chain ID 5042, and `owner()` returns the address above. These checks establish deployment and contract ownership; they do not establish that a payment was executed through Verigate.
+
+## Verigate integration flow
+
+The current implementation uses the dedicated Arc Authority Registry sequence documented in [the Arc integration guide](../arc-mainnet-integration.md):
+
+1. `POST /v1/integrations/arc/authorize` validates the signed agent intent, identity, capability, policy and Arc payment envelope, then returns an Execution Authorization and wallet-signable registration transaction.
+2. The executor wallet submits the Registry registration transaction.
+3. `POST /v1/integrations/arc/registration/confirm` verifies the transaction, receipt, canonical inclusion block and Registry state. The inclusion block timestamp is checked against the authorization validity interval.
+4. The executor wallet submits the Registry consumption transaction.
+5. `POST /v1/integrations/arc/consume/confirm` verifies consumption and uses the canonical consumption block timestamp for the local one-time execution decision.
+6. Only after successful confirmation does the API return the exact USDC payment transaction for a separate, explicit wallet approval.
+
+The generic `POST /v1/execution/consume` route rejects Arc authorizations with HTTP 409 so it cannot bypass the Registry sequence.
+
+## Separate team project: Agentic Wallet Guardian v3
+
+The team also has a live Arc Mainnet USDC payment demo in a separate repository. This is not Verigate and its transaction must not be attributed to Verigate.
 
 - Repository: https://github.com/rudimentall1/agentic-wallet-guardian-v3
-- Live Arc demo: http://77.239.125.37:8765/arc
+- Live demo: http://77.239.125.37:8765/arc
 - Demo video: https://youtu.be/srH0ZLwtwqQ
-- Network: Arc Mainnet
-- Chain ID: `5042`
-- RPC: https://rpc.mainnet.arc.io
-- USDC ERC-20 contract: `0x3600000000000000000000000000000000000000`
+- Network: Arc Mainnet, chain ID `5042`
+- Canonical USDC ERC-20: `0x3600000000000000000000000000000000000000`
 - USDC ERC-20 decimals: `6`
 
-### Verified mainnet transaction
-
-The following USDC transaction was successfully executed on Arc Mainnet through the Agentic Wallet Guardian v3 demo:
+Guardian v3 demo transaction:
 
 ```text
 0xd781e8b04b5ca89c3a34fcec50a6636049f7647d2b0e1b2bb64d5b1ee54daadf
 ```
 
-The Guardian repository README documents the live demo and this transaction. The demo evaluates the payment before the connected wallet signs and broadcasts it. Guardian does not custody the wallet or hold its private keys.
+This transaction is evidence for Guardian v3 only.
 
-## Verigate's Arc integration
+## Evidence boundary and current limitations
 
-Verigate now has a separate first-party Arc Mainnet integration in the main repository:
+- The Registry deployment is a confirmed Verigate on-chain deployment.
+- Automated HTTP E2E tests exercise authorization, registration confirmation, consumption confirmation and the wallet-payment handoff using mocked RPC and wallet transactions.
+- No Verigate registration or consumption transaction hashes are currently recorded here as live mainnet execution evidence.
+- No live USDC payment authorized through Verigate is claimed.
+- The Registry is an authority/evidence mechanism, not escrow and not a universal USDC transfer guard. Direct transfers submitted outside the compliant Verigate client flow are not prevented by this contract.
+- The API verifies canonical inclusion block hashes and timestamps, but the implementation does not currently define an additional multi-block finality wait policy.
+- The Registry stores the authorization ID, intent hash, executor, expiry and one-time consumed/revoked state; it does not store the full payment payload.
 
-- Integration guide: [docs/arc-mainnet-integration.md](../arc-mainnet-integration.md)
-- Implementation PR: https://github.com/rudimentall1/verigate/pull/21
-- Network configuration: Arc Mainnet, chain ID `5042`, official RPC and canonical USDC contract.
-- Read-only status endpoint: `GET /v1/integrations/arc/status`
-- Signed payment authorization endpoint: `POST /v1/integrations/arc/authorize`
-- Execution authority is consumed through `POST /v1/execution/consume` before the client wallet signs and broadcasts the exact transaction.
-
-The Verigate adapter reuses the validated Arc network parameters and non-custodial wallet flow, but performs authorization through Verigate's own signed ActionIntent, identity, capability, policy and execution-consumption path.
-
-## Scope and attribution
-
-The mainnet transaction above is **Guardian v3 evidence**, not a transaction authorized by Verigate. Verigate's Arc integration is implemented in the repository, but this evidence page does not claim that the Verigate adapter itself has been deployed to the live Guardian demo or that a Verigate-authorized mainnet transaction has occurred.
-
-This distinction is intentional so reviewers can verify the team's existing Arc Mainnet experience without confusing the two codebases.
+For grant and partner reviews, describe the Registry deployment, mocked end-to-end integration tests, Guardian v3 payment demo and any future Verigate-authorized payment as separate evidence items.
