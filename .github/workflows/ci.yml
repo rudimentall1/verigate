@@ -20,6 +20,9 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run full test suite
+        env:
+          VERIGATE_ENV: development
+          VERIGATE_ALLOW_INSECURE_DEV_MODE: "1"
         run: PYTHONPATH=. python3 -m unittest discover -s tests -v
 
       - name: Cross-language Agent SDK and Arc wallet client test
@@ -76,6 +79,9 @@ jobs:
         run: npx --yes @anna-ai/cli@0.1.64 validate --strict
 
       - name: Anna app end-to-end UI test (real app and plugin, scripted LLM)
+        env:
+          VERIGATE_ENV: development
+          VERIGATE_ALLOW_INSECURE_DEV_MODE: "1"
         run: node scripts/test_anna_ui.mjs
 
       - name: Build and smoke-test Linux Anna Executa binary
@@ -121,6 +127,9 @@ jobs:
           assert env["VERIGATE_API_KEYS"] == "ci-validation-only"
           assert env["VERIGATE_REQUIRE_AUTH"] == "1"
           assert env["VERIGATE_REQUIRE_SIGNED_INTENT"] == "1"
+          assert env["VERIGATE_ENV"] == "production"
+          assert env["VERIGATE_REQUIRE_ENCRYPTED_KEY"] == "1"
+          assert "VERIGATE_KEY_PASSPHRASE" in env
           PY
 
       - name: Build production container image
