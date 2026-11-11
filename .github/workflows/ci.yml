@@ -12,12 +12,18 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
 
       - name: Install test dependencies
         run: pip install -r requirements.txt
 
       - name: Run full test suite
         run: PYTHONPATH=. python3 -m unittest discover -s tests -v
+
+      - name: Cross-language Agent SDK and Arc wallet client test
+        run: PYTHONPATH=. node --test tests/agent-sdk-arc-client.test.mjs
 
       - name: Run the end-to-end demo
         run: PYTHONPATH=. python3 demo.py
@@ -37,8 +43,14 @@ jobs:
       - name: Install contract tooling
         run: npm ci
 
+      - name: Arc wallet client workflow tests
+        run: npm run test:arc-client
+
       - name: Atomic-state end-to-end test
         run: npm run test:atomic
+
+      - name: Compile Arc Authority Registry
+        run: npm run compile:arc-authority
 
       - name: Guard access-control test
         run: npm run test:guard
