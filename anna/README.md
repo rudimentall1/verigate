@@ -1,5 +1,12 @@
 # Verigate Authority (Anna App)
 
+> **Product role:** Anna is the first human-facing control interface for Verigate, not the security authority and not a standalone AI wallet. A person uses Anna to express payment intent and complete explicit approval steps. The bundled AI can interpret the request and provide advisory context, but it cannot grant permission or override Verigate's deterministic decision. Verigate remains the independent authorization layer; the supported execution path must enforce its signed, one-time authorization before a payment is handed to the connected wallet.
+
+Anna is one integration of the Verigate protocol. An external agent or application can integrate directly through Verigate's API/SDK without Anna. This keeps the product boundary clear: the human or organization delegates bounded authority, the agent proposes actions, Verigate decides whether the exact action is authorized, and the executor enforces that decision.
+
+See the repository's [product architecture](../docs/PRODUCT-ARCHITECTURE.md) for the full model.
+
+
 Verigate Authority lets a user describe a payment in plain language. The bundled Verigate Executa asks Anna's host LLM to interpret the request and perform a separate contextual risk review through Executa protocol-v2 `sampling/createMessage`; no provider API key is stored by the app or plugin. The UI invokes the bundled Executa through Anna Runtime, and the Executa returns the model response to the UI. Verigate then evaluates the exact fields against deterministic policy rules and returns a signed Decision Receipt.
 
 The integration path is real and explicit:
