@@ -186,3 +186,60 @@ def build_arc_payment_authorization_request(
         "constraints": action.constraints,
         "metadata": action.metadata,
     }
+
+
+
+def build_agent_enrollment_package(
+    private_key: Ed25519PrivateKey,
+    *,
+    agent_id: str,
+    capability_id: str,
+    allowed_actions: list[str],
+    allowed_targets: list[str],
+    allowed_resources: list[str] | None = None,
+    allowed_purposes: list[str] | None = None,
+    context_constraints: dict[str, Any] | None = None,
+    expires_at: float,
+    issued_at: float | None = None,
+) -> dict[str, Any]:
+    """Build a public-only, operator-reviewed enrollment package for tool agents."""
+    identity = public_identity(private_key, agent_id)
+    if not isinstance(capability_id, str) or not capability_id.strip() or len(capability_id) > 128:
+        raise ValueError("capability_id must be a non-empty string of at most 128 characters")
+
+    def _unique_strings(value: list[str], field_name: str) -> list[str]:
+        if (
+            not isinstance(value, list)
+            or not value
+            or any(not isinstance(item, str) or not item.strip() or len(item) > 256 for item in value)
+            or len(set(value)) != len(value)
+        ):
+            raise ValueError(f"{field_name} must be a non-empty list of unique strings")
+        return list(value)
+
+    actions = _unique_strings(allowed_actions, "allowed_actions")
+    targets = _unique_strings(allowed_targets, "allowed_targets")
+    resources = [] if allowed_resources is None else _unique_strings(allowed_resources, "allowed_resources")
+    purposes = [] if allowed_purposes is None else _unique_strings(allowed_purposes, "allowed_purposes")
+    constraints = {} if context_constraints is None else context_constraints
+    if not isinstance(constraints, dict):
+        raise ValueError("context_constraints must be an object")
+
+    issued = time.time() if issued_at is None else float(issued_at)
+    expiry = float(expires_at)
+    if not math.isfinite(issued) or not math.isfinite(expiry) or expiry <= issued:
+        raise ValueError("issued_at and expires_at must be finite, with expiry later than issuance")
+
+    return {
+        "schema_version": 1,
+        "agent_id": identity["agent_id"],
+        "public_key_b64": identity["public_key_b64"],
+        "capability_id": capability_id,
+        "allowed_actions": actions,
+        "allowed_targets": targets,
+        "allowed_resources": resources,
+        "allowed_purposes": purposes,
+        "context_constraints": constraints,
+        "issued_at": issued,
+        "expires_at": expiry,
+    }
