@@ -11,7 +11,7 @@ For any real deployment, apply the full baseline below. Every flag is read from 
 export VERIGATE_API_KEYS="sha256:<hex-of-your-key>"   # comma-separated; plain or sha256:<hex>
 export VERIGATE_REQUIRE_AUTH=1
 export VERIGATE_ENV=production
-export VERIGATE_REQUIRE_ARC_REGISTRY_CODE_HASH=1
+export VERIGATE_ARC_REGISTRY_CODE_HASH=<verified-runtime-keccak256>
 
 # Issuer key: encrypted at rest, never written in plaintext
 export VERIGATE_KEY_PASSPHRASE="<long random passphrase>"
