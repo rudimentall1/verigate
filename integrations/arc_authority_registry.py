@@ -13,6 +13,8 @@ import re
 import time
 from typing import Any
 
+from Crypto.Hash import keccak
+
 from enforcement.evm_rpc import EvmRpcClient, EvmRpcError
 
 ARC_CHAIN_ID = 5042
@@ -69,6 +71,7 @@ class ArcAuthorityRegistry:
         *,
         contract_address: str | None = None,
         executor_address: str | None = None,
+        expected_code_hash: str | None = None,
     ):
         self.contract_address = _address(
             contract_address
@@ -80,6 +83,9 @@ class ArcAuthorityRegistry:
             or os.environ.get("VERIGATE_ARC_EXECUTOR_ADDRESS", DEFAULT_EXECUTOR),
             "executor address",
         )
+        self.expected_code_hash = (
+            expected_code_hash or os.environ.get("VERIGATE_ARC_REGISTRY_CODE_HASH", "")
+        ).lower()
         endpoint = os.environ.get("VERIGATE_ARC_RPC_URL", "https://rpc.mainnet.arc.io")
         self.rpc = rpc or EvmRpcClient(endpoint, timeout_seconds=15)
 
@@ -128,6 +134,20 @@ class ArcAuthorityRegistry:
             code = self.rpc.get_code(self.contract_address)
             if code in {"0x", "0x0", "0x00"}:
                 raise ArcAuthorityRegistryError("Verigate registry has no deployed bytecode")
+            if not re.fullmatch(r"0x[0-9a-f]{64}", self.expected_code_hash):
+                raise ArcAuthorityRegistryError(
+                    "VERIGATE_ARC_REGISTRY_CODE_HASH must contain the independently verified runtime bytecode hash"
+                )
+            try:
+                hasher = keccak.new(digest_bits=256)
+                hasher.update(bytes.fromhex(code.removeprefix("0x")))
+                actual_code_hash = "0x" + hasher.hexdigest()
+            except (TypeError, ValueError) as exc:
+                raise ArcAuthorityRegistryError("Arc registry bytecode is malformed") from exc
+            if actual_code_hash != self.expected_code_hash:
+                raise ArcAuthorityRegistryError(
+                    f"Arc registry runtime bytecode hash mismatch: expected {self.expected_code_hash}, received {actual_code_hash}"
+                )
 
             owner_result = self.rpc.eth_call(self.contract_address, OWNER_SELECTOR)
             if len(owner_result) < 66:
