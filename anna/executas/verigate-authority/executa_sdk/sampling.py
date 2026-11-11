@@ -300,6 +300,12 @@ class SamplingClient:
                 SAMPLING_ERR_TIMEOUT,
                 f"sampling/createMessage timed out after {timeout}s",
             )
+        except asyncio.CancelledError:
+            # Cancellation is local to the caller; retire the reverse-RPC id
+            # so a late host response cannot retain a dead pending entry.
+            with self._lock:
+                self._pending.pop(req_id, None)
+            raise
 
     # — wiring —
 
@@ -348,8 +354,10 @@ class SamplingClient:
         try:
             loop.call_soon_threadsafe(_resolve)
         except RuntimeError:
-            # Loop is closed — fall back to direct (best-effort)
-            _resolve()
+            # The owning loop is closed. Never mutate its Future from the
+            # reader thread: set_result/set_exception may schedule callbacks
+            # on the closed loop and raise another RuntimeError.
+            return True
         return True
 
 

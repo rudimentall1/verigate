@@ -205,6 +205,61 @@ class AnnaStorageTransportFailureTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(handled)
         self.assertEqual(client._pending, {})
 
+    async def test_cancelled_sampling_request_discards_late_host_response(self):
+        sys.path.insert(0, str(ROOT / "anna" / "executas" / "verigate-authority"))
+        from executa_sdk.sampling import SamplingClient
+
+        frames = []
+        client = SamplingClient(write_frame=frames.append)
+        task = asyncio.create_task(client.create_message(
+            messages=[{"role": "user", "content": {"type": "text", "text": "test"}}],
+            max_tokens=8,
+            timeout=30.0,
+        ))
+        for _ in range(20):
+            if frames:
+                break
+            await asyncio.sleep(0)
+        self.assertEqual(len(frames), 1)
+        request_id = frames[0]["id"]
+
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+
+        self.assertNotIn(request_id, client._pending)
+        self.assertFalse(client.dispatch_response({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {"role": "assistant", "content": {"type": "text", "text": "late"}},
+        }))
+        self.assertEqual(client._pending, {})
+
+    def test_closed_event_loop_response_is_dropped_without_cross_thread_future_mutation(self):
+        sys.path.insert(0, str(ROOT / "anna" / "executas" / "verigate-authority"))
+        from executa_sdk.sampling import SamplingClient, _Pending as SamplingPending
+        from executa_sdk.storage import StorageClient, _Pending as StoragePending
+
+        for client_type, pending_type in (
+            (SamplingClient, SamplingPending),
+            (StorageClient, StoragePending),
+        ):
+            loop = asyncio.new_event_loop()
+            future = loop.create_future()
+            future.add_done_callback(lambda _: None)
+            client = client_type(write_frame=lambda _: None)
+            client._loop = loop
+            client._pending["closed-loop-request"] = pending_type(future=future)
+            loop.close()
+
+            self.assertTrue(client.dispatch_response({
+                "jsonrpc": "2.0",
+                "id": "closed-loop-request",
+                "result": {"ok": True},
+            }))
+            self.assertFalse(future.done())
+            self.assertEqual(client._pending, {})
+
     async def test_conditional_delete_conflict_is_preserved_as_storage_error(self):
         sys.path.insert(0, str(ROOT / "anna" / "executas" / "verigate-authority"))
         from executa_sdk.storage import (
