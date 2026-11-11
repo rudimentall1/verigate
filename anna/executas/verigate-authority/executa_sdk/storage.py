@@ -162,7 +162,10 @@ class _BaseRpcClient:
         try:
             loop.call_soon_threadsafe(_resolve)
         except RuntimeError:
-            _resolve()
+            # The owning loop is closed. Never mutate its Future from the
+            # reader thread: set_result/set_exception may schedule callbacks
+            # on the closed loop and raise another RuntimeError.
+            return True
         return True
 
     # — internal —
