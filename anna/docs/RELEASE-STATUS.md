@@ -4,8 +4,8 @@
 
 
 **Updated:** 2026-11-11  
-**Anna App / Executa source:** commit `6eca3bd782fe54ca798ac3fd66a54acde61b41fc`  
-**Source candidate:** Anna App **0.1.30** · bundled Executa **0.1.17**  
+**Anna App / Executa source:** commit `1afe3a4f35f945cc458cc705d59b400441e480cd`  
+**Source candidate:** Anna App **0.1.30** · bundled Executa **0.1.18**  
 **Current Anna Console state (11 November):** immutable Draft App **0.1.30** · version ID **2109** · App ID **851**; bundled Executa **0.1.17** · version ID **1063** · Executa ID **1314**
 
 ## Current source candidate — 11 November
