@@ -171,6 +171,13 @@ def _require_signed_intent() -> bool:
     Read at request time so operators can flip it without code changes and
     tests can toggle it deterministically.
     """
+    development_mode = (
+        os.environ.get("VERIGATE_ENV", "").lower() == "development"
+        and os.environ.get("VERIGATE_ALLOW_INSECURE_DEV_MODE", "").lower()
+        in {"1", "true", "yes"}
+    )
+    if not development_mode:
+        return True
     return os.environ.get("VERIGATE_REQUIRE_SIGNED_INTENT", "").lower() in {
         "1",
         "true",
