@@ -29,10 +29,10 @@ authorization, execution-side enforcement, evidence, and independent verificatio
 |---|---|
 | A: out-of-authority action | Deterministic policy engine (caps, allowlists, rate and daily limits, no statistical scores); capability ceilings; dynamic authority can never exceed the static ceiling; static revocation is final |
 | A: amount manipulation | Exact Decimal comparison for caps (`core/money.py`); NaN, infinity and negative amounts rejected |
-| A: forged identity | Ed25519 agent identities registered by fingerprint; agent-signed intents; `VERIGATE_REQUIRE_SIGNED_INTENT` closes the unsigned path |
+| A: forged identity | Ed25519 agent identities registered by fingerprint; agent-signed intents required outside explicit local development mode |
 | A: rotate editable Anna Agent ID to reset quotas | Anna Executa ignores the caller-supplied label for accounting and derives one installation principal from the persistent issuer public-key fingerprint; the label remains signed display metadata | All labels in one installation share limits; separate workspaces/issuer keys remain separate principals; this is not a cross-Agent or account-wide budget |
 | A/B: replay, double spend | One-time execution nonces consumed fail-closed by the router before execution; covered by a multi-process concurrency test |
-| B: unauthenticated API | API-key authentication, default-deny once configured; `VERIGATE_REQUIRE_AUTH` fails closed; constant-time key comparison |
+| B: unauthenticated API | Protected routes deny by default; API keys use constant-time comparison; only an explicit local development opt-in can disable auth |
 | C: cross-tenant access | Opt-in per-tenant issuer keys and tenant-scoped API credentials |
 | D: evidence tampering | Ed25519 signatures; standalone verifier needs only the proof bytes and a trusted public key; adversarial mutation corpus; CLI `verify` requires an explicit trusted issuer key |
 | E: handler substitution | Handler fingerprint binding; router binds adapter, target and execution artifact |
@@ -44,13 +44,11 @@ authorization, execution-side enforcement, evidence, and independent verificatio
 - **On-chain guard authorization.** `VerigateAtomicStateGuard.execute` is restricted to one immutable `executor` (the account that signs the transactions the off-chain router has authorized). It does not yet verify a per-action signed authorization on-chain, so what the executor sends is only as trustworthy as Verigate's router and the executor key. Earlier versions had no access control and were permissionless call relays: do not reuse an earlier deployment, and do not grant the guard privileges you would not grant to the executor.
 - **Transitive executor confinement.** A trusted handler can still create child effects that
   Verigate does not see. The default scope is `direct`; see README.
-- **Key custody.** Issuer keys live on local disk (optionally encrypted at rest). There is no
-  KMS/HSM integration or key-rotation tooling yet.
+- **Key custody.** Issuer keys live on local disk (encrypted at rest in the hardened container configuration). There is no KMS/HSM integration or complete key-rotation tooling yet.
 - **Storage.** SQLite, single process. Multiple replicas need shared storage or a real database.
 - **Availability.** The API has not been load-tested and has no volumetric DoS protection;
   deploy behind a reverse proxy.
-- **Open by default.** Without `VERIGATE_API_KEYS` or `VERIGATE_REQUIRE_AUTH` the API is open
-  and demo routes exist behind flags. Use the baseline in `docs/security-configuration.md`.
+- **Open development mode.** Protected API requests are denied by default when API keys are absent. The only open mode requires VERIGATE_ENV=development and VERIGATE_ALLOW_INSECURE_DEV_MODE=1. Docker defaults to production mode, mandatory API authentication, signed intents and encrypted issuer keys; Compose requires an API key and passphrase and binds to loopback. Use the baseline in docs/security-configuration.md for remote deployments.
 - **Policy quality.** Verigate enforces the configured policy; it does not judge whether the
   policy is wise.
 - **No independent audit yet.**

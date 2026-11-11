@@ -24,6 +24,7 @@ AI agents can propose consequential actions. Verigate decides whether the agent 
 
 ### For developers
 
+- **Connect an external agent.** Start with [External Agent Quickstart](docs/EXTERNAL_AGENT_QUICKSTART.md) and the runnable [Python example](examples/external-agent/agent.py); the client fails closed on API and transport errors.
 - **Try it in 60 seconds.** `python examples/genesis_demo.py` runs the full lifecycle, verifies the proof, then tampers with it and shows INVALID.
 - **Verify a proof without Verigate.** `pip install verigate-verify`, then `verigate-verify proof.json --public-key issuer.pub` ([PyPI](https://pypi.org/project/verigate-verify/), source in `packaging/verigate-verify`).
 - **Technical demo (terminal).** The full authority lifecycle, execution, a portable proof, and rejection of a tampered proof:
@@ -111,9 +112,9 @@ This repository contains a runnable Genesis 2.0 authority lifecycle and its veri
 | Policy engine (caps, allowlists, rate limits, new-payee/daily limits) | **Real.** Deterministic rules, no statistical "risk scores." Covered by the full automated suite. |
 | Ed25519 signing + independent verification | **Real.** Standard `cryptography` library primitives, not a custom crypto scheme. Tampering is detected, not just claimed. |
 | x402 header parsing | **Real**, for the `exact` scheme with `extra.name` asset identification. Refuses to guess decimals for an unrecognized asset/network pair rather than silently parsing an amount incorrectly — extend `x402/parser.py:_KNOWN_DECIMALS` as you verify more pairs. |
-| Arc Mainnet / USDC | **Implemented as a first-party integration.** Chain ID 5042, read-only RPC verification, canonical USDC ERC-20 validation, exact 6-decimal transfer encoding and a signed identity/capability authorization endpoint. The connected wallet remains the signer; Verigate does not custody funds. **The Verigate service is not deployed on Arc by this code change.** See `docs/arc-mainnet-integration.md`. |
+| Arc Mainnet / USDC | **Registry integration implemented on the consolidation branch.** Chain ID 5042, signed Arc payment intent, identity/capability/policy checks, Registry registration and one-time consumption, finalized-block and bytecode-hash verification, then a separate explicit wallet payment handoff. The connected wallet remains the signer; Verigate does not custody funds. **The Registry deployment is user-confirmed; a live Verigate-authorized USDC payment is not yet independently evidenced.** The Verigate API is a separately operated service, not a hosted endpoint. See `docs/arc-mainnet-integration.md`. |
 | Audit log / rate limiting / daily-spend tracking | **Real**, SQLite-backed, single-process. For multiple replicas, point every process at shared storage or swap in a real database — the `Storage` interface is small. |
-| FastAPI HTTP layer | **Real, with access control**: API-key auth (default-deny once `VERIGATE_API_KEYS` is set), tenant-scoped credentials (`VERIGATE_TENANT_API_KEYS`) and optional mandatory signed intents (`VERIGATE_REQUIRE_SIGNED_INTENT`). **Not yet load-tested or deployed as a hosted service.** Runs with `uvicorn api.main:app`; see `docs/security-configuration.md`. |
+| FastAPI HTTP layer | **Real, with access control**: API-key auth defaults to deny when no key is configured; only an explicit local development opt-in disables it. Executable authority requires agent-signed intents outside that opt-in. Tenant-scoped credentials (`VERIGATE_TENANT_API_KEYS`) are supported. **Not yet load-tested or deployed as a hosted service.** Runs with `uvicorn api.main:app`; see `docs/security-configuration.md`. |
 | AP2 / other payment-rail adapters | **Not built.** The architecture reserves the seam (`core.models.PaymentIntent` is rail-agnostic) but only x402 has a working parser today. |
 | Agent Identity Registry | **Real.** Ed25519 identities are registered by public-key fingerprint, can be revoked, and can sign exact `ActionIntent` envelopes before authorization. |
 | Capability Registry | **Real.** Capabilities are persistent, scoped, versioned and revocable; authority artifacts bind capability ID/version/digest. |
@@ -263,11 +264,28 @@ The endpoints are:
 
 The UI itself remains available even when execution endpoints are disabled, so a deployed instance does not silently become a transaction broadcaster just because `/demo/` is reachable.
 
-Or with Docker:
+Or with Docker. The container requires API authentication and signed intents by default. Compose binds the API to localhost only; it does not expose the port to your LAN or the public Internet.
 
 ```bash
-docker compose up --build
+export VERIGATE_API_KEYS="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export VERIGATE_KEY_PASSPHRASE="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+docker compose up --build -d
 ```
+
+Use the generated key for protected routes:
+
+```bash
+curl -X POST http://localhost:8000/v1/check \\
+  -H "Authorization: Bearer $VERIGATE_API_KEYS" \\
+  -H "Content-Type: application/json" \\
+  -d '{"agent_id": "trading-agent-001", "payee": "0xMerchantABC", "asset": "USDC", "network": "base", "amount": 10, "sign": true}'
+
+# Health and public-key discovery remain public.
+curl http://localhost:8000/health
+curl http://localhost:8000/v1/public-key
+```
+
+To expose a deployment remotely, keep authentication enabled and place it behind a TLS-terminating reverse proxy with explicit network access controls. Do not remove the loopback binding as a substitute for those controls.
 
 ```bash
 curl -X POST http://localhost:8000/v1/check \

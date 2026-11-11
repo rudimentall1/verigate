@@ -12,7 +12,11 @@ RUN mkdir -p /app/data /app/keys
 ENV VERIGATE_POLICY=/app/policies/default.yaml \
     VERIGATE_DB=/app/data/verigate.db \
     VERIGATE_PRIVATE_KEY=/app/keys/issuer.key \
-    VERIGATE_PUBLIC_KEY=/app/keys/issuer.pub
+    VERIGATE_PUBLIC_KEY=/app/keys/issuer.pub \
+    VERIGATE_ENV=production \
+    VERIGATE_REQUIRE_AUTH=1 \
+    VERIGATE_REQUIRE_SIGNED_INTENT=1 \
+    VERIGATE_REQUIRE_ENCRYPTED_KEY=1
 
 EXPOSE 8000
 

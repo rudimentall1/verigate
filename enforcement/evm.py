@@ -60,19 +60,19 @@ class EVMExecutionAdapter(ExecutionAdapter):
             result["signed_raw_transaction"] = signed_raw_transaction
         return result
 
-    def validate(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+    def validate(self, authorization: dict[str, Any], *, verification_time: int | None = None) -> tuple[bool, str]:
         action = authorization["payload"]["action"]
         try:
             self._transaction(action)
         except (KeyError, TypeError, ValueError) as exc:
             return False, str(exc)
-        return self.gate.validate(authorization)
+        return self.gate.validate(authorization, verification_time=verification_time)
 
-    def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
-        ok, reason = self.validate(authorization)
+    def consume(self, authorization: dict[str, Any], *, verification_time: int | None = None) -> tuple[bool, str]:
+        ok, reason = self.validate(authorization, verification_time=verification_time)
         if not ok:
             return False, reason
-        return self.gate.consume(authorization)
+        return self.gate.consume(authorization, verification_time=verification_time)
 
     @staticmethod
     def _atomic_guard_binding(

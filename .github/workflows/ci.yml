@@ -12,12 +12,21 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
 
       - name: Install test dependencies
         run: pip install -r requirements.txt
 
       - name: Run full test suite
+        env:
+          VERIGATE_ENV: development
+          VERIGATE_ALLOW_INSECURE_DEV_MODE: "1"
         run: PYTHONPATH=. python3 -m unittest discover -s tests -v
+
+      - name: Cross-language Agent SDK and Arc wallet client test
+        run: PYTHONPATH=. node --test tests/agent-sdk-arc-client.test.mjs
 
       - name: Run the end-to-end demo
         run: PYTHONPATH=. python3 demo.py
@@ -37,8 +46,14 @@ jobs:
       - name: Install contract tooling
         run: npm ci
 
+      - name: Arc wallet client workflow tests
+        run: npm run test:arc-client
+
       - name: Atomic-state end-to-end test
         run: npm run test:atomic
+
+      - name: Compile Arc Authority Registry
+        run: npm run compile:arc-authority
 
       - name: Guard access-control test
         run: npm run test:guard
@@ -64,6 +79,9 @@ jobs:
         run: npx --yes @anna-ai/cli@0.1.64 validate --strict
 
       - name: Anna app end-to-end UI test (real app and plugin, scripted LLM)
+        env:
+          VERIGATE_ENV: development
+          VERIGATE_ALLOW_INSECURE_DEV_MODE: "1"
         run: node scripts/test_anna_ui.mjs
 
       - name: Build and smoke-test Linux Anna Executa binary
@@ -72,3 +90,79 @@ jobs:
           python anna/build_binary.py
           python anna/smoke_binary.py anna/executas/verigate-authority/dist/verigate-authority "0.1.18"
           python anna/package_binary.py linux-x86_64 "0.1.18"
+
+
+  container:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify Compose refuses to start without an API key
+        run: |
+          if env -u VERIGATE_API_KEYS docker compose config --quiet; then
+            echo "::error::Compose accepted a missing VERIGATE_API_KEYS value"
+            exit 1
+          fi
+
+      - name: Validate protected Compose configuration
+        env:
+          VERIGATE_API_KEYS: ci-validation-only
+          VERIGATE_KEY_PASSPHRASE: ci-only-test-passphrase-32-characters
+        run: |
+          docker compose config --format json > "$RUNNER_TEMP/verigate-compose.json"
+          python3 - "$RUNNER_TEMP/verigate-compose.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              service = json.load(handle)["services"]["verigate"]
+
+          ports = service["ports"]
+          assert any(
+              port.get("host_ip") == "127.0.0.1"
+              and str(port.get("published")) == "8000"
+              and int(port.get("target")) == 8000
+              for port in ports
+          ), ports
+          env = service["environment"]
+          assert env["VERIGATE_API_KEYS"] == "ci-validation-only"
+          assert env["VERIGATE_REQUIRE_AUTH"] == "1"
+          assert env["VERIGATE_REQUIRE_SIGNED_INTENT"] == "1"
+          assert env["VERIGATE_ENV"] == "production"
+          assert env["VERIGATE_REQUIRE_ENCRYPTED_KEY"] == "1"
+          assert "VERIGATE_KEY_PASSPHRASE" in env
+          PY
+
+      - name: Build production container image
+        run: docker build --pull --tag verigate:ci .
+
+      - name: Smoke-test container API authentication
+        env:
+          VERIGATE_API_KEYS: ci-validation-only
+          VERIGATE_KEY_PASSPHRASE: ci-only-test-passphrase-32-characters
+        run: |
+          docker run --detach --name verigate-ci \
+            --publish 127.0.0.1:18000:8000 \
+            --env "VERIGATE_API_KEYS=${VERIGATE_API_KEYS}" \
+            --env "VERIGATE_KEY_PASSPHRASE=${VERIGATE_KEY_PASSPHRASE}" \
+            verigate:ci
+          trap 'docker rm --force verigate-ci >/dev/null 2>&1 || true' EXIT
+
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18000/health >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" -eq 1
+
+          without_key=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            http://127.0.0.1:18000/v1/execution/networks)
+          test "$without_key" = "401"
+
+          with_key=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${VERIGATE_API_KEYS}" \
+            http://127.0.0.1:18000/v1/execution/networks)
+          test "$with_key" = "200"

@@ -12,3 +12,5 @@ __pycache__
 keys/
 data/
 *.db
+_tools/
+_anna-screen.png
