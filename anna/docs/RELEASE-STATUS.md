@@ -9,7 +9,7 @@
 
 PR [#44](https://github.com/rudimentall1/verigate/pull/44) is merged into `main`. Its source candidate is App 0.1.30 / Executa 0.1.17. The source manifest requires bundled Executa >= 0.1.17.
 
-The source candidate has now been pushed and cut in Anna Console as immutable Draft App 0.1.30 / bundled Executa 0.1.17. It is still **Draft**: it has not been submitted for review or released to the Marketplace. Cloud Agent installation and invocation have not yet been verified.
+The source candidate was pushed and cut in Anna Console as immutable Draft App 0.1.30 / bundled Executa 0.1.17. It remains **Draft** and has not been submitted for review or released to the Marketplace. A live invocation through Cloud Agent #7883 is now verified; a second clean Agent installation and live APS KV/ETag concurrency behavior remain unverified.
 
 ### Exact-source main CI
 
@@ -117,7 +117,7 @@ Observed App behavior in that session:
 
 The 18-case DOCX matrix remains **local UI + real Executa subprocess QA with scripted Anna Sampling fixtures**, not 18 live Anna LLM runs. The live Anna Dashboard checks above are a separate, smaller evidence set. Do not merge the two evidence classes.
 
-These results do not close the Cloud Agent gate. They do not prove live Anna Sampling, actual Cloud Agent deployment, real APS storage/ETag behavior, live `describe`/ `invoke`, or a real injected EIP-1193 wallet session. The E2E wallet provider is simulated. The only recorded real MetaMask hand-off remains the 9 November attempt, which ended with the user rejecting the signature after ExecutionRouter consumed the permission.
+The 18-case local matrix does not prove live Anna LLM comprehension. Separately, the live Cloud Agent invocation is confirmed below. The remaining platform-level gaps are live APS storage/ETag behavior (including concurrent conditional-delete semantics), a second clean Agent installation, and a new end-to-end wallet session. The E2E wallet provider is simulated; the recorded real MetaMask hand-off remains the 9 November attempt, which ended with the user rejecting the signature after ExecutionRouter consumed the permission. The 11 November micropayment is separately recorded above.
 
 ### Cloud Agent runtime confirmation — 11 November 2026
 
@@ -168,11 +168,21 @@ Negative receipts are signed by the Anna installation issuer and explicitly iden
 
 Only SUBMITTED receipts are eligible for provider polling. REJECTED, ABORTED and UNKNOWN remain terminal local outcomes and do not trigger chain RPC polling. The source tests and CI cover these rules; no claim of live Cloud Agent validation is made.
 
+## Subsequent SDK and authorization-race tests — 11 November
+
+Two test-only changes were merged after the App 0.1.30 / Executa 0.1.17 immutable Console cut. They do not change the published or immutable Anna Console artifact:
+
+- [PR #48](https://github.com/rudimentall1/verigate/pull/48), merged as `a9b9185b21a39dff6f94f87dfc116fd8e5ac99c1): SDK transport tests prove a timed-out APS request discards a late host response and a conditional-delete `precondition_failed` response remains a `StorageError`. [CI run 42982549110](https://github.com/rudimentall1/verigate/actions/runs/42982549110) passed.
+- [PR #49](https://github.com/rudimentall1/verigate/pull/49), merged as `8f37da587508c0b4f5b2d60298be9cb98b6338d7): a deterministic two-consumer race test proves exactly one consumer wins against the fake APS adapter's atomic conditional-delete behavior. [CI run 42983061855](https://github.com/rudimentall1/verigate/actions/runs/42983061855) passed all three jobs: Python full suite, contracts and Anna UI E2E.
+- Current `main` includes PR #49 at `8f37da587508c0b4f5b2d60298be9cb98b6338d7`.
+
+**Evidence boundary:** these are SDK-local and fake-adapter tests. They do not establish that live Anna APS implements atomic ETag-conditional deletion under concurrent Cloud Agent requests. That remains a release gate and must not be represented as platform-verified.
+
 ## Remaining release gates
 
 | Gate | Status | Evidence / next action |
 |---|---|---|
-| Merged source and main CI | **PASS** | [Run 42874904974](https://github.com/rudimentall1/verigate/actions/runs/42874904974): 613 Python tests, 64/64 UI, Contracts, schema-4 validation and Linux 0.1.17 binary smoke test. |
+| Merged source and main CI | **PASS** | Original App 0.1.30 / Executa 0.1.17 source validation: [run 42874904974](https://github.com/rudimentall1/verigate/actions/runs/42874904974). Subsequent SDK and fake-adapter regression tests are merged on current `main`; [PR #49 CI run 42983061855](https://github.com/rudimentall1/verigate/actions/runs/42983061855) passed Python full suite, contracts and Anna UI E2E. |
 | Linux Executa 0.1.17 archive | **PASS in CI** | Extracted package smoke test completed successfully in the same run. |
 | Four-platform Executa 0.1.17 archives | **PASS** | [Run 42959224224](https://github.com/rudimentall1/verigate/actions/runs/42959224224): all four reproducible builds, extracted-package smoke tests, artifact uploads and independent SHA-256/manifest checks passed. Workflow artifacts expire 9 February 2027. |
 | Fresh Anna Cloud Agent installation and invoke | **PARTIAL PASS** | Cloud Agent #7883 is Online; App 0.1.30 invoked its App-bound Executa 0.1.17 and received a live Anna AI Sampling response. A second clean Agent installation remains untested because Cloud Agent capacity is already 1/1. APS KV/ETag and failure/late-result behavior remain open. See Cloud Agent runtime confirmation below. |
