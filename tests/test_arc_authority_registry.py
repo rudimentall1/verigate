@@ -1,5 +1,7 @@
 import unittest
 
+from Crypto.Hash import keccak
+
 from integrations.arc_authority_registry import (
     ARC_CHAIN_ID,
     DEFAULT_EXECUTOR,
@@ -8,6 +10,12 @@ from integrations.arc_authority_registry import (
     CONSUME_SELECTOR,
     ArcAuthorityRegistry,
 )
+
+
+def _test_runtime_hash():
+    hasher = keccak.new(digest_bits=256)
+    hasher.update(bytes.fromhex("60006000"))
+    return "0x" + hasher.hexdigest()
 
 
 class FakeRpc:
@@ -27,7 +35,7 @@ class FakeRpc:
 
 class ArcAuthorityRegistryEncodingTest(unittest.TestCase):
     def setUp(self):
-        self.registry = ArcAuthorityRegistry(rpc=FakeRpc())
+        self.registry = ArcAuthorityRegistry(rpc=FakeRpc(), expected_code_hash=_test_runtime_hash())
 
     def authorization(self):
         return {
@@ -46,6 +54,19 @@ class ArcAuthorityRegistryEncodingTest(unittest.TestCase):
         self.assertEqual(result["chain_id"], 5042)
         self.assertEqual(result["contract_address"].lower(), DEFAULT_REGISTRY.lower())
         self.assertEqual(result["owner"], DEFAULT_EXECUTOR.lower())
+
+    def test_deployment_verification_rejects_missing_runtime_hash_pin(self):
+        registry = ArcAuthorityRegistry(rpc=FakeRpc(), expected_code_hash="")
+        with self.assertRaisesRegex(Exception, "VERIGATE_ARC_REGISTRY_CODE_HASH"):
+            registry.verify_deployment()
+
+    def test_deployment_verification_rejects_runtime_hash_mismatch(self):
+        registry = ArcAuthorityRegistry(
+            rpc=FakeRpc(),
+            expected_code_hash="0x" + "00" * 32,
+        )
+        with self.assertRaisesRegex(Exception, "bytecode hash mismatch"):
+            registry.verify_deployment()
 
     def test_registration_transaction_binds_authorization_and_executor(self):
         result = self.registry.prepare_registration_transaction(self.authorization())
@@ -379,6 +400,7 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
         registry = ArcAuthorityRegistry.__new__(ArcAuthorityRegistry)
         registry.contract_address = registry_address
         registry.executor_address = executor
+        registry.expected_code_hash = _test_runtime_hash()
         authorization_id, intent_hash, valid_until = registry._authorization_values(
             authorization, require_unexpired=False
         )
