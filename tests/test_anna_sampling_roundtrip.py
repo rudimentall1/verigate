@@ -176,6 +176,35 @@ class AnnaStorageTransportFailureTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(handled)
         self.assertEqual(client._pending, {})
 
+    async def test_cancelled_request_discards_late_host_response(self):
+        sys.path.insert(0, str(ROOT / "anna" / "executas" / "verigate-authority"))
+        from executa_sdk.storage import StorageClient
+
+        frames = []
+        client = StorageClient(write_frame=frames.append)
+        task = asyncio.create_task(
+            client.get("verigate/approvals/test", scope="app", timeout=30.0)
+        )
+        for _ in range(20):
+            if frames:
+                break
+            await asyncio.sleep(0)
+        self.assertEqual(len(frames), 1)
+        request_id = frames[0]["id"]
+
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+
+        self.assertNotIn(request_id, client._pending)
+        handled = client.dispatch_response({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {"value": {"approved": True}, "exists": True},
+        })
+        self.assertFalse(handled)
+        self.assertEqual(client._pending, {})
+
     async def test_conditional_delete_conflict_is_preserved_as_storage_error(self):
         sys.path.insert(0, str(ROOT / "anna" / "executas" / "verigate-authority"))
         from executa_sdk.storage import (
