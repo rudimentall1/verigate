@@ -628,3 +628,72 @@ def test_find_event_accepts_exact_full_topic0_hash():
         authorization_id,
         intent_hash,
     ) == exact_log
+
+
+def test_inclusion_block_must_be_at_or_below_arc_finalized_head():
+    import pytest
+    from integrations.arc_authority_registry import ArcAuthorityRegistry, ArcAuthorityRegistryError
+
+    block_hash = "0x" + "11" * 32
+
+    class Rpc:
+        def get_block_by_number(self, number):
+            return {"number": "0x100", "timestamp": "0x64", "hash": block_hash}
+
+        def get_block_by_tag(self, tag):
+            assert tag == "finalized"
+            return {"number": "0xff", "hash": "0x" + "22" * 32}
+
+    registry = ArcAuthorityRegistry.__new__(ArcAuthorityRegistry)
+    registry.rpc = Rpc()
+    with pytest.raises(ArcAuthorityRegistryError, match="not yet finalized"):
+        registry._verify_inclusion_before_expiry(
+            {"blockNumber": "0x100", "blockHash": block_hash},
+            101,
+        )
+
+
+def test_finalized_head_hash_must_match_inclusion_at_same_height():
+    import pytest
+    from integrations.arc_authority_registry import ArcAuthorityRegistry, ArcAuthorityRegistryError
+
+    block_hash = "0x" + "11" * 32
+
+    class Rpc:
+        def get_block_by_number(self, number):
+            return {"number": "0x100", "timestamp": "0x64", "hash": block_hash}
+
+        def get_block_by_tag(self, tag):
+            assert tag == "finalized"
+            return {"number": "0x100", "hash": "0x" + "22" * 32}
+
+    registry = ArcAuthorityRegistry.__new__(ArcAuthorityRegistry)
+    registry.rpc = Rpc()
+    with pytest.raises(ArcAuthorityRegistryError, match="finalized block hash"):
+        registry._verify_inclusion_before_expiry(
+            {"blockNumber": "0x100", "blockHash": block_hash},
+            101,
+        )
+
+
+def test_finalized_tag_unavailable_fails_closed():
+    import pytest
+    from integrations.arc_authority_registry import ArcAuthorityRegistry, ArcAuthorityRegistryError
+    from enforcement.evm_rpc import EvmRpcError
+
+    block_hash = "0x" + "11" * 32
+
+    class Rpc:
+        def get_block_by_number(self, number):
+            return {"number": "0x100", "timestamp": "0x64", "hash": block_hash}
+
+        def get_block_by_tag(self, tag):
+            raise EvmRpcError("unsupported finalized tag")
+
+    registry = ArcAuthorityRegistry.__new__(ArcAuthorityRegistry)
+    registry.rpc = Rpc()
+    with pytest.raises(ArcAuthorityRegistryError, match="finalized block lookup failed"):
+        registry._verify_inclusion_before_expiry(
+            {"blockNumber": "0x100", "blockHash": block_hash},
+            101,
+        )
