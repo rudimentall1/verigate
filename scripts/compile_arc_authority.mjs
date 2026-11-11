@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import solc from "solc";
+import { keccak256 } from "ethers";
 
 const sourcePath = "contracts/arc-authority/src/VerigateAuthorityRegistry.sol";
 const source = fs.readFileSync(sourcePath, "utf8");
@@ -10,7 +11,7 @@ const input = {
     optimizer: { enabled: true, runs: 200 },
     outputSelection: {
       "*": {
-        "*": ["abi", "evm.bytecode.object"]
+        "*": ["abi", "evm.bytecode.object", "evm.deployedBytecode.object"]
       }
     }
   }
@@ -24,7 +25,7 @@ if (errors.length) {
 }
 
 const artifact = output.contracts?.["VerigateAuthorityRegistry.sol"]?.VerigateAuthorityRegistry;
-if (!artifact?.evm?.bytecode?.object) {
+if (!artifact?.evm?.bytecode?.object || !artifact?.evm?.deployedBytecode?.object) {
   throw new Error("Arc Authority Registry bytecode was not produced");
 }
 
