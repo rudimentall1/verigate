@@ -68,9 +68,11 @@ registration transaction. It deliberately returns
 
 The executor wallet submits the registration transaction. Verigate then
 checks the transaction hash, chain ID, sender, destination, calldata, zero
-native value, successful receipt, inclusion block number and hash, block
-timestamp, expected Registry event, and stored Registry state. The timestamp
-must fall within the signed authorization validity interval.
+native value, successful receipt, inclusion block number and hash, the Arc
+finalized block tag, block timestamp, expected Registry event, and stored
+Registry state. The timestamp must fall within the signed authorization
+validity interval. The receipt block must be at or below the RPC's finalized
+head; if the RPC cannot provide a valid finalized block, confirmation fails closed.
 
 Only after those checks does the API return the Registry consumption
 transaction.
@@ -131,11 +133,16 @@ client checks the account required by each transaction.
   submit a direct USDC transfer outside this client flow. Do not describe this
   version as technically preventing all out-of-band wallet transfers.
 - Receipt verification compares the receipt block hash with the RPC's
-  canonical block at verification time. The current implementation does not
-  define an additional multi-block finality wait policy.
+  canonical block and requires the inclusion block to be at or below Arc's
+  finalized block tag. Arc uses deterministic finality; Verigate does not add
+  an arbitrary confirmation-depth delay.
 - RPC-based verification depends on the configured Arc RPC returning honest,
-  consistent chain data. Independent evidence should retain transaction
-  hashes, block references, contract address and the deployed bytecode/source
+  consistent chain data. The API also requires VERIGATE_ARC_REGISTRY_CODE_HASH
+  and rejects a runtime bytecode hash mismatch. Obtain the reviewed hash with
+  `npm run verify:arc-deployment`; do not configure it until the script's
+  compiled/deployed bytecode comparison and owner/issuer checks have been
+  independently reviewed. Independent evidence should retain transaction
+  hashes, block references, contract address and deployed bytecode/source
   identity.
 
 ## Tests and evidence
@@ -146,7 +153,8 @@ Relevant automated coverage:
   bypass rejection, registration and consumption API flow.
 - `tests/test_arc_authority_registry.py`: deployment checks, transaction
   construction, transaction/receipt binding, event and Registry-state
-  validation, canonical block hash and trusted timestamp/expiry behavior.
+  validation, canonical block hash, finalized-head and trusted timestamp/expiry behavior,
+runtime bytecode hash pinning and enabled issuer checks.
 - `tests/test_arc_agent_enrollment.py` and
   `tests/test_agent_sdk_arc_api.py`: operator enrollment and SDK-to-API flow.
 - `tests/arc-client.test.mjs`: wallet chain/account checks, registration and
