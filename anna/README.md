@@ -121,31 +121,36 @@ The prior claim that no wallet had ever been connected in Anna Runtime is withdr
 | Wallet signature | User denied the signature request | Expected negative-path outcome; no successful signature |
 | Transaction / chain | No transaction hash, broadcast or chain inclusion is shown | No payment success or settlement is claimed |
 
-### Current Anna platform version
+### Current Anna platform version — 11 November 2026
 
-- Current App ID 851, immutable App version **0.1.29** (version ID **2097**); bundle status `ready`, 3 files / 93,108 bytes. Platform status is **Draft**, not Marketplace-published and not submitted for review.
-- Bundled production Executa ID 1314, version **0.1.16** (version ID 1042); the 0.1.29 cut reused its four cached platform binaries.
-- App 0.1.29 includes explicit ALLOW/WARN cancellation-state handling and regression tests. It was uploaded as the mutable working draft and cut as immutable Draft version ID 2097 on 10 November 2026; it has not been released to end users.
-- The 9 November MetaMask recording predates the 0.1.29 cut and does not identify an immutable App version. It must not be represented as a test of 0.1.29.
+- Current App ID **851**, immutable App version **0.1.30** (version ID **2109**); bundle status `ready`, 3 files / 95.9 KB. Platform status is **Draft**, not Marketplace-published and not submitted for review.
+- Bundled production Executa ID **1314**, version **0.1.17** (version ID **1063**), tool ID `tool-verigate-authority-verigate-authority-28x5jku8`. The 0.1.30 cut uploaded all four platform archives to Anna CDN.
+- Source candidate commit: `6365bb9983baa90fb2912a93fc7bcd938a4d8220`; App 0.1.30 / Executa 0.1.17 are the immutable Console cut. The App has not been released to Marketplace users.
+- Cloud Agent **#7883** is Online on Fly (region `sin`). Its plugin inventory shows the App-bound Executa **0.1.17 Running** with 9 tools. The live Dashboard used this Cloud Agent and received an Anna host-LLM contextual-review response through the bundled Executa before the deterministic Verigate policy result. A separate legacy Verigate tool ID at version 0.1.15 remains installed; App 0.1.30 is bound to the 0.1.17 tool ID.
+- Cloud Agent capacity is **1/1**. Live invocation is verified, but a separate clean Cloud Agent installation is not; no existing Agent was suspended, destroyed or changed.
 
 ### Automated and build evidence
 
-- GitHub Actions Python unittest suite: **603 passed**.
-- Anna UI E2E: **63/63 passed**, including ALLOW and WARN cancellation regression tests.
-- Local targeted Anna Python suite rerun on 10 November: **75 passed, 32 subtests passed**; Anna schema-4 strict validation passed.
-- App 0.1.27 lifecycle hardening and App 0.1.28 listing source passed exact-source CI: [run 42619825112](https://github.com/rudimentall1/verigate/actions/runs/42619825112).
-- Four-platform Executa 0.1.16 reproducible build, packaging and extracted-package smoke tests passed for Windows x86_64, Linux x86_64, macOS ARM64 and macOS Intel x86_64: [run 42571400453](https://github.com/rudimentall1/verigate/actions/runs/42571400453).
-- App 0.1.29 source CI passed all three jobs: Python (603), Contracts, Anna UI (63/63), strict schema-4 validation and Linux Executa build/smoke: [run 42786256350](https://github.com/rudimentall1/verigate/actions/runs/42786256350).
+- Exact-source main CI on merged source commit `6eca3bd782fe54ca798ac3fd66a54acde61b41fc`: **613 Python tests**, **64/64 Anna UI E2E tests**, Contracts, strict schema-4 validation and Linux Executa 0.1.17 build/package/smoke passed ([run 42874904974](https://github.com/actions/runs/42874904974)).
+- Four-platform Executa 0.1.17 reproducible builds, extracted-package smoke tests, checksum verification and artifact uploads passed for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel x86_64 ([run 42959224224](https://github.com/actions/runs/42959224224)).
+- Windows QA on source commit `6365bb9983baa90fb2912a93fc7bcd938a4d8220`: Anna CLI 0.1.64 strict schema-4 validation passed; Anna UI E2E **64/64 passed**; Python suite **613 passed, 4 skipped** (POSIX-only checks); all 18 exact requests from the user's DOCX were replayed through the real App UI and Executa subprocess with scripted Anna Sampling fixtures. This is policy/UI QA, not 18 live LLM runs.
+- The full release evidence and live Cloud Agent acceptance boundary are maintained in [current Anna release status](docs/RELEASE-STATUS.md).
+
+### Live wallet and settlement evidence
+
+- **9 November:** a real MetaMask hand-off displayed the exact 25 USDC Base transaction after Verigate issued and ExecutionRouter consumed a one-time authorization. The user deliberately rejected the wallet signature. This proves hand-off and one-time consumption, not broadcast or settlement.
+- **11 November:** one live **0.000001 USDC Base** transfer was submitted through the Anna App. The recorded transaction hash is `0xcd36b8c135074b6083fd650c8a0f686d4ffa125657d1e18964ac8ac6180c489c`; the independent Base RPC check reported receipt status `0x1`, block `0x355cb64`, and a USDC Transfer event for exactly one base unit. This is one successful micro-transfer, not broad validation of every amount, network or wallet state.
+- **11 November:** 12.50 USDC on Ethereum returned ALLOW and a verified Ed25519 Decision Receipt; no authorization or payment was issued for that preview. A 10 USDC Solana request with the literal placeholder `YOUR_SOLANA_WALLET_ADDRESS` was blocked as `invalid_payee`; no payment was sent. Solana wallet submission is not supported by this App version.
 
 ### Still unverified — do not overclaim
 
-- The 9 November recording proves live permission issuance and ExecutionRouter consumption in Anna Runtime, but its immutable App version identifier is not visible. Live acceptance of the exact 0.1.29 platform cut still needs version-bound verification.
-- Availability and lifecycle persistence of the injected EIP-1193 provider in a fresh Anna Cloud Agent/Linux session.
-- A user-approved MetaMask signature, wallet-returned transaction hash, signed `SUBMITTED` ExecutionReceipt and successful wallet broadcast. The 9 November user deliberately denied MetaMask signing.
-- Independent on-chain inclusion, confirmation depth, finality or reorg monitoring.
-- Cloud persistence across restart/reinstall and a live replay attempt against App-scope approval.
-- Marketplace approval or publication.
+- A second, separately provisioned clean Cloud Agent installation; current Cloud Agent capacity is 1/1.
+- Live Cloud Agent APS KV/ETag conditional-consumption behavior under replay/race, plus failure and late-result handling. The source/CI suites cover the protocol logic; this is not yet a live platform acceptance claim.
+- Wallet settlement beyond the single 0.000001 USDC Base transfer, including broader amounts, Ethereum settlement, Solana wallet submission, reorg/finality monitoring and recovery after ambiguous provider responses.
+- Cloud persistence across Agent restart/reinstall and a live replay attempt against App-scope approval.
+- Marketplace review approval or publication.
 - Independent third-party security audit, hosted multi-tenant service, production KMS/HSM custody or key-rotation service.
+
 
 ## Capability-bound execution authorization
 
