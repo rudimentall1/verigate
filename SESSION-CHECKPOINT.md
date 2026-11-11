@@ -218,3 +218,44 @@ PR #55: https://github.com/rudimentall1/verigate/pull/55
 - Completed: `test` PASS, `contracts` PASS, `container` PASS, `anna-ui` PASS.
 - Failed: `Arc Mainnet deployment verification (read-only)`, solely at the runtime bytecode comparison described above.
 - Overall PR CI conclusion: FAILURE because the read-only Arc verification correctly fails closed on the mismatch.
+
+
+## 15. Arc Mainnet transaction evidence clarification — 2026-11-11
+
+This section corrects the interpretation of the two transaction hashes discussed during the checkpoint recovery. The user supplied an Arc Explorer screenshot of the executor EOA transaction list:
+https://explorer.arc.io/address/0x1429906b663608DB6aDeAb8F975B47aFbbe8c68C?tab=txs
+
+The screenshot visibly lists the following distinct transactions:
+
+1. **Registry deployment**
+   - Transaction: `0xe85784e81ca0069410e8555961c8403fa02adc1361c7455657106afc96855ebb`
+   - Explorer type: `Contract creation`
+   - Block: `30012679`
+   - Created contract shown by Explorer: `0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D`
+   - This is the Registry deployment transaction. The prior checkpoint's deployment hash, address and block were correct.
+
+2. **USDC approval**
+   - Transaction: `0x4c1926681405885ff6e99a15aa73f9bbe8eb895a1eea33455efd0a73e8745c18`
+   - Explorer type: `Contract call`
+   - Method: `approve`
+   - Destination shown: USDC token contract
+   - Block: `30013066`
+   - This is an ERC-20 approval call, **not** the Registry deployment and not proof of a Verigate-authorized payment or settlement. Explorer displays transaction value 0 and fee 0.00142753 USDC.
+
+The same screenshot also lists later contract calls from the executor to the Registry at blocks 30024727, 30025935 and 30026205. Their presence is visible, but their exact semantic outcome must be established from transaction input, receipt logs and Registry state before describing them as successful registration or consumption confirmations.
+
+### Evidence classification
+
+- The deployment transaction, Registry address and deployment block are now corroborated by the user-provided Arc Explorer screenshot, in addition to the historical checkpoint record.
+- The approval transaction is separately identified by Explorer as an `approve` call.
+- This screenshot is explorer UI evidence. It is not a fresh independent RPC verification of runtime bytecode, owner, issuer state or finalized head.
+- The runtime bytecode mismatch reported in section 14 remains a separate unresolved verification issue:
+  - compiled source hash: `0x20ee1d407229f43acb985459db74d3d0ec6d6d25782b29f9e3baf72b51284597`
+  - deployed runtime hash: `0x6b229c049b9ba0007c318a10759a9827b5a798a4e511611872dcd4cf3973b160`
+- The mismatch does **not** invalidate or make uncertain the fact that the Registry deployment transaction is recorded as a successful contract creation in block 30012679. It means the current source build has not yet been proven byte-for-byte equivalent to the deployed runtime.
+
+### Correct working interpretation
+
+Do not refer to `0x4c192668...` as the deployment hash. Use `0xe85784e8...` for Registry deployment and `0x4c192668...` for the USDC approval. Keep the runtime artifact investigation open; do not redeploy, change the expected code hash, or weaken the verifier to make the mismatch disappear.
+
+No server command, contract call, transaction broadcast, deployment, key operation or production configuration change was performed while adding this checkpoint clarification.
