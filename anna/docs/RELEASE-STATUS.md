@@ -24,11 +24,24 @@ This proves the merged source and the Linux CI path. It does not prove a fresh A
 
 ### Executa 0.1.17 platform packages
 
-The repository workflow `.github/workflows/anna-executa-binaries.yml` defines four build targets: Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel x86_64. **A four-platform 0.1.17 workflow run and its extracted-package smoke tests have not been evidenced.** The successful run above only builds and smoke-tests Linux x86_64.
+The four-target workflow completed successfully in [run 42959224224](https://github.com/rudimentall1/verigate/actions/runs/42959224224), against source commit `6eca3bd782fe54ca798ac3fd66a54acde61b41fc`, with input `version=0.1.17` and `publish_release=false`.
 
-The newest GitHub Release observed on 11 November is still the draft Executa **0.1.14**. No 0.1.17 release or four-platform 0.1.17 asset set was present in the Releases listing. Do not reuse 0.1.14 or 0.1.16 binaries as evidence for 0.1.17.
+For **each** target, the workflow:
+- built the executable twice and reported `REPRODUCIBILITY PASS`;
+- packaged version 0.1.17 and extracted the resulting release archive;
+- ran the extracted entrypoint through `describe`, ALLOW decision, signed receipt, one-time App-scope approval, one-time wallet hand-off and persisted/verified SUBMITTED receipt;
+- verified the package SHA-256 against its generated `.sha256` sidecar, then uploaded the package and checksum sidecar as a workflow artifact.
 
-For a non-publishing matrix build, manually dispatch `Anna Executa Binaries` with version `0.1.17` and `publish_release=false`. This builds and smoke-tests all four targets and uploads workflow artifacts; it does not publish a GitHub Release. Keep `publish_release=false` until the artifacts have been inspected and a separate release decision is made.
+The four downloaded workflow artifacts were independently inspected here: each contains exactly one platform release archive and its checksum sidecar; each archive contains a root `manifest.json` declaring version **0.1.17** and the expected platform entrypoint. The SHA-256 recomputed over every downloaded archive matched both its sidecar and the workflow smoke-test log.
+
+| Target | Artifact ID | Entry point | Release archive SHA-256 |
+|---|---:|---|---|
+| Linux x86_64 | `13827958251` | `verigate-authority` | `358c3f37c9750010a6f37bcddb9506b55cee0cec933e5be9d2d1b5cc09517010` |
+| Windows x86_64 | `13828342753` | `verigate-authority.exe` | `b19024bbfd1546539a4e149856908159ba7b85fb91b055b4b302d70e8587f05e` |
+| macOS ARM64 | `13828337795` | `verigate-authority` | `89cb4f2c0c0c67b63b0f37a2b3fe24252a2166b11c499435f3ecf6ce7a7988f4` |
+| macOS Intel x86_64 | `13827999561` | `verigate-authority` | `1a1e6e0b5865e4aa594a3eea62bb97d66462a4471fe4e6913e4d890ab49ba81e` |
+
+These are **workflow artifacts, not a published GitHub Release**. GitHub reports their expiration as **9 February 2027**. The release job was skipped as intended. The newest GitHub Release listing still shows draft Executa **0.1.14**; no 0.1.17 release was published. Do not confuse the downloadable workflow artifacts with a permanent release or with an Anna Console bundle.
 
 ## Anna Console state
 
@@ -84,7 +97,7 @@ Only SUBMITTED receipts are eligible for provider polling. REJECTED, ABORTED and
 |---|---|---|
 | Merged source and main CI | **PASS** | [Run 42874904974](https://github.com/rudimentall1/verigate/actions/runs/42874904974): 613 Python tests, 64/64 UI, Contracts, schema-4 validation and Linux 0.1.17 binary smoke test. |
 | Linux Executa 0.1.17 archive | **PASS in CI** | Extracted package smoke test completed successfully in the same run. |
-| Windows/macOS Executa 0.1.17 archives | **BLOCKED / not evidenced** | Run the four-target workflow with version 0.1.17 and `publish_release=false`; inspect each extracted package and smoke-test result. |
+| Four-platform Executa 0.1.17 archives | **PASS** | [Run 42959224224](https://github.com/rudimentall1/verigate/actions/runs/42959224224): all four reproducible builds, extracted-package smoke tests, artifact uploads and independent SHA-256/manifest checks passed. Workflow artifacts expire 9 February 2027. |
 | Fresh Anna Cloud Agent installation and invoke | **BLOCKED / not evidenced** | Install the candidate in a fresh Cloud Agent and verify tool registration, `describe`, safe invoke, App-scope APS KV/ETag operations, and failure/late-result behavior. |
 | Anna Console immutable cut | **NOT DONE** | Recheck the current Console state, then cut App 0.1.30 with the intended Executa 0.1.17 bundle only after the preceding evidence is accepted. |
 | Anna review / Marketplace publication | **NOT DONE** | No review submission or publication is evidenced. |
