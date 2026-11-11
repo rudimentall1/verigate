@@ -131,8 +131,8 @@ The prior claim that no wallet had ever been connected in Anna Runtime is withdr
 
 ### Automated and build evidence
 
-- Exact-source main CI on merged source commit `6eca3bd782fe54ca798ac3fd66a54acde61b41fc`: **613 Python tests**, **64/64 Anna UI E2E tests**, Contracts, strict schema-4 validation and Linux Executa 0.1.17 build/package/smoke passed ([run 42874904974](https://github.com/actions/runs/42874904974)).
-- Four-platform Executa 0.1.17 reproducible builds, extracted-package smoke tests, checksum verification and artifact uploads passed for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel x86_64 ([run 42959224224](https://github.com/actions/runs/42959224224)).
+- Exact-source main CI on merged source commit `6eca3bd782fe54ca798ac3fd66a54acde61b41fc`: **613 Python tests**, **64/64 Anna UI E2E tests**, Contracts, strict schema-4 validation and Linux Executa 0.1.17 build/package/smoke passed ([run 42874904974](https://github.com/rudimentall1/verigate/actions/runs/42874904974)).
+- Four-platform Executa 0.1.17 reproducible builds, extracted-package smoke tests, checksum verification and artifact uploads passed for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel x86_64 ([run 42959224224](https://github.com/rudimentall1/verigate/actions/runs/42959224224)).
 - Windows QA on source commit `6365bb9983baa90fb2912a93fc7bcd938a4d8220`: Anna CLI 0.1.64 strict schema-4 validation passed; Anna UI E2E **64/64 passed**; Python suite **613 passed, 4 skipped** (POSIX-only checks); all 18 exact requests from the user's DOCX were replayed through the real App UI and Executa subprocess with scripted Anna Sampling fixtures. This is policy/UI QA, not 18 live LLM runs.
 - The full release evidence and live Cloud Agent acceptance boundary are maintained in [current Anna release status](docs/RELEASE-STATUS.md).
 
