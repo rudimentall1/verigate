@@ -140,12 +140,16 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
         # API down (no key can match), never silently fall back to open.
         configured = bool(os.environ.get("VERIGATE_API_KEYS", "").strip(", "))
         if not configured:
-            if _truthy("VERIGATE_REQUIRE_AUTH"):
+            if _truthy("VERIGATE_REQUIRE_AUTH") or not (
+                os.environ.get("VERIGATE_ENV", "").lower() == "development"
+                and _truthy("VERIGATE_ALLOW_INSECURE_DEV_MODE")
+            ):
                 return JSONResponse(
-                    {"detail": "authentication required but no API keys configured"},
+                    {"detail": "authentication required; configure VERIGATE_API_KEYS or explicitly enable insecure development mode"},
                     status_code=401,
+                    headers={"WWW-Authenticate": "Bearer"},
                 )
-            return await call_next(request)  # legacy open mode
+            return await call_next(request)  # explicit local development opt-in only
         if not is_authorized(_presented_key(request)):
             return JSONResponse(
                 {"detail": "missing or invalid API key"},
