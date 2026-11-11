@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import solc from "solc";
-import { JsonRpcProvider, keccak256 } from "ethers";
+import { Interface, JsonRpcProvider, keccak256 } from "ethers";
 
 const RPC_URL = process.env.VERIGATE_ARC_RPC_URL || "https://rpc.mainnet.arc.io";
 const CONTRACT = (process.env.VERIGATE_ARC_REGISTRY_ADDRESS || "0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D").toLowerCase();
@@ -39,6 +39,10 @@ if (compiledHash !== deployedHash) {
 const ownerData = await provider.call({ to: CONTRACT, data: "0x8da5cb5b" });
 const owner = ("0x" + ownerData.slice(-40)).toLowerCase();
 if (owner !== EXPECTED_OWNER) throw new Error(`Registry owner mismatch: expected ${EXPECTED_OWNER}, received ${owner}`);
+const registryInterface = new Interface(artifact.abi);
+const issuerData = registryInterface.encodeFunctionData("issuers", [EXPECTED_OWNER]);
+const issuerResult = await provider.call({ to: CONTRACT, data: issuerData });
+if (BigInt(issuerResult) !== 1n) throw new Error("Configured executor is not an enabled Registry issuer");
 const finalized = await provider.getBlock("finalized");
 if (!finalized || finalized.number == null || !finalized.hash) {
   throw new Error("Arc RPC did not return a verifiable finalized block");
