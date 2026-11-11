@@ -2,7 +2,7 @@
 
 **Updated:** 2026-11-11  
 **Anna App / Executa source:** commit `6eca3bd782fe54ca798ac3fd66a54acde61b41fc`  
-**Current documentation HEAD:** `9893...` (PR #47; docs-only release-status/QA clarification)  
+**Current documentation HEAD before this update:** `989378df11d613be3b04ea5fb67d489524cb7a5f` (PR #47; docs-only Windows QA matrix update)  
 **Source candidate:** Anna App **0.1.30** · bundled Executa **0.1.17**  
 **Current Anna Console state (11 November):** immutable Draft App **0.1.30** · version ID **2109** · App ID **851**; bundled Executa **0.1.17** · version ID **1063** · Executa ID **1314**
 
