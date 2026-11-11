@@ -178,7 +178,7 @@ Diagnose the GitHub Actions pre-job failure for run `43000038808` from workflow/
 ## Operational update — 2026-11-11 Arc verification run
 
 - PR #55 YAML pre-job failure was traced to unquoted hex address values interpreted as YAML integers. Registry and Executor values are now quoted in both Arc workflow files.
-- Latest PR head: `777fb01f4e4a33e6417c94ee82d4bdeb58612d5` (verify exact full SHA in PR metadata; checkpoint branch head).
+- Latest PR head: `777fb01f4e4a33e6417c94ee82e34bdeb58612d5` (verify exact full SHA in PR metadata; checkpoint branch head).
 - Arc read-only run [43012817343](https://github.com/rudimentall1/verigate/actions/runs/43012817343) now reaches Arc Mainnet and fails closed on runtime bytecode mismatch:
   - source compile hash `0x20ee1d407229f43acb985459db74d3d0ec6d6d25782b29f9e3baf72b51284597`
   - deployed code hash `0x6b229c049b9ba0007c318a10759a9827b5a798a4e511611872dcd4cf3973b160`
