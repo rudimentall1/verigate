@@ -188,5 +188,5 @@ jobs:
         env:
           VERIGATE_ARC_RPC_URL: https://rpc.mainnet.arc.io
           VERIGATE_ARC_REGISTRY_ADDRESS: "0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D"
-          VERIGATE_ARC_EXECUTOR_ADDRESS: 0x1429906b663608DB6aDeAb8F975B47aFbbe8c68C
+          VERIGATE_ARC_EXECUTOR_ADDRESS: "0x1429906b663608DB6aDeAb8F975B47aFbbe8c68C"
         run: npm run verify:arc-deployment
