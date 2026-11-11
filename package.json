@@ -7,7 +7,8 @@
     "test:atomic:arb": "node scripts/e2e_atomic_state_arbitrum_sepolia.mjs",
     "test:guard": "node scripts/test_guard_access_control.mjs",
     "test:arc-client": "node --test tests/arc-client.test.mjs",
-    "compile:arc-authority": "node scripts/compile_arc_authority.mjs"
+    "compile:arc-authority": "node scripts/compile_arc_authority.mjs",
+    "verify:arc-deployment": "node scripts/verify_arc_deployment.mjs"
   },
   "devDependencies": {
     "ethers": "^6.17.0",
