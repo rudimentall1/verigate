@@ -268,6 +268,7 @@ Or with Docker. The container requires API authentication and signed intents by 
 
 ```bash
 export VERIGATE_API_KEYS="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export VERIGATE_KEY_PASSPHRASE="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
 docker compose up --build -d
 ```
 
