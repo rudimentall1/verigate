@@ -238,9 +238,10 @@ def test_inclusion_block_expiry_check_accepts_pre_expiry_block():
     class BlockRpc:
         def get_block_by_tag(self, tag):
             assert tag == "finalized"
-            return self.get_block_by_number(256)
-
-        def get_block_by_number(self, number):
+            block = self.get_block_by_number(256)
+            if block is not None and isinstance(block.get("number"), int):
+                block = {**block, "number": hex(block["number"])}
+            return block
             assert number == 256
             return {
                 "number": "0x100",
@@ -267,9 +268,10 @@ def test_inclusion_block_expiry_check_rejects_post_expiry_block():
     class BlockRpc:
         def get_block_by_tag(self, tag):
             assert tag == "finalized"
-            return self.get_block_by_number(256)
-
-        def get_block_by_number(self, number):
+            block = self.get_block_by_number(256)
+            if block is not None and isinstance(block.get("number"), int):
+                block = {**block, "number": hex(block["number"])}
+            return block
             return {
                 "number": number,
                 "timestamp": "0x65",
@@ -296,9 +298,10 @@ def test_inclusion_block_expiry_check_fails_closed_without_block():
     class BlockRpc:
         def get_block_by_tag(self, tag):
             assert tag == "finalized"
-            return self.get_block_by_number(256)
-
-        def get_block_by_number(self, number):
+            block = self.get_block_by_number(256)
+            if block is not None and isinstance(block.get("number"), int):
+                block = {**block, "number": hex(block["number"])}
+            return block
             return None
 
     registry = ArcAuthorityRegistry.__new__(ArcAuthorityRegistry)
@@ -321,9 +324,10 @@ def test_inclusion_block_rejects_timestamp_equal_to_expiry():
     class BlockRpc:
         def get_block_by_tag(self, tag):
             assert tag == "finalized"
-            return self.get_block_by_number(256)
-
-        def get_block_by_number(self, number):
+            block = self.get_block_by_number(256)
+            if block is not None and isinstance(block.get("number"), int):
+                block = {**block, "number": hex(block["number"])}
+            return block
             return {
                 "number": number,
                 "timestamp": "0x64",
@@ -351,9 +355,10 @@ def test_inclusion_block_rejects_timestamp_before_issuance():
     class BlockRpc:
         def get_block_by_tag(self, tag):
             assert tag == "finalized"
-            return self.get_block_by_number(256)
-
-        def get_block_by_number(self, number):
+            block = self.get_block_by_number(256)
+            if block is not None and isinstance(block.get("number"), int):
+                block = {**block, "number": hex(block["number"])}
+            return block
             return {
                 "number": number,
                 "timestamp": "0x64",
@@ -512,10 +517,12 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
                 return None
     
             def get_block_by_tag(self, tag):
-            assert tag == "finalized"
-            return self.get_block_by_number(256)
-
-        def get_block_by_number(self, number):
+                assert tag == "finalized"
+                return {
+                    "number": "0x65",
+                    "timestamp": "0x65",
+                    "hash": consumption_block_hash,
+                }
                 if number == 100:
                     return {
                         "number": "0x64",
