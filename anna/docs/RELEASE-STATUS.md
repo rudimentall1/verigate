@@ -120,6 +120,17 @@ The 18-case DOCX matrix remains **local UI + real Executa subprocess QA with scr
 
 These results do not close the Cloud Agent gate. They do not prove live Anna Sampling, actual Cloud Agent deployment, real APS storage/ETag behavior, live `describe`/ `invoke`, or a real injected EIP-1193 wallet session. The E2E wallet provider is simulated. The only recorded real MetaMask hand-off remains the 9 November attempt, which ended with the user rejecting the signature after ExecutionRouter consumed the permission.
 
+### Cloud Agent runtime confirmation — 11 November 2026
+
+The signed-in Anna **Agents** page and Cloud Agent plugin details were inspected after the live Dashboard checks:
+
+- Cloud Agent **#7883** is **Running / Online**, provider **Fly**, region `sin`, machine ID `d8950d4be16208`, registered two days earlier. The Dashboard's selected/default Agent indicator carries the matching machine ID suffix `d8950d4be16208-5ebce57b`.
+- The Cloud Agent plugin inventory shows the App-bound Executa tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, version **0.1.17**, status **Running**, with **9 tools**.
+- The immutable App **0.1.30** / version ID **2109** was open in the Anna Dashboard. Its live request returned an Anna AI contextual-review response from the bundled Executa, followed by Verigate's deterministic **BLOCK / invalid_payee** for the deliberately invalid Solana placeholder. No payment was sent.
+- This confirms a live invocation path through the current Cloud Agent and the current App-bound Executa 0.1.17. It is not merely the local scripted E2E fixture.
+
+The account currently reports Cloud Agents **1/1**. A separate clean Cloud Agent could not be provisioned without freeing capacity; no existing Agent was suspended, destroyed or modified. Therefore the **live Cloud Agent invoke** sub-gate is now **PASS**, while a **fresh, separately provisioned Cloud Agent installation** remains untested. The Cloud Agent inventory also contains a separate legacy Verigate tool ID `tool-rinat-verigate-authority-2um8gwhw` at version **0.1.15**, still Running; it was left untouched. App 0.1.30 is bound to the distinct 0.1.17 tool ID above.
+
 ## What has been observed in Anna Runtime
 
 Two distinct live Runtime recordings must be kept separate.
@@ -165,7 +176,7 @@ Only SUBMITTED receipts are eligible for provider polling. REJECTED, ABORTED and
 | Merged source and main CI | **PASS** | [Run 42874904974](https://github.com/rudimentall1/verigate/actions/runs/42874904974): 613 Python tests, 64/64 UI, Contracts, schema-4 validation and Linux 0.1.17 binary smoke test. |
 | Linux Executa 0.1.17 archive | **PASS in CI** | Extracted package smoke test completed successfully in the same run. |
 | Four-platform Executa 0.1.17 archives | **PASS** | [Run 42959224224](https://github.com/rudimentall1/verigate/actions/runs/42959224224): all four reproducible builds, extracted-package smoke tests, artifact uploads and independent SHA-256/manifest checks passed. Workflow artifacts expire 9 February 2027. |
-| Fresh Anna Cloud Agent installation and invoke | **BLOCKED / not evidenced** | Developer CLI authentication cannot access user-runtime endpoints or the Installed Apps UI. Install immutable App 0.1.30 on a test Agent through the signed-in Anna web UI; verify deployment, real `describe`, safe invoke, APS KV/ETag, and failure/late-result behavior. |
+| Fresh Anna Cloud Agent installation and invoke | **PARTIAL PASS** | Cloud Agent #7883 is Online; App 0.1.30 invoked its App-bound Executa 0.1.17 and received a live Anna AI Sampling response. A second clean Agent installation remains untested because Cloud Agent capacity is already 1/1. APS KV/ETag and failure/late-result behavior remain open. See Cloud Agent runtime confirmation below. |
 | Anna Console immutable cut | **PASS** | App 0.1.30 / version ID 2109; Executa 0.1.17 / version ID 1063; four platform archives uploaded to Anna CDN; App remains Draft. |
 | Anna review / Marketplace publication | **NOT DONE** | No review submission or publication is evidenced. |
 | Successful signed wallet submission / on-chain settlement | **PARTIAL PASS** | One 0.000001 USDC Base transfer was submitted through the live Anna App and independently checked by Base RPC (receipt status 0x1; see the 11 November live Dashboard acceptance section). This does not validate every positive request or every supported network. |
