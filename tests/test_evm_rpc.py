@@ -51,6 +51,26 @@ class EvmRpcClientTest(unittest.TestCase):
         with self.assertRaisesRegex(EvmRpcError, "different block number"):
             mismatched.get_block_by_number(16)
 
+    def test_get_block_by_tag_requests_finalized_head(self):
+        calls = []
+
+        def transport(endpoint, payload, headers, timeout):
+            request = __import__("json").loads(payload)
+            calls.append(request)
+            return (
+                b'{"jsonrpc":"2.0","id":1,"result":'
+                b'{"number":"0x20","hash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}'
+            )
+
+        client = EvmRpcClient("https://example.invalid", transport=transport)
+        block = client.get_block_by_tag("finalized")
+        self.assertEqual(block["number"], "0x20")
+        self.assertEqual(calls[0]["method"], "eth_getBlockByNumber")
+        self.assertEqual(calls[0]["params"], ["finalized", False])
+
+        with self.assertRaises(ValueError):
+            client.get_block_by_tag("pending")
+
     def test_send_raw_transaction_uses_exact_wire_payload(self):
         calls = []
 
