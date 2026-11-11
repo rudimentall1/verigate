@@ -47,7 +47,7 @@ These are targets, not achieved measurements. Add reproducible benchmarks and re
 - PR #37 was reviewed and closed as a historical server snapshot: its distinct Valta, governance, evidence, tenancy and authority-graph modules were byte-for-byte identical to main; its API/schema/storage/engine versions were older. Backup files and generated contract build artifacts were not ported.
 - PR #16 was reviewed and closed as superseded by newer/equivalent Anna code already in main. Its real Anna Cloud Agent acceptance and durable Cloud persistence gates remain unverified.
 - PR #18 was closed because its content[].text JSON-envelope fix is already present in main. PR #19 was closed after its overlay change was ported and merged through #54.
-- Four open PRs remain: #28 Anna release checkpoint, #25 Guardian-specific bootstrap, #14 Render deployment runbook and #13 PortalDot Substrate one-time consumption.
+- Five open PRs remain: #28 Anna release checkpoint, #25 Guardian-specific bootstrap, #14 Render deployment runbook, #13 PortalDot Substrate one-time consumption and #55 read-only Arc Mainnet deployment verification (Draft; no live verification result recorded yet).
 
 
 
