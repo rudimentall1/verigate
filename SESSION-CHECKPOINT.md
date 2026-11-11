@@ -3,13 +3,13 @@
 **Updated:** 2026-11-11 14:50 +05:00  
 **Repository:** rudimentall1/verigate  
 **Default branch:** main  
-**Current main HEAD:** 1889963944756e271c968542bdf750c272c0c874  
-**Merged PR:** https://github.com/rudimentall1/verigate/pull/53  
-**Merged source HEAD:** 7e7a3fc49af3e96a864ff06d0496be168794bafb
+**Latest product merge before this checkpoint refresh:** 6ab3a289c300cb6d614d27bb7134ae251f7db261  
+**Merged PRs:** https://github.com/rudimentall1/verigate/pull/53 and https://github.com/rudimentall1/verigate/pull/54  
+**Latest merged source HEAD:** a14fb49b411e6fd18c5b74d11e85f3eb9d22fa18
 
 ## 1. Current repository state
 
-PR #53 was squash-merged into main on 2026-11-11. GitHub confirms main is identical to merge commit 1889963944756e271c968542bdf750c272c0c874.
+PR #53 was squash-merged into main on 2026-11-11 as 1889963944756e271c968542bdf750c272c0c874. PR #54 was then squash-merged as 6ab3a289c300cb6d614d27bb7134ae251f7db261. The current checkpoint refresh is being committed after those product merges.
 
 The exact PR source HEAD 7e7a3fc49af3e96a864ff06d0496be168794bafb passed all four CI jobs in run #42995150968:
 - test: success
@@ -21,7 +21,7 @@ CI run: https://github.com/rudimentall1/verigate/actions/runs/42995150968
 
 This proves the PR head passed CI before merge. A separate post-merge main-branch CI result has not yet been verified. Do not describe main CI as green until that run is checked.
 
-PR #53 merged 46 files (4,995 additions, 178 deletions). Its scope includes Arc Registry integration, external agent SDK, Arc wallet client, API default-deny, signed-intent enforcement, Docker production defaults and container smoke tests.
+PR #53 merged 46 files (4,995 additions, 178 deletions). Its scope includes Arc Registry integration, external agent SDK, Arc wallet client, API default-deny, signed-intent enforcement, Docker production defaults and container smoke tests. PR #54 merged the Anna WebView-safe confirmation overlay and E2E harness updates (4 files, 60 additions, 56 deletions).
 
 PRs #38, #40, #41 and #42 were closed as superseded by #53. Their changes were reconciled into #53; they were not merged independently.
 
@@ -106,18 +106,18 @@ Transaction 0xd781e8b04b5ca89c3a34fcec50a6636049f7647d2b0e1b2bb64d5b1ee54daadf b
 
 ## 7. Remaining open pull requests — audit status
 
-There are 8 open PRs remaining:
+There are 4 open PRs remaining:
 
-- **#37 — Snapshot complete server Verigate project.** 89 changed files, 17,682 additions, 81 deletions; branch diverges from main (3 commits ahead, 524 behind). It contains a large server snapshot, dated checkpoint material, backup files named *.before-*, and generated Solidity build artifacts. Do not merge this branch wholesale. Treat it as a recovery/reference source; extract only individually reviewed, still-missing functionality into a fresh branch based on current main.
-- **#16 — Anna router-gated EVM wallet execution.** 71 changed files; branch diverges from main (2 commits ahead, 82 behind). It contains substantive Anna app/Executa, authority, persistence, binary packaging and tests. Do not merge the stale branch directly. Review and port only changes still absent from current main. Real Anna Cloud Agent acceptance and durable issuer-key/SQLite persistence remain explicit blockers.
-- **#18 — Anna Executa response-envelope parsing.** Separate targeted UI/backend-envelope fix. Check whether its exact behavior is already included in #16 or main before porting.
-- **#19 — Anna embedded-WebView confirmation UI.** Separate targeted confirmation overlay fix. Check dependency/order with #18 and current main before porting.
+- **#37 — Snapshot complete server Verigate project. CLOSED as historical snapshot.** Its Valta, governance, evidence, tenancy and authority-graph modules were byte-for-byte identical to main. Its API/schema/storage/engine files were older than main; backup files and generated Solidity artifacts were not ported. Branch retained.
+- **#16 — Anna router-gated EVM wallet execution. CLOSED as superseded by current main.** Anna App, Executa, authority, persistence, receipt and binary packaging sources in main are newer or equivalent. Real Anna Cloud Agent acceptance and durable Cloud persistence remain unverified.
+- **#18 — Anna Executa response-envelope parsing. CLOSED as superseded.** MCP content[].text JSON decoding and tests are already present in main.
+- **#19 — Anna embedded-WebView confirmation UI. CLOSED as superseded by merged PR #54.**
 - **#25 — Guardian Arc agent bootstrap script.** Review against the operator enrollment functionality now merged in #53; likely overlapping, but do not close until behavior is compared.
 - **#28 — Anna 0.1.18 release checkpoint.** Docs-only. Preserve release evidence and limitations; check whether its checkpoint remains current.
 - **#14 — Render deployment runbook.** Docs-only pre-deployment runbook. Preserve if still accurate; no Render service or paid resource is implied.
 - **#13 — PortalDot Substrate one-time consumption.** Independent PortalDot integration. It only authorizes one-time consumption and does not broadcast Substrate transactions. Keep separate from Arc work.
 
-No other open PRs were closed.
+Other open PRs still requiring separate review: #28 Anna release docs, #25 Guardian-specific bootstrap, #14 Render runbook and #13 PortalDot Substrate consumption.
 
 ## 8. Next actions — strict order
 
@@ -139,3 +139,24 @@ No other open PRs were closed.
 - No private-key export or wallet broadcast.
 - No fabricated live payment evidence.
 - No claim of unhackable, fully audited, global wallet firewall or faster-than-Arc-finality behavior.
+
+
+## 10. Latest follow-up — Anna WebView confirmation fix (2026-11-11)
+
+PR #54 was squash-merged into main:
+- Merge commit: 6ab3a289c300cb6d614d27bb7134ae251f7db261.
+- Source HEAD: a14fb49b411e6fd18c5b74d11e85f3eb9d22fa18.
+- CI run #42999094385 passed all four jobs: test, contracts, container and anna-ui.
+- Anna UI job passed strict schema-4 manifest validation, the full UI E2E suite and Linux Executa binary build/smoke test.
+
+The UI no longer depends on the native HTML dialog API for explicit one-time confirmation. It uses an in-app overlay, Cancel/Escape/backdrop dismissal and focus restoration. Approval storage and Executa invocation remain behind explicit Confirm.
+
+The first PR #54 CI attempt failed because the E2E harness still queried the removed #approval-dialog element. The harness was corrected to assert #approval-overlay visibility. The subsequent exact-head CI passed. No policy, signature, wallet, nonce, storage or execution authorization rules were weakened.
+
+PR #19 was closed as superseded by #54. PR #18 was closed because its response-envelope fix is already in main.
+
+## 11. Post-merge validation boundary
+
+The exact source heads of PR #53 and PR #54 passed all four CI jobs before their squash merges. A separate CI result for the resulting main branch after the latest squash commits has not yet been independently checked. Do not claim post-merge main CI is green solely from the PR-head runs.
+
+The Arc Mainnet read-only deployment verification script remains unexecuted. No Desktop Commander device was connected in this session, so no production server command was run. No deployment, key change or transaction broadcast occurred.
