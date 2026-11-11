@@ -1,7 +1,8 @@
 # Anna App — current release status
 
 **Updated:** 2026-11-11  
-**Repository source candidate:** commit `6eca3bd782fe54ca798ac3fd66a54acde61b41fc` on `main`  
+**Anna App / Executa source:** commit `6eca3bd782fe54ca798ac3fd66a54acde61b41fc`  
+**Current documentation HEAD:** `9893...` (PR #47; docs-only release-status/QA clarification)  
 **Source candidate:** Anna App **0.1.30** · bundled Executa **0.1.17**  
 **Current Anna Console state (11 November):** immutable Draft App **0.1.30** · version ID **2109** · App ID **851**; bundled Executa **0.1.17** · version ID **1063** · Executa ID **1314**
 
@@ -94,6 +95,29 @@ All local validation below used a separate clean temporary checkout of source co
 
 **Important distinction:** policy WARN does not imply that Execution Authorization can be created. On a fresh installation, dynamic authority is **PROBATION / 50 USDC per action**. The App disables permission creation above that independent ceiling even where policy returns WARN for human review. Increasing that ceiling requires the documented verified authority progression; changing the AI response or approving the WARN cannot override it.
 
+### First-payee threshold versus dynamic authority — interpretation
+
+The **50 USDC first-payee threshold** and the **PROBATION 50 USDC per-action authority ceiling** are separate controls:
+
+- The DOCX case for **50.01 USDC** was replayed with isolated state and a previously unseen recipient. It returns **WARN** because the first-authorization threshold is exceeded.
+- Recipient history is installation-scoped and persists after a non-BLOCK authorization. A later request to the same recipient is no longer a first-payee request; do not expect the first-payee rule alone to keep returning WARN.
+- The independent PROBATION ceiling still prevents issuing an Execution Authorization above **50 USDC/action**, even if the policy preview returns ALLOW after recipient history exists.
+- Therefore, a policy ALLOW above 50 USDC is not an execution bypass. The authorization button must remain unavailable until the dynamic authority state permits the amount.
+
+Do not describe the difference between a fresh isolated fixture and a previously used Anna installation as a policy regression. To compare the same case, reset to a genuinely fresh issuer installation or use a new recipient and explicitly record the installation history. No new 50.01 live-session result is claimed here.
+
+### Live Anna Dashboard acceptance — 11 November
+
+The signed-in Brave session was switched to the actual **Dashboard - Anna** tab, and the loaded App document identified **Verigate Authority 0.1.30**, App ID **851**, immutable version ID **2109**. These observations are from the Anna App document, not from the surrounding ChatGPT conversation.
+
+Observed App behavior in that session:
+
+- **12.50 USDC / Ethereum / valid EVM recipient:** Anna AI returned a contextual interpretation; Verigate displayed **ALLOW**, the Ed25519 Decision Receipt verified, and the UI reported that the current PROBATION authority covered the amount. No authorization or payment was issued for this preview.
+- **10 USDC / Solana / `YOUR_SOLANA_WALLET_ADDRESS`:** the App first requested confirmation of extracted details. After confirmation, Verigate returned **BLOCK** with `invalid_payee` because the placeholder is not a valid Solana address. No payment was sent. Solana wallet submission is not supported by this App version.
+- **0.000001 USDC / Base:** the prior live wallet hand-off produced SUBMITTED receipt `0xcd36b8c135074b6083fd650c8a0f686d4ffa125657d1e18964ac8ac6180c489c`. The independent Base RPC check reported receipt status `0x1`, block `0x355cb64`, and a USDC Transfer event for exactly one base unit (0.000001 USDC). This is one verified micropayment, not proof that the full 18-case matrix has passed live.
+
+The 18-case DOCX matrix remains **local UI + real Executa subprocess QA with scripted Anna Sampling fixtures**, not 18 live Anna LLM runs. The live Anna Dashboard checks above are a separate, smaller evidence set. Do not merge the two evidence classes.
+
 These results do not close the Cloud Agent gate. They do not prove live Anna Sampling, actual Cloud Agent deployment, real APS storage/ETag behavior, live `describe`/ `invoke`, or a real injected EIP-1193 wallet session. The E2E wallet provider is simulated. The only recorded real MetaMask hand-off remains the 9 November attempt, which ended with the user rejecting the signature after ExecutionRouter consumed the permission.
 
 ## What has been observed in Anna Runtime
@@ -144,7 +168,7 @@ Only SUBMITTED receipts are eligible for provider polling. REJECTED, ABORTED and
 | Fresh Anna Cloud Agent installation and invoke | **BLOCKED / not evidenced** | Developer CLI authentication cannot access user-runtime endpoints or the Installed Apps UI. Install immutable App 0.1.30 on a test Agent through the signed-in Anna web UI; verify deployment, real `describe`, safe invoke, APS KV/ETag, and failure/late-result behavior. |
 | Anna Console immutable cut | **PASS** | App 0.1.30 / version ID 2109; Executa 0.1.17 / version ID 1063; four platform archives uploaded to Anna CDN; App remains Draft. |
 | Anna review / Marketplace publication | **NOT DONE** | No review submission or publication is evidenced. |
-| Successful signed wallet submission / on-chain settlement | **NOT PROVEN** | The 9 November live recording ends with the user rejecting MetaMask's signature. No transaction hash, broadcast or settlement is proven by that recording or CI. |
+| Successful signed wallet submission / on-chain settlement | **PARTIAL PASS** | One 0.000001 USDC Base transfer was submitted through the live Anna App and independently checked by Base RPC (receipt status 0x1; see the 11 November live Dashboard acceptance section). This does not validate every positive request or every supported network. |
 
 ## Product and security boundaries
 
