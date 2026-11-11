@@ -158,3 +158,18 @@ No production server deployment/restart, key rotation, Registry owner change, wa
 - Operational runtime-bytecode pinning until the actual Mainnet runtime hash is independently verified and configured.
 - Live Verigate Arc payment until its own registration, consumption and payment transactions are independently verified.
 - Real Anna Cloud Agent acceptance or durable Cloud persistence until those lifecycle tests are completed.
+
+
+## Operational update — 2026-11-11 16:17 +05:00
+
+- Current main HEAD `abb507b3e87131c6a87e6f3f4746c1e39ac4c7ef` has a separately checked post-merge CI run `43000194992`: **success**. Main CI is green for that run.
+- PR #55 head remains `10fc288527ce1766ca22c3cf14de22c418778a6b`, Draft, 3 commits ahead / 2 behind main.
+- Its dedicated workflow run `43000038808` and CI run `43000040926` both failed before jobs were created. Jobs API returned zero jobs; commit Check Runs API returned zero check runs. Both run records show event `push`.
+- The PR branch's dedicated workflow YAML includes push on the exact verification branch, path-filtered pull_request to main, and workflow_dispatch. The temporary conditional job in PR ci.yml is gated on pull_request plus the exact head branch; it cannot execute for the observed push event. This accounts for the conditional job not running, but not the dedicated workflow's pre-job failure.
+- No runner/job logs are available. Exact root cause remains unknown. Do not attribute failure to Arc RPC, contract bytecode, or the verification script.
+- No server access, live Arc RPC verification, deployment, transaction broadcast or key operation occurred.
+- Live Mainnet verification remains **not run / not independently verified**. PR #55 must remain Draft and unmerged until the workflow failure is diagnosed and a read-only verification job produces inspectable evidence.
+
+### Immediate next action
+
+Diagnose the GitHub Actions pre-job failure for run `43000038808` from workflow/check-suite/event metadata. Avoid speculative YAML edits and unnecessary reruns. After a successful runner execution, capture chain ID, runtime bytecode hash, Registry owner, enabled issuer and finalized head; only then consider configuring `VERIGATE_ARC_REGISTRY_CODE_HASH` with explicit operational approval.
