@@ -313,6 +313,35 @@ class ArcAuthorityRegistry:
                 "receipt block hash does not match canonical block"
             )
 
+        # Arc uses deterministic finality. Do not add an arbitrary confirmation
+        # count: require the inclusion block to be at or below the RPC's
+        # finalized head, then retain the exact block-hash comparison above.
+        try:
+            finalized = self.rpc.get_block_by_tag("finalized")
+        except (EvmRpcError, AttributeError) as exc:
+            raise ArcAuthorityRegistryError(
+                f"Arc finalized block lookup failed; refusing confirmation: {exc}"
+            ) from exc
+        if not isinstance(finalized, dict):
+            raise ArcAuthorityRegistryError("Arc finalized block is unavailable")
+        finalized_number = finalized.get("number")
+        try:
+            if not isinstance(finalized_number, str) or not finalized_number.startswith("0x"):
+                raise ValueError("invalid finalized block number")
+            finalized_height = int(finalized_number, 16)
+        except (TypeError, ValueError) as exc:
+            raise ArcAuthorityRegistryError("Arc finalized block number is invalid") from exc
+        if finalized_height < block_number_int:
+            raise ArcAuthorityRegistryError(
+                "transaction inclusion block is not yet finalized by Arc"
+            )
+        if finalized_height == block_number_int:
+            finalized_hash = finalized.get("hash")
+            if not isinstance(finalized_hash, str) or finalized_hash.lower() != receipt_block_hash.lower():
+                raise ArcAuthorityRegistryError(
+                    "Arc finalized block hash does not match transaction inclusion"
+                )
+
         timestamp = block.get("timestamp")
         try:
             if isinstance(timestamp, bool):
