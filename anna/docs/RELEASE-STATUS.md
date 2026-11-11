@@ -3,13 +3,13 @@
 **Updated:** 2026-11-11  
 **Repository source candidate:** commit `6eca3bd782fe54ca798ac3fd66a54acde61b41fc` on `main`  
 **Source candidate:** Anna App **0.1.30** · bundled Executa **0.1.17**  
-**Last recorded Anna Console state (10 November):** immutable Draft App **0.1.29** · version ID **2097** · App ID **851**; bundled Executa **0.1.16** · version ID **1042** · Executa ID **1314**
+**Current Anna Console state (11 November):** immutable Draft App **0.1.30** · version ID **2109** · App ID **851**; bundled Executa **0.1.17** · version ID **1063** · Executa ID **1314**
 
 ## Current source candidate — 11 November
 
 PR [#44](https://github.com/rudimentall1/verigate/pull/44) is merged into `main`. Its source candidate is App 0.1.30 / Executa 0.1.17. The source manifest requires bundled Executa >= 0.1.17.
 
-The source candidate is **not** an immutable Anna Console version. The last recorded Console snapshot remains the 0.1.29 / 0.1.16 Draft above. Do not claim that 0.1.30 / 0.1.17 is uploaded, cut, approved, Marketplace-published or installed in a Cloud Agent.
+The source candidate has now been pushed and cut in Anna Console as immutable Draft App 0.1.30 / bundled Executa 0.1.17. It is still **Draft**: it has not been submitted for review or released to the Marketplace. Cloud Agent installation and invocation have not yet been verified.
 
 ### Exact-source main CI
 
@@ -52,6 +52,20 @@ The last recorded Console inspection on 10 November confirmed:
 - The App was in **Draft** state, not Marketplace-published and not submitted for review.
 
 This snapshot predates PR #44. Recheck the Console before changing or cutting any immutable version. Do not overwrite or remove the existing Draft as part of source-level work.
+
+
+### Anna Console cut — 11 November
+
+The exact source checkout at commit `6365bb9983baa90fb2912a93fc7bcd938a4d8220` was validated with Anna CLI 0.1.64 strict schema-4 validation, then pushed and cut through the official CLI against `https://anna.partners`.
+
+- App ID **851**, slug `verigate-authority`, working revision **11**, final bundle status **ready** (3 files, 95.9 KB; 2/3 files deduplicated on upload).
+- Immutable App version **0.1.30**, version ID **2109**.
+- Executa ID **1314**, tool ID `tool-verigate-authority-verigate-authority-28x5jku8`, visibility **app_bundled**, immutable version **0.1.17**, version ID **1063**.
+- The cut uploaded **all four** version 0.1.17 platform archives to Anna CDN (4 uploaded, 0 cached). Executa version content hash: `0bcdb7d2897f282eb6c2f3f723b9ba22be052a0b32c956afcd905bd0beea91a9`.
+- Post-cut `apps status` confirmed App status **draft**, `is_published=false`, `published_at=null`, latest immutable App record 0.1.30 / ID 2109, and version count 10. Executa status confirmed `is_published=false` and Executa latest version 0.1.17 / ID 1063.
+- No `apps release`, review submission or Marketplace publication was run. App 0.1.29 / ID 2097 remains in version history and was not overwritten.
+
+The Cloud Agent test is a separate gate. The authenticated developer CLI can read/write Developer Console state, but the available developer credential receives HTTP 401 from the user-runtime endpoints `GET /api/v1/apps/installed` and `GET /api/v1/agents`. The CLI does not expose the user-facing App-install flow. No Cloud Agent install or invocation is claimed from these Developer API calls. Use the signed-in Anna web UI / authorized user session to install the immutable Draft on a test Agent, then verify deployment status and run safe `describe` / `invoke` checks.
 
 ## What has been observed in Anna Runtime
 
@@ -98,8 +112,8 @@ Only SUBMITTED receipts are eligible for provider polling. REJECTED, ABORTED and
 | Merged source and main CI | **PASS** | [Run 42874904974](https://github.com/rudimentall1/verigate/actions/runs/42874904974): 613 Python tests, 64/64 UI, Contracts, schema-4 validation and Linux 0.1.17 binary smoke test. |
 | Linux Executa 0.1.17 archive | **PASS in CI** | Extracted package smoke test completed successfully in the same run. |
 | Four-platform Executa 0.1.17 archives | **PASS** | [Run 42959224224](https://github.com/rudimentall1/verigate/actions/runs/42959224224): all four reproducible builds, extracted-package smoke tests, artifact uploads and independent SHA-256/manifest checks passed. Workflow artifacts expire 9 February 2027. |
-| Fresh Anna Cloud Agent installation and invoke | **BLOCKED / not evidenced** | Install the candidate in a fresh Cloud Agent and verify tool registration, `describe`, safe invoke, App-scope APS KV/ETag operations, and failure/late-result behavior. |
-| Anna Console immutable cut | **NOT DONE** | Recheck the current Console state, then cut App 0.1.30 with the intended Executa 0.1.17 bundle only after the preceding evidence is accepted. |
+| Fresh Anna Cloud Agent installation and invoke | **BLOCKED / not evidenced** | Developer CLI authentication cannot access user-runtime endpoints or the Installed Apps UI. Install immutable App 0.1.30 on a test Agent through the signed-in Anna web UI; verify deployment, real `describe`, safe invoke, APS KV/ETag, and failure/late-result behavior. |
+| Anna Console immutable cut | **PASS** | App 0.1.30 / version ID 2109; Executa 0.1.17 / version ID 1063; four platform archives uploaded to Anna CDN; App remains Draft. |
 | Anna review / Marketplace publication | **NOT DONE** | No review submission or publication is evidenced. |
 | Successful signed wallet submission / on-chain settlement | **NOT PROVEN** | The 9 November live recording ends with the user rejecting MetaMask's signature. No transaction hash, broadcast or settlement is proven by that recording or CI. |
 
