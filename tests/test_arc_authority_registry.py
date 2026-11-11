@@ -377,7 +377,7 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
         registration_log = {
             "address": registry_address,
             "topics": [
-                REGISTERED_EVENT + "0" * 56,
+                REGISTERED_EVENT,
                 "0x" + authorization_id,
                 "0x" + intent_hash,
                 topic_address(executor),
@@ -387,7 +387,7 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
         consumption_log = {
             "address": registry_address,
             "topics": [
-                CONSUMED_EVENT + "0" * 56,
+                CONSUMED_EVENT,
                 "0x" + authorization_id,
                 "0x" + intent_hash,
                 topic_address(executor),
@@ -498,3 +498,68 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
         assert consumption["transaction_ref"] == consumption_hash
         assert consumption["block_timestamp"] == 101
     
+
+
+def test_find_event_rejects_topic0_with_matching_four_byte_prefix_only():
+    import pytest
+    from integrations.arc_authority_registry import (
+        REGISTERED_EVENT,
+        ArcAuthorityRegistry,
+        ArcAuthorityRegistryError,
+    )
+
+    registry = ArcAuthorityRegistry.__new__(ArcAuthorityRegistry)
+    registry.contract_address = DEFAULT_REGISTRY.lower()
+    registry.executor_address = DEFAULT_EXECUTOR.lower()
+    authorization_id = "ab" * 32
+    intent_hash = "cd" * 32
+    address_topic = "0x" + DEFAULT_EXECUTOR.lower()[2:].rjust(64, "0")
+
+    forged_log = {
+        "address": DEFAULT_REGISTRY,
+        "topics": [
+            REGISTERED_EVENT[:10] + "0" * 56,
+            "0x" + authorization_id,
+            "0x" + intent_hash,
+            address_topic,
+        ],
+    }
+
+    with pytest.raises(ArcAuthorityRegistryError, match="event is missing"):
+        registry._find_event(
+            {"logs": [forged_log]},
+            REGISTERED_EVENT,
+            authorization_id,
+            intent_hash,
+        )
+
+
+def test_find_event_accepts_exact_full_topic0_hash():
+    from integrations.arc_authority_registry import (
+        REGISTERED_EVENT,
+        ArcAuthorityRegistry,
+    )
+
+    registry = ArcAuthorityRegistry.__new__(ArcAuthorityRegistry)
+    registry.contract_address = DEFAULT_REGISTRY.lower()
+    registry.executor_address = DEFAULT_EXECUTOR.lower()
+    authorization_id = "ab" * 32
+    intent_hash = "cd" * 32
+    address_topic = "0x" + DEFAULT_EXECUTOR.lower()[2:].rjust(64, "0")
+
+    exact_log = {
+        "address": DEFAULT_REGISTRY,
+        "topics": [
+            REGISTERED_EVENT,
+            "0x" + authorization_id,
+            "0x" + intent_hash,
+            address_topic,
+        ],
+    }
+
+    assert registry._find_event(
+        {"logs": [exact_log]},
+        REGISTERED_EVENT,
+        authorization_id,
+        intent_hash,
+    ) == exact_log
