@@ -7,7 +7,7 @@
  * Socket transport and the ethers broadcast adapter are separate layers.
  */
 import { createHash, createPublicKey, verify as verifySignature } from "node:crypto";
-import { appendFileSync, closeSync, existsSync, fsyncSync, openSync, readFileSync, unlinkSync } from "node:fs";
+import { appendFileSync, closeSync, fsyncSync, lstatSync, openSync, readFileSync, unlinkSync } from "node:fs";
 
 export const ARC_CHAIN_ID = 5042;
 export const ARC_USDC = "0x3600000000000000000000000000000000000000";
@@ -125,8 +125,16 @@ export function validateFeePolicy({ gasLimit, maxFeePerGas, maxPriorityFeePerGas
 export class OperationJournal {
   constructor(path) { this.path = path; }
   records() {
-    if (!existsSync(this.path)) return [];
-    return readFileSync(this.path, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line));
+    let stat;
+    try { stat = lstatSync(this.path); }
+    catch (error) { if (error.code === "ENOENT") return []; throw error; }
+    assert(stat.isFile(), "journal must be a regular file, not a symlink");
+    assert(stat.nlink === 1, "journal must not have additional hard links");
+    assert((stat.mode & 0o077) === 0, "journal permissions are too broad; require mode 0600 or stricter");
+    if (typeof process.getuid === "function") {
+      assert(stat.uid === process.getuid(), "journal must be owned by the signer process user");
+    }
+    return readFileSync(this.path, "utf8").split("\\n").filter(Boolean).map(line => JSON.parse(line));
   }
   withLock(callback) {
     const lockPath = this.path + ".lock";
