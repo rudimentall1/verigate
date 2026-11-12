@@ -55,6 +55,14 @@ if (( APPLY || PROVISION )); then
   [[ "$(id -u)" -eq 0 ]] || die "this mode must run as root"
 fi
 
+validate_service_account() {
+  local account="$1" entry name password uid gid gecos home shell
+  entry="$(getent passwd "$account")" || die "missing service account $account"
+  IFS=: read -r name password uid gid gecos home shell <<< "$entry"
+  [[ "$name" == "$account" && "$home" == "/nonexistent" && "$shell" == "/usr/sbin/nologin" ]] || die "$account must have home /nonexistent and shell /usr/sbin/nologin"
+  [[ "$(id -gn "$account")" == "$account" ]] || die "account $account must use its matching primary group"
+}
+
 provision_accounts() {
   for role in "${ROLES[@]}"; do
     local account="verigate-signer-${role}"
@@ -62,7 +70,7 @@ provision_accounts() {
     if ! id "$account" >/dev/null 2>&1; then
       useradd --system --gid "$account" --home-dir /nonexistent --shell /usr/sbin/nologin "$account"
     fi
-    [[ "$(id -gn "$account")" == "$account" ]] || die "account $account must use its matching primary group"
+    validate_service_account "$account"
     install -d -o "$account" -g "$account" -m 0700 "/var/lib/verigate-signer-${role}"
   done
   install -d -o root -g root -m 0711 "$CONFIG_ROOT"
@@ -90,7 +98,7 @@ validate_env() {
   local mode name
 
   id "$account" >/dev/null 2>&1 || die "missing service account $account; run --provision-accounts first"
-  [[ "$(id -gn "$account")" == "$account" ]] || die "account $account must use its matching primary group"
+  validate_service_account "$account"
   [[ -f "$file" && ! -L "$file" ]] || die "missing regular environment file: $file"
   [[ "$(stat -c '%U:%G' "$file")" == "root:root" ]] || die "$file must be owned by root:root"
   mode="$(stat -c '%a' "$file")"
