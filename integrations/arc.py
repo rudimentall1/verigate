@@ -208,6 +208,8 @@ class ArcPaymentSettlementVerifier:
         expected_transaction: dict,
         payment_transaction_hash: str,
         consumption_transaction_hash: str,
+        authorization_issued_at: int,
+        authorization_expires_at: int,
     ) -> dict:
         if not isinstance(expected_transaction, dict):
             raise ArcPaymentVerificationError("signed Arc payment transaction is required")
@@ -218,6 +220,17 @@ class ArcPaymentSettlementVerifier:
             raise ArcPaymentVerificationError("payment transaction hash must be a 32-byte 0x-prefixed hash")
         if not _TX_HASH_RE.fullmatch(consumption_transaction_hash or ""):
             raise ArcPaymentVerificationError("consumption transaction hash must be a 32-byte 0x-prefixed hash")
+
+        if (
+            isinstance(authorization_issued_at, bool)
+            or not isinstance(authorization_issued_at, int)
+            or authorization_issued_at < 0
+            or isinstance(authorization_expires_at, bool)
+            or not isinstance(authorization_expires_at, int)
+            or authorization_expires_at <= authorization_issued_at
+            or authorization_expires_at - authorization_issued_at > 300
+        ):
+            raise ArcPaymentVerificationError("authorization validity window is invalid")
 
         try:
             if self.rpc.chain_id() != ARC_CHAIN_ID:
@@ -308,13 +321,24 @@ class ArcPaymentSettlementVerifier:
 
         try:
             payment_block = self.rpc.get_block_by_number(payment_block_number)
+            consumption_block = self.rpc.get_block_by_number(consume_block_number)
             finalized_block = self.rpc.get_block_by_tag("finalized")
         except EvmRpcError as exc:
             raise EvmRpcError(f"Arc finality lookup failed: {exc}") from exc
         except AttributeError as exc:
             raise ArcPaymentVerificationError(f"Arc finality lookup is unavailable: {exc}") from exc
-        if not isinstance(payment_block, dict) or not isinstance(finalized_block, dict):
-            raise ArcPaymentVerificationError("Arc payment block or finalized head is unavailable")
+        if (
+            not isinstance(payment_block, dict)
+            or not isinstance(consumption_block, dict)
+            or not isinstance(finalized_block, dict)
+        ):
+            raise ArcPaymentVerificationError("Arc payment, consumption block or finalized head is unavailable")
+        if (
+            _rpc_int(consumption_block.get("number"), "consumption block number") != consume_block_number
+            or str(consumption_block.get("hash", "")).lower()
+            != str(consumption_receipt.get("blockHash", "")).lower()
+        ):
+            raise ArcPaymentVerificationError("Registry consumption block hash does not match the canonical block")
 
         payment_block_hash = payment_block.get("hash")
         receipt_block_hash = payment_receipt.get("blockHash")
@@ -335,6 +359,10 @@ class ArcPaymentSettlementVerifier:
             raise ArcPaymentVerificationError("Arc finalized block hash does not match the payment block")
 
         timestamp = _rpc_int(payment_block.get("timestamp"), "payment block timestamp")
+        if timestamp < authorization_issued_at:
+            raise ArcPaymentVerificationError("USDC payment was included before authorization issuance")
+        if timestamp >= authorization_expires_at:
+            raise ArcPaymentVerificationError("USDC payment was included at or after authorization expiry")
         logs = payment_receipt.get("logs")
         if not isinstance(logs, list):
             raise ArcPaymentVerificationError("payment receipt logs are missing")
