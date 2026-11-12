@@ -111,3 +111,13 @@ test("Arc adapter rejects a disabled issuer and an issuer key/address mismatch",
   });
   await assert.rejects(b.initialize(), /issuer signer address differs/);
 });
+
+test("Arc agent signer cannot reuse the Registry issuer address", async () => {
+  const sameAddress = mocks({ wallet: { getAddress: async () => ISSUER } });
+  const adapter = await createArcEthersAdapter({
+    provider: sameAddress.provider, wallet: sameAddress.wallet, registryAddress: REGISTRY,
+    role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await assert.rejects(adapter.initialize(), /distinct address from the Registry issuer/);
+});
