@@ -64,6 +64,7 @@ export async function createArcEthersAdapter({
   async function execute(input) {
     assert(initialized, "Arc signer adapter must pass startup verification before use");
     const tx = input?.transaction;
+    assert(typeof input?.validateBeforeBroadcast === "function", "authorization revalidation callback is required");
     assert(typeof input?.onBroadcast === "function", "durable broadcast journal callback is required");
     assert(tx && Number(tx.chainId) === ARC_CHAIN_ID, "derived transaction is not bound to Arc Mainnet");
     assert(normalizeAddress(tx.to, "derived transaction destination") === tx.to.toLowerCase(), "derived destination is malformed");
@@ -78,6 +79,7 @@ export async function createArcEthersAdapter({
     assert(estimate > 0n && estimate <= limits.gasLimit, "estimated gas exceeds signer gas limit");
 
     const nonce = await provider.getTransactionCount(address, "pending");
+    await input.validateBeforeBroadcast();
     const response = await signer.sendTransaction({
       chainId: ARC_CHAIN_ID, nonce, type: 2,
       to: tx.to, data: tx.data, value: 0n,
