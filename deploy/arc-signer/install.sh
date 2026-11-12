@@ -148,7 +148,12 @@ if (( ! APPLY )); then
   exit 0
 fi
 
-install -o root -g root -m 0644 "${SCRIPT_DIR}/../systemd/${UNIT_NAME}" "$TARGET_UNIT"
+if [[ -e "$TARGET_UNIT" || -L "$TARGET_UNIT" ]]; then
+  [[ -f "$TARGET_UNIT" && ! -L "$TARGET_UNIT" ]] || die "existing unit path is not a regular file"
+  cmp -s "$TARGET_UNIT" "${SCRIPT_DIR}/../systemd/${UNIT_NAME}" || die "existing unit differs from the reviewed template; inspect it manually before replacement"
+else
+  install -o root -g root -m 0644 "${SCRIPT_DIR}/../systemd/${UNIT_NAME}" "$TARGET_UNIT"
+fi
 systemctl daemon-reload
 log "installed unit template and reloaded systemd"
 log "units were NOT enabled or started; keys/config were NOT created or changed"
