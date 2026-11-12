@@ -46,7 +46,7 @@ The issuer instance must not share its key file, Unix socket, process identity o
 
 Use a durable append-only operation journal. Before broadcast, persist and fsync a reservation keyed by authorization ID plus operation. Immediately after the RPC returns a transaction hash, append and fsync a `broadcast` record containing that hash, before waiting for the receipt. After receipt verification, append and fsync the terminal outcome.
 
-- Authorization IDs are normalized to lowercase bare bytes32 for journal keys so prefixed/bare or mixed-case forms cannot create separate replay records.
+- Authorization IDs are normalized to lowercase bare bytes32, and journal keys also bind the signed authorization digest. Prefix/case variants cannot create separate replay records, while two distinct signed intents reusing one authorization ID cannot share a consume/payment gate.
 - A repeated operation with a completed record returns the existing result; it never broadcasts again.
 - A reservation without a recorded transaction hash is ambiguous (the process may have crashed after broadcast but before the hash was durably recorded). A `broadcast` record contains the exact transaction hash but is still unresolved until receipt verification is persisted. Both states reject retries and require operator reconciliation; never auto-retry an unresolved operation.
 - Serialize journal mutation and requests. Daily budget accounting includes reserved and broadcast-but-unresolved operations even across UTC midnight, because a pending transaction may be mined on the following day. Completed operations are charged by their UTC settlement day. Fail closed on lock, parse, fsync or persistence errors.
