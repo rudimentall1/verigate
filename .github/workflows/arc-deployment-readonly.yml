@@ -64,16 +64,7 @@ jobs:
       - name: Preview safe npm audit remediation (dry run)
         shell: bash
         run: |
-          npm audit fix --dry-run --json > /tmp/npm-audit-fix-preview.json || true
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          const report = JSON.parse(fs.readFileSync('/tmp/npm-audit-fix-preview.json', 'utf8'));
-          console.log('FIX_PREVIEW_METADATA', JSON.stringify(report.audit?.metadata?.vulnerabilities ?? report.metadata?.vulnerabilities ?? {}));
-          console.log('FIX_PREVIEW_ADDED', JSON.stringify(report.added ?? []));
-          console.log('FIX_PREVIEW_REMOVED', JSON.stringify(report.removed ?? []));
-          console.log('FIX_PREVIEW_CHANGED', JSON.stringify(report.changed ?? []));
-          console.log('FIX_PREVIEW_AUDIT', JSON.stringify(report.audit?.fixAvailable ?? report.fixAvailable ?? null));
-          NODE
+          npm audit fix --dry-run || true
 
       - name: Verify reviewed artifact against Arc Mainnet
         env:
