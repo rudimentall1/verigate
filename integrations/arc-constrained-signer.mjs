@@ -147,6 +147,10 @@ export class OperationJournal {
   reserve(authorizationId, operation, budget = {}) {
     return this.withLock(() => {
       const rows = this.records();
+      if (operation === "payment") {
+        const consume = rows.filter(x => x.authorizationId === authorizationId && x.operation === "consume").at(-1);
+        assert(consume?.state === "complete", "payment requires a completed consume operation for this authorization");
+      }
       const prior = rows.filter(x => x.authorizationId === authorizationId && x.operation === operation).at(-1);
       if (prior) {
         if (prior.state === "complete") return { replay: true, result: prior.result };
