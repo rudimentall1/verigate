@@ -83,6 +83,21 @@ export function createArcSignerSocketServer({
         // accept transaction overrides from the caller.
         const result = await executeOperation({
           transaction: derived, feePolicy, role,
+          validateBeforeBroadcast: () => {
+            const current = deriveArcOperation({
+              role, operation: request.operation, authorization: request.authorization,
+              publicKeyPem: authorizationPublicKeyPem, registryAddress, signerAddress,
+              issuerAddress, now: now(),
+            });
+            assert(
+              current.authorizationId === derived.authorizationId &&
+              current.operation === derived.operation &&
+              current.chainId === derived.chainId &&
+              current.to === derived.to &&
+              current.data === derived.data,
+              "authorization-derived transaction changed before broadcast",
+            );
+          },
           onBroadcast: txHash => journal.markBroadcast(derived.authorizationId, derived.operation, txHash),
         });
         assert(result && typeof result === "object" && typeof result.txHash === "string", "broadcast adapter returned no transaction hash");
