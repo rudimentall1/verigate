@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 readonly UNIT_FILE="/etc/systemd/system/verigate-arc-signer@.service"
+readonly REPO_UNIT="/opt/verigate/deploy/systemd/verigate-arc-signer@.service"
 readonly ROLES=(issuer agent)
 APPLY=0
 
@@ -30,6 +31,7 @@ while (($#)); do
 done
 
 command -v systemctl >/dev/null || die "systemctl is required"
+command -v cmp >/dev/null || die "cmp is required"
 if (( APPLY )); then [[ "$(id -u)" -eq 0 ]] || die "--apply must run as root"; fi
 
 for role in "${ROLES[@]}"; do
@@ -38,8 +40,10 @@ for role in "${ROLES[@]}"; do
   if systemctl is-enabled --quiet "$unit"; then log "unit is enabled: $unit"; else log "unit not enabled: $unit"; fi
 done
 
-if [[ -e "$UNIT_FILE" ]]; then
+if [[ -e "$UNIT_FILE" || -L "$UNIT_FILE" ]]; then
   [[ -f "$UNIT_FILE" && ! -L "$UNIT_FILE" ]] || die "unit path is not a regular file: $UNIT_FILE"
+  [[ -f "$REPO_UNIT" ]] || die "reviewed repository unit template missing: $REPO_UNIT"
+  cmp -s "$UNIT_FILE" "$REPO_UNIT" || die "installed unit differs from the reviewed template; inspect it manually and do not remove it automatically"
   log "would remove: $UNIT_FILE"
 else
   log "unit template is already absent"
