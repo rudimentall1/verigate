@@ -31,6 +31,8 @@ DEFAULT_NETWORKS: tuple[NetworkDescriptor, ...] = (
     NetworkDescriptor("zksync-era", "evm", 324, "ETH", True, ("zksync",)),
     NetworkDescriptor("arc", "evm", 5042, "USDC", True),
     NetworkDescriptor("solana", "solana", None, "SOL", True, ("sol",)),
+    # Known for signed authorization consumption only; no Substrate broadcaster is registered here.
+    NetworkDescriptor("portaldot-v3-substrate", "substrate", None, "POT", False, ("portaldot-v3",)),
 )
 
 class NetworkRegistry:
