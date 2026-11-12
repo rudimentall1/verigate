@@ -48,6 +48,8 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 [[ -f "${REPO_ROOT}/scripts/run_arc_signer.mjs" ]] || die "signer daemon entrypoint missing"
 [[ -f "${SCRIPT_DIR}/../systemd/${UNIT_NAME}" ]] || die "systemd unit template missing"
 
+[[ -x /usr/sbin/nologin ]] || die "/usr/sbin/nologin is required for non-login signer accounts"
+
 for cmd in systemctl getent id install stat grep groupadd useradd; do
   command -v "$cmd" >/dev/null || die "required command missing: $cmd"
 done
