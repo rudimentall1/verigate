@@ -53,6 +53,7 @@ test("Arc ethers adapter pins chain and Registry code, then broadcasts only deri
   assert.equal(info.chainId, ARC_CHAIN_ID);
   const result = await adapter.executeOperation({
     transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n },
+    validateBeforeBroadcast: async () => {},
     onBroadcast: async () => {},
   });
   assert.equal(result.txHash, HASH);
@@ -141,6 +142,7 @@ test("Arc adapter rejects receipt sender or destination substitution", async () 
   await a.initialize();
   await assert.rejects(a.executeOperation({
     transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n },
+    validateBeforeBroadcast: async () => {},
     onBroadcast: async () => {},
   }), /receipt sender does not match/);
 
@@ -161,6 +163,7 @@ test("Arc adapter rejects receipt sender or destination substitution", async () 
   await b.initialize();
   await assert.rejects(b.executeOperation({
     transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n },
+    validateBeforeBroadcast: async () => {},
     onBroadcast: async () => {},
   }), /receipt destination does not match/);
 });
