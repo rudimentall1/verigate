@@ -42,7 +42,7 @@ function authFixture(overrides = {}) {
     signature: sign(null, Buffer.from(canonicalJson(payload)), keys.privateKey).toString("base64"),
   };
   const pem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
-  return { authorization, pem, publicKeyPem: pem };
+  return { authorization, pem, publicKeyPem: pem, privateKey: keys.privateKey };
 }
 
 test("verifies signed authorization and derives exact USDC transfer", () => {
@@ -118,12 +118,12 @@ test("journal fails closed on unresolved reservation and duplicate completion", 
 test("rejects Arc metadata that conflicts with the pinned chain or token", () => {
   const wrongChain = authFixture();
   wrongChain.authorization.payload.action.metadata.arc.chain_id = 1;
-  wrongChain.authorization.signature = sign(null, Buffer.from(canonicalJson(wrongChain.authorization.payload)), generateKeyPairSync("ed25519").privateKey).toString("base64");
-  assert.throws(() => verifyExecutionAuthorization(wrongChain.authorization, wrongChain.pem), /invalid Verigate authorization signature/);
+  wrongChain.authorization.signature = sign(null, Buffer.from(canonicalJson(wrongChain.authorization.payload)), wrongChain.privateKey).toString("base64");
+  assert.throws(() => verifyExecutionAuthorization(wrongChain.authorization, wrongChain.pem), /Arc metadata chain/);
   const wrongToken = authFixture();
   wrongToken.authorization.payload.action.metadata.arc.token_address = AGENT;
-  wrongToken.authorization.signature = sign(null, Buffer.from(canonicalJson(wrongToken.authorization.payload)), generateKeyPairSync("ed25519").privateKey).toString("base64");
-  assert.throws(() => verifyExecutionAuthorization(wrongToken.authorization, wrongToken.pem), /invalid Verigate authorization signature/);
+  wrongToken.authorization.signature = sign(null, Buffer.from(canonicalJson(wrongToken.authorization.payload)), wrongToken.privateKey).toString("base64");
+  assert.throws(() => verifyExecutionAuthorization(wrongToken.authorization, wrongToken.pem), /Arc metadata token/);
 });
 
 test("journal enforces cumulative daily native-token budget across reservations and completions", () => {
