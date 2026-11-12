@@ -83,13 +83,13 @@ The checked-in systemd template is `deploy/systemd/verigate-arc-signer@.service`
 
 The scripts assume the repository is checked out at `/opt/verigate`. They are intentionally staged:
 
-1. Review `deploy/arc-signer/install.sh`. Run `sudo deploy/arc-signer/install.sh --provision-accounts` only when explicitly approved. This creates the two dedicated system users/groups and private state/config directories. It does not create keys.
+1. Review `deploy/arc-signer/install.sh`. Run `sudo bash deploy/arc-signer/install.sh --provision-accounts` only when explicitly approved. This creates the two dedicated system users/groups and private state/config directories. It does not create keys.
 2. Provision distinct EVM private-key files and separate copies of the pinned Verigate authorization public key at the paths in the role templates. Each file must be owned by its matching signer account and mode 0600. Key generation/import is an operator action and is not automated by these scripts.
 3. Copy `issuer.env.example` and `agent.env.example` to `/etc/verigate-signer/{issuer,agent}.env`. Replace every placeholder, measure fee limits from real representative receipts, verify the issuer address, then set owner root:root and mode 0640. Never put private keys in environment files.
-4. Run `sudo deploy/arc-signer/install.sh --check`. It is read-only and must pass for both roles.
-5. After independent review, run `sudo deploy/arc-signer/install.sh --apply`. It installs the unit template and reloads systemd only. It does not enable or start either service.
+4. Run `sudo bash deploy/arc-signer/install.sh --check`. It is read-only and must pass for both roles.
+5. After independent review, run `sudo bash deploy/arc-signer/install.sh --apply`. It installs the unit template and reloads systemd only. It does not enable or start either service.
 6. Before starting the agent signer, separately grant only the intended agent runtime identity access to the agent socket group. Do not grant it access to the issuer socket or either key file. Review the actual caller identity and group membership first.
-7. To roll back, run `sudo deploy/arc-signer/rollback.sh --check`, inspect the plan, then `sudo deploy/arc-signer/rollback.sh --apply`. Rollback stops/disables the two signer units and removes the unit template. It intentionally preserves keys, env files, journals, logs and service accounts for forensic review.
+7. To roll back, run `sudo bash deploy/arc-signer/rollback.sh --check`, inspect the plan, then `sudo bash deploy/arc-signer/rollback.sh --apply`. Rollback stops/disables the two signer units and removes the unit template. It intentionally preserves keys, env files, journals, logs and service accounts for forensic review.
 
 The example environment files contain deliberate placeholders and will fail installer validation until replaced. No fee ceilings are supplied here: derive and review them from actual Arc receipts. The scripts require GNU/Linux utilities including systemd, GNU `stat`, `useradd` and `groupadd`; run them only on a disposable test host until the clean-room test gate passes.
 
