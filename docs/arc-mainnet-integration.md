@@ -118,9 +118,9 @@ the user's wallet; Verigate does not custody keys or broadcast the payment.
 Arc authorizations are explicitly rejected with HTTP 409. This route cannot
 be used to skip Registry registration and consumption.
 
-## Wallet client transaction sequence
+## Autonomous agent execution sequence
 
-The optional EIP-1193 helper is documented in
+The optional EIP-1193/browser adapter is documented in
 [`docs/ARC_WALLET_CLIENT.md`](ARC_WALLET_CLIENT.md).
 
 The primary autonomous-agent path is implemented by
@@ -140,15 +140,15 @@ The primary autonomous-agent path is implemented by
 8. Verigate verifies the payment receipt, matching USDC Transfer event and
    finalized canonical block, then returns settlement evidence.
 
-The issuer signer and agent signer are separate. The issuer private key is
-not distributed to agents and neither private key is stored by Verigate.
+The issuer signer and agent signer are separate. The issuer must be the
+Registry owner or an enabled issuer. The per-authorization executor is bound
+to the agent's signed EVM payment sender. Registration is submitted by the
+issuer; consumption and payment are submitted by that agent executor. The
+issuer private key is not distributed to agents and neither key is stored by
+Verigate.
 
-The optional browser adapter is documented in
-`docs/ARC_WALLET_CLIENT.md`; it is for interactive wallet sessions, not the
+The optional browser adapter is for interactive wallet sessions, not the
 primary autonomous-agent architecture.
-
-The Registry executor and payment sender may be different accounts. The
-client checks the account required by each transaction.
 
 ## Security boundary and limitations
 
