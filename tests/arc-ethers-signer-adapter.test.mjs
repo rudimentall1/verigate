@@ -30,7 +30,7 @@ function mocks(overrides = {}) {
         hash: HASH,
         wait: async () => ({
           hash: HASH, status: 1, blockNumber: 123,
-          gasUsed: 21000n, effectiveGasPrice: 3n,
+          gasUsed: 21000n, gasPrice: 3n,
         }),
       };
     },
