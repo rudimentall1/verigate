@@ -52,8 +52,8 @@ fi
 
 for role in "${ROLES[@]}"; do
   unit="verigate-arc-signer@${role}.service"
-  systemctl stop "$unit" 2>/dev/null || true
-  systemctl disable "$unit" 2>/dev/null || true
+  if systemctl is-active --quiet "$unit"; then systemctl stop "$unit"; fi
+  if systemctl is-enabled --quiet "$unit"; then systemctl disable "$unit"; fi
 done
 
 rm -f -- "$UNIT_FILE"
