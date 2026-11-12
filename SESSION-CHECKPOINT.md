@@ -527,7 +527,7 @@ Next safe dependency action:
    - Added policy, socket server, socket client, ethers adapter and signer-client orchestration tests.
    - Full CI run [43186283832](https://github.com/rudimentall1/verigate/actions/runs/43186283832) passed 4/4 jobs (`contracts`, `test`, `container`, `anna-ui`) on implementation head `a4089c91e2272fc6745f081046c0798a3470a441`.
    - CI run [43189295403](https://github.com/rudimentall1/verigate/actions/runs/43189295403) passed 4/4 jobs on `f55b5a60e96d104075f408e644465cfa5febce8c`, covering installer syntax and environment validation before the later consume-gate changes.
-   - Latest CI run [43191258492](https://github.com/rudimentall1/verigate/actions/runs/43191258492) is running on implementation head `5f85702f2bdd9cd0aef7dcc90d72bc155c40c202`. `contracts`, `test` and `container` passed; `anna-ui` remains in progress. The contracts job includes the disposable Linux installer/rollback smoke test.
+   - Latest CI run [43191258492](https://github.com/rudimentall1/verigate/actions/runs/43191258492) passed 4/4 jobs (`contracts`, `test`, `container`, `anna-ui`) on implementation head `5f85702f2bdd9cd0aef7dcc90d72bc155c40c202`. The contracts job includes the disposable Linux installer/rollback smoke test, which passed.
 
 ### Verified Registry pin
 
