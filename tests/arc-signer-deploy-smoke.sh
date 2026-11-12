@@ -95,6 +95,9 @@ log "installing unit without enabling or starting services"
 bash /opt/verigate/deploy/arc-signer/install.sh --apply
 [[ -f "$UNIT_FILE" ]] || fail "unit template was not installed"
 cmp -s "$UNIT_FILE" /opt/verigate/deploy/systemd/verigate-arc-signer@.service || fail "installed unit differs from repository template"
+command -v systemd-analyze >/dev/null || fail "systemd-analyze is required for unit validation"
+systemd-analyze verify "$UNIT_FILE"
+log "systemd-analyze verified the installed unit template"
 
 log "running rollback preflight and rollback"
 bash /opt/verigate/deploy/arc-signer/rollback.sh --check
