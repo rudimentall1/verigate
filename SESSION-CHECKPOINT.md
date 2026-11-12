@@ -522,12 +522,12 @@ Next safe dependency action:
    - A later test adds the prefixed bytes32 authorization-ID case. [Run 43183096446](https://github.com/rudimentall1/verigate/actions/runs/43183096446) was still in progress at checkpoint time.
    - Full CI on the exact latest branch head is not yet confirmed green.
 
-### Important Registry address blocker
+### Verified Registry pin
 
-The legacy Registry default repeated in the repository and deployment notes,
-`0x4D09CdD490c1Ce48BCB6D1A5c1A6Bf41E2f5e853D`, contains **41 hex characters** after `0x`; it is not a valid 20-byte EVM address.
-
-The signer deliberately does not inherit that default. It requires an explicit valid `VERIGATE_ARC_REGISTRY_ADDRESS` and verifies the configured address's runtime hash and issuer mapping. Do not provision or start either signer role until the actual Registry address has been recovered from the deployment receipt and checked against live Arc state. Do not guess which character is wrong.
+- Registry: `0x4D09CdD490c1Ce48BCB6DA5c1A6Bf41E2f5e853D`.
+- Read-only deployment verification: [run 43160472757](https://github.com/rudimentall1/verigate/actions/runs/43160472757).
+- The run confirmed Arc chain ID 5042, the Registry address, owner, enabled issuer, deployment transaction/block and matching deployed runtime hash `0x6b229c049b9ba0007c318a10759a9827b5a798a4e511611872dcd4cf3973b160`.
+- The signer now pins this exact 20-byte address and rejects a different configured value. The earlier 41-character address in a previous checkpoint note was a transcription error, not the repository's actual deployment address.
 
 ### Explicit limitations — not production-ready
 
