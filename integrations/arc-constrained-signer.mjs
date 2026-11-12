@@ -124,12 +124,16 @@ export class OperationJournal {
     if (!existsSync(this.path)) return [];
     return readFileSync(this.path, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line));
   }
-  reserve(authorizationId, operation) {
+  withLock(callback) {
     const lockPath = this.path + ".lock";
     let lock;
     try { lock = openSync(lockPath, "wx", 0o600); }
     catch { throw new Error("journal is locked; refusing concurrent operation"); }
-    try {
+    try { return callback(); }
+    finally { closeSync(lock); try { unlinkSync(lockPath); } catch {} }
+  }
+  reserve(authorizationId, operation) {
+    return this.withLock(() => {
       const rows = this.records();
       const prior = rows.filter(x => x.authorizationId === authorizationId && x.operation === operation).at(-1);
       if (prior) {
@@ -138,17 +142,22 @@ export class OperationJournal {
       }
       const fd = openSync(this.path, "a", 0o600);
       try {
-        appendFileSync(fd, JSON.stringify({ authorizationId, operation, state: "reserved", at: Date.now() }) + "\n");
+        appendFileSync(fd, JSON.stringify({ authorizationId, operation, state: "reserved", at: Date.now() }) + "\\n");
         fsyncSync(fd);
       } finally { closeSync(fd); }
       return { replay: false };
-    } finally { closeSync(lock); }
+    });
   }
   complete(authorizationId, operation, result) {
-    const fd = openSync(this.path, "a", 0o600);
-    try {
-      appendFileSync(fd, JSON.stringify({ authorizationId, operation, state: "complete", result, at: Date.now() }) + "\n");
-      fsyncSync(fd);
-    } finally { closeSync(fd); }
+    return this.withLock(() => {
+      const rows = this.records();
+      const prior = rows.filter(x => x.authorizationId === authorizationId && x.operation === operation).at(-1);
+      assert(prior?.state === "reserved", "completion requires an existing unresolved reservation");
+      const fd = openSync(this.path, "a", 0o600);
+      try {
+        appendFileSync(fd, JSON.stringify({ authorizationId, operation, state: "complete", result, at: Date.now() }) + "\\n");
+        fsyncSync(fd);
+      } finally { closeSync(fd); }
+    });
   }
 }
