@@ -468,3 +468,55 @@ Next safe dependency action:
 - Arc read-only deployment verification in that run: **PASS**.
 - Full CI run [43161791702](https://github.com/rudimentall1/verigate/actions/runs/43161791702): test, contracts and container jobs passed at last inspection; `anna-ui` was still in progress.
 - No dependency update, lockfile change, server change or production deployment was made.
+
+
+## 20. Arc constrained signer service — 2026-11-12
+
+### Workstream and branch
+
+- Dedicated branch: `feat/arc-agent-signer-service-2026-11-12`.
+- Branch is based on the PR #57 head `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`, not on `main`.
+- Current branch head at checkpoint update: `40e7b086612721494c24e22197133a909f37dbb5`.
+- PR #57 remains separate and must not be merged or modified as part of signer work.
+- This checkpoint update is on the signer branch; it does not update `main`.
+
+### Design and implementation status
+
+Added `docs/ARC_AGENT_SIGNER_SERVICE.md` with the intended trust boundaries, two separate OS identities, Unix-domain-socket-only interface, role separation, replay/crash behavior, fee controls, Gensyn2 layout, adversarial test matrix and release gates.
+
+Added `integrations/arc-constrained-signer.mjs` as an initial policy core:
+- Verifies pinned Ed25519 authorization signatures and the 300-second validity window.
+- Validates Arc Mainnet (5042), canonical Arc USDC, six decimals, zero native value and exact transfer calldata.
+- Derives Registry registration, Registry consumption and USDC payment calldata internally.
+- Separates issuer-only registration from agent-only consumption/payment.
+- Validates configured gas/fee ceilings against live fee data.
+- Adds an append-only fsync-backed journal with exclusive locking, replay detection and fail-closed unresolved reservations.
+
+Added `tests/arc-constrained-signer.test.mjs` and npm script `test:arc-constrained-signer`. Updated `.github/workflows/ci.yml` to run the new test suite.
+
+### Explicit limitations — not yet production-ready
+
+- This is a policy core, **not yet a running signer service**.
+- No Unix socket server/client, systemd units, restricted signer process, key loading, transaction broadcast adapter or deployment scripts have been implemented.
+- Daily native-token budget is represented in the fee policy configuration but cumulative daily accounting has not yet been connected to the journal/broadcast path.
+- Registry runtime bytecode pinning must be wired into service startup and checked against the reviewed deployed runtime hash.
+- No signer keys were created, copied or exposed.
+- No transaction was broadcast.
+- Gensyn2 was not accessed or modified.
+
+### Next gates
+
+1. Run the new policy tests and full repository CI on this exact branch head; fix all failures before proceeding.
+2. Implement the Unix socket transport and role-specific signer process. Agent role must not expose registration or generic signing.
+3. Add measured fee policy, cumulative daily budget accounting, nonce handling and crash/reconciliation semantics around actual broadcasts.
+4. Add systemd hardening, key provisioning instructions and install/rollback scripts.
+5. Validate on a disposable Linux environment before touching Gensyn2.
+6. On Gensyn2, perform read-only inventory first; do not modify FLOP, AegisForge, OWNERA or unrelated services.
+7. No mainnet transaction or production key provisioning without a separate explicit decision.
+
+### Evidence classification
+
+- Policy core and tests: source added; CI result pending at this checkpoint.
+- Signer daemon: not implemented.
+- Gensyn2 installation: not started.
+- Live Arc payment through this signer: not performed.
