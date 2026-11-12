@@ -135,6 +135,10 @@ The EIP-1193 helper is documented in
 8. Present the payment details and call
    `broadcastAuthorizedArcPayment` only as a separate, explicit wallet
    action.
+9. Submit the payment transaction hash to
+   `POST /v1/integrations/arc/payment/confirm` (or use the client's
+   `confirmArcPayment` helper) and retain the returned finalized settlement
+   evidence.
 
 The Registry executor and payment sender may be different accounts. The
 client checks the account required by each transaction.
