@@ -41,8 +41,31 @@
     "source_metadata_hash_matches_archived_source": true
   },
   "notes": [
-    "This is a historical deployment artifact snapshot, not the active source tree.",
-    "The current main source has a stricter consume expiry condition (< instead of <=), so its bytecode is intentionally not expected to hash to this deployed runtime.",
-    "Runtime hash is expected to be checked against Arc Mainnet before accepting deployment verification."
+    "Historical deployment source and artifact snapshot; not the active source tree.",
+    "Current main uses a stricter consume expiry condition (<) than the deployed contract (<=); the supported API verification layer independently rejects inclusion at or after expiry.",
+    "Historical registry calls are included because they were visible in the user-provided explorer screenshot; the read-only verifier validates each receipt, event and final Registry state."
+  ],
+  "historical_registry_calls": [
+    {
+      "block": 30024727,
+      "selector": "0xb267748a",
+      "method": "registerAuthorization",
+      "expected_event": "AuthorizationRegistered",
+      "observed_in": "user-provided Arc Explorer executor transaction list"
+    },
+    {
+      "block": 30025935,
+      "selector": "0xb267748a",
+      "method": "registerAuthorization",
+      "expected_event": "AuthorizationRegistered",
+      "observed_in": "user-provided Arc Explorer executor transaction list"
+    },
+    {
+      "block": 30026205,
+      "selector": "0xbad56b75",
+      "method": "consumeAuthorization",
+      "expected_event": "AuthorizationConsumed",
+      "observed_in": "user-provided Arc Explorer executor transaction list"
+    }
   ]
 }
