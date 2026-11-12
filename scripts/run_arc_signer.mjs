@@ -4,6 +4,7 @@
  * Run issuer and agent instances under different Linux users and key files.
  */
 import { readFileSync, lstatSync } from "node:fs";
+import { dirname } from "node:path";
 import { OperationJournal, ARC_CHAIN_ID } from "../integrations/arc-constrained-signer.mjs";
 import { createArcSignerSocketServer } from "../integrations/arc-signer-socket.mjs";
 import { createArcEthersAdapter } from "../integrations/arc-ethers-signer-adapter.mjs";
@@ -26,6 +27,17 @@ function readProtectedFile(path, label, requirePrivateMode = false) {
   return readFileSync(path, "utf8").trim();
 }
 
+function validateJournalDirectory(path) {
+  const directory = lstatSync(dirname(path));
+  if (!directory.isDirectory()) throw new Error("journal parent must be a real directory, not a symlink");
+  if (typeof process.getuid === "function" && directory.uid !== process.getuid()) {
+    throw new Error("journal directory must be owned by the signer process user");
+  }
+  if ((directory.mode & 0o077) !== 0) {
+    throw new Error("journal directory permissions are too broad; require mode 0700 or stricter");
+  }
+}
+
 function integerEnv(name, fallback) {
   const value = process.env[name] ?? fallback;
   if (!/^[1-9][0-9]*$/.test(value)) throw new Error(name + " must be a positive integer");
@@ -44,6 +56,7 @@ async function main() {
   const privateKey = readProtectedFile(privateKeyPath, "Signer private key", true);
   if (!/^0x[0-9a-fA-F]{64}$/.test(privateKey)) throw new Error("Signer private key file must contain one 32-byte EVM key");
   const publicKeyPem = readProtectedFile(publicKeyPath, "Verigate authorization public key");
+  validateJournalDirectory(journalPath);
   const issuerAddress = required("VERIGATE_ARC_ISSUER_ADDRESS");
   const registryAddress = required("VERIGATE_ARC_REGISTRY_ADDRESS");
   const expectedRegistryCodeHash = required("VERIGATE_ARC_REGISTRY_CODE_HASH");
