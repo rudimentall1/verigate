@@ -1,6 +1,6 @@
 # Verigate Session Checkpoint
 
-**Updated:** 2026-11-11 14:50 +05:00  
+**Updated:** 2026-11-12 09:51 +05:00  
 **Repository:** rudimentall1/verigate  
 **Default branch:** main  
 **Latest product merge before this checkpoint refresh:** 6ab3a289c300cb6d614d27bb7134ae251f7db261  
@@ -259,3 +259,88 @@ The same screenshot also lists later contract calls from the executor to the Reg
 Do not refer to `0x4c192668...` as the deployment hash. Use `0xe85784e8...` for Registry deployment and `0x4c192668...` for the USDC approval. Keep the runtime artifact investigation open; do not redeploy, change the expected code hash, or weaken the verifier to make the mismatch disappear.
 
 No server command, contract call, transaction broadcast, deployment, key operation or production configuration change was performed while adding this checkpoint clarification.
+
+
+## 16. Arc Registry deployment artifact recovered and independently re-verified — 2026-11-12
+
+### Root cause of the earlier runtime mismatch
+
+The earlier read-only verifier rebuilt the current `main` Solidity source and compared that output with the immutable Arc Mainnet deployment. This was the wrong comparison baseline.
+
+The original deployment source and Foundry artifact were recovered from the retained historical `integration/arc` ref:
+
+- Deployed source blob: `adf46b928ee82ffc780a7f238272defcfeb73d8b`.
+- Original Foundry artifact blob: `11f7a16698f680c4e66f6d37786249f703e63faa`.
+- Original compiler: Solidity `0.8.24+commit.e11b9ed9`.
+- EVM target: `cancun`.
+- Optimizer: enabled, 200 runs.
+- `viaIR`: false.
+- Metadata: IPFS bytecode hash, CBOR appended, literal source content disabled.
+- Metadata source unit: `src/VerigateAuthorityRegistry.sol`.
+- Deployed source expiry boundary in `consumeAuthorization`: `block.timestamp <= auth.validUntil`.
+- Current `main` source expiry boundary: `block.timestamp < auth.validUntil`.
+- Current npm compiler range: `^0.8.37`; previous verifier did not explicitly set the historical EVM target or use the historical source-unit name.
+
+The source's locally computed Keccak-256 exactly matches the compiler metadata source hash:
+`0x117126830a75b649615e382998b63312958e1f7cc64c4c98a356192f8095c684`.
+
+The recovered runtime artifact is 3,119 bytes. Its Keccak-256 is:
+`0x6b229c049b9ba0007c318a10759a9827b5a798a4e511611872dcd4cf3973b160`.
+
+That runtime hash is an exact match for the deployed runtime hash previously returned by Arc RPC in run #43012817343. The previous mismatch was caused by comparing different source/compiler builds; it was **not** evidence that the Registry had not deployed or that the deployment transaction was wrong.
+
+### Recovery committed for review in PR #56
+
+Draft PR: https://github.com/rudimentall1/verigate/pull/56  
+Branch: `fix/arc-deployment-artifact-verification-2026-11-12`  
+PR head at creation: `31bad4d8b86c47fdef10e990a15046303840311f`  
+Base: `main` at `20c7e666ed697ae8f59c6d43541a6f84f1237818`.
+
+The PR adds:
+- `contracts/arc-authority/deployments/arc-mainnet/VerigateAuthorityRegistry.deployed.sol`: exact historical source snapshot.
+- `contracts/arc-authority/deployments/arc-mainnet/VerigateAuthorityRegistry.runtime.hex`: exact recovered runtime bytecode.
+- `contracts/arc-authority/deployments/arc-mainnet/deployment-manifest.json`: chain, deployment, owner, compiler, source and artifact identity.
+- `docs/evidence/arc-registry-deployment-artifact.md`: provenance, explanation and semantic boundary.
+- Updated `scripts/verify_arc_deployment.mjs`: checks the reviewed deployment artifact instead of compiling the current source as a substitute.
+- Dedicated read-only workflow `.github/workflows/arc-deployment-readonly.yml`.
+
+The PR remains **Draft and not merged**. Do not merge without explicit user authorization.
+
+### Latest Arc Mainnet read-only verification — PASS
+
+Workflow run: https://github.com/rudimentall1/verigate/actions/runs/43159111792  
+Run ID: `43159111792`  
+Job: `Verify Arc Registry deployment (read-only)` — success.
+
+The workflow verified against Arc Mainnet:
+- Chain ID: `5042`.
+- Registry: `0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D`.
+- Deployment transaction exists and is a contract creation from the expected executor.
+- Receipt status: success.
+- Deployment block: `30012679`.
+- Receipt-created contract address matches the Registry address.
+- Canonical deployment block hash: `0x5a427573baecb8f86bfe1a79ed2284958418b4299c4111efd1489eba8fb51213`.
+- Registry owner: `0x1429906b663608DB6aDeAb8F975B47aFbbe8c68C`.
+- Configured executor is an enabled issuer: `true`.
+- Finalized head at verification time: block `30807542`, hash `0x53be70a53ea8f0c82b0e1939a80a484cfa6db0dd2be8666025a41f078ad7a63d`.
+- Recovered artifact runtime hash equals the deployed on-chain runtime hash:
+  `0x6b229c049b9ba0007c318a10759a9827b5a798a4e511611872dcd4cf3973b160`.
+
+### PR #56 CI status
+
+CI run: https://github.com/rudimentall1/verigate/actions/runs/43159111732  
+All four jobs completed successfully:
+- `test`: PASS.
+- `contracts`: PASS.
+- `container`: PASS.
+- `anna-ui`: PASS, including strict manifest validation, UI E2E and Linux Executa binary build/smoke.
+
+The dedicated Arc read-only workflow also passed. These CI and RPC checks apply to the PR #56 merge ref / branch content, not to a production deployment of the Verigate API service.
+
+### Security and deployment boundaries
+
+- The deployed Registry's on-chain exact-expiry boundary is inclusive (`<=`). The current API integration separately rejects inclusion timestamps `>= valid_until`; therefore the supported Verigate flow remains strict at the API verification layer. Do not claim that the immutable deployed contract itself has the newer `<` condition.
+- The Registry is an authorization/evidence mechanism, not escrow or a global wallet firewall.
+- The recovered code hash is now established as the reviewed artifact hash. It has **not** been installed into a production service environment.
+- Do not update production `VERIGATE_ARC_REGISTRY_CODE_HASH`, deploy/restart the server, alter owner/issuer state, or broadcast transactions without a separate explicit decision.
+- No server command or production change was made during this recovery.
