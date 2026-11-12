@@ -198,7 +198,7 @@ export class OperationJournal {
     }
     const closeParen = stat.lastIndexOf(")");
     assert(closeParen >= 0, "lock owner process stat is malformed");
-    const fields = stat.slice(closeParen + 1).trim().split(/\\s+/);
+    const fields = stat.slice(closeParen + 1).trim().split(/\s+/);
     const startTicks = fields[19];
     assert(typeof startTicks === "string" && /^[0-9]+$/.test(startTicks), "lock owner process start time is unavailable");
     if (startTicks !== owner.startTicks) {
@@ -232,7 +232,7 @@ export class OperationJournal {
         const stat = readFileSync(`/proc/${process.pid}/stat`, "utf8");
         const closeParen = stat.lastIndexOf(")");
         assert(closeParen >= 0, "cannot determine signer process start time");
-        const fields = stat.slice(closeParen + 1).trim().split(/\\s+/);
+        const fields = stat.slice(closeParen + 1).trim().split(/\s+/);
         const startTicks = fields[19];
         assert(typeof startTicks === "string" && /^[0-9]+$/.test(startTicks), "cannot determine signer process start time");
         metadata = { version: 1, platform: "linux", pid: process.pid, bootId, startTicks };
@@ -241,7 +241,7 @@ export class OperationJournal {
         // stale-lock recovery remains intentionally unavailable there.
         metadata = { version: 1, platform: process.platform, pid: process.pid };
       }
-      writeFileSync(lock, JSON.stringify(metadata) + "\\n");
+      writeFileSync(lock, JSON.stringify(metadata) + "\n");
       fsyncSync(lock);
       return callback();
     } finally { closeSync(lock); try { unlinkSync(lockPath); } catch {} }
