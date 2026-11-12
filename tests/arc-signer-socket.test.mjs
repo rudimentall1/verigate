@@ -64,7 +64,7 @@ test("Unix socket exposes typed operations, enforces role and returns idempotent
     socketPath, role: "agent", authorizationPublicKeyPem: f.publicKeyPem,
     registryAddress: REGISTRY, signerAddress: AGENT, issuerAddress: "0x1111111111111111111111111111111111111111",
     journal, feePolicy: { maxNativeCost: "100", dailyNativeBudget: "1000" },
-    executeOperation: async ({ transaction, onBroadcast }) => {
+    executeOperation: async ({ transaction, validateBeforeBroadcast, onBroadcast }) => {
       broadcasts++;
       if (transaction.operation === "consume") assert.equal(transaction.to, REGISTRY);
       else {
@@ -72,6 +72,7 @@ test("Unix socket exposes typed operations, enforces role and returns idempotent
         assert.equal(transaction.to, ARC_USDC);
       }
       const txHash = transaction.operation === "consume" ? "0x" + "ce".repeat(32) : "0x" + "cd".repeat(32);
+      await validateBeforeBroadcast();
       await onBroadcast(txHash);
       return { txHash, actualNativeCost: "50" };
     },
@@ -123,6 +124,37 @@ test("Unix socket refuses to replace an existing path", async () => {
     await assert.rejects(service.listen(), /already exists/);
   } finally {
     await service.close().catch(() => {});
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("socket revalidates authorization expiry immediately before broadcast", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-expiry-"));
+  const socketPath = join(dir, "agent.sock");
+  const f = fixture();
+  let now = Math.floor(Date.now() / 1000);
+  let broadcasts = 0;
+  const service = createArcSignerSocketServer({
+    socketPath, role: "agent", authorizationPublicKeyPem: f.publicKeyPem,
+    registryAddress: REGISTRY, signerAddress: AGENT, issuerAddress: "0x1111111111111111111111111111111111111111",
+    journal: new OperationJournal(join(dir, "journal.jsonl")),
+    feePolicy: { maxNativeCost: "100", dailyNativeBudget: "1000" },
+    now: () => now,
+    executeOperation: async ({ validateBeforeBroadcast }) => {
+      now = f.authorization.payload.expires_at;
+      await validateBeforeBroadcast();
+      broadcasts++;
+      throw new Error("broadcast must not be reached");
+    },
+  });
+  try {
+    await service.listen();
+    const result = await request(socketPath, { operation: "consume", authorization: f.authorization });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /not currently valid/);
+    assert.equal(broadcasts, 0);
+  } finally {
+    await service.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
