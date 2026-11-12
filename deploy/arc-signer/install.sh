@@ -101,6 +101,44 @@ validate_env() {
   for name in VERIGATE_SIGNER_GAS_LIMIT VERIGATE_SIGNER_MAX_FEE_PER_GAS VERIGATE_SIGNER_MAX_PRIORITY_FEE_PER_GAS VERIGATE_SIGNER_MAX_NATIVE_COST VERIGATE_SIGNER_DAILY_NATIVE_BUDGET VERIGATE_SIGNER_CONFIRMATIONS; do
     grep -Eq "^${name}=[1-9][0-9]*$" "$file" || die "$file has invalid positive integer ${name}"
   done
+  grep -Eq '^VERIGATE_ARC_RPC_URL=https://[^[:space:]]+
+  [[ -f "$expected_pub" && ! -L "$expected_pub" ]] || die "missing authorization public key file: $expected_pub"
+  [[ "$(stat -c '%U:%a' "$expected_key")" == "${account}:600" ]] || die "$expected_key must be owned by ${account} and mode 0600"
+  [[ "$(stat -c '%U:%a' "$expected_pub")" == "${account}:600" ]] || die "$expected_pub must be owned by ${account} and mode 0600"
+}
+
+for role in "${ROLES[@]}"; do validate_env "$role"; done
+log "preflight passed: both roles have root-owned configuration, distinct key files, pinned Registry and numeric fee limits"
+if (( ! APPLY )); then
+  log "read-only mode; no system changes made"
+  exit 0
+fi
+
+install -o root -g root -m 0644 "${SCRIPT_DIR}/../systemd/${UNIT_NAME}" "$TARGET_UNIT"
+systemctl daemon-reload
+log "installed unit template and reloaded systemd"
+log "units were NOT enabled or started; keys/config were NOT created or changed"
+log "agent runtime socket group membership must be reviewed and provisioned separately"
+ "$file" || die "$file must use an HTTPS Arc RPC URL"
+  grep -Eq '^VERIGATE_ARC_ISSUER_ADDRESS=0x[0-9a-fA-F]{40}
+  [[ -f "$expected_pub" && ! -L "$expected_pub" ]] || die "missing authorization public key file: $expected_pub"
+  [[ "$(stat -c '%U:%a' "$expected_key")" == "${account}:600" ]] || die "$expected_key must be owned by ${account} and mode 0600"
+  [[ "$(stat -c '%U:%a' "$expected_pub")" == "${account}:600" ]] || die "$expected_pub must be owned by ${account} and mode 0600"
+}
+
+for role in "${ROLES[@]}"; do validate_env "$role"; done
+log "preflight passed: both roles have root-owned configuration, distinct key files, pinned Registry and numeric fee limits"
+if (( ! APPLY )); then
+  log "read-only mode; no system changes made"
+  exit 0
+fi
+
+install -o root -g root -m 0644 "${SCRIPT_DIR}/../systemd/${UNIT_NAME}" "$TARGET_UNIT"
+systemctl daemon-reload
+log "installed unit template and reloaded systemd"
+log "units were NOT enabled or started; keys/config were NOT created or changed"
+log "agent runtime socket group membership must be reviewed and provisioned separately"
+ "$file" || die "$file has an invalid 20-byte issuer address"
   [[ -f "$expected_key" && ! -L "$expected_key" ]] || die "missing private key file: $expected_key (installer never creates keys)"
   [[ -f "$expected_pub" && ! -L "$expected_pub" ]] || die "missing authorization public key file: $expected_pub"
   [[ "$(stat -c '%U:%a' "$expected_key")" == "${account}:600" ]] || die "$expected_key must be owned by ${account} and mode 0600"
