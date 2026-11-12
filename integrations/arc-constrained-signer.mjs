@@ -102,6 +102,12 @@ export function deriveArcOperation({ role, operation, authorization, publicKeyPe
   throw new Error("unsupported signer operation");
 }
 
+/**
+ * Fee units: gasLimit is gas; fee-per-gas values are EVM wei/gas; maxNativeCost
+ * and dailyNativeBudget are Arc native USDC in 18-decimal base units.
+ * ERC-20 USDC transfer amounts remain 6-decimal units and are not comparable
+ * without dividing native fee totals by 1e12.
+ */
 export function validateFeePolicy({ gasLimit, maxFeePerGas, maxPriorityFeePerGas, maxNativeCost, dailyNativeBudget }, feeData) {
   const fields = { gasLimit, maxFeePerGas, maxPriorityFeePerGas, maxNativeCost, dailyNativeBudget };
   for (const [k, v] of Object.entries(fields)) {
