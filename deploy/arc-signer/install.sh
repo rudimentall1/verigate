@@ -106,7 +106,7 @@ validate_env() {
   mode="$(stat -c '%a' "$file")"
   [[ "$mode" == "600" || "$mode" == "640" ]] || die "$file must be mode 0600 or 0640"
   while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ -z "$line" || "$line" == \\#* ]] && continue
+    [[ -z "$line" || "$line" == \#* ]] && continue
     [[ "$line" == *=* ]] || die "$file contains a malformed environment line"
     name="${line%%=*}"
     case "$name" in
