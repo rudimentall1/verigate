@@ -152,13 +152,12 @@ export async function executeAuthorizedArcPayment({
   assert(normalizeAddress(authorized.arc_authority?.executor, "Registry executor") === agentAddress, "signed Registry executor does not match agent signer");
   assert(normalizeAddress(evm.from, "signed payment sender") === agentAddress, "agent signer does not match signed payment sender");
 
-  const intentHash = createHash("sha256").update(canonicalJson({
-    domain: "verigate.arc.authority.registry",
-    version: 1,
-    chain_id: ARC_CHAIN_ID,
-    contract: registryAddress,
-    authorization,
-  }), "utf8").digest("hex");
+  // Match the server's language-neutral Registry hash: the Ed25519
+  // signature commits to the canonical authorization payload.
+  const intentHash = createHash("sha256").update(
+    `verigate.arc.authority.registry:v2:${ARC_CHAIN_ID}:${registryAddress}:${authorization.algorithm}:${authorization.signature}`,
+    "ascii",
+  ).digest("hex");
   const authId = payload.authorization_id;
   const expectedRegistration = {
     to: registryAddress,
