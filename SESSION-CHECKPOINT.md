@@ -1,6 +1,6 @@
 # Verigate Session Checkpoint
 
-**Updated:** 2026-11-12 10:20 +05:00
+**Updated:** 2026-11-12 10:42 +05:00
 **Repository:** rudimentall1/verigate  
 **Default branch:** main  
 **Latest product merge before this checkpoint refresh:** 6ab3a289c300cb6d614d27bb7134ae251f7db261  
@@ -417,3 +417,54 @@ Next security action: capture `npm audit --json`, identify the exact affected de
 Evidence source: [PR #56 CI run 43160472728](https://github.com/rudimentall1/verigate/actions/runs/43160472728), contract-tooling job installation output.
 
 No dependency update or remediation was made in this session.
+
+
+## 19. npm dependency audit triage — 2026-11-12
+
+### Exact audit result
+
+A dedicated non-blocking audit report was added temporarily to the PR #56 Arc read-only workflow to capture full npm advisory metadata.
+
+Audit result: 420 packages; 36 advisories:
+- 5 critical
+- 25 high
+- 5 moderate
+- 1 low
+
+All four root dependencies in `package.json` are declared under `devDependencies`:
+- `ethers`
+- `ganache`
+- `jsdom`
+- `solc`
+
+Therefore this particular npm tree is the contract/test tooling dependency tree, not the Python API's production runtime dependency set. The advisories still matter to developer machines and CI, but they must not be reported as 36 confirmed production API vulnerabilities.
+
+### Root cause concentration
+
+The majority of the advisories are nested under `ganache@7.9.2`. The audit identifies critical advisories in bundled transitive packages including `cipher-base`, `elliptic`, `pbkdf2`, `sha.js` and `webpack`, alongside high-severity issues in other bundled dependencies.
+
+The npm dry-run explicitly reports that bundled dependencies `bn.js`, `elliptic` and `secp256k1` inside Ganache cannot be fixed automatically and recommends checking for an updated Ganache package. The audit's suggested Ganache remediation is a SemVer-major change and must not be applied blindly.
+
+A separate direct dependency finding affects `solc` through transitive package `tmp@0.2.6`. The dry-run preview proposes `solc 0.8.37 -> 0.8.38` and reports two packages changed in its isolated preview. No package or lockfile was actually modified by this dry run.
+
+### Usage and scope
+
+- `ganache` is imported by local contract/guard test and compile scripts; it is not imported by the Verigate API runtime.
+- `solc` is used by contract compilation/test scripts; it is not imported by the API runtime.
+- The Python API runtime dependency set is separately defined in `requirements.txt`.
+
+### Decision
+
+Do not use `npm audit fix --force` and do not downgrade Ganache to the suggested major-incompatible version.
+
+Next safe dependency action:
+1. Validate `solc@0.8.38` against the current contract compile and all CI jobs before committing the lockfile update.
+2. Investigate a maintained replacement for Ganache or an isolated test-only toolchain migration. Do not let this dependency cleanup block the Arc production integration work.
+3. Keep the Python API production dependency audit separate from this npm dev-tooling audit.
+
+### CI evidence
+
+- Audit report and dry-run preview were executed in [Arc read-only run 43161791635](https://github.com/rudimentall1/verigate/actions/runs/43161791635).
+- Arc read-only deployment verification in that run: **PASS**.
+- Full CI run [43161791702](https://github.com/rudimentall1/verigate/actions/runs/43161791702): test, contracts and container jobs passed at last inspection; `anna-ui` was still in progress.
+- No dependency update, lockfile change, server change or production deployment was made.
