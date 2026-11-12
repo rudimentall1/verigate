@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "network": "Arc Mainnet",
+  "chain_id": 5042,
+  "contract_name": "VerigateAuthorityRegistry",
+  "contract_address": "0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D",
+  "deployment_transaction": "0xe85784e81ca0069410e8555961c8403fa02adc1361c7455657106afc96855ebb",
+  "deployment_block": 30012679,
+  "expected_owner_and_issuer": "0x1429906b663608DB6aDeAb8F975B47aFbbe8c68C",
+  "compiler": {
+    "name": "solc",
+    "version": "0.8.24+commit.e11b9ed9",
+    "evm_version": "cancun",
+    "optimizer_enabled": true,
+    "optimizer_runs": 200,
+    "via_ir": false,
+    "metadata_bytecode_hash": "ipfs",
+    "metadata_append_cbor": true,
+    "metadata_use_literal_content": false,
+    "source_unit": "src/VerigateAuthorityRegistry.sol"
+  },
+  "deployed_source": {
+    "historical_git_ref": "integration/arc",
+    "repository_path": "contracts/arc-authority/src/VerigateAuthorityRegistry.sol",
+    "git_blob_sha": "adf46b928ee82ffc780a7f238272defcfeb73d8b",
+    "keccak256": "0x117126830a75b649615e382998b63312958e1f7cc64c4c98a356192f8095c684",
+    "consume_expiry_condition": "block.timestamp <= auth.validUntil"
+  },
+  "artifact_provenance": {
+    "historical_git_ref": "integration/arc",
+    "repository_path": "contracts/arc-authority/out/VerigateAuthorityRegistry.sol/VerigateAuthorityRegistry.json",
+    "git_blob_sha": "11f7a16698f680c4e66f6d37786249f703e63faa"
+  },
+  "runtime": {
+    "byte_length": 3119,
+    "keccak256": "0x6b229c049b9ba0007c318a10759a9827b5a798a4e511611872dcd4cf3973b160"
+  },
+  "evidence": {
+    "deployment_explorer_url": "https://explorer.arc.io/tx/0xe85784e81ca0069410e8555961c8403fa02adc1361c7455657106afc96855ebb",
+    "runtime_hash_rpc_workflow_run": "https://github.com/rudimentall1/verigate/actions/runs/43012817343",
+    "source_metadata_hash_matches_archived_source": true
+  },
+  "notes": [
+    "This is a historical deployment artifact snapshot, not the active source tree.",
+    "The current main source has a stricter consume expiry condition (< instead of <=), so its bytecode is intentionally not expected to hash to this deployed runtime.",
+    "Runtime hash is expected to be checked against Arc Mainnet before accepting deployment verification."
+  ]
+}
