@@ -98,6 +98,116 @@ try {
   const [issuerEnabled] = registryInterface.decodeFunctionResult("issuers", issuerResult);
   requireCondition(issuerEnabled === true, "Configured executor is not an enabled Registry issuer");
 
+  const activityInterface = new Interface([
+    "event AuthorizationRegistered(bytes32 indexed authorizationId, bytes32 indexed intentHash, address indexed executor, uint64 validUntil, address issuer)",
+    "event AuthorizationConsumed(bytes32 indexed authorizationId, bytes32 indexed intentHash, address indexed executor)",
+    "function getAuthorization(bytes32 authorizationId) view returns (tuple(bytes32 intentHash, address executor, uint64 validUntil, uint64 registeredAt, bool consumed, bool revoked))",
+  ]);
+  const observedRegistryCalls = [];
+  const consumedAuthorizationIds = new Set();
+
+  for (const expectedCall of manifest.historical_registry_calls || []) {
+    const block = await provider.getBlock(expectedCall.block, true);
+    requireCondition(block?.hash, `Historical Registry activity block ${expectedCall.block} was not returned`);
+    const transactions = block.prefetchedTransactions?.length
+      ? block.prefetchedTransactions
+      : await Promise.all((block.transactions || []).map((hash) => provider.getTransaction(hash)));
+    const matches = transactions.filter((transaction) =>
+      transaction
+      && transaction.from?.toLowerCase() === EXPECTED_OWNER
+      && transaction.to?.toLowerCase() === CONTRACT
+      && transaction.data?.slice(0, 10).toLowerCase() === expectedCall.selector.toLowerCase()
+    );
+    requireCondition(
+      matches.length === 1,
+      `Expected exactly one ${expectedCall.method} call by the executor in block ${expectedCall.block}; found ${matches.length}`,
+    );
+
+    const transaction = matches[0];
+    const receipt = await provider.getTransactionReceipt(transaction.hash);
+    requireCondition(receipt, `Missing receipt for historical Registry call ${transaction.hash}`);
+    requireCondition(receipt.status === 1, `Historical Registry call failed: ${transaction.hash}`);
+    requireCondition(
+      receipt.blockHash?.toLowerCase() === block.hash.toLowerCase(),
+      `Historical Registry receipt is not in the canonical block: ${transaction.hash}`,
+    );
+    requireCondition(
+      receipt.to?.toLowerCase() === CONTRACT && receipt.from?.toLowerCase() === EXPECTED_OWNER,
+      `Historical Registry receipt sender/destination mismatch: ${transaction.hash}`,
+    );
+
+    const events = receipt.logs.flatMap((log) => {
+      try {
+        const parsed = activityInterface.parseLog(log);
+        return parsed ? [{ log, parsed }] : [];
+      } catch {
+        return [];
+      }
+    }).filter(({ parsed }) => parsed.name === expectedCall.expected_event);
+    requireCondition(
+      events.length === 1,
+      `Expected exactly one ${expectedCall.expected_event} event in ${transaction.hash}; found ${events.length}`,
+    );
+
+    const { parsed } = events[0];
+    const authorizationId = parsed.args.authorizationId.toLowerCase();
+    const intentHash = parsed.args.intentHash.toLowerCase();
+    const executor = parsed.args.executor.toLowerCase();
+    requireCondition(executor === EXPECTED_OWNER, `Unexpected Registry executor in ${transaction.hash}`);
+
+    const callSummary = {
+      block: expectedCall.block,
+      transaction_hash: transaction.hash,
+      method: expectedCall.method,
+      event: expectedCall.expected_event,
+      authorization_id: authorizationId,
+      intent_hash: intentHash,
+      executor,
+    };
+
+    if (expectedCall.expected_event === "AuthorizationRegistered") {
+      const issuer = parsed.args.issuer.toLowerCase();
+      const validUntil = parsed.args.validUntil;
+      requireCondition(issuer === EXPECTED_OWNER, `Unexpected Registry issuer in ${transaction.hash}`);
+      requireCondition(validUntil > 0n, `Invalid authorization expiry in ${transaction.hash}`);
+      callSummary.issuer = issuer;
+      callSummary.valid_until = validUntil.toString();
+    } else if (expectedCall.expected_event === "AuthorizationConsumed") {
+      consumedAuthorizationIds.add(authorizationId);
+    }
+
+    const stateData = activityInterface.encodeFunctionData("getAuthorization", [authorizationId]);
+    const stateResult = await provider.call({ to: CONTRACT, data: stateData });
+    const [state] = activityInterface.decodeFunctionResult("getAuthorization", stateResult);
+    requireCondition(state.registeredAt > 0n, `Authorization is missing from Registry state: ${authorizationId}`);
+    requireCondition(state.intentHash.toLowerCase() === intentHash, `Registry intent hash differs from event for ${authorizationId}`);
+    requireCondition(state.executor.toLowerCase() === executor, `Registry executor differs from event for ${authorizationId}`);
+    requireCondition(state.revoked === false, `Historical authorization is revoked: ${authorizationId}`);
+    if (expectedCall.expected_event === "AuthorizationRegistered") {
+      requireCondition(state.validUntil === parsed.args.validUntil, `Registry expiry differs from registration event for ${authorizationId}`);
+    } else {
+      requireCondition(state.consumed === true, `Consumed event has no consumed Registry state for ${authorizationId}`);
+    }
+
+    callSummary.registry_state = {
+      registered_at: state.registeredAt.toString(),
+      valid_until: state.validUntil.toString(),
+      consumed: state.consumed,
+      revoked: state.revoked,
+    };
+    observedRegistryCalls.push(callSummary);
+  }
+
+  for (const authorizationId of consumedAuthorizationIds) {
+    const registerCall = observedRegistryCalls.find((entry) =>
+      entry.authorization_id === authorizationId && entry.event === "AuthorizationRegistered"
+    );
+    requireCondition(
+      registerCall,
+      `Consumed authorization has no matching registration in the observed block set: ${authorizationId}`,
+    );
+  }
+
   const finalized = await provider.getBlock("finalized");
   requireCondition(finalized?.number != null && finalized.hash, "Arc RPC did not return a verifiable finalized block");
   requireCondition(
