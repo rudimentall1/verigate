@@ -53,6 +53,7 @@ export async function createArcEthersAdapter({
     assert(typeof code === "string" && code !== "0x" && code.length > 2, "Arc Registry has no runtime bytecode");
     assert(keccak256(code).toLowerCase() === expectedRegistryCodeHash.toLowerCase(), "Arc Registry runtime bytecode hash mismatch");
     if (role === "issuer") assert(address === issuer, "issuer signer address differs from configured Registry issuer");
+    if (role === "agent") assert(address !== issuer, "agent signer must use a distinct address from the Registry issuer");
     const issuerCall = id("issuers(address)").slice(0, 10) + issuer.slice(2).padStart(64, "0");
     const issuerEnabled = await provider.call({ to: registry, data: issuerCall });
     assert(BigInt(issuerEnabled) === 1n, "configured Registry issuer is not enabled on Arc");
