@@ -1,0 +1,50 @@
+name: Arc Mainnet read-only deployment verification
+
+on:
+  push:
+    branches:
+      - verify/arc-mainnet-readonly-2026-11-11
+    paths:
+      - ".github/workflows/arc-deployment-readonly.yml"
+      - "contracts/arc-authority/src/VerigateAuthorityRegistry.sol"
+      - "scripts/verify_arc_deployment.mjs"
+      - "scripts/compile_arc_authority.mjs"
+      - "package.json"
+      - "package-lock.json"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/arc-deployment-readonly.yml"
+      - "contracts/arc-authority/src/VerigateAuthorityRegistry.sol"
+      - "scripts/verify_arc_deployment.mjs"
+      - "scripts/compile_arc_authority.mjs"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Arc Registry deployment (read-only)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install pinned contract tooling
+        run: npm ci
+
+      - name: Verify deployed bytecode, owner, issuer and finalized head
+        env:
+          VERIGATE_ARC_RPC_URL: https://rpc.mainnet.arc.io
+          VERIGATE_ARC_REGISTRY_ADDRESS: "0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D"
+          VERIGATE_ARC_EXECUTOR_ADDRESS: "0x1429906b663608DB6aDeAb8F975B47aFbbe8c68C"
+        run: npm run verify:arc-deployment
