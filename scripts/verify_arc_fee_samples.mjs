@@ -16,6 +16,7 @@ const samples = [
 
 const provider = new JsonRpcProvider(RPC_URL, 5042, { staticNetwork: true });
 let archiveProvider = null;
+let archiveVerified = false;
 try {
   const network = await provider.getNetwork();
   if (network.chainId !== 5042n) throw new Error(`Expected Arc Mainnet 5042, got ${network.chainId}`);
@@ -28,6 +29,11 @@ try {
       // Arc RPC nodes may prune old hash/receipt lookups. Arcscan documents
       // its read-only RPC as a multi-provider fallback for historical reads.
       archiveProvider ??= new JsonRpcProvider("https://rpc.arc-scan.org", 5042, { staticNetwork: true });
+      if (!archiveVerified) {
+        const archiveChainId = BigInt(await archiveProvider.send("eth_chainId", []));
+        if (archiveChainId !== 5042n) throw new Error(`Arcscan fallback RPC returned chain ${archiveChainId}, expected 5042`);
+        archiveVerified = true;
+      }
       tx ??= await archiveProvider.getTransaction(sample.hash);
       receipt ??= await archiveProvider.send("eth_getTransactionReceipt", [sample.hash]);
       source = "Arcscan read-only RPC fallback";
