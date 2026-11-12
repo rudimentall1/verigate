@@ -138,7 +138,7 @@ export async function executeAuthorizedArcPayment({
   assert(consumeTx, "Verigate did not return a Registry consumption transaction");
 
   // Consumption and payment are executed by the agent's own EVM account.
-  const consumeHash = await submitAndConfirm(agentSigner, consumeTx, "Agent Registry consumption");
+  const consumeHash = await submitAndConfirm(agentSigner, consumeTx, "agent executor Registry consumption");
   const consumed = await postJson(
     fetchImpl,
     `${base}/v1/integrations/arc/consume/confirm`,
@@ -152,7 +152,7 @@ export async function executeAuthorizedArcPayment({
   assert(consumed.execute === true, consumed.reason || "Verigate denied execution");
   assert(consumed.wallet_transaction, "Verigate did not return the exact authorized payment transaction");
 
-  const paymentHash = await submitAndConfirm(agentSigner, consumed.wallet_transaction, "Agent USDC payment");
+  const paymentHash = await submitAndConfirm(agentSigner, consumed.wallet_transaction, "agent executor USDC payment");
   const settlement = await postJson(
     fetchImpl,
     `${base}/v1/integrations/arc/payment/confirm`,
