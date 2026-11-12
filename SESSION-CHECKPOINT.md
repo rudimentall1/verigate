@@ -477,7 +477,7 @@ Next safe dependency action:
 - Dedicated branch: `feat/arc-agent-signer-service-2026-11-12`.
 - PR #58: https://github.com/rudimentall1/verigate/pull/58
 - PR #58 is Draft/Open and stacked on PR #57 branch head `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`; it is not based on `main`.
-- Current branch head before this checkpoint update: `dd11ea6f9e1246677e8d9e1b865c689f60d5ef30`.
+- Latest implementation head before this checkpoint update: `9e40c3248f391b58fa45abb4ee3d18dcd54c21b0`.
 - PR #57 remains separate. Do not merge either PR without explicit approval.
 - This checkpoint and all signer work are on the signer branch, not `main`.
 
@@ -490,7 +490,9 @@ Next safe dependency action:
    - Derives Registry registration, Registry consumption and USDC payment calldata internally.
    - Enforces issuer-only registration and agent-only consumption/payment.
    - Validates configured fee ceilings and live fee data.
-   - Uses an append-only fsync-backed journal with locking, replay protection, cumulative daily budget reservations and fail-closed unresolved operations.
+   - Uses an append-only fsync-backed journal with locking, replay protection, cumulative per-instance daily budget reservations and fail-closed unresolved operations.
+   - Journal file reads reject symlinks, hard links, foreign ownership and group/other permissions; journal directories must be owned by the signer and mode 0700.
+   - Operation state is `reserved` → `broadcast` → `complete`: transaction hash is fsynced immediately after RPC submission and before receipt waiting; completion must match the durable broadcast hash.
 
 2. `integrations/arc-signer-socket.mjs` and `integrations/arc-signer-client.mjs`
    - Unix-domain socket only; typed operations are `register`, `consume`, and `payment`.
@@ -509,6 +511,8 @@ Next safe dependency action:
    - Loads EVM private key from a protected file, checks file type, owner and restrictive permissions, and does not accept the private key through command-line arguments or environment variables.
    - Requires separate role, socket, journal, RPC, Registry, issuer, public-key and fee configuration.
    - systemd template provides separate issuer/agent users and groups, strict filesystem protection, restricted writable paths, no ambient capabilities and restricted address families.
+   - Added `deploy/arc-signer/install.sh`, `rollback.sh`, and role-specific `.env.example` templates. Installer modes are staged: `--provision-accounts`, read-only `--check`, then `--apply` to install the unit only. It never generates/imports keys or starts services. Rollback preserves keys, env files, journals, users and groups.
+   - Installer validates root-owned env files, exact socket/journal/key paths, pinned Registry address/hash, HTTPS RPC, 20-byte issuer address, numeric fee limits, and separate signer-owned 0600 key/public-key files. Config/key parent directories are root-owned mode 0711.
 
 5. Existing Arc executor integration
    - Added `executeAuthorizedArcPaymentWithSignerClients` to `integrations/arc-agent-executor.mjs`.
@@ -518,8 +522,8 @@ Next safe dependency action:
 
 6. Tests and CI
    - Added policy, socket server, socket client, ethers adapter and signer-client orchestration tests.
-   - The contracts, test and container jobs passed on [run 43183351339](https://github.com/rudimentall1/verigate/actions/runs/43183351339), including the verified Registry pin and prefixed bytes32 authorization-ID test. The `anna-ui` job was still running at checkpoint time.
-   - Full CI on the exact latest branch head after the documentation/checkpoint corrections is not yet confirmed green.
+   - Full CI run [43186283832](https://github.com/rudimentall1/verigate/actions/runs/43186283832) passed 4/4 jobs (`contracts`, `test`, `container`, `anna-ui`) on implementation head `a4089c91e2272fc6745f081046c0798a3470a441`.
+   - Later commits added the installer, rollback, env templates, directory permission changes and CI shell syntax checks. CI run [43188296046](https://github.com/rudimentall1/verigate/actions/runs/43188296046) is queued for the latest implementation head `9e40c3248f391b58fa45abb4ee3d18dcd54c21b0`; do not treat the earlier 4/4 run as validation of these later files.
 
 ### Verified Registry pin
 
@@ -541,7 +545,7 @@ Next safe dependency action:
 
 1. Finish CI on the exact current branch head and fix any failure.
 2. Recover and independently verify the correct Registry address from deployment receipt/live Arc RPC. Correct the pre-existing configuration separately; never guess the missing/extra character.
-3. Complete adversarial crash/replay validation, including failure after broadcast but before receipt persistence, and validate fee accounting against actual Arc receipts.
-4. Prepare role-specific environment files, Linux users/groups, socket ACLs, systemd install/rollback and a disposable Linux clean-room test.
+3. Complete remaining adversarial crash/replay validation and validate fee accounting against actual Arc receipts; current adapter tests are mocked.
+4. Run the new install/rollback scripts and systemd unit in a disposable clean-room Linux environment. Do not use Gensyn2 for this gate.
 5. Only after all gates pass, inspect Gensyn2 read-only and prepare a controlled installation. Do not modify FLOP, AegisForge, OWNERA or unrelated services.
 6. No mainnet transaction or production key provisioning without a separate explicit decision.
