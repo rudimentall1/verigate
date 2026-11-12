@@ -508,11 +508,11 @@ def authorize_arc_payment(req: ActionAuthorizationRequest) -> dict:
         "arc_authority": arc_authority,
         "wallet_transaction": None,
         "execution_order": [
-            "sign and broadcast arc_authority.registration_transaction with the configured executor wallet",
+            "submit arc_authority.registration_transaction with the configured Registry issuer signer",
             "confirm its transaction hash at /v1/integrations/arc/registration/confirm",
-            "sign and broadcast the returned consume_transaction with the same wallet",
+            "sign and broadcast the returned consume_transaction with the agent executor signer",
             "confirm its transaction hash at /v1/integrations/arc/consume/confirm",
-            "only after execute=true, sign and broadcast the returned wallet_transaction payment on Arc",
+            "only after execute=true, sign and broadcast the returned wallet_transaction payment with the agent executor signer",
         ],
     }
 
