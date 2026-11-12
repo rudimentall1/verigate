@@ -56,6 +56,7 @@ The exact recipient and amount encoded in `data` must match `target` and
 import {
   authorizeArcPayment,
   broadcastAuthorizedArcPayment,
+  confirmArcPayment,
 } from "./integrations/arc-client.mjs";
 
 const result = await authorizeArcPayment({
@@ -70,6 +71,18 @@ const paymentHash = await broadcastAuthorizedArcPayment({
   provider: window.ethereum,
   walletTransaction: result.wallet_transaction,
 });
+
+// Verify the mined payment against the original authorization and finalized Arc state.
+const settlement = await confirmArcPayment({
+  provider: window.ethereum,
+  apiBaseUrl: "https://YOUR-VERIGATE-API",
+  authorization: result.authorization,
+  registration_tx_hash: result.registration_tx_hash,
+  consume_tx_hash: result.consume_tx_hash,
+  payment_tx_hash: paymentHash,
+});
+
+console.log(settlement.payment_settlement);
 ```
 
 ## Transaction order
@@ -84,6 +97,9 @@ const paymentHash = await broadcastAuthorizedArcPayment({
 8. Only if `execute === true`, the helper returns the payment transaction.
 9. The application explicitly calls `broadcastAuthorizedArcPayment` after
    presenting the payment to the user.
+10. After the payment is mined, the application calls `confirmArcPayment`.
+    Verigate returns settlement evidence only after checking the exact USDC
+    Transfer event and finalized canonical block.
 
 The registry executor and the payment sender are not assumed to be the same
 account. Each wallet operation checks that the connected provider exposes the
@@ -94,7 +110,8 @@ account specified in that transaction's `from` field.
 The helper stops on a wrong chain, unavailable account, reverted transaction,
 receipt timeout, non-2xx API response, failed registration/consumption
 confirmation, or `execute !== true`. It never broadcasts the payment in the
-authorization call.
+authorization call. `confirmArcPayment` also fails if the payment receipt is
+not yet available or Verigate cannot verify finalized settlement.
 
 The helper currently expects the caller to provide an EIP-1193 provider and a
 fully signed `ActionAuthorizationRequest`. Agent-intent signing and UI review
