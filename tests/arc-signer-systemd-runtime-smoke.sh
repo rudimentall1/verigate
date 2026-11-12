@@ -47,9 +47,9 @@ cleanup() {
 trap cleanup EXIT
 
 useradd --system --user-group --home-dir /nonexistent --shell /usr/sbin/nologin "$SIGNER_USER"
+CREATED_USERS=1
 useradd --system --user-group --home-dir /nonexistent --shell /usr/sbin/nologin "$ALLOW_USER"
 useradd --system --user-group --home-dir /nonexistent --shell /usr/sbin/nologin "$DENY_USER"
-CREATED_USERS=1
 usermod --append --groups "$SIGNER_USER" "$ALLOW_USER"
 
 install -d -o root -g root -m 0755 "$SERVER_ROOT"
@@ -120,7 +120,7 @@ assert_access_policy() {
   if runuser -u "$DENY_USER" -- python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1])' "$SOCKET_PATH" >/dev/null 2>&1; then
     fail "unrelated user unexpectedly connected to the systemd-managed socket"
   fi
-  runuser -u "$ALLOW_USER" -- python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); assert s.recv(3)==b"ok\\n"; s.close()' "$SOCKET_PATH"
+  runuser -u "$ALLOW_USER" -- python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); assert s.recv(3)==bytes([111,107,10]); s.close()' "$SOCKET_PATH"
 }
 
 wait_for_socket
