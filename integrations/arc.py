@@ -168,3 +168,192 @@ class ArcMainnetIntegration:
             "rpc_host": urlsplit(self.rpc.endpoint).hostname,
             "verified": True,
         }
+
+
+TRANSFER_EVENT_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+_TX_HASH_RE = re.compile(r"^0x[0-9a-fA-F]{64}$")
+
+
+class ArcPaymentVerificationError(ValueError):
+    """Raised when an Arc USDC settlement cannot be independently verified."""
+
+
+def _rpc_int(value: object, field: str) -> int:
+    if isinstance(value, bool):
+        raise ArcPaymentVerificationError(f"{field} is invalid")
+    try:
+        if isinstance(value, int):
+            parsed = value
+        elif isinstance(value, str) and value.startswith("0x"):
+            parsed = int(value, 16)
+        else:
+            raise ValueError("not an integer or 0x quantity")
+    except (TypeError, ValueError) as exc:
+        raise ArcPaymentVerificationError(f"{field} is invalid") from exc
+    if parsed < 0:
+        raise ArcPaymentVerificationError(f"{field} is invalid")
+    return parsed
+
+
+class ArcPaymentSettlementVerifier:
+    """Read-only verifier for a wallet-broadcast Arc USDC payment."""
+
+    def __init__(self, rpc: EvmRpcClient | None = None):
+        endpoint = os.environ.get("VERIGATE_ARC_RPC_URL", ARC_RPC_URL)
+        self.rpc = rpc or EvmRpcClient(endpoint, timeout_seconds=15)
+
+    def confirm_payment(
+        self,
+        *,
+        expected_transaction: dict,
+        payment_transaction_hash: str,
+        consumption_transaction_hash: str,
+    ) -> dict:
+        if not isinstance(expected_transaction, dict):
+            raise ArcPaymentVerificationError("signed Arc payment transaction is required")
+        for field in ("chain_id", "from", "to", "value_wei", "data"):
+            if field not in expected_transaction:
+                raise ArcPaymentVerificationError(f"signed Arc payment transaction is missing {field}")
+        if not _TX_HASH_RE.fullmatch(payment_transaction_hash or ""):
+            raise ArcPaymentVerificationError("payment transaction hash must be a 32-byte 0x-prefixed hash")
+        if not _TX_HASH_RE.fullmatch(consumption_transaction_hash or ""):
+            raise ArcPaymentVerificationError("consumption transaction hash must be a 32-byte 0x-prefixed hash")
+
+        try:
+            if self.rpc.chain_id() != ARC_CHAIN_ID:
+                raise ArcPaymentVerificationError("RPC is not connected to Arc Mainnet")
+            payment_tx = self.rpc.get_transaction_by_hash(payment_transaction_hash)
+            payment_receipt = self.rpc.get_transaction_receipt(payment_transaction_hash)
+            consumption_tx = self.rpc.get_transaction_by_hash(consumption_transaction_hash)
+            consumption_receipt = self.rpc.get_transaction_receipt(consumption_transaction_hash)
+        except EvmRpcError as exc:
+            raise ArcPaymentVerificationError(f"Arc transaction lookup failed: {exc}") from exc
+
+        if payment_tx is None or payment_receipt is None:
+            raise ArcPaymentVerificationError("Arc payment transaction is not mined")
+        if consumption_tx is None or consumption_receipt is None:
+            raise ArcPaymentVerificationError("Arc Registry consumption transaction is unavailable")
+
+        expected_chain_id = _rpc_int(expected_transaction["chain_id"], "signed chain ID")
+        expected_sender = _address(expected_transaction["from"], "signed payment sender")
+        expected_token = _address(expected_transaction["to"], "signed payment token")
+        expected_value = _rpc_int(expected_transaction["value_wei"], "signed native value")
+        expected_data = expected_transaction["data"]
+        if expected_chain_id != ARC_CHAIN_ID or expected_token != ARC_USDC_ADDRESS or expected_value != 0:
+            raise ArcPaymentVerificationError("signed transaction is not a canonical Arc USDC ERC-20 transfer")
+        if not isinstance(expected_data, str) or not re.fullmatch(r"0x[a-fA-F0-9]{136}", expected_data):
+            raise ArcPaymentVerificationError("signed Arc USDC transfer calldata is malformed")
+        if expected_data[:10].lower() != ERC20_TRANSFER_SELECTOR:
+            raise ArcPaymentVerificationError("signed Arc payment is not ERC-20 transfer(address,uint256)")
+
+        calldata = expected_data[10:]
+        expected_recipient = _address("0x" + calldata[24:64], "signed payment recipient")
+        expected_amount = int(calldata[64:128], 16)
+        if expected_amount <= 0:
+            raise ArcPaymentVerificationError("signed Arc USDC transfer amount must be positive")
+
+        try:
+            tx_chain_id = _rpc_int(payment_tx.get("chainId"), "payment chain ID")
+            tx_value = _rpc_int(payment_tx.get("value", "0x0"), "payment native value")
+            tx_index = _rpc_int(payment_receipt.get("transactionIndex"), "payment transaction index")
+            consume_index = _rpc_int(consumption_receipt.get("transactionIndex"), "consumption transaction index")
+            payment_block_number = _rpc_int(payment_receipt.get("blockNumber"), "payment block number")
+            consume_block_number = _rpc_int(consumption_receipt.get("blockNumber"), "consumption block number")
+        except ArcPaymentVerificationError:
+            raise
+
+        tx_data = payment_tx.get("input", payment_tx.get("data", ""))
+        if tx_chain_id != ARC_CHAIN_ID:
+            raise ArcPaymentVerificationError("payment transaction was not sent on Arc Mainnet")
+        if _address(payment_tx.get("from", ""), "payment transaction sender") != expected_sender:
+            raise ArcPaymentVerificationError("payment transaction sender does not match the signed authorization")
+        if _address(payment_tx.get("to", ""), "payment transaction token") != expected_token:
+            raise ArcPaymentVerificationError("payment transaction destination is not canonical Arc USDC")
+        if tx_value != 0 or not isinstance(tx_data, str) or tx_data.lower() != expected_data.lower():
+            raise ArcPaymentVerificationError("payment transaction does not match the signed USDC transfer")
+
+        if payment_receipt.get("status") not in ("0x1", 1, "1"):
+            raise ArcPaymentVerificationError("Arc USDC payment transaction did not succeed")
+        if str(payment_receipt.get("transactionHash", "")).lower() != payment_transaction_hash.lower():
+            raise ArcPaymentVerificationError("payment receipt transaction hash mismatch")
+        if _address(payment_receipt.get("from", ""), "payment receipt sender") != expected_sender:
+            raise ArcPaymentVerificationError("payment receipt sender mismatch")
+        if _address(payment_receipt.get("to", ""), "payment receipt destination") != expected_token:
+            raise ArcPaymentVerificationError("payment receipt destination mismatch")
+        if payment_block_number < consume_block_number or (
+            payment_block_number == consume_block_number and tx_index <= consume_index
+        ):
+            raise ArcPaymentVerificationError("USDC payment was not ordered after Registry authorization consumption")
+
+        try:
+            payment_block = self.rpc.get_block_by_number(payment_block_number)
+            finalized_block = self.rpc.get_block_by_tag("finalized")
+        except (EvmRpcError, AttributeError) as exc:
+            raise ArcPaymentVerificationError(f"Arc finality lookup failed: {exc}") from exc
+        if not isinstance(payment_block, dict) or not isinstance(finalized_block, dict):
+            raise ArcPaymentVerificationError("Arc payment block or finalized head is unavailable")
+
+        payment_block_hash = payment_block.get("hash")
+        receipt_block_hash = payment_receipt.get("blockHash")
+        if (
+            not isinstance(payment_block_hash, str)
+            or not _TX_HASH_RE.fullmatch(payment_block_hash)
+            or not isinstance(receipt_block_hash, str)
+            or payment_block_hash.lower() != receipt_block_hash.lower()
+        ):
+            raise ArcPaymentVerificationError("payment receipt block hash does not match the canonical block")
+        finalized_number = _rpc_int(finalized_block.get("number"), "finalized block number")
+        if finalized_number < payment_block_number:
+            raise ArcPaymentVerificationError("Arc payment inclusion block is not finalized")
+        if finalized_number == payment_block_number and str(finalized_block.get("hash", "")).lower() != payment_block_hash.lower():
+            raise ArcPaymentVerificationError("Arc finalized block hash does not match the payment block")
+
+        timestamp = _rpc_int(payment_block.get("timestamp"), "payment block timestamp")
+        logs = payment_receipt.get("logs")
+        if not isinstance(logs, list):
+            raise ArcPaymentVerificationError("payment receipt logs are missing")
+        sender_topic = "0x" + expected_sender[2:].rjust(64, "0")
+        recipient_topic = "0x" + expected_recipient[2:].rjust(64, "0")
+        matching_logs = []
+        for log in logs:
+            if not isinstance(log, dict) or str(log.get("address", "")).lower() != expected_token:
+                continue
+            topics = log.get("topics")
+            data = log.get("data")
+            if (
+                isinstance(topics, list)
+                and len(topics) == 3
+                and str(topics[0]).lower() == TRANSFER_EVENT_TOPIC
+                and str(topics[1]).lower() == sender_topic
+                and str(topics[2]).lower() == recipient_topic
+                and isinstance(data, str)
+                and re.fullmatch(r"0x[0-9a-fA-F]{64}", data)
+                and int(data, 16) == expected_amount
+            ):
+                matching_logs.append(log)
+        if len(matching_logs) != 1:
+            raise ArcPaymentVerificationError(
+                f"expected exactly one matching canonical USDC Transfer event, found {len(matching_logs)}"
+            )
+
+        return {
+            "verified": True,
+            "chain_id": ARC_CHAIN_ID,
+            "token_address": expected_token,
+            "token": "USDC",
+            "token_decimals": ARC_USDC_ERC20_DECIMALS,
+            "sender": expected_sender,
+            "recipient": expected_recipient,
+            "amount_base_units": str(expected_amount),
+            "payment_transaction_hash": payment_transaction_hash.lower(),
+            "payment_block_number": payment_block_number,
+            "payment_block_hash": payment_block_hash.lower(),
+            "payment_block_timestamp": timestamp,
+            "payment_transaction_index": tx_index,
+            "transfer_log_index": _rpc_int(matching_logs[0].get("logIndex"), "Transfer log index"),
+            "consumption_transaction_hash": consumption_transaction_hash.lower(),
+            "consumption_block_number": consume_block_number,
+            "finalized_block_number": finalized_number,
+            "finalized_block_hash": str(finalized_block.get("hash", "")).lower(),
+            "explorer_url": f"{ARC_EXPLORER_URL}/tx/{payment_transaction_hash.lower()}",
+        }
