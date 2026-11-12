@@ -46,6 +46,7 @@ class FakeRpc:
             "input": EXPECTED_DATA,
             "value": "0x0",
             "blockNumber": "0x64",
+            "blockHash": PAYMENT_BLOCK_HASH,
             "transactionIndex": "0x2",
         }
         self.consumption_tx = {"hash": CONSUME_HASH}
