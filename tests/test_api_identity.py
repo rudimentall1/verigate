@@ -94,6 +94,13 @@ class ApiIdentityTest(unittest.TestCase):
                 )
                 self.assertEqual(blocked.status_code, 403)
 
+                spoofed_agent = dict(payload)
+                spoofed_agent["agent_id"] = "attacker-controlled-agent"
+                rejected_identity_mismatch = client.post(
+                    "/v1/authorize/identity", json=spoofed_agent
+                )
+                self.assertEqual(rejected_identity_mismatch.status_code, 403)
+
                 self.assertTrue(
                     main._storage.revoke_identity(identity_id)
                 )
