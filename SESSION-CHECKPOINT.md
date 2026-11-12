@@ -477,7 +477,7 @@ Next safe dependency action:
 - Dedicated branch: `feat/arc-agent-signer-service-2026-11-12`.
 - PR #58: https://github.com/rudimentall1/verigate/pull/58
 - PR #58 is Draft/Open and stacked on PR #57 branch head `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`; it is not based on `main`.
-- Current branch head before this checkpoint update: `af85ec2389341cfddb8bdffab5650d91ea9d15f2`.
+- Current branch head before this checkpoint update: `dd11ea6f9e1246677e8d9e1b865c689f60d5ef30`.
 - PR #57 remains separate. Do not merge either PR without explicit approval.
 - This checkpoint and all signer work are on the signer branch, not `main`.
 
@@ -518,9 +518,8 @@ Next safe dependency action:
 
 6. Tests and CI
    - Added policy, socket server, socket client, ethers adapter and signer-client orchestration tests.
-   - The contracts job passed on [run 43183075881](https://github.com/rudimentall1/verigate/actions/runs/43183075881), including 19 executor/orchestration assertions and signer policy/client tests.
-   - A later test adds the prefixed bytes32 authorization-ID case. [Run 43183096446](https://github.com/rudimentall1/verigate/actions/runs/43183096446) was still in progress at checkpoint time.
-   - Full CI on the exact latest branch head is not yet confirmed green.
+   - The contracts, test and container jobs passed on [run 43183351339](https://github.com/rudimentall1/verigate/actions/runs/43183351339), including the verified Registry pin and prefixed bytes32 authorization-ID test. The `anna-ui` job was still running at checkpoint time.
+   - Full CI on the exact latest branch head after the documentation/checkpoint corrections is not yet confirmed green.
 
 ### Verified Registry pin
 
