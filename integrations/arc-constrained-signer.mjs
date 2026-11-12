@@ -7,7 +7,7 @@
  * Socket transport and the ethers broadcast adapter are separate layers.
  */
 import { createHash, createPublicKey, verify as verifySignature } from "node:crypto";
-import { appendFileSync, closeSync, fsyncSync, lstatSync, openSync, readFileSync, unlinkSync } from "node:fs";
+import { appendFileSync, closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 
 export const ARC_CHAIN_ID = 5042;
 export const ARC_USDC = "0x3600000000000000000000000000000000000000";
@@ -137,13 +137,114 @@ export class OperationJournal {
     }
     return readFileSync(this.path, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line));
   }
+  lockPath() { return this.path + ".lock"; }
+
+  inspectLock() {
+    const lockPath = this.lockPath();
+    let before;
+    try { before = lstatSync(lockPath); }
+    catch (error) {
+      if (error.code === "ENOENT") return { exists: false, status: "absent" };
+      throw error;
+    }
+    assert(before.isFile(), "lock must be a regular file, not a symlink");
+    assert(before.nlink === 1, "lock must not have additional hard links");
+    assert((before.mode & 0o777) === 0o600, "lock permissions must be exactly 0600");
+    if (typeof process.getuid === "function") {
+      assert(before.uid === process.getuid(), "lock must be owned by the signer process user");
+    }
+    const fd = openSync(lockPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    let raw;
+    try {
+      const opened = fstatSync(fd);
+      assert(opened.isFile() && opened.nlink === 1, "opened lock is not a safe regular file");
+      assert(opened.dev === before.dev && opened.ino === before.ino, "lock changed while being inspected");
+      assert((opened.mode & 0o777) === 0o600, "lock permissions must be exactly 0600");
+      if (typeof process.getuid === "function") {
+        assert(opened.uid === process.getuid(), "lock must be owned by the signer process user");
+      }
+      raw = readFileSync(fd, "utf8");
+    } finally { closeSync(fd); }
+
+    let owner;
+    try { owner = JSON.parse(raw); }
+    catch { throw new Error("lock metadata is malformed; refusing recovery"); }
+    assert(owner && owner.version === 1 && owner.platform === "linux", "lock metadata version or platform is unsupported");
+    assert(Number.isSafeInteger(owner.pid) && owner.pid > 0, "lock metadata PID is invalid");
+    assert(typeof owner.bootId === "string" && /^[0-9a-f-]{36}$/i.test(owner.bootId), "lock boot ID is invalid");
+    assert(typeof owner.startTicks === "string" && /^[0-9]+$/.test(owner.startTicks), "lock process start time is invalid");
+
+    let currentBootId;
+    try { currentBootId = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim(); }
+    catch { throw new Error("cannot read Linux boot ID; refusing lock recovery"); }
+    if (currentBootId !== owner.bootId) {
+      return { exists: true, status: "stale", reason: "different-boot", owner, lockPath, ownerFileDev: before.dev, ownerFileIno: before.ino };
+    }
+
+    let alive = true;
+    try { process.kill(owner.pid, 0); }
+    catch (error) {
+      if (error.code === "ESRCH") alive = false;
+      else if (error.code === "EPERM") alive = true;
+      else throw new Error("cannot establish lock owner liveness; refusing recovery");
+    }
+    if (!alive) return { exists: true, status: "stale", reason: "owner-exited", owner, lockPath, ownerFileDev: before.dev, ownerFileIno: before.ino };
+
+    let stat;
+    try { stat = readFileSync(`/proc/${owner.pid}/stat`, "utf8"); }
+    catch (error) {
+      if (error.code === "ENOENT") return { exists: true, status: "stale", reason: "pid-not-present", owner, lockPath, ownerFileDev: before.dev, ownerFileIno: before.ino };
+      throw new Error("cannot inspect lock owner process; refusing recovery");
+    }
+    const closeParen = stat.lastIndexOf(")");
+    assert(closeParen >= 0, "lock owner process stat is malformed");
+    const fields = stat.slice(closeParen + 1).trim().split(/\\s+/);
+    const startTicks = fields[19];
+    assert(typeof startTicks === "string" && /^[0-9]+$/.test(startTicks), "lock owner process start time is unavailable");
+    if (startTicks !== owner.startTicks) {
+      return { exists: true, status: "stale", reason: "pid-reused", owner, lockPath, ownerFileDev: before.dev, ownerFileIno: before.ino };
+    }
+    return { exists: true, status: "live", reason: "owner-process-matches", owner, lockPath, ownerFileDev: before.dev, ownerFileIno: before.ino };
+  }
+
+  recoverStaleLock({ apply = false } = {}) {
+    const inspection = this.inspectLock();
+    if (!inspection.exists) return { ...inspection, recovered: false };
+    assert(inspection.status === "stale", "lock owner is live or lock safety cannot be established; refusing recovery");
+    if (!apply) return { ...inspection, recovered: false, requiresApply: true };
+
+    const current = lstatSync(inspection.lockPath);
+    assert(current.isFile() && current.nlink === 1, "lock changed before recovery");
+    assert(current.dev === inspection.ownerFileDev && current.ino === inspection.ownerFileIno, "lock changed before recovery");
+    unlinkSync(inspection.lockPath);
+    return { ...inspection, recovered: true };
+  }
+
   withLock(callback) {
-    const lockPath = this.path + ".lock";
+    const lockPath = this.lockPath();
     let lock;
     try { lock = openSync(lockPath, "wx", 0o600); }
     catch { throw new Error("journal is locked; refusing concurrent operation"); }
-    try { return callback(); }
-    finally { closeSync(lock); try { unlinkSync(lockPath); } catch {} }
+    try {
+      let metadata;
+      if (process.platform === "linux") {
+        const bootId = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+        const stat = readFileSync(`/proc/${process.pid}/stat`, "utf8");
+        const closeParen = stat.lastIndexOf(")");
+        assert(closeParen >= 0, "cannot determine signer process start time");
+        const fields = stat.slice(closeParen + 1).trim().split(/\\s+/);
+        const startTicks = fields[19];
+        assert(typeof startTicks === "string" && /^[0-9]+$/.test(startTicks), "cannot determine signer process start time");
+        metadata = { version: 1, platform: "linux", pid: process.pid, bootId, startTicks };
+      } else {
+        // Non-Linux development/test environments can use the journal, but
+        // stale-lock recovery remains intentionally unavailable there.
+        metadata = { version: 1, platform: process.platform, pid: process.pid };
+      }
+      writeFileSync(lock, JSON.stringify(metadata) + "\\n");
+      fsyncSync(lock);
+      return callback();
+    } finally { closeSync(lock); try { unlinkSync(lockPath); } catch {} }
   }
   reserve(authorizationId, operation, budget = {}, authorizationKey = authorizationId) {
     return this.withLock(() => {
