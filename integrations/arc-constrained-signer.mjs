@@ -88,15 +88,15 @@ export function deriveArcOperation({ role, operation, authorization, publicKeyPe
     assert(role === "issuer", "agent signer cannot register authorizations");
     assert(signer === normalizeAddress(issuerAddress, "configured issuer"), "issuer signer address mismatch");
     const data = REGISTER_SELECTOR + id + intentHash + addressWord(verified.sender, "agent sender") + uintWord(p.expires_at, "expiry");
-    return { chainId: ARC_CHAIN_ID, to: registry, data, value: 0n, operation, authorizationId: p.authorization_id };
+    return { chainId: ARC_CHAIN_ID, to: registry, data, value: 0n, operation, authorizationId: id };
   }
   assert(role === "agent", "issuer signer cannot execute agent operations");
   assert(signer === verified.sender, "agent signer does not match signed sender");
   if (operation === "consume") {
-    return { chainId: ARC_CHAIN_ID, to: registry, data: CONSUME_SELECTOR + id + intentHash, value: 0n, operation, authorizationId: p.authorization_id };
+    return { chainId: ARC_CHAIN_ID, to: registry, data: CONSUME_SELECTOR + id + intentHash, value: 0n, operation, authorizationId: id };
   }
   if (operation === "payment") {
-    return { chainId: ARC_CHAIN_ID, to: ARC_USDC, data: verified.expectedTransfer, value: 0n, operation, authorizationId: p.authorization_id };
+    return { chainId: ARC_CHAIN_ID, to: ARC_USDC, data: verified.expectedTransfer, value: 0n, operation, authorizationId: id };
   }
   throw new Error("unsupported signer operation");
 }
