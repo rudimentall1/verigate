@@ -251,6 +251,29 @@ class ArcApiTest(unittest.TestCase):
                     authorization["payload"]["issued_at"] + 2,
                 )
 
+                with patch.object(
+                    main.ArcPaymentSettlementVerifier,
+                    "confirm_payment",
+                    return_value={
+                        "verified": True,
+                        "payment_transaction_hash": "0x" + "33" * 32,
+                        "amount_base_units": "1250000",
+                    },
+                ):
+                    settlement = client.post(
+                        "/v1/integrations/arc/payment/confirm",
+                        json={
+                            "authorization": authorization,
+                            "registration_tx_hash": registration_hash,
+                            "consume_tx_hash": consumption_hash,
+                            "payment_tx_hash": "0x" + "33" * 32,
+                        },
+                    )
+                self.assertEqual(settlement.status_code, 200, settlement.text)
+                self.assertTrue(settlement.json()["settled"])
+                self.assertTrue(settlement.json()["payment_settlement"]["verified"])
+
+
     def test_arc_endpoint_rejects_non_arc_payment_before_network_or_identity_checks(self):
         request = {
             "identity_id": "identity",
