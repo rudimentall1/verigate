@@ -1,6 +1,6 @@
 # Verigate Session Checkpoint
 
-**Updated:** 2026-11-12 10:42 +05:00
+**Updated:** 2026-11-12 10:55 +05:00
 **Repository:** rudimentall1/verigate  
 **Default branch:** main  
 **Latest product merge before this checkpoint refresh:** 6ab3a289c300cb6d614d27bb7134ae251f7db261  
@@ -468,3 +468,68 @@ Next safe dependency action:
 - Arc read-only deployment verification in that run: **PASS**.
 - Full CI run [43161791702](https://github.com/rudimentall1/verigate/actions/runs/43161791702): test, contracts and container jobs passed at last inspection; `anna-ui` was still in progress.
 - No dependency update, lockfile change, server change or production deployment was made.
+
+
+## 20. Arc USDC payment settlement confirmation — implementation PR #57
+
+### Why this slice was added
+
+The existing Arc flow stopped after Verigate confirmed Registry registration and one-time consumption and returned the exact USDC wallet transaction. The wallet broadcast was separate and explicit, but there was no dedicated API endpoint to verify that the payment itself settled.
+
+### Implementation branch and PR
+
+- Branch: `feat/arc-payment-settlement-confirmation-2026-11-12`
+- Draft PR #57: https://github.com/rudimentall1/verigate/pull/57
+- Current head: `32b7fa82aabca002ab3f8358ef4cf755b9f1ba0a`
+- Base: `main`
+- State: open, Draft, mergeable, unmerged.
+- 9 changed files. The PR has multiple incremental commits from the connector-based editing workflow; merge as a squash commit if eventually approved. Do not merge without explicit authorization.
+
+### New API
+
+`POST /v1/integrations/arc/payment/confirm`
+
+The endpoint accepts the original signed Execution Authorization and the registration, consumption and payment transaction hashes. It re-verifies the signed authorization and Registry registration/consumption before checking the payment.
+
+The payment verifier checks:
+- Arc chain ID 5042.
+- Signed sender, canonical Arc USDC token destination, zero native value and exact transfer calldata.
+- Payment transaction hash and transaction/receipt block number, block hash and transaction index agreement.
+- Successful payment receipt.
+- Exactly one `Transfer(address,address,uint256)` event emitted by canonical USDC, matching signed sender, recipient and exact base-unit amount.
+- Payment ordering after Registry consumption, including transaction index when both are in the same block.
+- Canonical inclusion block hash and inclusion at or below Arc's finalized head.
+- Successful consumption receipt and matching transaction/receipt inclusion coordinates.
+
+The endpoint returns `settled=true` and structured settlement evidence only after all checks pass. RPC availability failures return 503; invalid or mismatched evidence returns 409. The endpoint does not broadcast transactions or custody wallet keys.
+
+### Wallet client
+
+Added `confirmArcPayment` to `integrations/arc-client.mjs`. It waits for the wallet-broadcast payment receipt, submits the original authorization and all three transaction hashes, then requires `settled=true` and `payment_settlement.verified=true`.
+
+Updated:
+- `docs/arc-mainnet-integration.md`
+- `docs/ARC_WALLET_CLIENT.md`
+- `docs/evidence/arc-mainnet.md`
+
+The evidence document explicitly labels this as source implementation under CI review, not a live payment.
+
+### Tests and CI
+
+Latest PR CI run: [43162858818](https://github.com/rudimentall1/verigate/actions/runs/43162858818).
+
+At last inspection:
+- Full Python test suite: **PASS**, 669 tests.
+- Contract tooling and Arc wallet client tests: **PASS**.
+- Container build/auth smoke: **PASS**.
+- Anna UI E2E: still in progress; Linux Executa build/smoke has not yet run in this attempt.
+
+Earlier intermediate CI attempts had one test assertion failure because the negative-order test changed the receipt index but not the corresponding transaction index. The test fixture was corrected to keep transaction/receipt coordinates consistent before asserting the ordering rule. The latest full Python test suite passes.
+
+### Evidence boundary
+
+- This endpoint is source code on an unmerged Draft PR.
+- No live Verigate-authorized Arc USDC payment has been broadcast or verified.
+- No hosted Verigate API deployment or Gensyn2 server change.
+- No Registry owner/issuer mutation, contract deployment or transaction broadcast.
+- PR #57 must remain unmerged until complete CI and review pass, followed by a separate explicit deployment decision.
