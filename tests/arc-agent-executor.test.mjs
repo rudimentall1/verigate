@@ -31,15 +31,17 @@ function signer(address, sent, hashes) {
 
 function fixture({
   agentAddress = AGENT, signedSender = AGENT, issuerAddress = ISSUER, tokenAddress = USDC, calldataRecipient = RECIPIENT, calldataAmount = 100000, chainId = BigInt(ARC_CHAIN_ID),
-  mutate = () => {}, invalidSignature = false, settlement = true,
+  mutate = () => {}, invalidSignature = false, settlement = true, expired = false,
 } = {}) {
   const keys = generateKeyPairSync("ed25519");
-  const expiresAt = 1900000000;
+  const issuedAt = Math.floor(Date.now() / 1000) - 10;
+  const expiresAt = expired ? issuedAt + 9 : issuedAt + 240;
   const authorization = {
     algorithm: "Ed25519",
     payload: {
       authorization_version: 1,
       authorization_id: "aa".repeat(32),
+      issued_at: issuedAt,
       expires_at: expiresAt,
       action: {
         network: "arc",
@@ -158,6 +160,12 @@ test("rejects identical issuer and agent signer addresses before API calls", asy
   await assert.rejects(run(f), /must be different addresses/);
   assert.equal(f.sent.length, 0);
   assert.equal(f.calls.length, 0);
+});
+
+test("rejects an expired but correctly signed authorization before broadcast", async () => {
+  const f = fixture({ expired: true });
+  await assert.rejects(run(f), /expired or has an invalid lifetime/);
+  assert.equal(f.sent.length, 0);
 });
 
 test("rejects invalid Verigate signature before any transaction broadcast", async () => {
