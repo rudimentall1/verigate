@@ -314,3 +314,20 @@ test("journal lock recovery refuses malformed metadata and unsafe lock files", {
     assert.throws(() => journal.inspectLock(), /permissions must be exactly 0600/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+
+test("journal lock records its live Linux owner and rejects concurrent acquisition", { skip: process.platform !== "linux" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-lock-owner-"));
+  try {
+    const journal = new OperationJournal(join(dir, "ops.jsonl"));
+    journal.withLock(() => {
+      const metadata = JSON.parse(readFileSync(journal.lockPath(), "utf8"));
+      assert.equal(metadata.version, 1);
+      assert.equal(metadata.platform, "linux");
+      assert.equal(metadata.pid, process.pid);
+      assert.equal(journal.inspectLock().status, "live");
+      assert.throws(() => journal.withLock(() => {}), /journal is locked/);
+    });
+    assert.equal(journal.inspectLock().status, "absent");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
