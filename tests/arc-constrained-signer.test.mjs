@@ -202,12 +202,15 @@ test("journal blocks payment until the same authorization has a completed consum
   try {
     const journal = new OperationJournal(join(dir, "ops.jsonl"));
     const id = "0x" + "a1".repeat(32);
-    assert.throws(() => journal.reserve(id, "payment"), /completed consume operation/);
-    assert.deepEqual(journal.reserve(id, "consume"), { replay: false });
-    journal.markBroadcast(id, "consume", "0x" + "a2".repeat(32));
-    assert.throws(() => journal.reserve(id, "payment"), /completed consume operation/);
-    journal.complete(id, "consume", { txHash: "0x" + "a2".repeat(32) });
-    assert.deepEqual(journal.reserve(id, "payment"), { replay: false });
+    const signatureKeyA = id + ":signature-A";
+    const signatureKeyB = id + ":signature-B";
+    assert.throws(() => journal.reserve(id, "payment", {}, signatureKeyA), /completed consume operation/);
+    assert.deepEqual(journal.reserve(id, "consume", {}, signatureKeyA), { replay: false });
+    journal.markBroadcast(id, "consume", "0x" + "a2".repeat(32), signatureKeyA);
+    assert.throws(() => journal.reserve(id, "payment", {}, signatureKeyA), /completed consume operation/);
+    journal.complete(id, "consume", { txHash: "0x" + "a2".repeat(32) }, undefined, signatureKeyA);
+    assert.throws(() => journal.reserve(id, "payment", {}, signatureKeyB), /completed consume operation/);
+    assert.deepEqual(journal.reserve(id, "payment", {}, signatureKeyA), { replay: false });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
