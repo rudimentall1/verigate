@@ -21,6 +21,13 @@ Run two instances of the same constrained signer implementation under separate O
 
 The issuer instance must not share its key file, Unix socket, process identity or writable state with the agent instance. The agent instance must never be able to request Registry registration.
 
+## Implementation status (2026-11-12)
+
+- Implemented: typed newline-delimited JSON protocol over a Unix-domain socket, 64 KiB request cap, one request per connection, socket mode 0660, refusal to replace an existing socket path, role checks, signed-authorization verification, internally derived transaction fields, durable reservation before adapter invocation, replay response for completed operations, and fail-closed unresolved reservations.
+- Implemented tests: agent payment request, replay without a second adapter call, issuer-only operation rejection by an agent role, arbitrary caller-supplied transaction fields rejection, socket permissions, and existing-path refusal.
+- Not implemented: production ethers adapter, encrypted/private-key loading, nonce manager, Registry runtime-bytecode verification in signer startup, systemd units, installation/rollback scripts, and OS account provisioning.
+- The socket module is transport/policy orchestration only. It does not yet sign or broadcast a transaction. The injected adapter is a trusted boundary and must enforce live fee data, nonce handling, transaction construction, broadcast, receipt status and finality before this can be treated as an operational signer.
+
 ## Interface requirements
 
 - Local Unix domain socket only. No TCP listener and no public HTTP port.
