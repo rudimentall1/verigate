@@ -41,6 +41,26 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Report npm dependency advisories (non-blocking)
+        shell: bash
+        run: |
+          npm audit --json > /tmp/npm-audit.json || true
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const report = JSON.parse(fs.readFileSync('/tmp/npm-audit.json', 'utf8'));
+          console.log('AUDIT_METADATA', JSON.stringify(report.metadata?.vulnerabilities ?? {}));
+          for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
+            const via = (item.via ?? []).map((entry) => typeof entry === 'string'
+              ? { dependency: entry }
+              : { title: entry.title, url: entry.url, range: entry.range, cwe: entry.cwe, cvss: entry.cvss?.score });
+            console.log('AUDIT_ITEM', JSON.stringify({
+              name, severity: item.severity, isDirect: item.isDirect,
+              range: item.range, via, effects: item.effects,
+              nodes: item.nodes, fixAvailable: item.fixAvailable,
+            }));
+          }
+          NODE
+
       - name: Verify reviewed artifact against Arc Mainnet
         env:
           VERIGATE_ARC_RPC_URL: https://rpc.mainnet.arc.io
