@@ -559,3 +559,34 @@ Next safe dependency action:
 4. Measure fee ceilings from representative Arc receipts and review the per-role budgets. The two role journals enforce separate budgets, not one shared global ceiling.
 5. Only after all gates pass, inspect Gensyn2 read-only and prepare a controlled installation. Do not modify FLOP, AegisForge, OWNERA or unrelated services.
 6. No mainnet transaction or production key provisioning without a separate explicit decision.
+
+
+## 21. Arc constrained signer: exact-head CI and stale lock gate — 2026-11-12
+
+### Exact-head CI verification
+
+- Current PR #58 head: `a4a11a2501f316e257f2cdc3352840e170aa0345`.
+- GitHub Actions CI run [#43193728508](https://github.com/rudimentall1/verigate/actions/runs/43193728508) is associated with that exact commit and completed with conclusion **success**.
+- All four jobs passed:
+  - `contracts`: includes constrained signer policy tests, signer client/orchestration tests, Arc compile/access-control tests.
+  - `test`: full repository test suite, SDK/wallet client tests, end-to-end demo and API smoke check.
+  - `container`: protected Compose configuration, production image build and API auth smoke test.
+  - `anna-ui`: manifest validation, app/plugin E2E UI test, Linux Executa build/smoke test.
+- This exact-head run supersedes the earlier note that a fresh CI run was still required for the crash/restart tests. Both restart regression tests are now covered by a successful exact-head full CI run.
+- PR #58 remains Draft/Open and unmerged. PR #57 remains separate. No merge or readiness-state change was made.
+
+### Remaining journal-lock issue
+
+- `OperationJournal.withLock()` still creates an exclusive `.lock` file with `openSync(..., "wx")` and removes it in `finally`.
+- A hard process termination can leave the lock file behind. The service correctly fails closed, but the current lock contains no owner metadata and cannot safely distinguish a live owner from a stale lock.
+- No stale-lock recovery code or operator recovery command has been implemented yet.
+- Next implementation must add owner identity (PID, Linux boot ID and process start ticks), fsync lock metadata, and provide explicit inspect/recover behavior. Recovery must refuse malformed/unsafe/live-owner locks, require an explicit apply flag, never run automatically at service startup, and must not alter or delete journal records.
+- Add tests for live-owner refusal, stale PID/start-time detection, PID reuse protection, malformed metadata, symlink/hardlink/permission rejection, and byte-for-byte journal preservation.
+
+### Deployment gates unchanged
+
+- Actual systemd manager startup/restart and issuer/agent socket ACL behavior remain unverified.
+- Fee ceilings still require measurement from representative Arc receipts. Issuer and agent journals have separate budgets, not one shared global budget.
+- No signer keys were provisioned and no live Arc transaction was broadcast by the signer.
+- Gensyn2 remains untouched. Do not modify FLOP, AegisForge, OWNERA or unrelated services.
+- Do not merge PR #57 or #58, provision production keys, start signer services or send live transactions without separate explicit approval.
