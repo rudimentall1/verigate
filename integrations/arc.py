@@ -300,8 +300,10 @@ class ArcPaymentSettlementVerifier:
         try:
             payment_block = self.rpc.get_block_by_number(payment_block_number)
             finalized_block = self.rpc.get_block_by_tag("finalized")
-        except (EvmRpcError, AttributeError) as exc:
-            raise ArcPaymentVerificationError(f"Arc finality lookup failed: {exc}") from exc
+        except EvmRpcError as exc:
+            raise EvmRpcError(f"Arc finality lookup failed: {exc}") from exc
+        except AttributeError as exc:
+            raise ArcPaymentVerificationError(f"Arc finality lookup is unavailable: {exc}") from exc
         if not isinstance(payment_block, dict) or not isinstance(finalized_block, dict):
             raise ArcPaymentVerificationError("Arc payment block or finalized head is unavailable")
 
