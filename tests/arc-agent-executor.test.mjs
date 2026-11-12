@@ -30,7 +30,7 @@ function signer(address, sent, hashes) {
 }
 
 function fixture({
-  agentAddress = AGENT, issuerAddress = ISSUER, chainId = BigInt(ARC_CHAIN_ID),
+  agentAddress = AGENT, signedSender = AGENT, issuerAddress = ISSUER, chainId = BigInt(ARC_CHAIN_ID),
   mutate = () => {}, invalidSignature = false, settlement = true,
 } = {}) {
   const keys = generateKeyPairSync("ed25519");
@@ -50,7 +50,7 @@ function fixture({
         metadata: {
           evm_transaction: {
             chain_id: ARC_CHAIN_ID,
-            from: agentAddress,
+            from: signedSender,
             to: USDC,
             data: "0xa9059cbb" + RECIPIENT.slice(2).padStart(64, "0") + WORD(100000),
             value_wei: "0",
@@ -74,11 +74,11 @@ function fixture({
   const registrationTx = {
     chainId: "0x13b2", from: issuerAddress, to: REGISTRY,
     data: "0xb267748a" + authorization.payload.authorization_id + intentHash
-      + agentAddress.slice(2).toLowerCase().padStart(64, "0") + WORD(expiresAt),
+      + signedSender.slice(2).toLowerCase().padStart(64, "0") + WORD(expiresAt),
     value: "0x0",
   };
   const consumeTx = {
-    chainId: "0x13b2", from: agentAddress, to: REGISTRY,
+    chainId: "0x13b2", from: signedSender, to: REGISTRY,
     data: "0xbad56b75" + authorization.payload.authorization_id + intentHash,
     value: "0x0",
   };
@@ -113,7 +113,7 @@ function fixture({
         arc_authority: {
           contract_address: REGISTRY,
           issuer: issuerAddress,
-          executor: agentAddress,
+          executor: signedSender,
           registration_transaction: responseData.registrationTx,
         },
       };
@@ -204,9 +204,9 @@ test("rejects payment recipient, token destination or amount substitution before
   }
 });
 
-test("rejects a payment signer that does not match the signed agent sender", async () => {
-  const f = fixture({ agentAddress: RECIPIENT });
-  await assert.rejects(run(f), /signed payment sender/);
+test("rejects an agent signer that does not match the signed agent sender", async () => {
+  const f = fixture({ agentAddress: RECIPIENT, signedSender: AGENT });
+  await assert.rejects(run(f), /signed Registry executor does not match agent signer/);
   assert.equal(f.sent.length, 0);
 });
 
