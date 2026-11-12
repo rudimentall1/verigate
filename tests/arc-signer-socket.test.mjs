@@ -66,9 +66,12 @@ test("Unix socket exposes typed operations, enforces role and returns idempotent
     journal, feePolicy: { maxNativeCost: "100", dailyNativeBudget: "1000" },
     executeOperation: async ({ transaction, onBroadcast }) => {
       broadcasts++;
-      assert.equal(transaction.operation, "payment");
-      assert.equal(transaction.to, ARC_USDC);
-      const txHash = "0x" + "cd".repeat(32);
+      if (transaction.operation === "consume") assert.equal(transaction.to, REGISTRY);
+      else {
+        assert.equal(transaction.operation, "payment");
+        assert.equal(transaction.to, ARC_USDC);
+      }
+      const txHash = transaction.operation === "consume" ? "0x" + "ce".repeat(32) : "0x" + "cd".repeat(32);
       await onBroadcast(txHash);
       return { txHash, actualNativeCost: "50" };
     },
@@ -76,20 +79,27 @@ test("Unix socket exposes typed operations, enforces role and returns idempotent
   try {
     await service.listen();
     assert.equal(statSync(socketPath).mode & 0o777, 0o660);
+    const premature = await request(socketPath, { operation: "payment", authorization: f.authorization });
+    assert.equal(premature.ok, false);
+    assert.match(premature.error, /completed consume operation/);
+    assert.equal(broadcasts, 0);
+    const consumed = await request(socketPath, { operation: "consume", authorization: f.authorization });
+    assert.equal(consumed.ok, true);
+    assert.equal(consumed.replay, false);
     const first = await request(socketPath, { operation: "payment", authorization: f.authorization });
     assert.equal(first.ok, true);
     assert.equal(first.replay, false);
     const replay = await request(socketPath, { operation: "payment", authorization: f.authorization });
     assert.equal(replay.ok, true);
     assert.equal(replay.replay, true);
-    assert.equal(broadcasts, 1);
+    assert.equal(broadcasts, 2);
     const forbidden = await request(socketPath, { operation: "register", authorization: f.authorization });
     assert.equal(forbidden.ok, false);
     assert.match(forbidden.error, /agent signer cannot register/);
     const arbitrary = await request(socketPath, { operation: "payment", authorization: f.authorization, to: RECIPIENT, data: "0xdeadbeef" });
     assert.equal(arbitrary.ok, false);
     assert.match(arbitrary.error, /only operation and authorization/);
-    assert.equal(broadcasts, 1);
+    assert.equal(broadcasts, 2);
   } finally {
     await service.close();
     rmSync(dir, { recursive: true, force: true });
