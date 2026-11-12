@@ -94,8 +94,17 @@ validate_env() {
   [[ -f "$file" && ! -L "$file" ]] || die "missing regular environment file: $file"
   [[ "$(stat -c '%U:%G' "$file")" == "root:root" ]] || die "$file must be owned by root:root"
   mode="$(stat -c '%a' "$file")"
-  (( (8#$mode & 0022) == 0 )) || die "$file must not be group/world writable"
+  [[ "$mode" == "600" || "$mode" == "640" ]] || die "$file must be mode 0600 or 0640"
+  ensure_single_var() {
+    local count
+    count="$(grep -c "^$1=" "$file" || true)"
+    [[ "$count" == "1" ]] || die "$file must define $1 exactly once"
+  }
 
+  for name in VERIGATE_SIGNER_ROLE VERIGATE_SIGNER_SOCKET VERIGATE_SIGNER_JOURNAL VERIGATE_SIGNER_PRIVATE_KEY_FILE VERIGATE_AUTH_PUBLIC_KEY_FILE VERIGATE_ARC_RPC_URL VERIGATE_ARC_ISSUER_ADDRESS VERIGATE_ARC_REGISTRY_ADDRESS VERIGATE_ARC_REGISTRY_CODE_HASH VERIGATE_SIGNER_GAS_LIMIT VERIGATE_SIGNER_MAX_FEE_PER_GAS VERIGATE_SIGNER_MAX_PRIORITY_FEE_PER_GAS VERIGATE_SIGNER_MAX_NATIVE_COST VERIGATE_SIGNER_DAILY_NATIVE_BUDGET VERIGATE_SIGNER_CONFIRMATIONS; do
+    ensure_single_var "$name"
+  done
+  grep -Eq '(^|_)PRIVATE_KEY=' "$file" && die "$file must not contain private-key material or private-key environment variables"
   grep -Fqx "VERIGATE_SIGNER_ROLE=${role}" "$file" || die "$file has incorrect signer role"
   grep -Fqx "VERIGATE_SIGNER_SOCKET=/run/verigate-signer-${role}/signer.sock" "$file" || die "$file has incorrect socket path"
   grep -Fqx "VERIGATE_SIGNER_JOURNAL=/var/lib/verigate-signer-${role}/ops.jsonl" "$file" || die "$file has incorrect journal path"
