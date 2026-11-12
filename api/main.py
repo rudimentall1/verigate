@@ -653,7 +653,7 @@ def confirm_arc_consumption(req: dict) -> dict:
     evidence = {
         "chain_id": ARC_CHAIN_ID,
         "contract_address": registry.contract_address,
-        "executor": registry.executor_address,
+        "executor": consumption["executor"],
         "authorization_id": registration["authorization_id"],
         "intent_hash": registration["intent_hash"],
         "registration": {
