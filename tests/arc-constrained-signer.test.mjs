@@ -1,0 +1,115 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { generateKeyPairSync, sign } from "node:crypto";
+import {
+  ARC_CHAIN_ID, ARC_USDC, deriveArcOperation, verifyExecutionAuthorization,
+  validateFeePolicy, OperationJournal, canonicalJson,
+} from "../integrations/arc-constrained-signer.mjs";
+
+const ISSUER = "0x1111111111111111111111111111111111111111";
+const AGENT = "0x2222222222222222222222222222222222222222";
+const REGISTRY = "0x3333333333333333333333333333333333333333";
+const RECIPIENT = "0x4444444444444444444444444444444444444444";
+const word = n => BigInt(n).toString(16).padStart(64, "0");
+
+function authFixture(overrides = {}) {
+  const keys = generateKeyPairSync("ed25519");
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    authorization_version: 1,
+    authorization_id: "0x" + "aa".repeat(32),
+    issued_at: now - 5,
+    expires_at: now + 240,
+    action: {
+      network: "arc", asset: "USDC", action_type: "payment",
+      target: RECIPIENT, amount_exact: "1.25",
+      metadata: {
+        arc: { chain_id: ARC_CHAIN_ID, asset: "USDC", token_address: ARC_USDC, token_decimals: 6 },
+        evm_transaction: {
+          chain_id: ARC_CHAIN_ID, from: AGENT, to: ARC_USDC,
+          data: "0xa9059cbb" + RECIPIENT.slice(2).padStart(64, "0") + word(1250000),
+          value_wei: "0",
+        },
+      },
+    },
+    ...overrides,
+  };
+  const authorization = {
+    algorithm: "Ed25519", payload,
+    signature: sign(null, Buffer.from(canonicalJson(payload)), keys.privateKey).toString("base64"),
+  };
+  return { authorization, pem: keys.publicKey.export({ type: "spki", format: "pem" }).toString() };
+}
+
+test("verifies signed authorization and derives exact USDC transfer", () => {
+  const f = authFixture();
+  const v = verifyExecutionAuthorization(f.authorization, f.pem);
+  assert.equal(v.sender, AGENT);
+  assert.equal(v.recipient, RECIPIENT);
+  assert.equal(v.amount, 1250000n);
+  const tx = deriveArcOperation({ role: "agent", operation: "payment", ...f, registryAddress: REGISTRY, signerAddress: AGENT });
+  assert.equal(tx.chainId, ARC_CHAIN_ID);
+  assert.equal(tx.to, ARC_USDC);
+  assert.equal(tx.data, f.authorization.payload.action.metadata.evm_transaction.data);
+  assert.equal(tx.value, 0n);
+});
+
+test("issuer can derive registration but cannot consume", () => {
+  const f = authFixture();
+  const tx = deriveArcOperation({ role: "issuer", operation: "register", ...f, registryAddress: REGISTRY, signerAddress: ISSUER, issuerAddress: ISSUER });
+  assert.equal(tx.to, REGISTRY);
+  assert.equal(tx.data.slice(0, 10), "0xb267748a");
+  assert.throws(() => deriveArcOperation({ role: "issuer", operation: "consume", ...f, registryAddress: REGISTRY, signerAddress: ISSUER, issuerAddress: ISSUER }), /issuer signer cannot execute/);
+});
+
+test("agent cannot register and wrong sender cannot execute", () => {
+  const f = authFixture();
+  assert.throws(() => deriveArcOperation({ role: "agent", operation: "register", ...f, registryAddress: REGISTRY, signerAddress: AGENT }), /agent signer cannot register/);
+  assert.throws(() => deriveArcOperation({ role: "agent", operation: "payment", ...f, registryAddress: REGISTRY, signerAddress: ISSUER }), /does not match signed sender/);
+});
+
+test("rejects tampered payload, wrong chain, noncanonical token and expired authorization", () => {
+  const f = authFixture();
+  const tampered = structuredClone(f.authorization);
+  tampered.payload.action.amount_exact = "99";
+  assert.throws(() => verifyExecutionAuthorization(tampered, f.pem), /invalid Verigate authorization signature/);
+  const expired = authFixture({ issued_at: Math.floor(Date.now() / 1000) - 500, expires_at: Math.floor(Date.now() / 1000) - 1 });
+  assert.throws(() => verifyExecutionAuthorization(expired.authorization, expired.pem), /not currently valid/);
+  const wrongChain = authFixture();
+  wrongChain.authorization.payload.action.metadata.evm_transaction.chain_id = 1;
+  wrongChain.authorization.signature = sign(null, Buffer.from(canonicalJson(wrongChain.authorization.payload)), generateKeyPairSync("ed25519").privateKey).toString("base64");
+  assert.throws(() => verifyExecutionAuthorization(wrongChain.authorization, wrongChain.pem), /invalid Verigate authorization signature/);
+});
+
+test("rejects inconsistent fee configuration and live fee spikes", () => {
+  const policy = { gasLimit: "100000", maxFeePerGas: "100", maxPriorityFeePerGas: "5", maxNativeCost: "10000000", dailyNativeBudget: "50000000" };
+  assert.equal(validateFeePolicy(policy, { maxFeePerGas: 90n, maxPriorityFeePerGas: 2n }).gasLimit, 100000n);
+  assert.throws(() => validateFeePolicy(policy, { maxFeePerGas: 101n, maxPriorityFeePerGas: 2n }), /exceeds signer policy/);
+  assert.throws(() => validateFeePolicy({ ...policy, maxPriorityFeePerGas: "101" }, { maxFeePerGas: 90n, maxPriorityFeePerGas: 2n }), /priority fee cannot exceed/);
+});
+
+test("journal reserves once and returns completed result without a second reservation", () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-"));
+  try {
+    const journal = new OperationJournal(join(dir, "ops.jsonl"));
+    const id = "0x" + "aa".repeat(32);
+    assert.deepEqual(journal.reserve(id, "payment"), { replay: false });
+    journal.complete(id, "payment", { txHash: "0x123" });
+    assert.deepEqual(journal.reserve(id, "payment"), { replay: true, result: { txHash: "0x123" } });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("journal fails closed on unresolved reservation and duplicate completion", () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-"));
+  try {
+    const journal = new OperationJournal(join(dir, "ops.jsonl"));
+    const id = "0x" + "bb".repeat(32);
+    journal.reserve(id, "consume");
+    assert.throws(() => journal.reserve(id, "consume"), /operator reconciliation/);
+    journal.complete(id, "consume", { txHash: "0x456" });
+    assert.throws(() => journal.complete(id, "consume", { txHash: "0x789" }), /existing unresolved reservation/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
