@@ -590,3 +590,36 @@ Next safe dependency action:
 - No signer keys were provisioned and no live Arc transaction was broadcast by the signer.
 - Gensyn2 remains untouched. Do not modify FLOP, AegisForge, OWNERA or unrelated services.
 - Do not merge PR #57 or #58, provision production keys, start signer services or send live transactions without separate explicit approval.
+
+
+## 22. Arc signer stale-lock recovery implementation — 2026-11-12
+
+### Implemented on the signer branch
+
+- Updated `OperationJournal.withLock()` to write owner metadata into the exclusive lock file and fsync it before running the protected operation:
+  - signer PID;
+  - Linux boot ID;
+  - Linux process start ticks from `/proc/<pid>/stat`;
+  - metadata version and platform.
+- Added `OperationJournal.inspectLock()`:
+  - checks regular-file type, one hard link, exact 0600 permissions and signer ownership;
+  - opens with `O_NOFOLLOW` where supported and checks the opened inode against the initial `lstat`;
+  - rejects malformed or unsupported metadata;
+  - distinguishes a live process from a stale lock using boot ID, PID liveness and process start ticks, protecting against PID reuse.
+- Added `OperationJournal.recoverStaleLock({ apply })`:
+  - default behavior is inspect-only;
+  - requires `apply: true` to unlink a provably stale lock;
+  - refuses a live owner or any uncertain/unsafe lock;
+  - checks the lock inode again immediately before unlinking;
+  - never reads, rewrites, truncates or deletes journal operation records.
+- Added operator command `scripts/recover_arc_signer_lock.mjs` and npm alias `npm run recover:arc-signer-lock -- /path/to/journal.jsonl [--apply]`.
+- Added tests for live-owner refusal, PID reuse, stale PID recovery, explicit-apply requirement, malformed metadata, symlink/hardlink/broad-permission rejection, journal byte preservation, lock owner metadata and concurrent acquisition refusal.
+- Recovery is not called automatically at service startup. Non-Linux environments can continue to use the journal, but stale-lock recovery is intentionally unsupported there.
+
+### Verification status
+
+- Latest implementation commit at this checkpoint: `75fd812bc7495be646b7dac1bc491a99f8ba36cd`.
+- PR #58 remains Draft/Open and unmerged.
+- The exact-head CI pass [#43193728508](https://github.com/rudimentall1/verigate/actions/runs/43193728508) validates the previous head `a4a11a2...`, **not** the stale-lock implementation above.
+- A fresh CI run for `75fd812...` has not yet appeared in the GitHub workflow-run lookup. Do not claim these new lock-recovery tests pass until the fresh run completes.
+- No Gensyn2 access or changes, no signer key provisioning, no service start and no live transaction.
