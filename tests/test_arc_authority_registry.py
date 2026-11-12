@@ -74,6 +74,18 @@ class ArcAuthorityRegistryEncodingTest(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "not an enabled Registry issuer"):
             registry.verify_deployment()
 
+    def test_deployment_verification_allows_separate_enabled_issuer(self):
+        issuer = "0x5555555555555555555555555555555555555555"
+        registry = ArcAuthorityRegistry(
+            rpc=FakeRpc(),
+            issuer_address=issuer,
+            expected_code_hash=_test_runtime_hash(),
+        )
+        result = registry.verify_deployment()
+        self.assertEqual(result["owner"], DEFAULT_EXECUTOR.lower())
+        self.assertEqual(result["issuer"], issuer.lower())
+        self.assertTrue(result["issuer_enabled"])
+
     def test_deployment_verification_rejects_missing_runtime_hash_pin(self):
         registry = ArcAuthorityRegistry(rpc=FakeRpc(), expected_code_hash="")
         with self.assertRaisesRegex(Exception, "VERIGATE_ARC_REGISTRY_CODE_HASH"):
