@@ -632,3 +632,12 @@ Next safe dependency action:
 - Latest branch implementation commit: `c8bb76ae9d543cd9f2add79d18baf37b4fc1c4f4`.
 - PR #58 remains Draft/Open. No merge, service installation, key provisioning or live transaction.
 - CI for the stale-lock implementation is still not confirmed. The last confirmed full CI pass remains run #43193728508 on the earlier head `a4a11a2...`. Do not mark the new lock recovery code tested until a fresh run on the current head passes.
+
+
+## 24. Arc signer PR metadata and latest checkpoint — 2026-11-12
+
+- PR #58 description now includes the stale-lock owner metadata, explicit recovery command, PID-reuse protection, unsafe-lock rejection and operator runbook.
+- PR remains **Draft/Open**, based on PR #57. No merge or base change.
+- Latest signer branch head: `2d080d9bc431acdad87e7ea7d2db0b1764926611`.
+- Latest confirmed full CI pass remains run [#43193728508](https://github.com/rudimentall1/verigate/actions/runs/43193728508) on earlier head `a4a11a2...`. The workflow-run lookup has not returned a run for the new stale-lock commits, and combined commit status is empty. Treat the new code as **not yet CI-verified**.
+- Before any deployment discussion, obtain a full CI run for the latest head and inspect the `contracts` job output for the lock recovery tests. Then test the real systemd runtime/ACL behavior in a disposable Linux VM.
