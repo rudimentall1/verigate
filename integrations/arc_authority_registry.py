@@ -125,19 +125,21 @@ class ArcAuthorityRegistry:
             raise ArcAuthorityRegistryError("authorization expiry is outside uint64 range")
         if require_unexpired and valid_until <= int(time.time()):
             raise ArcAuthorityRegistryError("execution authorization has expired")
-        canonical = json.dumps(
-            {
-                "domain": "verigate.arc.authority.registry",
-                "version": 1,
-                "chain_id": ARC_CHAIN_ID,
-                "contract": self.contract_address.lower(),
-                "authorization": authorization,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-        intent_hash = hashlib.sha256(canonical).hexdigest()
+        signature = authorization.get("signature")
+        algorithm = authorization.get("algorithm")
+        if algorithm != "Ed25519" or not isinstance(signature, str) or not signature:
+            raise ArcAuthorityRegistryError(
+                "execution authorization must carry an Ed25519 signature"
+            )
+        # Hash the signed envelope by its signature bytes rather than re-serializing
+        # JSON across languages. Python and JavaScript stringify integral floats
+        # differently (e.g. 1.0 vs 1), which would otherwise produce divergent
+        # Registry intent hashes for the same valid authorization.
+        hash_input = (
+            f"verigate.arc.authority.registry:v2:{ARC_CHAIN_ID}:"
+            f"{self.contract_address.lower()}:{algorithm}:{signature}"
+        ).encode("ascii")
+        intent_hash = hashlib.sha256(hash_input).hexdigest()
         return authorization_id, intent_hash, valid_until
 
     def verify_deployment(self) -> dict:
