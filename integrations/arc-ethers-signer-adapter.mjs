@@ -79,8 +79,9 @@ export async function createArcEthersAdapter({
     const receipt = await response.wait(confirmations);
     assert(receipt && Number(receipt.status) === 1, "Arc transaction receipt is missing or reverted");
     assert(String(receipt.hash || receipt.transactionHash).toLowerCase() === response.hash.toLowerCase(), "receipt hash does not match submitted transaction");
-    assert(receipt.gasUsed != null && receipt.effectiveGasPrice != null, "receipt lacks actual fee fields");
-    const actualNativeCost = (BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice)).toString();
+    const effectiveGasPrice = receipt.effectiveGasPrice ?? receipt.gasPrice;
+    assert(receipt.gasUsed != null && effectiveGasPrice != null, "receipt lacks actual fee fields");
+    const actualNativeCost = (BigInt(receipt.gasUsed) * BigInt(effectiveGasPrice)).toString();
     assert(BigInt(actualNativeCost) <= limits.maxNativeCost, "actual native cost exceeded per-operation ceiling");
     return {
       txHash: response.hash,
