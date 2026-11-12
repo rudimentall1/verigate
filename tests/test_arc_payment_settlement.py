@@ -108,11 +108,13 @@ class ArcPaymentSettlementTests(unittest.TestCase):
         self.rpc = FakeRpc()
         self.verifier = ArcPaymentSettlementVerifier(self.rpc)
 
-    def confirm(self):
+    def confirm(self, issued_at=1731139500, expires_at=1731139600):
         return self.verifier.confirm_payment(
             expected_transaction=EXPECTED_TRANSACTION,
             payment_transaction_hash=PAYMENT_HASH,
             consumption_transaction_hash=CONSUME_HASH,
+            authorization_issued_at=issued_at,
+            authorization_expires_at=expires_at,
         )
 
     def test_confirms_exact_usdc_transfer_after_registry_consumption(self):
@@ -142,6 +144,18 @@ class ArcPaymentSettlementTests(unittest.TestCase):
         self.rpc.payment_tx["transactionIndex"] = "0x0"
         with self.assertRaisesRegex(ArcPaymentVerificationError, "not ordered after"):
             self.confirm()
+
+    def test_rejects_payment_included_before_authorization_issuance(self):
+        with self.assertRaisesRegex(ArcPaymentVerificationError, "before authorization issuance"):
+            self.confirm(issued_at=1731139585, expires_at=1731139700)
+
+    def test_rejects_payment_included_at_authorization_expiry(self):
+        with self.assertRaisesRegex(ArcPaymentVerificationError, "at or after authorization expiry"):
+            self.confirm(issued_at=1731139500, expires_at=1731139584)
+
+    def test_rejects_invalid_authorization_validity_window(self):
+        with self.assertRaisesRegex(ArcPaymentVerificationError, "validity window is invalid"):
+            self.confirm(issued_at=1731139500, expires_at=1731139901)
 
     def test_rejects_unfinalized_payment_block(self):
         self.rpc.finalized = {"number": "0x63", "hash": FINALIZED_BLOCK_HASH}
