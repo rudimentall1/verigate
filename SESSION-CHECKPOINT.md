@@ -477,46 +477,50 @@ Next safe dependency action:
 - Dedicated branch: `feat/arc-agent-signer-service-2026-11-12`.
 - PR #58: https://github.com/rudimentall1/verigate/pull/58
 - PR #58 is Draft/Open and stacked on PR #57 branch head `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`; it is not based on `main`.
-- Current branch head before this checkpoint update: `d620bef09bb4341937ce57a889786e105b06a05b`.
+- Current branch head before this checkpoint update: `af85ec2389341cfddb8bdffab5650d91ea9d15f2`.
 - PR #57 remains separate. Do not merge either PR without explicit approval.
 - This checkpoint and all signer work are on the signer branch, not `main`.
 
 ### Implemented
 
 1. `integrations/arc-constrained-signer.mjs`
-   - Verifies pinned Ed25519 authorization signatures and the 300-second validity window.
+   - Verifies pinned Verigate Ed25519 authorization signatures, version 1, positive timestamps and the 300-second validity window.
+   - Accepts API-compatible bytes32 authorization IDs both with and without `0x`.
    - Validates Arc Mainnet chain 5042, canonical Arc USDC, six decimals, zero native value and exact transfer calldata.
    - Derives Registry registration, Registry consumption and USDC payment calldata internally.
    - Enforces issuer-only registration and agent-only consumption/payment.
    - Validates configured fee ceilings and live fee data.
    - Uses an append-only fsync-backed journal with locking, replay protection, cumulative daily budget reservations and fail-closed unresolved operations.
 
-2. `integrations/arc-signer-socket.mjs`
+2. `integrations/arc-signer-socket.mjs` and `integrations/arc-signer-client.mjs`
    - Unix-domain socket only; typed operations are `register`, `consume`, and `payment`.
    - Rejects arbitrary transaction fields, oversized requests and existing socket paths.
    - Uses socket mode 0660 and a durable reservation before adapter execution.
    - Completed requests replay the saved result instead of broadcasting twice.
+   - Client exposes only the three typed operations; no generic sign or send-transaction method.
 
 3. `integrations/arc-ethers-signer-adapter.mjs`
    - Ethers v6 adapter pins Arc chain ID, a configured 20-byte Registry address and the expected Registry runtime code hash.
    - Startup checks the configured issuer mapping on-chain; issuer role also requires the loaded signer address to match the configured issuer.
-   - Enforces live fee data, gas estimation, configured gas/fee ceilings, pending nonce lookup, serialized local broadcasts, receipt status/hash and actual native-cost accounting.
-   - No caller-supplied gas, fee, destination or calldata overrides are accepted.
+   - Enforces live fee data, gas estimation, configured gas/fee ceilings, pending nonce lookup, serialized local broadcasts, receipt status/hash, confirmation wait and actual native-cost accounting.
 
-4. `scripts/run_arc_signer.mjs`
+4. `scripts/run_arc_signer.mjs` and `deploy/systemd/verigate-arc-signer@.service`
    - Linux-only daemon entrypoint.
    - Loads EVM private key from a protected file, checks file type, owner and restrictive permissions, and does not accept the private key through command-line arguments or environment variables.
    - Requires separate role, socket, journal, RPC, Registry, issuer, public-key and fee configuration.
+   - systemd template provides separate issuer/agent users and groups, strict filesystem protection, restricted writable paths, no ambient capabilities and restricted address families.
 
-5. `deploy/systemd/verigate-arc-signer@.service`
-   - Hardened systemd template for separate issuer and agent service users/groups.
-   - Includes filesystem, capability, address-family and writable-path restrictions.
+5. Existing Arc executor integration
+   - Added `executeAuthorizedArcPaymentWithSignerClients` to `integrations/arc-agent-executor.mjs`.
+   - Preserves the existing API sequence: authorize → issuer register → registration confirm → agent consume → consumption confirm → agent payment → payment confirm.
+   - Validates the API-provided transaction envelopes against independently derived calldata before requesting signer operations.
+   - Orchestrator uses typed socket clients and does not load EVM Wallets or private keys.
 
 6. Tests and CI
-   - Added signer policy, Unix socket and ethers adapter tests.
-   - `npm run test:arc-constrained-signer` now syntax-checks the daemon and runs all three signer test files.
-   - CI job `contracts` passed on earlier commit `c8973b5`; later issuer-startup checks and their test fixtures are being validated by the current workflow.
-   - Latest branch-head CI run: [43182609166](https://github.com/rudimentall1/verigate/actions/runs/43182609166), queued at checkpoint time. The preceding code run [43182583586](https://github.com/rudimentall1/verigate/actions/runs/43182583586) was still in progress.
+   - Added policy, socket server, socket client, ethers adapter and signer-client orchestration tests.
+   - The contracts job passed on [run 43183075881](https://github.com/rudimentall1/verigate/actions/runs/43183075881), including 19 executor/orchestration assertions and signer policy/client tests.
+   - A later test adds the prefixed bytes32 authorization-ID case. [Run 43183096446](https://github.com/rudimentall1/verigate/actions/runs/43183096446) was still in progress at checkpoint time.
+   - Full CI on the exact latest branch head is not yet confirmed green.
 
 ### Important Registry address blocker
 
@@ -530,17 +534,15 @@ The signer deliberately does not inherit that default. It requires an explicit v
 - No signer keys were created, copied or exposed.
 - No live Arc transaction was broadcast by this service.
 - Adapter tests use mocked provider/wallet objects; they are not live-chain verification.
-- No Unix socket client has yet been wired into the existing `arc-agent-executor.mjs` orchestration. The daemon and typed transport exist, but the complete agent-to-signer-to-Verigate confirmation flow still needs integration.
 - No clean-room Linux install, systemd runtime test, OS account/group provisioning, or rollback test has been completed.
-- No Gensyn2 server command was run; Gensyn2 remains untouched.
+- Gensyn2 was not accessed or modified.
 - This is OS-isolated signing, not an HSM and not protection against root/host compromise.
 
 ### Next gates
 
 1. Finish CI on the exact current branch head and fix any failure.
 2. Recover and independently verify the correct Registry address from deployment receipt/live Arc RPC. Correct the pre-existing configuration separately; never guess the missing/extra character.
-3. Add a Unix socket client and integrate the issuer/agent signer calls into the Arc execution flow while preserving the existing Verigate confirmation endpoints.
-4. Test full crash/replay semantics, including failure after broadcast but before receipt persistence, and validate fee accounting against actual Arc receipts.
-5. Prepare role-specific environment files, Linux users/groups, socket ACLs, systemd install/rollback and a disposable Linux clean-room test.
-6. Only after all gates pass, inspect Gensyn2 read-only and prepare a controlled installation. Do not modify FLOP, AegisForge, OWNERA or unrelated services.
-7. No mainnet transaction or production key provisioning without a separate explicit decision.
+3. Complete adversarial crash/replay validation, including failure after broadcast but before receipt persistence, and validate fee accounting against actual Arc receipts.
+4. Prepare role-specific environment files, Linux users/groups, socket ACLs, systemd install/rollback and a disposable Linux clean-room test.
+5. Only after all gates pass, inspect Gensyn2 read-only and prepare a controlled installation. Do not modify FLOP, AegisForge, OWNERA or unrelated services.
+6. No mainnet transaction or production key provisioning without a separate explicit decision.
