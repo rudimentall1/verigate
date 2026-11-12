@@ -1,8 +1,8 @@
-"""Client-side transaction preparation and on-chain verification for Verigate Arc Authority Registry.
+"""Transaction preparation and on-chain verification for Verigate Arc Authority Registry.
 
-The user's wallet signs both registry transactions. The API never receives or stores
-the EVM private key. A payment transaction is released only after both on-chain
-receipts and the registry state have been verified.
+The operator-controlled issuer signer submits registration. The agent-controlled
+EVM executor submits one-time consumption and the payment. The API never receives
+or stores either EVM private key.
 """
 from __future__ import annotations
 
