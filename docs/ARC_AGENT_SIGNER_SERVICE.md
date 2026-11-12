@@ -21,6 +21,8 @@ Run two instances of the same constrained signer implementation under separate O
 
 The issuer instance must not share its key file, Unix socket, process identity or writable state with the agent instance. The agent instance must never be able to request Registry registration.
 
+The application-side orchestration must preserve that split. Run `registerArcAuthorizationWithIssuerSignerClient` only in the operator-controlled issuer controller; it requires only the issuer socket and returns the signed authorization plus the confirmed registration transaction hash. Hand those values to the agent runtime, which calls `executeRegisteredArcPaymentWithAgentSignerClient` using only the agent socket. The agent phase independently re-confirms registration through Verigate before consuming and paying. The agent process does not need issuer-socket permissions. The compatibility wrapper `executeAuthorizedArcPaymentWithSignerClients` requires both clients in one process and is for a trusted coordinator only; do not deploy that wrapper inside the autonomous agent runtime.
+
 ## Implementation status (2026-11-12)
 
 - Implemented: typed newline-delimited JSON protocol over a Unix-domain socket, 64 KiB request cap, one request per connection, socket mode 0660, refusal to replace an existing socket path, role checks, signed-authorization verification, internally derived transaction fields, durable reservation before adapter invocation, replay response for completed operations, and fail-closed unresolved reservations.
