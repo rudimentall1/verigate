@@ -1,0 +1,37 @@
+[Unit]
+Description=Verigate constrained Arc signer (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=verigate-signer-%i
+Group=verigate-signer-%i
+WorkingDirectory=/opt/verigate
+EnvironmentFile=/etc/verigate-signer/%i.env
+ExecStart=/usr/bin/node /opt/verigate/scripts/run_arc_signer.mjs
+Restart=on-failure
+RestartSec=3
+UMask=0077
+
+RuntimeDirectory=verigate-signer-%i
+RuntimeDirectoryMode=0750
+StateDirectory=verigate-signer-%i
+StateDirectoryMode=0700
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/run/verigate-signer-%i /var/lib/verigate-signer-%i
+
+[Install]
+WantedBy=multi-user.target
