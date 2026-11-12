@@ -191,7 +191,7 @@ export class OperationJournal {
       }
       const fd = openSync(this.path, "a", 0o600);
       try {
-        appendFileSync(fd, JSON.stringify(record) + "\\n");
+        appendFileSync(fd, JSON.stringify(record) + "\n");
         fsyncSync(fd);
       } finally { closeSync(fd); }
     });
