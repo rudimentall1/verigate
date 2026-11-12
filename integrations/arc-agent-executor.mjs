@@ -229,11 +229,6 @@ export { ARC_CHAIN_ID };
 
 
 /**
- * Execute the existing Verigate Arc confirmation sequence through role-scoped
- * Unix socket signer clients. No EVM Wallet or private key enters this process.
- */
-
-/**
  * Operator-side phase: obtain a signed Verigate authorization, then register
  * it using only the issuer socket. This function must run in the operator-
  * controlled issuer controller, never in an autonomous agent runtime.
