@@ -164,8 +164,12 @@ export class OperationJournal {
         for (const row of rows) latest.set(row.authorizationId + ":" + row.operation, row);
         let committed = 0n;
         for (const row of latest.values()) {
-          if (row.budgetDay === budgetDay && (row.state === "reserved" || row.state === "broadcast" || row.state === "complete")) {
-            committed += BigInt(row.state === "complete" && row.actualNativeCost !== undefined ? row.actualNativeCost : row.reservedNativeCost ?? "0");
+          if (row.state === "reserved" || row.state === "broadcast") {
+            // An unresolved transaction can still be mined after UTC midnight.
+            // Keep its full reservation charged against every new day's ceiling.
+            committed += BigInt(row.reservedNativeCost ?? "0");
+          } else if (row.state === "complete" && (row.settlementDay ?? row.budgetDay) === budgetDay) {
+            committed += BigInt(row.actualNativeCost ?? row.reservedNativeCost ?? "0");
           }
         }
         assert(committed + cap <= daily, "daily native-token budget would be exceeded");
@@ -212,6 +216,7 @@ export class OperationJournal {
       if (actual !== undefined) record.actualNativeCost = actual.toString();
       if (prior.budgetDay !== undefined) {
         record.budgetDay = prior.budgetDay;
+        record.settlementDay = new Date().toISOString().slice(0, 10);
         record.reservedNativeCost = prior.reservedNativeCost;
         record.dailyNativeBudget = prior.dailyNativeBudget;
       }
