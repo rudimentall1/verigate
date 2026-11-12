@@ -97,11 +97,11 @@ test("journal reserves once and returns completed result without a second reserv
   try {
     const journal = new OperationJournal(join(dir, "ops.jsonl"));
     const id = "0x" + "aa".repeat(32);
-    assert.deepEqual(journal.reserve(id, "payment"), { replay: false });
+    assert.deepEqual(journal.reserve(id, "consume"), { replay: false });
     const txHash = "0x" + "12".repeat(32);
-    journal.markBroadcast(id, "payment", txHash);
-    assert.throws(() => journal.complete(id, "payment", { txHash: "0x" + "ff".repeat(32) }), /must match the durable broadcast record/);
-    journal.complete(id, "payment", { txHash });
+    journal.markBroadcast(id, "consume", txHash);
+    assert.throws(() => journal.complete(id, "consume", { txHash: "0x" + "ff".repeat(32) }), /must match the durable broadcast record/);
+    journal.complete(id, "consume", { txHash });
     assert.deepEqual(journal.reserve(id, "payment"), { replay: true, result: { txHash } });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -140,7 +140,7 @@ test("journal enforces cumulative daily native-token budget across reservations 
     journal.markBroadcast("0x" + "01".repeat(32), "register", "0x" + "aa".repeat(32));
     journal.complete("0x" + "01".repeat(32), "register", { txHash: "0x" + "aa".repeat(32) }, "30");
     journal.reserve("0x" + "02".repeat(32), "consume", { maxNativeCost: "60", dailyNativeBudget: "100", now: day + 1000 });
-    assert.throws(() => journal.reserve("0x" + "03".repeat(32), "payment", { maxNativeCost: "11", dailyNativeBudget: "100", now: day + 2000 }), /daily native-token budget/);
+    assert.throws(() => journal.reserve("0x" + "03".repeat(32), "consume", { maxNativeCost: "11", dailyNativeBudget: "100", now: day + 2000 }), /daily native-token budget/);
     journal.markBroadcast("0x" + "02".repeat(32), "consume", "0x" + "bb".repeat(32));
     assert.throws(() => journal.complete("0x" + "02".repeat(32), "consume", { txHash: "0x" + "bb".repeat(32) }, "61"), /exceeds reserved/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -187,12 +187,26 @@ test("unresolved signer broadcasts remain reserved across UTC midnight", () => {
     const beforeMidnight = Date.parse("2026-11-11T23:59:00.000Z");
     const afterMidnight = Date.parse("2026-11-12T00:01:00.000Z");
     const firstId = "0x" + "91".repeat(32);
-    journal.reserve(firstId, "payment", {
+    journal.reserve(firstId, "consume", {
       maxNativeCost: "80", dailyNativeBudget: "100", now: beforeMidnight,
     });
-    journal.markBroadcast(firstId, "payment", "0x" + "91".repeat(32));
+    journal.markBroadcast(firstId, "consume", "0x" + "91".repeat(32));
     assert.throws(() => journal.reserve("0x" + "92".repeat(32), "payment", {
       maxNativeCost: "21", dailyNativeBudget: "100", now: afterMidnight,
     }), /daily native-token budget/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("journal blocks payment until the same authorization has a completed consume", () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-consume-gate-"));
+  try {
+    const journal = new OperationJournal(join(dir, "ops.jsonl"));
+    const id = "0x" + "a1".repeat(32);
+    assert.throws(() => journal.reserve(id, "payment"), /completed consume operation/);
+    assert.deepEqual(journal.reserve(id, "consume"), { replay: false });
+    journal.markBroadcast(id, "consume", "0x" + "a2".repeat(32));
+    assert.throws(() => journal.reserve(id, "payment"), /completed consume operation/);
+    journal.complete(id, "consume", { txHash: "0x" + "a2".repeat(32) });
+    assert.deepEqual(journal.reserve(id, "payment"), { replay: false });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
