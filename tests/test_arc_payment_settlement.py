@@ -133,6 +133,7 @@ class ArcPaymentSettlementTests(unittest.TestCase):
 
     def test_rejects_payment_before_registry_consumption(self):
         self.rpc.payment_receipt["transactionIndex"] = "0x0"
+        self.rpc.payment_tx["transactionIndex"] = "0x0"
         with self.assertRaisesRegex(ArcPaymentVerificationError, "not ordered after"):
             self.confirm()
 
