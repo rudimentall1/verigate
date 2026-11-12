@@ -89,6 +89,28 @@ verified Arc block timestamp.
 Only when all checks succeed does the API return the exact wallet payment
 transaction and Arc authority evidence.
 
+### Payment settlement confirmation
+
+`POST /v1/integrations/arc/payment/confirm`
+
+After the user separately signs and broadcasts the returned USDC transaction,
+the client submits its transaction hash together with the original signed
+authorization and the registration/consumption transaction hashes. Verigate
+re-verifies the Registry sequence and then checks the payment transaction
+against the exact signed EVM envelope.
+
+The verifier requires:
+- Arc Mainnet chain ID, canonical USDC token address and zero native value.
+- Exact sender, token destination and transfer calldata from the signed intent.
+- Successful payment receipt whose transaction and receipt inclusion coordinates agree.
+- Exactly one matching `Transfer(address,address,uint256)` event emitted by canonical USDC, with the signed sender, recipient and amount.
+- Payment transaction ordering after Registry consumption (including transaction index when both are in the same block).
+- Receipt block hash matching the canonical block and inclusion at or below Arc's finalized head.
+
+The response returns `settled=true` and structured settlement evidence only
+after all checks pass. This endpoint verifies a payment already broadcast by
+the user's wallet; Verigate does not custody keys or broadcast the payment.
+
 ### Generic consume route
 
 `POST /v1/execution/consume`
