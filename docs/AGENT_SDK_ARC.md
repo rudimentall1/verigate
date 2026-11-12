@@ -95,6 +95,9 @@ import { JsonRpcProvider, Wallet } from "ethers";
 import { executeAuthorizedArcPayment } from "./integrations/arc-agent-executor.mjs";
 
 const request = JSON.parse(await readFile("arc-payment-request.json", "utf8"));
+// Pin this PEM out-of-band for the expected Verigate tenant. Do not trust a
+// public key fetched from the same API response path being authenticated.
+const verigatePublicKey = await readFile(process.env.VERIGATE_PUBLIC_KEY_PATH, "utf8");
 const provider = new JsonRpcProvider("https://rpc.mainnet.arc.io");
 
 // Local/dev illustration only. For production, replace the issuer Wallet with
@@ -108,6 +111,7 @@ const result = await executeAuthorizedArcPayment({
   agentSigner,
   apiBaseUrl: process.env.VERIGATE_API_URL,
   authorizationRequest: request,
+  verigatePublicKey,
   headers: { Authorization: `Bearer ${process.env.VERIGATE_API_KEY}` },
 });
 
@@ -119,6 +123,8 @@ console.log({
   settlement: result.payment_settlement,
 });
 ```
+
+The executor requires a pinned Verigate Ed25519 public key (`verigatePublicKey`) provisioned out-of-band for the tenant. It verifies the signed execution authorization locally before any transaction is submitted. Fetching the key from the same API endpoint at runtime would be trust-on-first-use and would not protect against an API or transport key substitution.
 
 The helper performs the following sequence:
 
