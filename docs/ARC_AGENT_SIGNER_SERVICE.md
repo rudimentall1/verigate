@@ -59,7 +59,7 @@ The signer must set and enforce transaction limits itself, not accept them from 
 - Maximum fee per gas.
 - Maximum priority fee per gas.
 - Maximum native-token cost per transaction.
-- Per-instance daily native-token budget and optional rate limit. Each signer role enforces its own budget from its own journal; the system-wide daily ceiling is the sum of the issuer and agent budgets. This is not a shared global budget. A strict shared ceiling requires a shared ledger or budget broker before deployment.
+- Per-instance daily native-token budget, enforced by UTC calendar day, and optional rate limit. Each signer role enforces its own budget from its own journal; the system-wide daily ceiling is the sum of the issuer and agent budgets. This is not a shared global budget. A strict shared ceiling requires a shared ledger or budget broker before deployment.
 
 No fee numbers are hard-coded in this specification. The initial values must be measured from representative Arc registration, consumption and USDC transfer receipts and reviewed by the operator. Startup must fail if required limits are missing, malformed, internally inconsistent or exceed the configured cost budget. The signer must fail closed if live fee data cannot be validated.
 
