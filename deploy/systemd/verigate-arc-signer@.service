@@ -9,7 +9,8 @@ User=verigate-signer-%i
 Group=verigate-signer-%i
 WorkingDirectory=/opt/verigate
 EnvironmentFile=/etc/verigate-signer/%i.env
-ExecStart=/usr/bin/node /opt/verigate/scripts/run_arc_signer.mjs
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/env node /opt/verigate/scripts/run_arc_signer.mjs
 Restart=on-failure
 RestartSec=3
 UMask=0077
