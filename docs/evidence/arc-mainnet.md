@@ -20,14 +20,14 @@ The deployment transaction and subsequent read-only RPC checks establish that th
 
 ## Verigate integration flow
 
-The current implementation uses the dedicated Arc Authority Registry sequence documented in [the Arc integration guide](../arc-mainnet-integration.md):
+The current implementation uses the Arc Authority Registry sequence documented in [the Arc integration guide](../arc-mainnet-integration.md):
 
-1. `POST /v1/integrations/arc/authorize` validates the signed agent intent, identity, capability, policy and Arc payment envelope, then returns an Execution Authorization and wallet-signable registration transaction.
-2. The executor wallet submits the Registry registration transaction.
-3. `POST /v1/integrations/arc/registration/confirm` verifies the transaction, receipt, canonical inclusion block and Registry state. The inclusion block timestamp is checked against the authorization validity interval.
-4. The executor wallet submits the Registry consumption transaction.
-5. `POST /v1/integrations/arc/consume/confirm` verifies consumption and uses the canonical consumption block timestamp for the local one-time execution decision.
-6. Only after successful confirmation does the API return the exact USDC payment transaction for a separate, explicit wallet approval.
+1. `POST /v1/integrations/arc/authorize` validates the signed agent intent, identity, capability, policy and exact Arc USDC envelope, then returns an Execution Authorization and registration transaction.
+2. The operator-controlled Registry issuer signer submits registration.
+3. `POST /v1/integrations/arc/registration/confirm` verifies the issuer transaction, receipt, canonical inclusion block, Registry event and state.
+4. The agent's own EVM executor submits the one-time consumption transaction. Its address is bound to the signed payment sender.
+5. `POST /v1/integrations/arc/consume/confirm` verifies the executor transaction and Registry state before returning the exact USDC transaction.
+6. The agent executor broadcasts the payment. `POST /v1/integrations/arc/payment/confirm` independently checks the Transfer event and finalized settlement.
 
 The generic `POST /v1/execution/consume` route rejects Arc authorizations with HTTP 409 so it cannot bypass the Registry sequence.
 
