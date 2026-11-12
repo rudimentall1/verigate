@@ -52,6 +52,9 @@ jobs:
       - name: Headless Arc agent executor workflow tests
         run: npm run test:arc-agent-executor
 
+      - name: Constrained Arc signer policy tests
+        run: npm run test:arc-constrained-signer
+
       - name: Atomic-state end-to-end test
         run: npm run test:atomic
 
