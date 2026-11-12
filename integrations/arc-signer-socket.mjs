@@ -91,6 +91,7 @@ export function createArcSignerSocketServer({
             });
             assert(
               current.authorizationId === derived.authorizationId &&
+              current.authorizationKey === derived.authorizationKey &&
               current.operation === derived.operation &&
               current.chainId === derived.chainId &&
               current.to === derived.to &&
