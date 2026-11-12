@@ -233,6 +233,12 @@ class ArcPaymentSettlementVerifier:
             raise ArcPaymentVerificationError("Arc payment transaction is not mined")
         if consumption_tx is None or consumption_receipt is None:
             raise ArcPaymentVerificationError("Arc Registry consumption transaction is unavailable")
+        if str(consumption_tx.get("hash", "")).lower() != consumption_transaction_hash.lower():
+            raise ArcPaymentVerificationError("Registry consumption transaction hash mismatch")
+        if str(consumption_receipt.get("transactionHash", "")).lower() != consumption_transaction_hash.lower():
+            raise ArcPaymentVerificationError("Registry consumption receipt hash mismatch")
+        if consumption_receipt.get("status") not in ("0x1", 1, "1"):
+            raise ArcPaymentVerificationError("Arc Registry consumption transaction did not succeed")
 
         expected_chain_id = _rpc_int(expected_transaction["chain_id"], "signed chain ID")
         expected_sender = _address(expected_transaction["from"], "signed payment sender")
