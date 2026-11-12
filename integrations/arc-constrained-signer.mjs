@@ -60,6 +60,9 @@ export function verifyExecutionAuthorization(authorization, publicKeyPem, now = 
   assert(action?.network === "arc" && action?.asset === "USDC" && action?.action_type === "payment", "authorization is not an Arc USDC payment");
   assert(Number(evm?.chain_id) === ARC_CHAIN_ID, "authorization chain must be Arc Mainnet (5042)");
   assert(normalizeAddress(evm?.to, "USDC token") === ARC_USDC, "authorization does not target canonical Arc USDC");
+  assert(Number(action.metadata.arc?.chain_id) === ARC_CHAIN_ID, "Arc metadata chain must be Arc Mainnet (5042)");
+  assert(normalizeAddress(action.metadata.arc?.token_address, "Arc metadata token") === ARC_USDC, "Arc metadata token must be canonical USDC");
+  assert(action.metadata.arc?.asset === "USDC", "Arc metadata asset must be USDC");
   assert(Number(action.metadata.arc?.token_decimals) === 6, "Arc USDC decimals must be 6");
   const sender = normalizeAddress(evm.from, "payment sender");
   const recipient = normalizeAddress(action.target, "payment recipient");
@@ -132,7 +135,7 @@ export class OperationJournal {
     try { return callback(); }
     finally { closeSync(lock); try { unlinkSync(lockPath); } catch {} }
   }
-  reserve(authorizationId, operation) {
+  reserve(authorizationId, operation, budget = {}) {
     return this.withLock(() => {
       const rows = this.records();
       const prior = rows.filter(x => x.authorizationId === authorizationId && x.operation === operation).at(-1);
@@ -140,22 +143,54 @@ export class OperationJournal {
         if (prior.state === "complete") return { replay: true, result: prior.result };
         throw new Error("operation has an unresolved reservation; operator reconciliation required");
       }
+      let reservation = { authorizationId, operation, state: "reserved", at: Date.now() };
+      if (budget.maxNativeCost !== undefined || budget.dailyNativeBudget !== undefined) {
+        let cap, daily;
+        try { cap = BigInt(budget.maxNativeCost); daily = BigInt(budget.dailyNativeBudget); }
+        catch { throw new Error("budget maxNativeCost and dailyNativeBudget must be integers"); }
+        assert(cap > 0n && daily > 0n, "budget limits must be positive");
+        assert(cap <= daily, "per-operation native cost exceeds daily budget");
+        const budgetDay = new Date(budget.now ?? Date.now()).toISOString().slice(0, 10);
+        const latest = new Map();
+        for (const row of rows) latest.set(row.authorizationId + ":" + row.operation, row);
+        let committed = 0n;
+        for (const row of latest.values()) {
+          if (row.budgetDay === budgetDay && (row.state === "reserved" || row.state === "complete")) {
+            committed += BigInt(row.state === "complete" && row.actualNativeCost !== undefined ? row.actualNativeCost : row.reservedNativeCost ?? "0");
+          }
+        }
+        assert(committed + cap <= daily, "daily native-token budget would be exceeded");
+        reservation = { ...reservation, budgetDay, reservedNativeCost: cap.toString(), dailyNativeBudget: daily.toString() };
+      }
       const fd = openSync(this.path, "a", 0o600);
       try {
-        appendFileSync(fd, JSON.stringify({ authorizationId, operation, state: "reserved", at: Date.now() }) + "\n");
+        appendFileSync(fd, JSON.stringify(reservation) + "\n");
         fsyncSync(fd);
       } finally { closeSync(fd); }
       return { replay: false };
     });
   }
-  complete(authorizationId, operation, result) {
+  complete(authorizationId, operation, result, actualNativeCost) {
     return this.withLock(() => {
       const rows = this.records();
       const prior = rows.filter(x => x.authorizationId === authorizationId && x.operation === operation).at(-1);
       assert(prior?.state === "reserved", "completion requires an existing unresolved reservation");
+      let actual;
+      if (actualNativeCost !== undefined) {
+        try { actual = BigInt(actualNativeCost); } catch { throw new Error("actualNativeCost must be an integer"); }
+        assert(actual >= 0n, "actualNativeCost cannot be negative");
+        if (prior.reservedNativeCost !== undefined) assert(actual <= BigInt(prior.reservedNativeCost), "actual native cost exceeds reserved per-operation ceiling");
+      }
+      const record = { authorizationId, operation, state: "complete", result, at: Date.now() };
+      if (actual !== undefined) record.actualNativeCost = actual.toString();
+      if (prior.budgetDay !== undefined) {
+        record.budgetDay = prior.budgetDay;
+        record.reservedNativeCost = prior.reservedNativeCost;
+        record.dailyNativeBudget = prior.dailyNativeBudget;
+      }
       const fd = openSync(this.path, "a", 0o600);
       try {
-        appendFileSync(fd, JSON.stringify({ authorizationId, operation, state: "complete", result, at: Date.now() }) + "\n");
+        appendFileSync(fd, JSON.stringify(record) + "\n");
         fsyncSync(fd);
       } finally { closeSync(fd); }
     });
