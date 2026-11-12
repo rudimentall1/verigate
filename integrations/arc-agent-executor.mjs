@@ -57,7 +57,7 @@ function verifyAuthorization(authorization, pem) {
   assert(valid, "Verigate execution authorization signature is invalid");
   const p = authorization.payload;
   assert(p.authorization_version === 1, "unsupported execution authorization version");
-  assert(typeof p.authorization_id === "string" && /^[0-9a-f]{64}$/.test(p.authorization_id), "authorization_id must be a lowercase 32-byte hex value");
+  assert(typeof p.authorization_id === "string" && /^(?:0x)?[0-9a-fA-F]{64}$/.test(p.authorization_id), "authorization_id must be bytes32");
   assert(Number.isSafeInteger(p.issued_at) && p.issued_at > 0, "authorization issuance time is invalid");
   assert(Number.isSafeInteger(p.expires_at) && p.expires_at > 0, "authorization expiry is invalid");
   const now = Math.floor(Date.now() / 1000);
@@ -171,7 +171,7 @@ export async function executeAuthorizedArcPayment({
     `verigate.arc.authority.registry:v2:${ARC_CHAIN_ID}:${pinnedRegistryAddress}:${authorization.algorithm}:${authorization.signature}`,
     "ascii",
   ).digest("hex");
-  const authId = payload.authorization_id;
+  const authId = payload.authorization_id.replace(/^0x/i, "").toLowerCase();
   const expectedRegistration = {
     to: pinnedRegistryAddress,
     data: REGISTER_SELECTOR + authId + intentHash + addressWord(agentAddress, "agent executor") + word(payload.expires_at, "authorization expiry"),
