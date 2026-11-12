@@ -6,7 +6,7 @@
  * serializes broadcasts to avoid local nonce races, and fails closed on fee,
  * estimate, receipt or settlement inconsistencies.
  */
-import { JsonRpcProvider, Wallet, keccak256 } from "ethers";
+import { JsonRpcProvider, Wallet, keccak256, id } from "ethers";
 import {
   ARC_CHAIN_ID, normalizeAddress, validateFeePolicy,
 } from "./arc-constrained-signer.mjs";
@@ -20,6 +20,8 @@ export async function createArcEthersAdapter({
   privateKey,
   registryAddress,
   expectedRegistryCodeHash,
+  role,
+  issuerAddress,
   feePolicy,
   confirmations = 1,
   provider: injectedProvider,
@@ -31,6 +33,8 @@ export async function createArcEthersAdapter({
   assert(feePolicy && feePolicy.gasLimit !== undefined, "complete signer fee policy is required");
   assert(Number.isSafeInteger(confirmations) && confirmations >= 1, "confirmations must be a positive integer");
   const registry = normalizeAddress(registryAddress, "Arc Registry");
+  assert(role === "issuer" || role === "agent", "signer role must be issuer or agent");
+  const issuer = normalizeAddress(issuerAddress, "configured Registry issuer");
 
   const provider = injectedProvider || new JsonRpcProvider(rpcUrl, ARC_CHAIN_ID, { staticNetwork: true });
   const wallet = injectedWallet || new Wallet(privateKey, provider);
@@ -45,8 +49,12 @@ export async function createArcEthersAdapter({
     const code = await provider.getCode(registry);
     assert(typeof code === "string" && code !== "0x" && code.length > 2, "Arc Registry has no runtime bytecode");
     assert(keccak256(code).toLowerCase() === expectedRegistryCodeHash.toLowerCase(), "Arc Registry runtime bytecode hash mismatch");
+    if (role === "issuer") assert(address === issuer, "issuer signer address differs from configured Registry issuer");
+    const issuerCall = id("issuers(address)").slice(0, 10) + issuer.slice(2).padStart(64, "0");
+    const issuerEnabled = await provider.call({ to: registry, data: issuerCall });
+    assert(BigInt(issuerEnabled) === 1n, "configured Registry issuer is not enabled on Arc");
     initialized = true;
-    return { address, chainId: ARC_CHAIN_ID, registry, registryCodeHash: keccak256(code) };
+    return { address, chainId: ARC_CHAIN_ID, registry, issuer, issuerEnabled: true, registryCodeHash: keccak256(code) };
   }
 
   async function execute(input) {
