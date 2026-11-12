@@ -50,7 +50,7 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 [[ -x /usr/sbin/nologin ]] || die "/usr/sbin/nologin is required for non-login signer accounts"
 
-for cmd in systemctl getent id install stat grep groupadd useradd; do
+for cmd in systemctl getent id install stat grep cmp groupadd useradd; do
   command -v "$cmd" >/dev/null || die "required command missing: $cmd"
 done
 if (( APPLY || PROVISION )); then
