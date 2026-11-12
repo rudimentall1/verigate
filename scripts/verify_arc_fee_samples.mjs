@@ -15,21 +15,32 @@ const samples = [
 ];
 
 const provider = new JsonRpcProvider(RPC_URL, 5042, { staticNetwork: true });
+let archiveProvider = null;
 try {
   const network = await provider.getNetwork();
   if (network.chainId !== 5042n) throw new Error(`Expected Arc Mainnet 5042, got ${network.chainId}`);
   const results = [];
   for (const sample of samples) {
-    const transaction = await provider.getTransaction(sample.hash);
-    if (!transaction) throw new Error(`Arc RPC did not return transaction data for ${sample.operation} (${sample.hash})`);
+    let source = "primary Arc RPC";
+    let tx = await provider.getTransaction(sample.hash);
+    let receipt = await provider.send("eth_getTransactionReceipt", [sample.hash]);
+    if (!tx || !receipt) {
+      // Arc RPC nodes may prune old hash/receipt lookups. Arcscan documents
+      // its read-only RPC as a multi-provider fallback for historical reads.
+      archiveProvider ??= new JsonRpcProvider("https://rpc.arc-scan.org", 5042, { staticNetwork: true });
+      tx ??= await archiveProvider.getTransaction(sample.hash);
+      receipt ??= await archiveProvider.send("eth_getTransactionReceipt", [sample.hash]);
+      source = "Arcscan read-only RPC fallback";
+    }
+    const transaction = tx;
+    if (!transaction) throw new Error(`No transaction data from primary or archive RPC for ${sample.operation} (${sample.hash})`);
+    if (!receipt) throw new Error(`No receipt from primary or archive RPC for ${sample.operation} (${sample.hash})`);
     if (String(transaction.to).toLowerCase() !== sample.to.toLowerCase()) {
       throw new Error(`Transaction destination mismatch for ${sample.operation}`);
     }
     if (String(transaction.data).slice(0, 10).toLowerCase() !== sample.selector) {
       throw new Error(`Transaction selector mismatch for ${sample.operation}`);
     }
-    const receipt = await provider.send("eth_getTransactionReceipt", [sample.hash]);
-    if (!receipt) throw new Error(`Arc RPC did not return a receipt for ${sample.operation} (${sample.hash})`);
     if (String(receipt.transactionHash).toLowerCase() !== sample.hash.toLowerCase()) {
       throw new Error(`Receipt transaction hash mismatch for ${sample.operation}`);
     }
@@ -45,6 +56,7 @@ try {
     results.push({
       operation: sample.operation,
       evidenceClass: sample.evidenceClass,
+      rpcSource: source,
       transactionHash: sample.hash,
       blockNumber: Number(BigInt(receipt.blockNumber)),
       from: receipt.from,
@@ -72,4 +84,5 @@ try {
   }, null, 2) + "\n");
 } finally {
   await provider.destroy();
+  if (archiveProvider) await archiveProvider.destroy();
 }
