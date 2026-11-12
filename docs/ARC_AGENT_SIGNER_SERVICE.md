@@ -24,9 +24,11 @@ The issuer instance must not share its key file, Unix socket, process identity o
 ## Implementation status (2026-11-12)
 
 - Implemented: typed newline-delimited JSON protocol over a Unix-domain socket, 64 KiB request cap, one request per connection, socket mode 0660, refusal to replace an existing socket path, role checks, signed-authorization verification, internally derived transaction fields, durable reservation before adapter invocation, replay response for completed operations, and fail-closed unresolved reservations.
-- Implemented tests: agent payment request, replay without a second adapter call, issuer-only operation rejection by an agent role, arbitrary caller-supplied transaction fields rejection, socket permissions, and existing-path refusal.
-- Not implemented: production ethers adapter, encrypted/private-key loading, nonce manager, Registry runtime-bytecode verification in signer startup, systemd units, installation/rollback scripts, and OS account provisioning.
-- The socket module is transport/policy orchestration only. It does not yet sign or broadcast a transaction. The injected adapter is a trusted boundary and must enforce live fee data, nonce handling, transaction construction, broadcast, receipt status and finality before this can be treated as an operational signer.
+- Implemented: ethers v6 adapter with Arc chain-ID check, pinned Registry address and runtime bytecode hash verification at startup, live fee-data validation, gas estimation, configured gas/fee ceilings, pending nonce lookup, serialized local broadcasts, receipt status/hash checks, confirmation wait and actual native-cost accounting.
+- Implemented: Linux daemon entrypoint with file-based private-key loading, owner/mode checks, role-specific configuration, no key in command-line arguments or environment variables, and startup failure if the Registry pin or fee policy is invalid.
+- Implemented tests: agent payment request, replay without a second adapter call, issuer-only operation rejection by an agent role, arbitrary caller-supplied transaction fields rejection, socket permissions, existing-path refusal, adapter chain/code-hash/fee/gas checks and receipt accounting.
+- Not implemented: systemd units, installation/rollback scripts, automated OS account and group provisioning, clean-room Linux install validation, and live Arc broadcast test. The current tests use mocked provider/wallet objects; they are not live-chain verification.
+- This remains an OS-isolated signer design, not an HSM and not protection against root/host compromise. Separate Linux users, groups, key files, journals and socket paths must be provisioned before the two role instances are safe to operate.
 
 ## Interface requirements
 
