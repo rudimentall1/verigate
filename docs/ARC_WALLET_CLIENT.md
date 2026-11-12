@@ -86,23 +86,21 @@ console.log(settlement.payment_settlement);
 
 ## Transaction order
 
-1. Client checks Arc Mainnet and the wallet account for the registry executor.
-2. Client asks Verigate to authorize the signed payment intent.
-3. Executor wallet signs and broadcasts the registry registration transaction.
-4. Client waits for a successful receipt and asks Verigate to verify it.
-5. Executor wallet signs and broadcasts the registry consumption transaction.
-6. Client waits for a successful receipt and asks Verigate to verify it.
-7. Verigate verifies the canonical Arc evidence and consumes the local one-time authorization.
-8. Only if `execute === true`, the helper returns the payment transaction.
-9. The application explicitly calls `broadcastAuthorizedArcPayment` after
-   presenting the payment to the user.
-10. After the payment is mined, the application calls `confirmArcPayment`.
-    Verigate returns settlement evidence only after checking the exact USDC
-    Transfer event and finalized canonical block.
+1. Client checks Arc Mainnet and asks Verigate to authorize the signed agent
+   payment intent.
+2. The Registry issuer account signs and broadcasts registration.
+3. The client waits for a successful receipt and asks Verigate to verify it.
+4. The agent executor account signs and broadcasts one-time consumption.
+5. The client waits for a successful receipt and asks Verigate to verify it.
+6. Only if `execute === true`, Verigate returns the exact payment transaction.
+7. The agent executor account signs and broadcasts the USDC payment.
+8. After the payment is mined, the client calls `confirmArcPayment`.
+   Verigate returns settlement evidence only after checking the exact USDC
+   Transfer event and finalized canonical block.
 
-The registry executor and the payment sender are not assumed to be the same
-account. Each wallet operation checks that the connected provider exposes the
-account specified in that transaction's `from` field.
+The Registry issuer and agent executor are intentionally separate. This
+browser adapter requires the connected wallet provider to expose both
+accounts; the headless agent executor is the preferred autonomous path.
 
 ## Failure behavior
 
