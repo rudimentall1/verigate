@@ -83,14 +83,6 @@ async function postJson(fetchImpl, url, body, headers) {
   return payload;
 }
 
-async function getPublicKey(fetchImpl, base, headers) {
-  const response = await fetchImpl(`${base}/v1/public-key`, { method: "GET", headers });
-  assert(response?.ok, `could not retrieve Verigate public key (HTTP ${response?.status ?? "unknown"})`);
-  const pem = await response.text();
-  assert(typeof pem === "string" && pem.includes("BEGIN PUBLIC KEY"), "Verigate public key response is invalid");
-  return pem;
-}
-
 function normalizeSignerTransaction(transaction, signerAddress, label, expected) {
   assert(transaction && typeof transaction === "object", `${label} transaction is missing`);
   const from = normalizeAddress(transaction.from, `${label} transaction from`);
@@ -126,11 +118,12 @@ async function submitAndConfirm(signer, transaction, label, expected) {
  */
 export async function executeAuthorizedArcPayment({
   provider, issuerSigner, agentSigner, apiBaseUrl, authorizationRequest,
-  fetchImpl = globalThis.fetch, headers = {},
+  verigatePublicKey, fetchImpl = globalThis.fetch, headers = {},
 }) {
   assert(provider && typeof provider.getNetwork === "function", "an ethers-compatible JSON-RPC provider is required");
   assert(typeof apiBaseUrl === "string" && apiBaseUrl.length > 0, "apiBaseUrl is required");
   assert(typeof fetchImpl === "function", "fetch implementation is required");
+  assert(typeof verigatePublicKey === "string" && verigatePublicKey.includes("BEGIN PUBLIC KEY"), "a pinned Verigate Ed25519 public key is required");
   assert(authorizationRequest && typeof authorizationRequest === "object", "signed agent authorization request is required");
   assert(issuerSigner && typeof issuerSigner.getAddress === "function", "operator issuer signer is required");
   assert(agentSigner && typeof agentSigner.getAddress === "function", "agent executor signer is required");
@@ -142,11 +135,10 @@ export async function executeAuthorizedArcPayment({
   assert(issuerAddress !== agentAddress, "Registry issuer and agent executor signers must be different addresses");
 
   const base = apiBaseUrl.replace(/\/$/, "");
-  const publicKeyPem = await getPublicKey(fetchImpl, base, headers);
   const authorized = await postJson(fetchImpl, `${base}/v1/integrations/arc/authorize`, authorizationRequest, headers);
   const authorization = authorized.execution_authorization;
   const registrationTx = authorized.arc_authority?.registration_transaction;
-  const { payload, evm } = verifyAuthorization(authorization, publicKeyPem);
+  const { payload, evm } = verifyAuthorization(authorization, verigatePublicKey);
   const registryAddress = normalizeAddress(authorized.arc_authority?.contract_address, "configured Registry address");
   assert(normalizeAddress(authorized.arc_authority?.issuer, "Registry issuer") === issuerAddress, "configured Registry issuer does not match issuer signer");
   assert(normalizeAddress(authorized.arc_authority?.executor, "Registry executor") === agentAddress, "signed Registry executor does not match agent signer");
