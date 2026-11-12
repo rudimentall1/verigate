@@ -55,6 +55,9 @@ jobs:
       - name: Constrained Arc signer policy tests
         run: npm run test:arc-constrained-signer
 
+      - name: Arc signer real systemd runtime smoke test
+        run: sudo -n bash tests/arc-signer-systemd-runtime-smoke.sh
+
       - name: Atomic-state end-to-end test
         run: npm run test:atomic
 
