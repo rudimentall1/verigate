@@ -232,13 +232,17 @@ export { ARC_CHAIN_ID };
  * Execute the existing Verigate Arc confirmation sequence through role-scoped
  * Unix socket signer clients. No EVM Wallet or private key enters this process.
  */
-export async function executeAuthorizedArcPaymentWithSignerClients({
-  issuerSignerClient, agentSignerClient, apiBaseUrl, authorizationRequest,
-  verigatePublicKey, registryAddress, issuerAddress, agentAddress,
-  fetchImpl = globalThis.fetch, headers = {},
+
+/**
+ * Operator-side phase: obtain a signed Verigate authorization, then register
+ * it using only the issuer socket. This function must run in the operator-
+ * controlled issuer controller, never in an autonomous agent runtime.
+ */
+export async function registerArcAuthorizationWithIssuerSignerClient({
+  issuerSignerClient, apiBaseUrl, authorizationRequest, verigatePublicKey,
+  registryAddress, issuerAddress, agentAddress, fetchImpl = globalThis.fetch, headers = {},
 }) {
   assert(issuerSignerClient && typeof issuerSignerClient.register === "function", "issuer signer client must expose register()");
-  assert(agentSignerClient && typeof agentSignerClient.consume === "function" && typeof agentSignerClient.payment === "function", "agent signer client must expose consume() and payment()");
   assert(typeof apiBaseUrl === "string" && apiBaseUrl.length > 0, "apiBaseUrl is required");
   assert(typeof fetchImpl === "function", "fetch implementation is required");
   assert(typeof verigatePublicKey === "string" && verigatePublicKey.includes("BEGIN PUBLIC KEY"), "a pinned Verigate Ed25519 public key is required");
@@ -276,11 +280,56 @@ export async function executeAuthorizedArcPaymentWithSignerClients({
   }, headers);
   assert(registered.registered === true, "Verigate did not confirm Registry registration");
 
+  return {
+    authorization,
+    registration_tx_hash: registrationHash,
+    issuer: pinnedIssuer,
+    executor: pinnedAgent,
+    registered: true,
+  };
+}
+
+/**
+ * Agent-side phase: consumes an operator-confirmed registration, then sends
+ * only consume/payment requests through the agent socket. No issuer socket or
+ * issuer private key is required in this process.
+ */
+export async function executeRegisteredArcPaymentWithAgentSignerClient({
+  agentSignerClient, apiBaseUrl, authorization, registration_tx_hash,
+  verigatePublicKey, registryAddress, issuerAddress, agentAddress,
+  fetchImpl = globalThis.fetch, headers = {},
+}) {
+  assert(agentSignerClient && typeof agentSignerClient.consume === "function" && typeof agentSignerClient.payment === "function", "agent signer client must expose consume() and payment()");
+  assert(typeof apiBaseUrl === "string" && apiBaseUrl.length > 0, "apiBaseUrl is required");
+  assert(typeof fetchImpl === "function", "fetch implementation is required");
+  assert(typeof verigatePublicKey === "string" && verigatePublicKey.includes("BEGIN PUBLIC KEY"), "a pinned Verigate Ed25519 public key is required");
+  const pinnedRegistry = normalizeAddress(registryAddress, "pinned Registry address");
+  const pinnedIssuer = normalizeAddress(issuerAddress, "pinned issuer address");
+  const pinnedAgent = normalizeAddress(agentAddress, "pinned agent address");
+  assert(pinnedIssuer !== pinnedAgent, "Registry issuer and agent executor must be different addresses");
+  const registrationHash = normalizeHash(registration_tx_hash, "operator-confirmed registration transaction hash");
+  const { payload, evm } = verifyAuthorization(authorization, verigatePublicKey);
+  assert(normalizeAddress(evm.from, "signed payment sender") === pinnedAgent, "signed payment sender does not match the pinned agent");
+
+  const base = apiBaseUrl.replace(/\/$/, "");
+  // Re-confirm the operator's transaction against Registry state before the
+  // agent signer is asked to consume the authorization.
+  const registered = await postJson(fetchImpl, `${base}/v1/integrations/arc/registration/confirm`, {
+    authorization, registration_tx_hash: registrationHash,
+  }, headers);
+  assert(registered.registered === true, "operator registration is not confirmed by Verigate");
+
+  const intentHash = createHash("sha256").update(
+    `verigate.arc.authority.registry:v2:${ARC_CHAIN_ID}:${pinnedRegistry}:${authorization.algorithm}:${authorization.signature}`,
+    "ascii",
+  ).digest("hex");
+  const authId = payload.authorization_id.replace(/^0x/i, "").toLowerCase();
   const expectedConsume = {
     to: pinnedRegistry,
     data: CONSUME_SELECTOR + authId + intentHash,
   };
   normalizeSignerTransaction(registered.consume_transaction, pinnedAgent, "Registry consumption", expectedConsume);
+
   const consumption = await agentSignerClient.consume(authorization);
   const consumeHash = normalizeHash(consumption?.result?.txHash, "Registry consumption transaction hash");
   const consumed = await postJson(fetchImpl, `${base}/v1/integrations/arc/consume/confirm`, {
@@ -289,7 +338,10 @@ export async function executeAuthorizedArcPaymentWithSignerClients({
   assert(consumed.execute === true, consumed.reason || "Verigate denied execution");
   assert(consumed.wallet_transaction, "Verigate did not return the exact authorized payment transaction");
 
-  const expectedPayment = { to: ARC_USDC_ADDRESS, data: verifyAuthorization(authorization, verigatePublicKey).expectedTransferData };
+  const expectedPayment = {
+    to: ARC_USDC_ADDRESS,
+    data: verifyAuthorization(authorization, verigatePublicKey).expectedTransferData,
+  };
   normalizeSignerTransaction(consumed.wallet_transaction, pinnedAgent, "USDC payment", expectedPayment);
   const payment = await agentSignerClient.payment(authorization);
   const paymentHash = normalizeHash(payment?.result?.txHash, "USDC payment transaction hash");
@@ -311,4 +363,27 @@ export async function executeAuthorizedArcPaymentWithSignerClients({
     payment_settlement: settlement.payment_settlement,
     settled: true,
   };
+}
+
+/**
+ * Backward-compatible trusted-coordinator wrapper. This requires both socket
+ * permissions in one process; do not use it inside an agent runtime. Production
+ * deployments should run the operator-side and agent-side functions above in
+ * separate processes with distinct Unix-socket access.
+ */
+export async function executeAuthorizedArcPaymentWithSignerClients({
+  issuerSignerClient, agentSignerClient, apiBaseUrl, authorizationRequest,
+  verigatePublicKey, registryAddress, issuerAddress, agentAddress,
+  fetchImpl = globalThis.fetch, headers = {},
+}) {
+  const operatorResult = await registerArcAuthorizationWithIssuerSignerClient({
+    issuerSignerClient, apiBaseUrl, authorizationRequest, verigatePublicKey,
+    registryAddress, issuerAddress, agentAddress, fetchImpl, headers,
+  });
+  const agentResult = await executeRegisteredArcPaymentWithAgentSignerClient({
+    agentSignerClient, apiBaseUrl, authorization: operatorResult.authorization,
+    registration_tx_hash: operatorResult.registration_tx_hash,
+    verigatePublicKey, registryAddress, issuerAddress, agentAddress, fetchImpl, headers,
+  });
+  return agentResult;
 }
