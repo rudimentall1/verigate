@@ -213,8 +213,18 @@ export class OperationJournal {
     assert(inspection.status === "stale", "lock owner is live or lock safety cannot be established; refusing recovery");
     if (!apply) return { ...inspection, recovered: false, requiresApply: true };
 
+    const confirmed = this.inspectLock();
+    assert(confirmed.status === "stale", "lock owner changed or became live before recovery");
+    assert(confirmed.ownerFileDev === inspection.ownerFileDev && confirmed.ownerFileIno === inspection.ownerFileIno, "lock changed before recovery");
+    assert(confirmed.owner.pid === inspection.owner.pid
+      && confirmed.owner.bootId === inspection.owner.bootId
+      && confirmed.owner.startTicks === inspection.owner.startTicks, "lock owner metadata changed before recovery");
     const current = lstatSync(inspection.lockPath);
     assert(current.isFile() && current.nlink === 1, "lock changed before recovery");
+    assert((current.mode & 0o777) === 0o600, "lock permissions changed before recovery");
+    if (typeof process.getuid === "function") {
+      assert(current.uid === process.getuid(), "lock ownership changed before recovery");
+    }
     assert(current.dev === inspection.ownerFileDev && current.ino === inspection.ownerFileIno, "lock changed before recovery");
     unlinkSync(inspection.lockPath);
     return { ...inspection, recovered: true };
