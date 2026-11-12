@@ -2,7 +2,7 @@
 
 Verigate's Arc integration combines a signed agent payment intent, identity and
 capability checks, deterministic policy evaluation, an on-chain one-time
-authority registry, and an explicit non-custodial wallet handoff.
+authority registry, and non-custodial execution by the agent's own signer.
 
 This guide describes the **Arc Authority Registry flow**. The older generic
 `POST /v1/execution/consume` flow is not valid for Arc authorizations: the API
