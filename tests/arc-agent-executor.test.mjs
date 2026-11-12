@@ -98,9 +98,6 @@ function fixture({
   const agentSigner = signer(agentAddress, sent, hashes);
   const calls = [];
   const fetchImpl = async (url, options = {}) => {
-    if (url.endsWith("/v1/public-key")) {
-      return { ok: true, status: 200, async text() { return keys.publicKey.export({ type: "spki", format: "pem" }).toString(); } };
-    }
     const body = JSON.parse(options.body);
     calls.push({ url, body });
     let payload;
@@ -132,6 +129,7 @@ function fixture({
   };
   return {
     provider: { async getNetwork() { return { chainId }; } },
+    verigatePublicKey: keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
     issuerSigner, agentSigner, sent, calls, fetchImpl,
   };
 }
@@ -140,7 +138,7 @@ async function run(f) {
   return executeAuthorizedArcPayment({
     provider: f.provider, issuerSigner: f.issuerSigner, agentSigner: f.agentSigner,
     apiBaseUrl: "https://verigate.example/", authorizationRequest: { signed: true },
-    fetchImpl: f.fetchImpl,
+    verigatePublicKey: f.verigatePublicKey, fetchImpl: f.fetchImpl,
   });
 }
 
