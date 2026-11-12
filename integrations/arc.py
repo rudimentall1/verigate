@@ -269,12 +269,21 @@ class ArcPaymentSettlementVerifier:
             consume_block_number = _rpc_int(consumption_receipt.get("blockNumber"), "consumption block number")
             tx_block_number = _rpc_int(payment_tx.get("blockNumber"), "payment transaction block number")
             tx_index_from_transaction = _rpc_int(payment_tx.get("transactionIndex"), "payment transaction index")
+            consume_tx_block_number = _rpc_int(consumption_tx.get("blockNumber"), "consumption transaction block number")
+            consume_tx_index = _rpc_int(consumption_tx.get("transactionIndex"), "consumption transaction index")
         except ArcPaymentVerificationError:
             raise
 
         tx_data = payment_tx.get("input", payment_tx.get("data", ""))
         if tx_block_number != payment_block_number or tx_index_from_transaction != tx_index:
             raise ArcPaymentVerificationError("payment transaction and receipt inclusion coordinates differ")
+        if (
+            consume_tx_block_number != consume_block_number
+            or consume_tx_index != consume_index
+            or str(consumption_tx.get("blockHash", "")).lower()
+            != str(consumption_receipt.get("blockHash", "")).lower()
+        ):
+            raise ArcPaymentVerificationError("Registry consumption transaction and receipt inclusion coordinates differ")
         if tx_chain_id != ARC_CHAIN_ID:
             raise ArcPaymentVerificationError("payment transaction was not sent on Arc Mainnet")
         if _address(payment_tx.get("from", ""), "payment transaction sender") != expected_sender:
