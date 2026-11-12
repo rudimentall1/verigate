@@ -596,3 +596,14 @@ Implement a constrained agent signer service before any production claim:
 - No live Verigate-authorized Arc USDC payment has been independently verified.
 - The Registry deployment and historical registration/consumption evidence remain as described in sections 16–17; they do not prove an agent payment settlement.
 
+## 22. Signer service preparation branch created — 2026-11-12
+
+- Dedicated branch: `feat/arc-agent-signer-service-2026-11-12`.
+- Branch base: PR #57 head `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`.
+- Added `docs/ARC_AGENT_SIGNER_SERVICE.md` (commit `33dd6a1fbd55d4b0dca223f8fc8b9f61155f924f`): trust boundaries, role separation, Unix-socket-only interface, durable replay journal, fee/budget controls, Gensyn2 OS isolation, adversarial test matrix and release gates.
+- This branch currently contains a **design specification only**; the signer service implementation, tests, systemd units and install/rollback scripts are not yet complete.
+- Do not deploy the design document as if it were an executable service. Do not open or merge a production PR until implementation and tests exist.
+- The signer must run as separate issuer and agent instances with different OS users/keys/state/sockets. The agent runtime must not read either key and must not access the issuer socket.
+- Fee ceilings remain unconfigured until representative Arc registration, consumption and USDC transfer gas costs are measured. No values have been guessed.
+- Gensyn2 remains the intended target. Server inventory and installation are pending reconnection. No server files, users, services or processes have been changed.
+
