@@ -105,6 +105,15 @@ validate_env() {
   [[ "$(stat -c '%U:%G' "$file")" == "root:root" ]] || die "$file must be owned by root:root"
   mode="$(stat -c '%a' "$file")"
   [[ "$mode" == "600" || "$mode" == "640" ]] || die "$file must be mode 0600 or 0640"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" == \\#* ]] && continue
+    [[ "$line" == *=* ]] || die "$file contains a malformed environment line"
+    name="${line%%=*}"
+    case "$name" in
+      VERIGATE_SIGNER_ROLE|VERIGATE_SIGNER_SOCKET|VERIGATE_SIGNER_JOURNAL|VERIGATE_SIGNER_PRIVATE_KEY_FILE|VERIGATE_AUTH_PUBLIC_KEY_FILE|VERIGATE_ARC_RPC_URL|VERIGATE_ARC_ISSUER_ADDRESS|VERIGATE_ARC_REGISTRY_ADDRESS|VERIGATE_ARC_REGISTRY_CODE_HASH|VERIGATE_SIGNER_GAS_LIMIT|VERIGATE_SIGNER_MAX_FEE_PER_GAS|VERIGATE_SIGNER_MAX_PRIORITY_FEE_PER_GAS|VERIGATE_SIGNER_MAX_NATIVE_COST|VERIGATE_SIGNER_DAILY_NATIVE_BUDGET|VERIGATE_SIGNER_CONFIRMATIONS) ;;
+      *) die "$file contains unsupported environment variable: $name" ;;
+    esac
+  done < "$file"
   ensure_single_var() {
     local count
     count="$(grep -c "^$1=" "$file" || true)"
