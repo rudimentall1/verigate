@@ -507,7 +507,7 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
     
             def eth_call(self, _, data):
                 if data == "0x8da5cb5b":
-                    return "0x" + "0" * 24 + executor[2:]
+                    return "0x" + "0" * 24 + issuer[2:]
                 if data.startswith(ISSUER_SELECTOR):
                     return "0x" + format(1, "064x")
                 if data == GET_AUTHORIZATION_SELECTOR + authorization_id:
