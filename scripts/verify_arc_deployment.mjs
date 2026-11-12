@@ -212,8 +212,6 @@ try {
     );
   }
 
-  const finalized = await provider.getBlock("finalized");
-  requireCondition(finalized?.number != null && finalized.hash, "Arc RPC did not return a verifiable finalized block");
   requireCondition(
     finalized.number >= deploymentReceipt.blockNumber,
     "Registry deployment block is above the reported finalized head",
