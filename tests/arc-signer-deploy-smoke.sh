@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 [[ "$(id -u)" -eq 0 ]] || { echo "run this smoke test as root" >&2; exit 1; }
 [[ -x /usr/sbin/nologin ]] || { echo "missing /usr/sbin/nologin" >&2; exit 1; }
+for cmd in runuser useradd usermod python3; do command -v "$cmd" >/dev/null || { echo "missing required command: $cmd" >&2; exit 1; }; done
 
 readonly REPO_SOURCE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly UNIT_FILE="/etc/systemd/system/verigate-arc-signer@.service"
@@ -10,7 +11,7 @@ readonly CONFIG_ROOT="/etc/verigate-signer"
 readonly ROLES=(issuer agent)
 readonly SOCKET_ALLOW_USER="verigate-agent-client-smoke"
 readonly SOCKET_DENY_USER="verigate-unrelated-client-smoke"
-readonly SOCKET_ACL_ROOT="/var/tmp/verigate-arc-signer-acl-$"
+readonly SOCKET_ACL_ROOT="/var/tmp/verigate-arc-signer-acl-$BASHPID"
 readonly TMP_DIR="$(mktemp -d)"
 readonly SYSTEMCTL_LOG="${TMP_DIR}/systemctl.log"
 SOCKET_SERVER_PID=""
