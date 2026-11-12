@@ -97,6 +97,8 @@ from integrations.arc import (
     ARC_USDC_ADDRESS,
     ArcIntegrationError,
     ArcMainnetIntegration,
+    ArcPaymentSettlementVerifier,
+    ArcPaymentVerificationError,
     validate_arc_usdc_transfer,
 )
 from x402.parser import X402ParseError, offer_to_intent, parse_payment_required_header
@@ -659,6 +661,51 @@ def confirm_arc_consumption(req: dict) -> dict:
             "Verigate local one-time authorization consumed",
             "connected wallet may now sign and broadcast wallet_transaction",
         ],
+    }
+
+
+@app.post("/v1/integrations/arc/payment/confirm")
+def confirm_arc_payment(req: dict) -> dict:
+    """Verify that the exact authorized Arc USDC transfer settled on finalized chain state."""
+    authorization = req.get("authorization")
+    registration_tx_hash = req.get("registration_tx_hash")
+    consumption_tx_hash = req.get("consume_tx_hash")
+    payment_tx_hash = req.get("payment_tx_hash")
+
+    try:
+        _preverify_arc_execution_authorization(authorization)
+        registry = ArcAuthorityRegistry()
+        verification_time = registry.registration_verification_time(
+            authorization, registration_tx_hash
+        )
+        payload = _verified_arc_execution_authorization(
+            authorization,
+            verification_time=verification_time,
+        )
+        registry.confirm_registration(authorization, registration_tx_hash)
+        consumption = registry.confirm_consumption(authorization, consumption_tx_hash)
+        ArcMainnetIntegration(rpc=registry.rpc).status()
+        settlement = ArcPaymentSettlementVerifier(registry.rpc).confirm_payment(
+            expected_transaction=payload["action"]["metadata"]["evm_transaction"],
+            payment_transaction_hash=payment_tx_hash,
+            consumption_transaction_hash=consumption_tx_hash,
+        )
+    except (ArcAuthorityRegistryError, ArcPaymentVerificationError, ArcIntegrationError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except EvmRpcError as exc:
+        raise HTTPException(status_code=503, detail=f"Arc mainnet verification failed: {exc}") from exc
+
+    return {
+        "settled": True,
+        "reason": "Exact Verigate-authorized Arc USDC transfer is confirmed in a finalized block",
+        "arc_authority_evidence": {
+            "registration_transaction_hash": registration_tx_hash,
+            "consumption_transaction_hash": consumption_tx_hash,
+            "authorization_id": consumption["authorization_id"],
+            "intent_hash": consumption["intent_hash"],
+            "consumption_block_number": consumption["block_ref"],
+        },
+        "payment_settlement": settlement,
     }
 
 
