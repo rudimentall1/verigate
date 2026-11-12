@@ -44,6 +44,12 @@ function mocks(overrides = {}) {
 
 test("Arc ethers adapter pins chain and Registry code, then broadcasts only derived zero-value tx", async () => {
   const m = mocks();
+  let authorizationRevalidated = false;
+  const originalSend = m.wallet.sendTransaction;
+  m.wallet.sendTransaction = async tx => {
+    assert.equal(authorizationRevalidated, true, "authorization must be revalidated before wallet broadcast");
+    return originalSend(tx);
+  };
   const adapter = await createArcEthersAdapter({
     provider: m.provider, wallet: m.wallet, registryAddress: REGISTRY, role: "agent", issuerAddress: ISSUER,
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
@@ -53,7 +59,7 @@ test("Arc ethers adapter pins chain and Registry code, then broadcasts only deri
   assert.equal(info.chainId, ARC_CHAIN_ID);
   const result = await adapter.executeOperation({
     transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n },
-    validateBeforeBroadcast: async () => {},
+    validateBeforeBroadcast: async () => { authorizationRevalidated = true; },
     onBroadcast: async () => {},
   });
   assert.equal(result.txHash, HASH);
