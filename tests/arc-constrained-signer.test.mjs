@@ -114,3 +114,27 @@ test("journal fails closed on unresolved reservation and duplicate completion", 
     assert.throws(() => journal.complete(id, "consume", { txHash: "0x789" }), /existing unresolved reservation/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("rejects Arc metadata that conflicts with the pinned chain or token", () => {
+  const wrongChain = authFixture();
+  wrongChain.authorization.payload.action.metadata.arc.chain_id = 1;
+  wrongChain.authorization.signature = sign(null, Buffer.from(canonicalJson(wrongChain.authorization.payload)), generateKeyPairSync("ed25519").privateKey).toString("base64");
+  assert.throws(() => verifyExecutionAuthorization(wrongChain.authorization, wrongChain.pem), /invalid Verigate authorization signature/);
+  const wrongToken = authFixture();
+  wrongToken.authorization.payload.action.metadata.arc.token_address = AGENT;
+  wrongToken.authorization.signature = sign(null, Buffer.from(canonicalJson(wrongToken.authorization.payload)), generateKeyPairSync("ed25519").privateKey).toString("base64");
+  assert.throws(() => verifyExecutionAuthorization(wrongToken.authorization, wrongToken.pem), /invalid Verigate authorization signature/);
+});
+
+test("journal enforces cumulative daily native-token budget across reservations and completions", () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-budget-"));
+  try {
+    const journal = new OperationJournal(join(dir, "ops.jsonl"));
+    const day = Date.parse("2026-11-12T10:00:00.000Z");
+    journal.reserve("0x" + "01".repeat(32), "register", { maxNativeCost: "40", dailyNativeBudget: "100", now: day });
+    journal.complete("0x" + "01".repeat(32), "register", { txHash: "0xaaa" }, "30");
+    journal.reserve("0x" + "02".repeat(32), "consume", { maxNativeCost: "60", dailyNativeBudget: "100", now: day + 1000 });
+    assert.throws(() => journal.reserve("0x" + "03".repeat(32), "payment", { maxNativeCost: "11", dailyNativeBudget: "100", now: day + 2000 }), /daily native-token budget/);
+    assert.throws(() => journal.complete("0x" + "02".repeat(32), "consume", { txHash: "0xbbb" }, "61"), /exceeds reserved/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
