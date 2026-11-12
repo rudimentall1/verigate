@@ -49,7 +49,12 @@ class FakeRpc:
             "blockHash": PAYMENT_BLOCK_HASH,
             "transactionIndex": "0x2",
         }
-        self.consumption_tx = {"hash": CONSUME_HASH}
+        self.consumption_tx = {
+            "hash": CONSUME_HASH,
+            "blockNumber": "0x64",
+            "blockHash": PAYMENT_BLOCK_HASH,
+            "transactionIndex": "0x1",
+        }
         self.payment_receipt = {
             "transactionHash": PAYMENT_HASH,
             "status": "0x1",
