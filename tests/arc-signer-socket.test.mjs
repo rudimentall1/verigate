@@ -158,3 +158,92 @@ test("socket revalidates authorization expiry immediately before broadcast", asy
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("restart after an ambiguous pre-hash crash keeps the authorization blocked", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-crash-before-hash-"));
+  const socketPath = join(dir, "agent.sock");
+  const journalPath = join(dir, "journal.jsonl");
+  const journal = new OperationJournal(journalPath);
+  const f = fixture();
+  let attempts = 0;
+  const makeService = executeOperation => createArcSignerSocketServer({
+    socketPath, role: "agent", authorizationPublicKeyPem: f.publicKeyPem,
+    registryAddress: REGISTRY, signerAddress: AGENT,
+    issuerAddress: "0x1111111111111111111111111111111111111111",
+    journal, feePolicy: { maxNativeCost: "100", dailyNativeBudget: "1000" },
+    executeOperation,
+  });
+  try {
+    const first = makeService(async () => {
+      attempts++;
+      // Simulate a crash/timeout after the reservation but before a hash
+      // could be durably recorded. The RPC outcome is deliberately unknown.
+      throw new Error("simulated ambiguous RPC failure");
+    });
+    await first.listen();
+    const failed = await request(socketPath, { operation: "consume", authorization: f.authorization });
+    assert.equal(failed.ok, false);
+    assert.match(failed.error, /ambiguous RPC failure/);
+    await first.close();
+
+    const restarted = makeService(async () => {
+      attempts++;
+      throw new Error("must not broadcast after unresolved reservation");
+    });
+    await restarted.listen();
+    const retry = await request(socketPath, { operation: "consume", authorization: f.authorization });
+    assert.equal(retry.ok, false);
+    assert.match(retry.error, /unresolved reservation/);
+    assert.equal(attempts, 1);
+    assert.equal(journal.records().at(-1).state, "reserved");
+    await restarted.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("restart after a recorded broadcast never resubmits while receipt is unresolved", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-crash-after-hash-"));
+  const socketPath = join(dir, "agent.sock");
+  const journal = new OperationJournal(join(dir, "journal.jsonl"));
+  const f = fixture();
+  const txHash = "0x" + "fa".repeat(32);
+  let attempts = 0;
+  const makeService = executeOperation => createArcSignerSocketServer({
+    socketPath, role: "agent", authorizationPublicKeyPem: f.publicKeyPem,
+    registryAddress: REGISTRY, signerAddress: AGENT,
+    issuerAddress: "0x1111111111111111111111111111111111111111",
+    journal, feePolicy: { maxNativeCost: "100", dailyNativeBudget: "1000" },
+    executeOperation,
+  });
+  try {
+    const first = makeService(async ({ onBroadcast }) => {
+      attempts++;
+      await onBroadcast(txHash);
+      // Simulate process loss while waiting for a receipt.
+      throw new Error("simulated receipt wait interruption");
+    });
+    await first.listen();
+    const failed = await request(socketPath, { operation: "consume", authorization: f.authorization });
+    assert.equal(failed.ok, false);
+    assert.match(failed.error, /receipt wait interruption/);
+    await first.close();
+
+    const restarted = makeService(async () => {
+      attempts++;
+      throw new Error("must not submit a second transaction");
+    });
+    await restarted.listen();
+    const retry = await request(socketPath, { operation: "consume", authorization: f.authorization });
+    assert.equal(retry.ok, false);
+    assert.match(retry.error, /unresolved reservation/);
+    assert.equal(attempts, 1);
+    const latest = journal.records().at(-1);
+    assert.equal(latest.state, "broadcast");
+    assert.equal(latest.txHash, txHash);
+    await restarted.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
