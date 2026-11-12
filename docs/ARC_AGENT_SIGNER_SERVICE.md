@@ -63,15 +63,18 @@ The signer must set and enforce transaction limits itself, not accept them from 
 
 No fee numbers are hard-coded in this specification. The initial values must be measured from representative Arc registration, consumption and USDC transfer receipts and reviewed by the operator. Startup must fail if required limits are missing, malformed, internally inconsistent or exceed the configured cost budget. The signer must fail closed if live fee data cannot be validated.
 
-## Gensyn2 deployment model
+## Linux deployment model
 
-- Dedicated Linux user: `verigate-signer`.
-- Dedicated access group: `verigate-agent`; only the intended agent runtime user is a member.
-- Signer key directory: owned by `verigate-signer`, mode 0700; private key file mode 0600.
-- Runtime directory: `/run/verigate-signer`, mode 0750.
-- Unix socket: `/run/verigate-signer/signer.sock`, mode 0660, group `verigate-agent`.
-- Separate service instance, user, key path, journal and socket for issuer and agent roles.
-- systemd hardening: no-new-privileges, private tmp, strict filesystem protections, restricted writable paths, and no ambient capabilities.
+The checked-in systemd template is `deploy/systemd/verigate-arc-signer@.service`. Instantiate it separately as `verigate-arc-signer@issuer.service` and `verigate-arc-signer@agent.service`.
+
+- Dedicated Linux users and primary groups: `verigate-signer-issuer` and `verigate-signer-agent`.
+- Only the intended agent runtime user is added to group `verigate-signer-agent`. The issuer socket must be accessible only to the operator/issuer caller.
+- Private key files are owned by the matching signer user and mode 0600 (or stricter); key files must not be shared between roles.
+- Runtime paths: `/run/verigate-signer-issuer/signer.sock` and `/run/verigate-signer-agent/signer.sock`, directory mode 0750, socket mode 0660.
+- Journals: `/var/lib/verigate-signer-issuer/ops.jsonl` and `/var/lib/verigate-signer-agent/ops.jsonl`; each role has its own state.
+- Each `/etc/verigate-signer/{issuer,agent}.env` file is root-owned and readable by the service manager. It sets `VERIGATE_SIGNER_ROLE`, `VERIGATE_SIGNER_SOCKET`, `VERIGATE_SIGNER_JOURNAL`, `VERIGATE_SIGNER_PRIVATE_KEY_FILE`, `VERIGATE_AUTH_PUBLIC_KEY_FILE`, `VERIGATE_ARC_RPC_URL`, `VERIGATE_ARC_ISSUER_ADDRESS`, `VERIGATE_ARC_REGISTRY_CODE_HASH`, and all five `VERIGATE_SIGNER_*` fee/confirmation limits.
+- The signer entrypoint rejects a private key file not owned by its service user or readable by group/other. It rejects symlinks and non-regular files.
+- systemd hardening: no-new-privileges, private tmp, strict filesystem protections, restricted writable paths, no ambient capabilities, and restricted address families.
 - Do not use Docker as a prerequisite.
 - Do not change, restart or stop FLOP, AegisForge, OWNERA or unrelated services.
 
