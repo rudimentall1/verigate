@@ -134,7 +134,7 @@ export class OperationJournal {
     if (typeof process.getuid === "function") {
       assert(stat.uid === process.getuid(), "journal must be owned by the signer process user");
     }
-    return readFileSync(this.path, "utf8").split("\\n").filter(Boolean).map(line => JSON.parse(line));
+    return readFileSync(this.path, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line));
   }
   withLock(callback) {
     const lockPath = this.path + ".lock";
