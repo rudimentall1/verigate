@@ -694,6 +694,8 @@ def confirm_arc_payment(req: dict) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except EvmRpcError as exc:
         raise HTTPException(status_code=503, detail=f"Arc mainnet verification failed: {exc}") from exc
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=400, detail="malformed Arc payment confirmation request") from exc
 
     return {
         "settled": True,
