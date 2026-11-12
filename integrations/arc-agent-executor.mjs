@@ -163,7 +163,7 @@ export async function executeAuthorizedArcPayment({
   // Match the server's language-neutral Registry hash: the Ed25519
   // signature commits to the canonical authorization payload.
   const intentHash = createHash("sha256").update(
-    `verigate.arc.authority.registry:v2:${ARC_CHAIN_ID}:${registryAddress}:${authorization.algorithm}:${authorization.signature}`,
+    `verigate.arc.authority.registry:v2:${ARC_CHAIN_ID}:${pinnedRegistryAddress}:${authorization.algorithm}:${authorization.signature}`,
     "ascii",
   ).digest("hex");
   const authId = payload.authorization_id;
