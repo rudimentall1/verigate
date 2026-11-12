@@ -64,6 +64,7 @@ export async function createArcEthersAdapter({
   async function execute(input) {
     assert(initialized, "Arc signer adapter must pass startup verification before use");
     const tx = input?.transaction;
+    assert(typeof input?.onBroadcast === "function", "durable broadcast journal callback is required");
     assert(tx && Number(tx.chainId) === ARC_CHAIN_ID, "derived transaction is not bound to Arc Mainnet");
     assert(normalizeAddress(tx.to, "derived transaction destination") === tx.to.toLowerCase(), "derived destination is malformed");
     assert(typeof tx.data === "string" && /^0x(?:[0-9a-fA-F]{2})*$/.test(tx.data), "derived calldata is malformed");
@@ -85,6 +86,7 @@ export async function createArcEthersAdapter({
       maxPriorityFeePerGas: limits.maxPriorityFeePerGas,
     });
     assert(response && typeof response.hash === "string", "RPC returned no transaction hash");
+    await input.onBroadcast(response.hash);
     const receipt = await response.wait(confirmations);
     assert(receipt && Number(receipt.status) === 1, "Arc transaction receipt is missing or reverted");
     assert(String(receipt.hash || receipt.transactionHash).toLowerCase() === response.hash.toLowerCase(), "receipt hash does not match submitted transaction");
