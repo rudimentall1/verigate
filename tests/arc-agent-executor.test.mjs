@@ -64,13 +64,10 @@ function fixture({
   ).toString("base64");
   if (invalidSignature) authorization.signature = Buffer.alloc(64, 7).toString("base64");
 
-  const intentHash = createHash("sha256").update(canonicalJson({
-    domain: "verigate.arc.authority.registry",
-    version: 1,
-    chain_id: ARC_CHAIN_ID,
-    contract: REGISTRY.toLowerCase(),
-    authorization,
-  })).digest("hex");
+  const intentHash = createHash("sha256").update(
+    `verigate.arc.authority.registry:v2:${ARC_CHAIN_ID}:${REGISTRY.toLowerCase()}:${authorization.algorithm}:${authorization.signature}`,
+    "ascii",
+  ).digest("hex");
   const registrationTx = {
     chainId: "0x13b2", from: issuerAddress, to: REGISTRY,
     data: "0xb267748a" + authorization.payload.authorization_id + intentHash
