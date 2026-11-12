@@ -201,7 +201,7 @@ wait_for_ready() {
 }
 assert_access() {
   if runuser -u "$DENY_USER" -- python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1])' "$SOCKET_PATH" >/dev/null 2>&1; then fail "unrelated user connected to daemon socket"; fi
-  runuser -u "$CLIENT_USER" -- python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); s.sendall(b"{\\"operation\\":\\"consume\\",\\"authorization\\":{}}\\n"); data=s.recv(4096); assert b"\\"ok\\":false" in data; s.close()' "$SOCKET_PATH"
+  runuser -u "$CLIENT_USER" -- python3 -c 'import json,socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); s.sendall(json.dumps({"operation":"consume","authorization":{}}).encode()+bytes([10])); data=s.recv(4096); assert json.loads(data)["ok"] is False; s.close()' "$SOCKET_PATH"
 }
 
 wait_for_ready
