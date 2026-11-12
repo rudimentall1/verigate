@@ -6,6 +6,7 @@ separate capability that permits an ALLOW decision to reach an executor.
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import json
 import time
@@ -187,7 +188,48 @@ def issue_execution_authorization(
     }
     return ExecutionAuthorization(payload, _sign(payload, private_key))
 
+def normalize_decision_receipt_json_transport(receipt: dict[str, Any]) -> dict[str, Any]:
+    """Restore schema-defined float fields after JavaScript JSON number serialization.
+
+    JSON has one number type. JavaScript JSON.stringify serializes integral
+    floats such as 25.0 as 25, while Python's canonical json.dumps emits 25.0.
+    Decision Receipt v1 defines these fields as floating-point values, so
+    restore their Python representation before checking the signed payload.
+    The input object is copied and is never mutated.
+    """
+    if not isinstance(receipt, dict):
+        return receipt
+    normalized = copy.deepcopy(receipt)
+    payload = normalized.get("payload")
+    if not isinstance(payload, dict):
+        return normalized
+
+    intent = payload.get("intent")
+    if isinstance(intent, dict):
+        for field in ("amount", "timestamp"):
+            value = intent.get(field)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                intent[field] = float(value)
+
+    decision = payload.get("decision")
+    if isinstance(decision, dict):
+        value = decision.get("evaluated_at")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            decision["evaluated_at"] = float(value)
+
+    signed_policy = payload.get("signed_policy_version")
+    if isinstance(signed_policy, dict):
+        signed_payload = signed_policy.get("payload")
+        if isinstance(signed_payload, dict):
+            value = signed_payload.get("created_at")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                signed_payload["created_at"] = float(value)
+
+    return normalized
+
+
 def verify_receipt(receipt: dict[str, Any], public_key: Ed25519PublicKey) -> tuple[bool, str]:
+    receipt = normalize_decision_receipt_json_transport(receipt)
     try:
         payload = receipt["payload"]
         signature = receipt["signature"]
