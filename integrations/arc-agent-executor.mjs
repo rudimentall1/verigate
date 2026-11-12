@@ -9,6 +9,7 @@ import { createHash, createPublicKey, verify as verifySignature } from "node:cry
 const ARC_CHAIN_ID = 5042;
 const REGISTER_SELECTOR = "0xb267748a";
 const CONSUME_SELECTOR = "0xbad56b75";
+const ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -59,12 +60,25 @@ function verifyAuthorization(authorization, pem) {
   assert(typeof p.authorization_id === "string" && /^[0-9a-f]{64}$/.test(p.authorization_id), "authorization_id must be a lowercase 32-byte hex value");
   assert(Number.isSafeInteger(p.expires_at) && p.expires_at > 0, "authorization expiry is invalid");
   assert(p.action && typeof p.action === "object", "signed authorized action is missing");
-  assert(p.action.network === "arc" && p.action.asset === "USDC" && p.action.action_type === "payment", "signed authorization is not an Arc USDC payment");
-  const evm = p.action.metadata?.evm_transaction;
+  const action = p.action;
+  assert(action.network === "arc" && action.asset === "USDC" && action.action_type === "payment", "signed authorization is not an Arc USDC payment");
+  const arc = action.metadata?.arc;
+  assert(arc && Number(arc.chain_id) === ARC_CHAIN_ID && arc.asset === "USDC", "signed Arc network binding is invalid");
+  assert(normalizeAddress(arc.token_address, "signed canonical USDC token") === ARC_USDC_ADDRESS, "signed token is not canonical Arc USDC");
+  assert(arc.token_decimals === 6, "signed Arc USDC decimals must be 6");
+  const evm = action.metadata?.evm_transaction;
   assert(evm && typeof evm === "object", "signed Arc payment transaction is missing");
   assert(Number(evm.chain_id) === ARC_CHAIN_ID, "signed payment must target Arc Mainnet");
+  assert(normalizeAddress(evm.to, "signed USDC token destination") === ARC_USDC_ADDRESS, "signed payment destination is not canonical Arc USDC");
   assert(BigInt(evm.value_wei ?? 0) === 0n, "signed USDC payment must not transfer native value");
-  return { payload: p, evm };
+  const recipient = normalizeAddress(action.target, "signed payment recipient");
+  assert(typeof action.amount_exact === "string" && /^\\d+(?:\\.\\d{1,6})?$/.test(action.amount_exact), "signed USDC amount_exact must be a decimal string with at most 6 places");
+  const [whole, fraction = ""] = action.amount_exact.split(".");
+  const amount = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, "0") || "0");
+  assert(amount > 0n && amount < (1n << 256n), "signed USDC amount is outside valid range");
+  const expectedTransferData = "0xa9059cbb" + addressWord(recipient, "signed payment recipient") + word(amount, "signed USDC amount");
+  assert(typeof evm.data === "string" && evm.data.toLowerCase() === expectedTransferData, "signed USDC calldata does not match the signed recipient and amount");
+  return { payload: p, evm, expectedTransferData };
 }
 
 async function postJson(fetchImpl, url, body, headers) {
@@ -118,12 +132,13 @@ async function submitAndConfirm(signer, transaction, label, expected) {
  */
 export async function executeAuthorizedArcPayment({
   provider, issuerSigner, agentSigner, apiBaseUrl, authorizationRequest,
-  verigatePublicKey, fetchImpl = globalThis.fetch, headers = {},
+  verigatePublicKey, registryAddress, fetchImpl = globalThis.fetch, headers = {},
 }) {
   assert(provider && typeof provider.getNetwork === "function", "an ethers-compatible JSON-RPC provider is required");
   assert(typeof apiBaseUrl === "string" && apiBaseUrl.length > 0, "apiBaseUrl is required");
   assert(typeof fetchImpl === "function", "fetch implementation is required");
   assert(typeof verigatePublicKey === "string" && verigatePublicKey.includes("BEGIN PUBLIC KEY"), "a pinned Verigate Ed25519 public key is required");
+  assert(typeof registryAddress === "string" && /^0x[0-9a-fA-F]{40}$/.test(registryAddress), "a pinned Arc Registry address is required");
   assert(authorizationRequest && typeof authorizationRequest === "object", "signed agent authorization request is required");
   assert(issuerSigner && typeof issuerSigner.getAddress === "function", "operator issuer signer is required");
   assert(agentSigner && typeof agentSigner.getAddress === "function", "agent executor signer is required");
@@ -139,7 +154,8 @@ export async function executeAuthorizedArcPayment({
   const authorization = authorized.execution_authorization;
   const registrationTx = authorized.arc_authority?.registration_transaction;
   const { payload, evm } = verifyAuthorization(authorization, verigatePublicKey);
-  const registryAddress = normalizeAddress(authorized.arc_authority?.contract_address, "configured Registry address");
+  const pinnedRegistryAddress = normalizeAddress(registryAddress, "pinned Registry address");
+  assert(normalizeAddress(authorized.arc_authority?.contract_address, "configured Registry address") === pinnedRegistryAddress, "Verigate Registry address does not match the pinned Registry");
   assert(normalizeAddress(authorized.arc_authority?.issuer, "Registry issuer") === issuerAddress, "configured Registry issuer does not match issuer signer");
   assert(normalizeAddress(authorized.arc_authority?.executor, "Registry executor") === agentAddress, "signed Registry executor does not match agent signer");
   assert(normalizeAddress(evm.from, "signed payment sender") === agentAddress, "agent signer does not match signed payment sender");
@@ -152,7 +168,7 @@ export async function executeAuthorizedArcPayment({
   ).digest("hex");
   const authId = payload.authorization_id;
   const expectedRegistration = {
-    to: registryAddress,
+    to: pinnedRegistryAddress,
     data: REGISTER_SELECTOR + authId + intentHash + addressWord(agentAddress, "agent executor") + word(payload.expires_at, "authorization expiry"),
   };
 
@@ -166,7 +182,7 @@ export async function executeAuthorizedArcPayment({
   }, headers);
   assert(registered.registered === true, "Verigate did not confirm Registry registration");
   const consumeTx = registered.consume_transaction;
-  const expectedConsume = { to: registryAddress, data: CONSUME_SELECTOR + authId + intentHash };
+  const expectedConsume = { to: pinnedRegistryAddress, data: CONSUME_SELECTOR + authId + intentHash };
   const consumeHash = await submitAndConfirm(
     agentSigner, consumeTx, "agent executor Registry consumption", expectedConsume,
   );
@@ -178,8 +194,8 @@ export async function executeAuthorizedArcPayment({
   assert(consumed.wallet_transaction, "Verigate did not return the exact authorized payment transaction");
 
   const expectedPayment = {
-    to: normalizeAddress(evm.to, "signed USDC token destination"),
-    data: evm.data,
+    to: ARC_USDC_ADDRESS,
+    data: verifyAuthorization(authorization, verigatePublicKey).expectedTransferData,
   };
   const paymentHash = await submitAndConfirm(
     agentSigner, consumed.wallet_transaction, "agent executor USDC payment", expectedPayment,
