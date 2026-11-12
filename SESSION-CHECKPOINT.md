@@ -534,3 +534,65 @@ Earlier intermediate CI attempts had one test assertion failure because the nega
 - No hosted Verigate API deployment or Gensyn2 server change.
 - No Registry owner/issuer mutation, contract deployment or transaction broadcast.
 - PR #57 must remain unmerged until complete CI and review pass, followed by a separate explicit deployment decision.
+
+## 21. Arc autonomous signer service — implementation plan and security finding (2026-11-12)
+
+### User decision
+
+The user approved the deployment target: **Gensyn2**. Due to limited remote-session/tool budget, the agreed sequence is:
+1. Prepare and test the signer service and its documentation in GitHub first.
+2. Complete review and CI on the repository branch.
+3. Only then transfer the reviewed artifact to Gensyn2 and perform a controlled installation.
+4. Update the server checkpoint copy after the GitHub checkpoint and implementation are finalized.
+
+No Gensyn2 connection was available at the time of this checkpoint update. No server command, file write, user creation, service installation or process change has been performed.
+
+### PR #57 latest state
+
+- PR: https://github.com/rudimentall1/verigate/pull/57
+- Branch: `feat/arc-payment-settlement-confirmation-2026-11-12`
+- Latest inspected head: `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`
+- State: open, Draft, unmerged.
+- Latest CI run #1453: https://github.com/rudimentall1/verigate/actions/runs/43177600891 — all four jobs PASS (Python/tests, contracts, container, Anna UI).
+- The latest head includes Anna UI harness diagnostics; this is not evidence of a live Arc payment.
+- Do not merge or remove Draft without explicit user authorization.
+
+### Security review finding: SDK checks are not a signer boundary
+
+The current `integrations/arc-agent-executor.mjs` validates the transaction before calling the supplied signer, including sender, destination, chain, calldata and zero native value. However, the executor receives an unrestricted ethers-compatible signer and calls `signer.sendTransaction(tx)`.
+
+The SDK does not independently enforce gas limit, max fee per gas, priority fee, per-operation native cost or aggregate daily spend. More importantly, if an autonomous model/agent process can access the raw EVM private key, it can bypass the SDK and submit arbitrary transactions directly. Caller-side checks cannot prevent that.
+
+The current `docs/AGENT_SDK_ARC.md` correctly warns that a raw `Wallet` in an environment variable is local/dev only and that production requires a restricted signing boundary. The example still constructs both issuer and agent `Wallet` instances in the agent runtime, so the implementation example must be reconciled with the stated production boundary.
+
+### Required signer architecture
+
+Implement a constrained agent signer service before any production claim:
+
+- Run as a separate OS process under a dedicated Linux user on Gensyn2; the agent runtime must not be able to read the signer's key files or invoke a generic raw-signing interface.
+- Accept a typed, narrow request containing the signed Verigate authorization and the intended operation; reject arbitrary transaction payloads and generic `signTransaction` requests.
+- Independently verify the pinned Verigate Ed25519 public key, authorization signature, chain ID 5042, pinned Registry address, canonical Arc USDC token, agent sender identity, recipient, exact six-decimal amount, authorization validity interval, allowed Registry method and exact calldata.
+- Permit only the specific Registry registration/consumption and USDC transfer operations required by the approved flow. Keep the operator issuer key in a separate operator-controlled boundary; the agent signer must never access it.
+- Enforce replay protection and idempotency inside the signer, with durable atomic state. Fail closed on storage errors, ambiguous prior submissions or invalid authorization.
+- Enforce gas limit, max fee, priority fee, maximum native execution cost per operation and aggregate daily/rate budgets inside the signer. Do not invent fee values; derive initial limits from measured Arc transaction costs and require explicit operator configuration.
+- Do not expose private keys, seed phrases or signed raw transactions to the model or logs.
+- A separate process alone is insufficient if the model process can still read the same key or control the signer host unrestrictedly. Enforce OS-level user/file permissions and a narrow authenticated IPC/API boundary. Document the residual host-root compromise risk.
+
+### Implementation and deployment gates
+
+1. Inspect the existing executor, Registry ABI/selectors, tests and runtime constraints before choosing the service interface.
+2. Add the service, config validation, durable replay/idempotency store, signer policy and adversarial tests on a dedicated GitHub branch.
+3. Test positive registration/consume/payment authorization paths and negative cases: forged/expired authorization, wrong chain/Registry/token/sender/recipient/amount, arbitrary selector, calldata tampering, replay/race, excessive gas/fees, budget exhaustion, signer/API bypass attempts and storage failure.
+4. Add systemd unit and installation/runbook for Gensyn2, using a dedicated user and strict permissions. Keep issuer signing separate.
+5. Pass full CI and review the complete diff. No merge without user approval.
+6. Only after repository implementation is reviewed, connect to Gensyn2, inspect existing users/processes/paths, back up only files that will be changed, install the service without touching FLOP/AegisForge or other processes, and verify health and negative authorization behavior.
+7. Do not broadcast a live payment or use production funds as part of installation. A live payment requires a separate explicit decision and measured fee limits.
+
+### Current evidence boundary
+
+- PR #57 source and CI are not a deployed signer service.
+- No signer service exists on Gensyn2 as a result of this work.
+- No Gensyn2 server modification has occurred.
+- No live Verigate-authorized Arc USDC payment has been independently verified.
+- The Registry deployment and historical registration/consumption evidence remain as described in sections 16–17; they do not prove an agent payment settlement.
+
