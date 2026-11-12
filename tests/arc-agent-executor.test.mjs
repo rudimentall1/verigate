@@ -135,7 +135,7 @@ test("rejects a payment signer that does not match the signed agent executor", a
       authorizationRequest: {},
       fetchImpl: f.fetchImpl,
     }),
-    /agent executor signer does not match transaction from address/,
+    /agent executor Registry consumption signer does not match transaction from address/,
   );
   assert.equal(f.sent.length, 1);
   assert.equal(f.sent[0].address, ISSUER);
