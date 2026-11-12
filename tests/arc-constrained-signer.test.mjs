@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, linkSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateKeyPairSync, sign } from "node:crypto";
@@ -150,4 +150,25 @@ test("accepts Verigate authorization IDs encoded as bare bytes32 hex", () => {
     registryAddress: REGISTRY, signerAddress: ISSUER, issuerAddress: ISSUER,
   });
   assert.equal(tx.data.slice(10, 74), "cc".repeat(32));
+});
+
+test("journal rejects symlinks, hard links and group/world-readable files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-journal-security-"));
+  try {
+    const target = join(dir, "target.jsonl");
+    const link = join(dir, "symlink.jsonl");
+    writeFileSync(target, "", { mode: 0o600 });
+    symlinkSync(target, link);
+    assert.throws(() => new OperationJournal(link).records(), /regular file/);
+
+    const hardLinked = join(dir, "hardlinked.jsonl");
+    writeFileSync(hardLinked, "", { mode: 0o600 });
+    linkSync(hardLinked, join(dir, "hardlink-alias.jsonl"));
+    assert.throws(() => new OperationJournal(hardLinked).records(), /additional hard links/);
+
+    const broad = join(dir, "broad.jsonl");
+    writeFileSync(broad, "", { mode: 0o600 });
+    chmodSync(broad, 0o644);
+    assert.throws(() => new OperationJournal(broad).records(), /permissions are too broad/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
