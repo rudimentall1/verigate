@@ -153,6 +153,7 @@ class ArcApiTest(unittest.TestCase):
             "confirm_consumption",
             side_effect=lambda auth, tx_hash: {
                 "consumed": True,
+                "executor": SENDER.lower(),
                 "authorization_id": "0x" + auth["payload"]["authorization_id"],
                 "intent_hash": "0x" + "ab" * 32,
                 "transaction_ref": tx_hash,
@@ -236,6 +237,7 @@ class ArcApiTest(unittest.TestCase):
                     self.assertEqual(consumption.status_code, 200, consumption.text)
                     result = consumption.json()
                 self.assertTrue(result["execute"])
+                self.assertEqual(result["arc_authority_evidence"]["executor"], SENDER.lower())
                 self.assertEqual(
                     result["arc_authority_evidence"]["registration"]["transaction_ref"],
                     registration_hash,
