@@ -61,3 +61,12 @@ This transaction is evidence for Guardian v3 only.
 - The Registry stores the authorization ID, intent hash, executor, expiry and one-time consumed/revoked state; it does not store the full payment payload.
 
 For grant and partner reviews, describe the Registry deployment, mocked end-to-end integration tests, Guardian v3 payment demo and any future Verigate-authorized payment as separate evidence items.
+
+
+## Arc USDC settlement verification capability
+
+A separate implementation branch adds `POST /v1/integrations/arc/payment/confirm` and an EIP-1193 client helper, `confirmArcPayment`. After the user explicitly broadcasts the wallet payment, the API can verify the transaction against the original signed authorization, the confirmed Registry consumption, the canonical USDC contract, the exact sender/recipient/amount Transfer event, the canonical inclusion block and Arc finalized head.
+
+Implementation branch: `feat/arc-payment-settlement-confirmation-2026-11-12`.
+
+This is currently **source-level implementation under CI review**. It has not been merged, deployed to a hosted Verigate API, or exercised with a live Verigate-authorized Arc USDC payment. No settlement transaction hash is claimed. The existing evidence boundary above remains unchanged until a real wallet transaction is broadcast and the new endpoint independently verifies its finalized receipt.
