@@ -476,7 +476,7 @@ Next safe dependency action:
 
 - Dedicated branch: `feat/arc-agent-signer-service-2026-11-12`.
 - Branch is based on the PR #57 head `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`, not on `main`.
-- Current branch head at checkpoint update: `40e7b086612721494c24e22197133a909f37dbb5`.
+- Current branch head at latest checkpoint update: `13d28fea451fe005927f6c70934772cab025cc82`.
 - PR #57 remains separate and must not be merged or modified as part of signer work.
 - This checkpoint update is on the signer branch; it does not update `main`.
 
@@ -520,3 +520,10 @@ Added `tests/arc-constrained-signer.test.mjs` and npm script `test:arc-constrain
 - Signer daemon: not implemented.
 - Gensyn2 installation: not started.
 - Live Arc payment through this signer: not performed.
+
+
+### CI correction record — 2026-11-12
+
+The first complete contracts job for signer policy tests failed 2 of 7 tests. Root cause: journal append code wrote the two-character sequence `\\n` instead of a newline, so multiple JSON records were concatenated and could not be parsed on the next read. The journal writer was corrected in commit `13d28fea451fe005927f6c70934772cab025cc82`. The new CI run `43180158155` was started against that exact head; its final result was still pending when this note was written.
+
+This is a real test-discovered defect, not a production incident. Do not mark the signer tests green until the rerun completes.
