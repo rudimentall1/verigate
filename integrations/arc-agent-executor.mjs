@@ -58,7 +58,12 @@ function verifyAuthorization(authorization, pem) {
   const p = authorization.payload;
   assert(p.authorization_version === 1, "unsupported execution authorization version");
   assert(typeof p.authorization_id === "string" && /^[0-9a-f]{64}$/.test(p.authorization_id), "authorization_id must be a lowercase 32-byte hex value");
+  assert(Number.isSafeInteger(p.issued_at) && p.issued_at > 0, "authorization issuance time is invalid");
   assert(Number.isSafeInteger(p.expires_at) && p.expires_at > 0, "authorization expiry is invalid");
+  const now = Math.floor(Date.now() / 1000);
+  assert(p.issued_at <= now, "execution authorization is not active yet");
+  assert(p.expires_at > now && p.expires_at > p.issued_at, "execution authorization is expired or has an invalid lifetime");
+  assert(p.expires_at - p.issued_at <= 300, "execution authorization lifetime exceeds 300 seconds");
   assert(p.action && typeof p.action === "object", "signed authorized action is missing");
   const action = p.action;
   assert(action.network === "arc" && action.asset === "USDC" && action.action_type === "payment", "signed authorization is not an Arc USDC payment");
