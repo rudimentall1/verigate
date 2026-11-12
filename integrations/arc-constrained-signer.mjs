@@ -164,7 +164,7 @@ export class OperationJournal {
         for (const row of rows) latest.set(row.authorizationId + ":" + row.operation, row);
         let committed = 0n;
         for (const row of latest.values()) {
-          if (row.budgetDay === budgetDay && (row.state === "reserved" || row.state === "complete")) {
+          if (row.budgetDay === budgetDay && (row.state === "reserved" || row.state === "broadcast" || row.state === "complete")) {
             committed += BigInt(row.state === "complete" && row.actualNativeCost !== undefined ? row.actualNativeCost : row.reservedNativeCost ?? "0");
           }
         }
@@ -179,18 +179,35 @@ export class OperationJournal {
       return { replay: false };
     });
   }
+  markBroadcast(authorizationId, operation, txHash) {
+    return this.withLock(() => {
+      const rows = this.records();
+      const prior = rows.filter(x => x.authorizationId === authorizationId && x.operation === operation).at(-1);
+      assert(prior?.state === "reserved", "broadcast recording requires an existing reservation");
+      assert(typeof txHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(txHash), "broadcast transaction hash must be bytes32");
+      const record = { authorizationId, operation, state: "broadcast", txHash, at: Date.now() };
+      for (const key of ["budgetDay", "reservedNativeCost", "dailyNativeBudget"]) {
+        if (prior[key] !== undefined) record[key] = prior[key];
+      }
+      const fd = openSync(this.path, "a", 0o600);
+      try {
+        appendFileSync(fd, JSON.stringify(record) + "\\n");
+        fsyncSync(fd);
+      } finally { closeSync(fd); }
+    });
+  }
   complete(authorizationId, operation, result, actualNativeCost) {
     return this.withLock(() => {
       const rows = this.records();
       const prior = rows.filter(x => x.authorizationId === authorizationId && x.operation === operation).at(-1);
-      assert(prior?.state === "reserved", "completion requires an existing unresolved reservation");
+      assert(prior?.state === "broadcast", "completion requires a durably recorded broadcast transaction");
       let actual;
       if (actualNativeCost !== undefined) {
         try { actual = BigInt(actualNativeCost); } catch { throw new Error("actualNativeCost must be an integer"); }
         assert(actual >= 0n, "actualNativeCost cannot be negative");
         if (prior.reservedNativeCost !== undefined) assert(actual <= BigInt(prior.reservedNativeCost), "actual native cost exceeds reserved per-operation ceiling");
       }
-      const record = { authorizationId, operation, state: "complete", result, at: Date.now() };
+      const record = { authorizationId, operation, state: "complete", txHash: prior.txHash, result, at: Date.now() };
       if (actual !== undefined) record.actualNativeCost = actual.toString();
       if (prior.budgetDay !== undefined) {
         record.budgetDay = prior.budgetDay;
