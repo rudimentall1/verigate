@@ -132,6 +132,10 @@ try {
     requireCondition(receipt, `Missing receipt for historical Registry call ${transaction.hash}`);
     requireCondition(receipt.status === 1, `Historical Registry call failed: ${transaction.hash}`);
     requireCondition(
+      receipt.blockNumber === expectedCall.block,
+      `Historical Registry receipt block mismatch: ${transaction.hash}`,
+    );
+    requireCondition(
       receipt.blockHash?.toLowerCase() === block.hash.toLowerCase(),
       `Historical Registry receipt is not in the canonical block: ${transaction.hash}`,
     );
@@ -141,6 +145,7 @@ try {
     );
 
     const events = receipt.logs.flatMap((log) => {
+      if (log.address?.toLowerCase() !== CONTRACT) return [];
       try {
         const parsed = activityInterface.parseLog(log);
         return parsed ? [{ log, parsed }] : [];
