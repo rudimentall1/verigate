@@ -98,8 +98,10 @@ test("journal reserves once and returns completed result without a second reserv
     const journal = new OperationJournal(join(dir, "ops.jsonl"));
     const id = "0x" + "aa".repeat(32);
     assert.deepEqual(journal.reserve(id, "payment"), { replay: false });
-    journal.complete(id, "payment", { txHash: "0x123" });
-    assert.deepEqual(journal.reserve(id, "payment"), { replay: true, result: { txHash: "0x123" } });
+    const txHash = "0x" + "12".repeat(32);
+    journal.markBroadcast(id, "payment", txHash);
+    journal.complete(id, "payment", { txHash });
+    assert.deepEqual(journal.reserve(id, "payment"), { replay: true, result: { txHash } });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -110,8 +112,9 @@ test("journal fails closed on unresolved reservation and duplicate completion", 
     const id = "0x" + "bb".repeat(32);
     journal.reserve(id, "consume");
     assert.throws(() => journal.reserve(id, "consume"), /operator reconciliation/);
-    journal.complete(id, "consume", { txHash: "0x456" });
-    assert.throws(() => journal.complete(id, "consume", { txHash: "0x789" }), /existing unresolved reservation/);
+    journal.markBroadcast(id, "consume", "0x" + "45".repeat(32));
+    journal.complete(id, "consume", { txHash: "0x" + "45".repeat(32) });
+    assert.throws(() => journal.complete(id, "consume", { txHash: "0x" + "78".repeat(32) }), /durably recorded broadcast/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -132,10 +135,12 @@ test("journal enforces cumulative daily native-token budget across reservations 
     const journal = new OperationJournal(join(dir, "ops.jsonl"));
     const day = Date.parse("2026-11-12T10:00:00.000Z");
     journal.reserve("0x" + "01".repeat(32), "register", { maxNativeCost: "40", dailyNativeBudget: "100", now: day });
-    journal.complete("0x" + "01".repeat(32), "register", { txHash: "0xaaa" }, "30");
+    journal.markBroadcast("0x" + "01".repeat(32), "register", "0x" + "aa".repeat(32));
+    journal.complete("0x" + "01".repeat(32), "register", { txHash: "0x" + "aa".repeat(32) }, "30");
     journal.reserve("0x" + "02".repeat(32), "consume", { maxNativeCost: "60", dailyNativeBudget: "100", now: day + 1000 });
     assert.throws(() => journal.reserve("0x" + "03".repeat(32), "payment", { maxNativeCost: "11", dailyNativeBudget: "100", now: day + 2000 }), /daily native-token budget/);
-    assert.throws(() => journal.complete("0x" + "02".repeat(32), "consume", { txHash: "0xbbb" }, "61"), /exceeds reserved/);
+    journal.markBroadcast("0x" + "02".repeat(32), "consume", "0x" + "bb".repeat(32));
+    assert.throws(() => journal.complete("0x" + "02".repeat(32), "consume", { txHash: "0x" + "bb".repeat(32) }, "61"), /exceeds reserved/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
