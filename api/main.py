@@ -723,6 +723,8 @@ def confirm_arc_payment(req: dict) -> dict:
             expected_transaction=payload["action"]["metadata"]["evm_transaction"],
             payment_transaction_hash=payment_tx_hash,
             consumption_transaction_hash=consumption_tx_hash,
+            authorization_issued_at=payload["issued_at"],
+            authorization_expires_at=payload["expires_at"],
         )
     except (ArcAuthorityRegistryError, ArcPaymentVerificationError, ArcIntegrationError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
