@@ -74,7 +74,7 @@ export function createArcSignerSocketServer({
           maxNativeCost: feePolicy.maxNativeCost,
           dailyNativeBudget: feePolicy.dailyNativeBudget,
           now: Date.now(),
-        });
+        }, derived.authorizationKey);
         if (reservation.replay) {
           writeJson(socket, { ok: true, replay: true, result: reservation.result });
           return;
@@ -98,11 +98,11 @@ export function createArcSignerSocketServer({
               "authorization-derived transaction changed before broadcast",
             );
           },
-          onBroadcast: txHash => journal.markBroadcast(derived.authorizationId, derived.operation, txHash),
+          onBroadcast: txHash => journal.markBroadcast(derived.authorizationId, derived.operation, txHash, derived.authorizationKey),
         });
         assert(result && typeof result === "object" && typeof result.txHash === "string", "broadcast adapter returned no transaction hash");
         assert(typeof result.actualNativeCost === "string" && /^[0-9]+$/.test(result.actualNativeCost), "broadcast adapter returned no actual native cost");
-        journal.complete(derived.authorizationId, derived.operation, result, result.actualNativeCost);
+        journal.complete(derived.authorizationId, derived.operation, result, result.actualNativeCost, derived.authorizationKey);
         writeJson(socket, { ok: true, replay: false, result });
       } catch (error) {
         // A failed adapter may have broadcast before failing. Keep reservation
