@@ -37,15 +37,16 @@ The issuer instance must not share its key file, Unix socket, process identity o
 - Typed operations only: `register`, `consume`, `payment`. No generic sign-message, sign-transaction or caller-supplied arbitrary calldata method.
 - Every request carries the complete Verigate Execution Authorization. The signer independently verifies its Ed25519 signature against an out-of-band pinned public key.
 - The signer independently derives Registry calldata and USDC transfer calldata. It does not trust caller-supplied destination, calldata, chain ID, value, gas or fee fields.
-- Role policy restricts the issuer instance to `register`; the agent instance to `consume` and `payment`.
+- Role policy restricts the issuer instance to `register`; the agent instance to `consume` and `payment`. The agent journal refuses `payment` unless `consume` for the same canonical authorization ID has a completed receipt record.
 - The signer pins Arc Mainnet chain ID 5042, the reviewed Registry address and runtime code hash, and canonical Arc USDC address `0x3600000000000000000000000000000000000000`.
 - Agent signer address must equal the signed payment envelope's `from` address. Issuer signer address must equal the configured enabled Registry issuer.
-- Authorization validity is checked at signing time. The signer rejects malformed, forged, expired, not-yet-valid and over-300-second authorizations.
+- Authorization validity is checked when the request is accepted and revalidated after RPC fee/gas/nonce preflight immediately before broadcast. The signer rejects malformed, forged, expired, not-yet-valid and over-300-second authorizations.
 
 ## Replay, crash and idempotency
 
 Use a durable append-only operation journal. Before broadcast, persist and fsync a reservation keyed by authorization ID plus operation. Immediately after the RPC returns a transaction hash, append and fsync a `broadcast` record containing that hash, before waiting for the receipt. After receipt verification, append and fsync the terminal outcome.
 
+- Authorization IDs are normalized to lowercase bare bytes32 for journal keys so prefixed/bare or mixed-case forms cannot create separate replay records.
 - A repeated operation with a completed record returns the existing result; it never broadcasts again.
 - A reservation without a recorded transaction hash is ambiguous (the process may have crashed after broadcast but before the hash was durably recorded). A `broadcast` record contains the exact transaction hash but is still unresolved until receipt verification is persisted. Both states reject retries and require operator reconciliation; never auto-retry an unresolved operation.
 - Serialize journal mutation and requests. Daily budget accounting includes reserved and broadcast-but-unresolved operations even across UTC midnight, because a pending transaction may be mined on the following day. Completed operations are charged by their UTC settlement day. Fail closed on lock, parse, fsync or persistence errors.
