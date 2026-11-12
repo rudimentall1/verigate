@@ -1,6 +1,6 @@
 # Arc Agent Signer Service
 
-**Status:** design and implementation gate; not production-ready until code, adversarial tests and CI are complete.
+**Status:** implementation and CI-tested on a disposable Linux runner; not production-ready until target-host identity/ACL review, real Arc fee sampling, and controlled deployment gates are complete.
 
 ## Purpose
 
@@ -59,7 +59,7 @@ The signer must set and enforce transaction limits itself, not accept them from 
 - Per-operation gas limit.
 - Maximum fee per gas.
 - Maximum priority fee per gas.
-- Maximum native-token cost per transaction.
+- Maximum native USDC cost per transaction (native 18-decimal units).
 - Per-instance daily native USDC budget, enforced by UTC calendar day, and optional rate limit. Arc native USDC uses 18 decimals for gas accounting; the canonical USDC ERC-20 interface used for application transfers uses 6 decimals. `gasUsed × effectiveGasPrice`, `maxNativeCost` and `dailyNativeBudget` are native 18-decimal USDC base units. Fee-per-gas values (`maxFeePerGas`, `maxPriorityFeePerGas`) remain EVM wei-per-gas values. Convert native fee totals by dividing by 10^12 before expressing them in six-decimal ERC-20 USDC units. Each signer role enforces its own budget from its own journal; the system-wide daily ceiling is the sum of issuer and agent budgets. This is not a shared global budget. A strict shared ceiling requires a shared ledger or budget broker before deployment.
 
 No production fee limits are set. `scripts/verify_arc_fee_samples.mjs` now retrieves three historical Registry receipts using read-only JSON-RPC and reports gas used, effective gas price and total native USDC fee in 18-decimal units, alongside the six-decimal equivalent. The script is included in CI; its output is an evidence sample only, not an automatic fee policy. Before choosing values, collect and compare actual registration, consumption and USDC transfer receipts, account for price variation, then set per-operation and daily ceilings with a review margin. Startup must fail if required limits are missing, malformed, internally inconsistent or exceed the configured cost budget. The signer must fail closed if live fee data cannot be validated.
