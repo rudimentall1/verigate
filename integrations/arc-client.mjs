@@ -173,4 +173,47 @@ export async function broadcastAuthorizedArcPayment({ provider, walletTransactio
   });
 }
 
+
+/**
+ * Ask Verigate to verify the wallet-broadcast payment against the original
+ * signed authorization and the already-confirmed Registry consumption.
+ * The API returns settled=true only after the matching USDC Transfer log is
+ * present in a canonical finalized Arc block.
+ */
+export async function confirmArcPayment({
+  provider,
+  apiBaseUrl,
+  authorization,
+  registration_tx_hash,
+  consume_tx_hash,
+  payment_tx_hash,
+  fetchImpl = globalThis.fetch,
+  headers = {},
+  receiptWait = {},
+}) {
+  assert(typeof apiBaseUrl === "string" && apiBaseUrl.length > 0, "apiBaseUrl is required");
+  assert(typeof fetchImpl === "function", "fetch implementation is required");
+  assert(authorization && typeof authorization === "object", "signed authorization is required");
+  assert(typeof registration_tx_hash === "string", "registration transaction hash is required");
+  assert(typeof consume_tx_hash === "string", "consumption transaction hash is required");
+  assert(typeof payment_tx_hash === "string", "payment transaction hash is required");
+  await ensureArc(provider);
+  await waitForReceipt(provider, payment_tx_hash, receiptWait);
+
+  const result = await postJson(
+    fetchImpl,
+    `${apiBaseUrl.replace(/\/$/, "")}/v1/integrations/arc/payment/confirm`,
+    {
+      authorization,
+      registration_tx_hash,
+      consume_tx_hash,
+      payment_tx_hash,
+    },
+    headers,
+  );
+  assert(result.settled === true, result.reason || "Verigate did not confirm Arc USDC settlement");
+  assert(result.payment_settlement?.verified === true, "Verigate returned no verified payment settlement evidence");
+  return result;
+}
+
 export { ARC_CHAIN_ID, ARC_CHAIN_HEX };
