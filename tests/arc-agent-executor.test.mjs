@@ -30,7 +30,7 @@ function signer(address, sent, hashes) {
 }
 
 function fixture({
-  agentAddress = AGENT, signedSender = AGENT, issuerAddress = ISSUER, tokenAddress = USDC, chainId = BigInt(ARC_CHAIN_ID),
+  agentAddress = AGENT, signedSender = AGENT, issuerAddress = ISSUER, tokenAddress = USDC, calldataRecipient = RECIPIENT, calldataAmount = 100000, chainId = BigInt(ARC_CHAIN_ID),
   mutate = () => {}, invalidSignature = false, settlement = true,
 } = {}) {
   const keys = generateKeyPairSync("ed25519");
@@ -53,7 +53,7 @@ function fixture({
             chain_id: ARC_CHAIN_ID,
             from: signedSender,
             to: tokenAddress,
-            data: "0xa9059cbb" + RECIPIENT.slice(2).padStart(64, "0") + WORD(100000),
+            data: "0xa9059cbb" + calldataRecipient.slice(2).padStart(64, "0") + WORD(calldataAmount),
             value_wei: "0",
           },
         },
@@ -169,6 +169,12 @@ test("rejects invalid Verigate signature before any transaction broadcast", asyn
 test("rejects a Verigate Registry address that differs from the agent's pinned Registry", async () => {
   const f = fixture();
   await assert.rejects(run(f, { pinnedRegistry: RECIPIENT }), /does not match the pinned Registry/);
+  assert.equal(f.sent.length, 0);
+});
+
+test("rejects signed ERC-20 calldata inconsistent with authorized recipient and amount", async () => {
+  const f = fixture({ calldataAmount: 100001 });
+  await assert.rejects(run(f), /calldata does not match the signed recipient and amount/);
   assert.equal(f.sent.length, 0);
 });
 
