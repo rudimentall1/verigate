@@ -533,8 +533,12 @@ def _verified_arc_execution_authorization(
     if not valid:
         raise HTTPException(status_code=403, detail=f"invalid Verigate execution authorization: {reason}")
 
-    payload = authorization.get("payload", {})
-    action = payload.get("action", {})
+    payload = authorization.get("payload")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=403, detail="invalid Verigate execution authorization: invalid payload")
+    action = payload.get("action")
+    if not isinstance(action, dict):
+        raise HTTPException(status_code=403, detail="invalid Verigate execution authorization: invalid action")
     if (
         action.get("network") != ARC_CHAIN
         or action.get("action_type") != "payment"
