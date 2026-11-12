@@ -8,7 +8,8 @@
     "test:guard": "node scripts/test_guard_access_control.mjs",
     "test:arc-client": "node --test tests/arc-client.test.mjs",
     "compile:arc-authority": "node scripts/compile_arc_authority.mjs",
-    "verify:arc-deployment": "node scripts/verify_arc_deployment.mjs"
+    "verify:arc-deployment": "node scripts/verify_arc_deployment.mjs",
+    "test:arc-agent-executor": "node --test tests/arc-agent-executor.test.mjs"
   },
   "devDependencies": {
     "ethers": "^6.17.0",
