@@ -47,8 +47,12 @@ export async function createArcEthersAdapter({
   let queue = Promise.resolve();
 
   async function initialize() {
+    // Do not rely on getNetwork() alone: JsonRpcProvider may be configured
+    // with staticNetwork and return its pinned value without querying the RPC.
+    const rpcChainId = BigInt(await provider.send("eth_chainId", []));
+    assert(rpcChainId === BigInt(ARC_CHAIN_ID), "RPC endpoint is not Arc Mainnet (5042)");
     const network = await provider.getNetwork();
-    assert(Number(network.chainId) === ARC_CHAIN_ID, "RPC endpoint is not Arc Mainnet (5042)");
+    assert(BigInt(network.chainId) === BigInt(ARC_CHAIN_ID), "provider network configuration is not Arc Mainnet (5042)");
     const code = await provider.getCode(registry);
     assert(typeof code === "string" && code !== "0x" && code.length > 2, "Arc Registry has no runtime bytecode");
     assert(keccak256(code).toLowerCase() === expectedRegistryCodeHash.toLowerCase(), "Arc Registry runtime bytecode hash mismatch");
