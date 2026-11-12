@@ -67,3 +67,23 @@ This verifier does not broadcast transactions, deploy contracts, change Registry
 The deployed contract's exact-expiry check is inclusive (`<=`). The current source is stricter (`<`). The archived source is retained only to identify the immutable deployed artifact; it is not the active source tree. Do not claim the deployed contract has the newer strict-expiry behavior unless a separately reviewed migration or redeployment establishes that.
 
 The Registry is an authorization/evidence mechanism, not escrow and not a global wallet firewall. Direct USDC transfers outside the integrated Verigate execution path remain possible.
+
+
+## Historical Registry activity visible in the executor account
+
+The explorer screenshot also showed three calls from the Registry executor to the deployed contract. The read-only verifier now retrieves each block from Arc Mainnet and checks the full transaction, successful receipt, canonical block hash, Registry-emitted event, event arguments and current stored Registry state.
+
+The verified results are:
+
+| Block | Transaction | Method / event | Result |
+|---:|---|---|---|
+| 30024727 | `0xa6a2fb23af073085c64bb168f14ee02d90d64fbeb4629dc2724ba1d01624867f` | `registerAuthorization` / `AuthorizationRegistered` | Successful registration. Current state: not consumed, not revoked. |
+| 30025935 | `0x5f45d89e0f12e42a0d00268d6125a2b05f6474f4ed786895bc7715cf39ad1696` | `registerAuthorization` / `AuthorizationRegistered` | Successful registration. This authorization is later consumed. |
+| 30026205 | `0xc0b2a5de7973da979808ebf5f69e4736ad1eea22fc1fdd5f698b2b44cbad5de8` | `consumeAuthorization` / `AuthorizationConsumed` | Successful one-time consumption of the authorization registered in block 30025935. |
+
+The first authorization ID is `0x3c67a35b4d370c8f80a221270fcfebcf0eba20b6bad478e2761809daab2b7299`.
+The second authorization ID is `0xc208b44433c17dbe4e71aea589f5755b1408e37d46a522c1f2022592ed2fdec2`; its intent hash matches between registration and consumption. The state read confirms `consumed=true` and `revoked=false`.
+
+Verification run: [Arc Mainnet read-only run 43160229353](https://github.com/rudimentall1/verigate/actions/runs/43160229353).
+
+This proves successful Registry-level registration and one-time consumption for the observed calls. It does **not** prove that the Verigate API generated the off-chain authorization, and it does not show a subsequent USDC payment or settlement. No payment transaction is attributed to these three Registry calls.
