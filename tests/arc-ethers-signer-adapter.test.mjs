@@ -48,7 +48,7 @@ test("Arc ethers adapter pins chain and Registry code, then broadcasts only deri
     provider: m.provider, wallet: m.wallet, registryAddress: REGISTRY, role: "agent", issuerAddress: ISSUER,
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
-  await assert.rejects(adapter.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n }, onBroadcast: async () => {} }), /startup verification/);
+  await assert.rejects(adapter.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n }, validateBeforeBroadcast: async () => {}, onBroadcast: async () => {} }), /startup verification/);
   const info = await adapter.initialize();
   assert.equal(info.chainId, ARC_CHAIN_ID);
   const result = await adapter.executeOperation({
@@ -85,7 +85,7 @@ test("Arc ethers adapter fails closed on chain, bytecode, fee and gas mismatches
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
   await c.initialize();
-  await assert.rejects(c.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n }, onBroadcast: async () => {} }), /exceeds signer policy/);
+  await assert.rejects(c.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n }, validateBeforeBroadcast: async () => {}, onBroadcast: async () => {} }), /exceeds signer policy/);
 
   const highGas = mocks({ provider: { estimateGas: async () => 100001n } });
   const d = await createArcEthersAdapter({
@@ -93,7 +93,7 @@ test("Arc ethers adapter fails closed on chain, bytecode, fee and gas mismatches
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
   await d.initialize();
-  await assert.rejects(d.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n }, onBroadcast: async () => {} }), /estimated gas exceeds/);
+  await assert.rejects(d.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n }, validateBeforeBroadcast: async () => {}, onBroadcast: async () => {} }), /estimated gas exceeds/);
 });
 
 test("Arc adapter rejects a disabled issuer and an issuer key/address mismatch", async () => {
