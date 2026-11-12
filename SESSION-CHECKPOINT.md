@@ -399,3 +399,21 @@ Full CI for the current PR merge ref: [run 43160472728](https://github.com/rudim
 - PR #56 updates deployment evidence and verification only. It does not deploy the Verigate API service.
 - `VERIGATE_ARC_REGISTRY_CODE_HASH` has not been installed in a production environment.
 - No Gensyn2 server command, service restart, owner/issuer mutation, contract deployment or transaction broadcast occurred.
+
+
+## 18. npm dependency audit warning observed in PR #56 CI — 2026-11-12
+
+The contract-tooling CI job for PR #56 completed successfully, but `npm ci` reported that it audited 420 packages and found:
+
+- 1 low
+- 5 moderate
+- 25 high
+- 5 critical
+
+This is an npm dependency-tree advisory count, not yet a confirmed count of vulnerabilities reachable in a shipped production runtime. The job installs the repository's npm contract/test tooling and related transitive packages. The individual advisories, vulnerable package paths, direct/transitive status, fix availability and whether any affected package ships with an executable product have **not yet been triaged**.
+
+Next security action: capture `npm audit --json`, identify the exact affected dependency paths, separate build/test-only packages from shipped runtime dependencies, then plan minimal compatible updates and rerun the full CI. Do not run `npm audit fix --force` blindly and do not report this as 36 confirmed production vulnerabilities.
+
+Evidence source: [PR #56 CI run 43160472728](https://github.com/rudimentall1/verigate/actions/runs/43160472728), contract-tooling job installation output.
+
+No dependency update or remediation was made in this session.
