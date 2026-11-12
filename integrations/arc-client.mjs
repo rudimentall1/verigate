@@ -1,9 +1,9 @@
 /**
- * Minimal EIP-1193 client for Verigate's Arc Authority Registry flow.
+ * Optional EIP-1193 browser adapter for Verigate's Arc Authority Registry flow.
  *
- * This module never broadcasts the payment automatically. It performs the
- * two registry transactions, obtains Verigate's final payment transaction,
- * and returns it for a separate, explicit user-confirmed wallet action.
+ * This module requires the connected provider to expose both the Registry
+ * issuer account and the agent executor account. Autonomous agents should use
+ * arc-agent-executor.mjs with separate operator and agent signers instead.
  */
 
 const ARC_CHAIN_ID = 5042;
