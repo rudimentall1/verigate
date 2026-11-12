@@ -22,16 +22,17 @@ readonly SERVICE_ROOT="/opt/verigate-arc-signer-flow"
 readonly CONFIG_ROOT="/etc/verigate-arc-flow"
 readonly KEY_ROOT="${CONFIG_ROOT}/keys"
 readonly RPC_SCRIPT="${SERVICE_ROOT}/mock-rpc.mjs"
-readonly RPC_KEY="$(mktemp)"
-readonly RPC_CERT="$(mktemp)"
-readonly RPC_PORT_FILE="$(mktemp)"
-readonly RPC_METHODS="$(mktemp)"
+readonly TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+readonly RPC_KEY="${TMP_DIR}/rpc.key"
+readonly RPC_CERT="${TMP_DIR}/rpc.crt"
+readonly RPC_PORT_FILE="${TMP_DIR}/rpc.port"
+readonly RPC_METHODS="${TMP_DIR}/rpc.methods"
 readonly REGISTRY="0x4D09CdD490c1Ce48BCB6DA5c1A6Bf41E2f5e853D"
 readonly USDC="0x3600000000000000000000000000000000000000"
 readonly REGISTRY_CODE="0x60006000556001600055"
 readonly ISSUER_PRIVATE_KEY="0x2222222222222222222222222222222222222222222222222222222222222222"
 readonly AGENT_PRIVATE_KEY="0x1111111111111111111111111111111111111111111111111111111111111111"
-readonly TMP_DIR="$(mktemp -d)"
 RPC_PID=""
 CREATED_USERS=0
 
@@ -195,9 +196,12 @@ for attempt in $(seq 1 100); do [[ -s "$RPC_PORT_FILE" ]] && break; kill -0 "$RP
 RPC_PORT="$(cat "$RPC_PORT_FILE")"
 CODE_HASH="$("$NODE_BIN" --input-type=module -e 'import { keccak256 } from "ethers"; process.stdout.write(keccak256(process.argv[1]));' "$REGISTRY_CODE")"
 
-"$NODE_BIN" --input-type=module -e 'import { generateKeyPairSync, sign } from "node:crypto"; import { writeFileSync } from "node:fs"; const { canonicalJson, ARC_CHAIN_ID, ARC_USDC } = await import(process.argv[1]); import { Wallet } from "ethers"; const issuer=new Wallet(process.argv[2]); const agent=new Wallet(process.argv[3]); const recipient="0x3333333333333333333333333333333333333333"; const amount=1250000n; const data="0xa9059cbb"+recipient.slice(2).padStart(64,"0")+amount.toString(16).padStart(64,"0"); const now=Math.floor(Date.now()/1000); const payload={authorization_version:1,authorization_id:"0x"+"aa".repeat(32),issued_at:now-2,expires_at:now+240,action:{network:"arc",asset:"USDC",action_type:"payment",target:recipient,amount_exact:"1.25",metadata:{arc:{chain_id:ARC_CHAIN_ID,asset:"USDC",token_address:ARC_USDC,token_decimals:6},evm_transaction:{chain_id:ARC_CHAIN_ID,from:agent.address,to:ARC_USDC,data,value_wei:"0"}}}}; const pair=generateKeyPairSync("ed25519"); const authorization={algorithm:"Ed25519",payload,signature:sign(null,Buffer.from(canonicalJson(payload)),pair.privateKey).toString("base64")}; writeFileSync(process.argv[4],pair.publicKey.export({type:"spki",format:"pem"})); writeFileSync(process.argv[5],JSON.stringify(authorization)); writeFileSync(process.argv[6],issuer.address+"\n"+agent.address+"\n");' "file://${SERVICE_ROOT}/integrations/arc-constrained-signer.mjs" "$ISSUER_PRIVATE_KEY" "$AGENT_PRIVATE_KEY" "${TMP_DIR}/authorization-public.pem" "${TMP_DIR}/authorization.json" "${TMP_DIR}/addresses.txt"
+"$NODE_BIN" --input-type=module -e 'import { generateKeyPairSync, sign } from "node:crypto"; import { writeFileSync } from "node:fs"; import { Wallet } from "ethers"; const { canonicalJson, ARC_CHAIN_ID, ARC_USDC } = await import(process.argv[1]); const issuer=new Wallet(process.argv[2]); const agent=new Wallet(process.argv[3]); const recipient="0x3333333333333333333333333333333333333333"; const amount=1250000n; const data="0xa9059cbb"+recipient.slice(2).padStart(64,"0")+amount.toString(16).padStart(64,"0"); const now=Math.floor(Date.now()/1000); const payload={authorization_version:1,authorization_id:"0x"+"aa".repeat(32),issued_at:now-2,expires_at:now+240,action:{network:"arc",asset:"USDC",action_type:"payment",target:recipient,amount_exact:"1.25",metadata:{arc:{chain_id:ARC_CHAIN_ID,asset:"USDC",token_address:ARC_USDC,token_decimals:6},evm_transaction:{chain_id:ARC_CHAIN_ID,from:agent.address,to:ARC_USDC,data,value_wei:"0"}}}}; const pair=generateKeyPairSync("ed25519"); const authorization={algorithm:"Ed25519",payload,signature:sign(null,Buffer.from(canonicalJson(payload)),pair.privateKey).toString("base64")}; writeFileSync(process.argv[4],pair.publicKey.export({type:"spki",format:"pem"})); writeFileSync(process.argv[5],JSON.stringify(authorization)); writeFileSync(process.argv[6],issuer.address+"\n"+agent.address+"\n");' "file://${SERVICE_ROOT}/integrations/arc-constrained-signer.mjs" "$ISSUER_PRIVATE_KEY" "$AGENT_PRIVATE_KEY" "${TMP_DIR}/authorization-public.pem" "${TMP_DIR}/authorization.json" "${TMP_DIR}/addresses.txt"
 AUTH_PUBLIC_SOURCE="${TMP_DIR}/authorization-public.pem"
-AUTH_FILE="${TMP_DIR}/authorization.json"
+AUTH_FILE="${CONFIG_ROOT}/authorization.json"
+cp "${TMP_DIR}/authorization.json" "$AUTH_FILE"
+chown root:root "$AUTH_FILE"
+chmod 0644 "$AUTH_FILE"
 mapfile -t ADDRESSES < "${TMP_DIR}/addresses.txt"
 [[ "${ADDRESSES[0],,}" == "${ISSUER_ADDRESS,,}" && "${ADDRESSES[1],,}" == "${AGENT_ADDRESS,,}" ]] || fail "authorization fixture address mismatch"
 
@@ -287,11 +291,11 @@ wait_ready agent
 
 request_signer() {
   local user="$1" socket="$2" operation="$3" replay="$4"
-  runuser -u "$user" -- python3 -c 'import json,socket,sys; path,auth,op,replay=sys.argv[1:]; body={"operation":op,"authorization":json.load(open(auth,encoding="utf-8"))}; s=socket.socket(socket.AF_UNIX); s.settimeout(5); s.connect(path); s.sendall(json.dumps(body).encode()+bytes([10])); s.shutdown(socket.SHUT_WR); data=s.recv(8192); s.close(); result=json.loads(data); assert result.get("ok") is True,result; assert result.get("replay") is (replay=="true"),result; print(json.dumps(result))' "$socket" "$AUTH_FILE" "$operation" "$replay"
+  runuser -u "$user" -- python3 -c 'import json,socket,sys; path,auth,op,replay=sys.argv[1:]; body={"operation":op,"authorization":json.load(open(auth,encoding="utf-8"))}; s=socket.socket(socket.AF_UNIX); s.settimeout(5); s.connect(path); s.sendall(json.dumps(body).encode()+bytes([10])); data=s.makefile("rb").readline(); s.close(); result=json.loads(data); assert result.get("ok") is True,result; assert result.get("replay") is (replay=="true"),result; print(json.dumps(result))' "$socket" "$AUTH_FILE" "$operation" "$replay"
 }
 request_rejected() {
   local user="$1" socket="$2" operation="$3" expected="$4"
-  runuser -u "$user" -- python3 -c 'import json,socket,sys; path,auth,op,expected=sys.argv[1:]; body={"operation":op,"authorization":json.load(open(auth,encoding="utf-8"))}; s=socket.socket(socket.AF_UNIX); s.settimeout(5); s.connect(path); s.sendall(json.dumps(body).encode()+bytes([10])); s.shutdown(socket.SHUT_WR); data=s.recv(8192); s.close(); result=json.loads(data); assert result.get("ok") is False,result; assert expected in result.get("error",""),result; print(result.get("error"))' "$socket" "$AUTH_FILE" "$operation" "$expected"
+  runuser -u "$user" -- python3 -c 'import json,socket,sys; path,auth,op,expected=sys.argv[1:]; body={"operation":op,"authorization":json.load(open(auth,encoding="utf-8"))}; s=socket.socket(socket.AF_UNIX); s.settimeout(5); s.connect(path); s.sendall(json.dumps(body).encode()+bytes([10])); data=s.makefile("rb").readline(); s.close(); result=json.loads(data); assert result.get("ok") is False,result; assert expected in result.get("error",""),result; print(result.get("error"))' "$socket" "$AUTH_FILE" "$operation" "$expected"
 }
 assert_denied() {
   local socket="$1"
