@@ -62,18 +62,65 @@ request = build_arc_payment_authorization_request(
 
 Send `request` to `POST /v1/integrations/arc/authorize`, with the API's normal authentication headers. The signed payload binds the exact recipient, amount, asset, network, sender and canonical Arc USDC transfer calldata.
 
-## 4. Execute only through the Arc authority flow
+## 4. Browser-based wallet adapter (optional)
 
-Use `integrations/arc-client.mjs` from a wallet-enabled client to:
-1. request authorization;
-2. register the authorization on Arc;
-3. confirm registration;
-4. consume the authorization on Arc;
-5. confirm consumption;
-6. receive the exact payment transaction.
-
-Payment broadcast remains a separate explicit wallet action. The client does not automatically send the payment.
+The optional `integrations/arc-client.mjs` helper is an EIP-1193/browser adapter. It is useful for interactive wallet demos, but it is not the primary autonomous-agent execution path. It assumes the browser wallet can access both the Registry issuer and agent executor accounts.
 
 ## Scope
 
 This SDK provides key handling, public enrollment package creation and signed Arc payment request construction. It does not register identities remotely, hold wallet keys, submit transactions, or bypass Verigate's operator-controlled capability registry.
+
+## 4. Execute headlessly from an autonomous agent
+
+The Python SDK above signs the exact intent request. The execution path is a separate Node.js helper and does not require a browser, MetaMask, or an EIP-1193 provider.
+
+The transaction roles are deliberately separate:
+
+- **Registry issuer signer:** operator-controlled signer or restricted KMS/HSM adapter. It submits only the Registry registration transaction returned by Verigate.
+- **Agent executor signer:** the agent's own EVM account. Its address must match the `from` address in the signed payment intent. It submits Registry consumption and the exact USDC payment.
+- **Verigate API:** never receives either private key and never broadcasts a transaction.
+
+Install ethers v6 in the agent runtime (or provide signer adapters with the same `getAddress()` and `sendTransaction(tx)` interface):
+
+```bash
+npm install ethers
+```
+
+Example:
+
+```js
+import { JsonRpcProvider, Wallet } from "ethers";
+import { executeAuthorizedArcPayment } from "./integrations/arc-agent-executor.mjs";
+
+// Load these from the agent platform's secret manager / signer service.
+// Do not place private keys in prompts, agent context, or Verigate API config.
+const provider = new JsonRpcProvider("https://rpc.mainnet.arc.io");
+const issuerSigner = new Wallet(process.env.ARC_ISSUER_SIGNING_KEY, provider);
+const agentSigner = new Wallet(process.env.AGENT_ARC_SIGNING_KEY, provider);
+
+// request is built and Ed25519-signed by the Python agent SDK shown above.
+const result = await executeAuthorizedArcPayment({
+  provider,
+  issuerSigner,
+  agentSigner,
+  apiBaseUrl: process.env.VERIGATE_API_URL,
+  authorizationRequest: request,
+  headers: { Authorization: `Bearer ${process.env.VERIGATE_API_KEY}` },
+});
+
+console.log({
+  settled: result.settled,
+  registration: result.registration_tx_hash,
+  consumption: result.consume_tx_hash,
+  payment: result.payment_tx_hash,
+  settlement: result.payment_settlement,
+});
+```
+
+For production, the issuer signer should be an isolated operator/KMS/HSM service restricted to the Registry registration call, not a raw issuer private key distributed to each agent. The agent's own signer must remain in its execution environment or an agent-scoped signing service.
+
+The agent executor address is taken from the signed EVM payment envelope, registered on-chain as the authorization executor, and is the only address allowed to consume that authorization. The payment must use the same signed sender. The agent executor also needs the Arc native gas asset for transaction fees.
+
+## Scope
+
+This is a non-custodial agent execution path. It supports autonomous signing/broadcast by the agent's own signer while keeping Registry issuance under operator control. Verigate authorizes and independently verifies; the execution keys remain outside the Verigate API.
