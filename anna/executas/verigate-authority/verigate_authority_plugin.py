@@ -1357,29 +1357,8 @@ def _verigate_verify_decision_receipt(args: dict) -> dict:
     if not isinstance(receipt, dict):
         return {"success": False, "error": "receipt_json must contain a receipt object"}
 
-    # JSON transports such as JavaScript JSON.stringify normalize integral
-    # floats (25.0 -> 25). Restore the schema-defined float fields before
-    # checking the Python-signed canonical payload. Without this step a valid
-    # receipt would appear tampered after crossing the Anna host boundary.
-    payload = receipt.get("payload")
-    if isinstance(payload, dict):
-        intent = payload.get("intent")
-        if isinstance(intent, dict):
-            for field in ("amount", "timestamp"):
-                value = intent.get(field)
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
-                    intent[field] = float(value)
-        decision = payload.get("decision")
-        if isinstance(decision, dict):
-            value = decision.get("evaluated_at")
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                decision["evaluated_at"] = float(value)
-        signed_policy = payload.get("signed_policy_version")
-        if isinstance(signed_policy, dict) and isinstance(signed_policy.get("payload"), dict):
-            policy_created = signed_policy["payload"].get("created_at")
-            if isinstance(policy_created, (int, float)) and not isinstance(policy_created, bool):
-                signed_policy["payload"]["created_at"] = float(policy_created)
-
+    # Shared schema-aware normalization lives in attest.receipt so this
+    # App verifier and independent Python verifiers apply the same wire rules.
     try:
         # Verification is read-only: it loads only the public trust anchor and
         # never creates, unlocks or reads the issuer's private signing key.
