@@ -81,10 +81,10 @@ The checked-in systemd template is `deploy/systemd/verigate-arc-signer@.service`
 
 ### Installer and rollback procedure (not yet executed)
 
-The scripts assume the repository is checked out at `/opt/verigate`. They are intentionally staged:
+The scripts assume the repository is checked out at `/opt/verigate`. The config and key parent directories are root-owned mode 0711 so signer users can traverse to their own key files without listing the directory. The scripts are intentionally staged:
 
 1. Review `deploy/arc-signer/install.sh`. Run `sudo bash deploy/arc-signer/install.sh --provision-accounts` only when explicitly approved. This creates the two dedicated system users/groups and private state/config directories. It does not create keys.
-2. Provision distinct EVM private-key files and separate copies of the pinned Verigate authorization public key at the paths in the role templates. Each file must be owned by its matching signer account and mode 0600. Key generation/import is an operator action and is not automated by these scripts.
+2. Provision distinct EVM private-key files and separate copies of the pinned Verigate authorization public key at the paths in the role templates. Each file must be owned by its matching signer account and mode 0600. The signer can traverse the root-owned mode-0711 parent directories but cannot list their contents. Key generation/import is an operator action and is not automated by these scripts.
 3. Copy `issuer.env.example` and `agent.env.example` to `/etc/verigate-signer/{issuer,agent}.env`. Replace every placeholder, measure fee limits from real representative receipts, verify the issuer address, then set owner root:root and mode 0640. Never put private keys in environment files.
 4. Run `sudo bash deploy/arc-signer/install.sh --check`. It is read-only and must pass for both roles.
 5. After independent review, run `sudo bash deploy/arc-signer/install.sh --apply`. It installs the unit template and reloads systemd only. It does not enable or start either service.
