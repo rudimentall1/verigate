@@ -1,6 +1,6 @@
 # Verigate Session Checkpoint
 
-**Updated:** 2026-11-12 09:51 +05:00  
+**Updated:** 2026-11-12 10:20 +05:00
 **Repository:** rudimentall1/verigate  
 **Default branch:** main  
 **Latest product merge before this checkpoint refresh:** 6ab3a289c300cb6d614d27bb7134ae251f7db261  
@@ -344,3 +344,58 @@ The dedicated Arc read-only workflow also passed. These CI and RPC checks apply 
 - The recovered code hash is now established as the reviewed artifact hash. It has **not** been installed into a production service environment.
 - Do not update production `VERIGATE_ARC_REGISTRY_CODE_HASH`, deploy/restart the server, alter owner/issuer state, or broadcast transactions without a separate explicit decision.
 - No server command or production change was made during this recovery.
+
+
+## 17. Arc Registry historical lifecycle evidence — 2026-11-12
+
+### Historical Registry calls verified
+
+The three calls visible in the user-provided executor address screenshot were independently resolved through Arc RPC. The verifier checks each transaction in its reported block, sender, destination, selector, successful receipt, receipt/canonical block hash, Registry-emitted event and stored Registry state. Each activity block was also required to be at or below the finalized head.
+
+1. **Registration — block 30024727**
+   - Transaction: `0xa6a2fb23af073085c64bb168f14ee02d90d64fbeb4629dc2724ba1d01624867f`
+   - Method/event: `registerAuthorization` / `AuthorizationRegistered`
+   - Authorization ID: `0x3c67a35b4d370c8f80a221270fcfebcf0eba20b6bad478e2761809daab2b7299`
+   - Intent hash: `0xfa87d4962e3a9e260ca77d98b9b3197f759388412a24f505ce6e1eb9bb0448cd`
+   - Registry state at verification: registered, not consumed, not revoked.
+
+2. **Registration — block 30025935**
+   - Transaction: `0x5f45d89e0f12e42a0d00268d6125a2b05f6474f4ed786895bc7715cf39ad1696`
+   - Method/event: `registerAuthorization` / `AuthorizationRegistered`
+   - Authorization ID: `0xc208b44433c17dbe4e71aea589f5755b1408e37d46a522c1f2022592ed2fdec2`
+   - Intent hash: `0xf17c1a8a37add7e8d9af4a2f750e3035bcc4daa22e09ea03368acb747c1b9181`
+   - Registry state at verification: consumed, not revoked.
+
+3. **Consumption — block 30026205**
+   - Transaction: `0xc0b2a5de7973da979808ebf5f69e4736ad1eea22fc1fdd5f698b2b44cbad5de8`
+   - Method/event: `consumeAuthorization` / `AuthorizationConsumed`
+   - Authorization ID and intent hash match the second registration exactly.
+   - Registry state confirms `consumed=true`, `revoked=false`.
+
+These transactions prove two successful Registry registrations and one successful one-time Registry consumption. They do **not** establish that the associated off-chain authorization packages were produced by the Verigate API, and they do not show a USDC transfer or settlement. Do not describe this as a completed Verigate-authorized payment.
+
+### Latest verification and CI
+
+Latest read-only Arc verification: [run 43160472757](https://github.com/rudimentall1/verigate/actions/runs/43160472757) — **PASS**.
+
+- Runtime bytecode hash equals the recovered reviewed artifact:
+  `0x6b229c049b9ba0007c318a10759a9827b5a798a4e511611872dcd4cf3973b160`.
+- Deployment transaction, successful receipt, Registry address, deployer, block 30012679 and canonical deployment block hash verified.
+- Owner and enabled issuer verified.
+- Historical activity receipts, events and state verified.
+- Finalized head at this run: block `30808953`, hash `0x43686ce3625f2115ef3d269d627c98bbb75976993479d3585b2f3867c76dd5e1`.
+
+Full CI for the current PR merge ref: [run 43160472728](https://github.com/rudimentall1/verigate/actions/runs/43160472728) — all four jobs **PASS**:
+- `test`
+- `contracts`
+- `container`
+- `anna-ui`, including the Linux Executa build and smoke test.
+
+### PR status and boundaries
+
+- PR #56: https://github.com/rudimentall1/verigate/pull/56
+- Current PR head: `677fd00552d828c52b3008d9eddf0f77a244e016`.
+- PR remains **Draft**, open and unmerged. CI and read-only verification are green; do not merge without explicit authorization.
+- PR #56 updates deployment evidence and verification only. It does not deploy the Verigate API service.
+- `VERIGATE_ARC_REGISTRY_CODE_HASH` has not been installed in a production environment.
+- No Gensyn2 server command, service restart, owner/issuer mutation, contract deployment or transaction broadcast occurred.
