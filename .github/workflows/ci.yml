@@ -61,6 +61,9 @@ jobs:
       - name: Arc signer daemon mock-RPC systemd smoke test
         run: sudo -n bash tests/arc-signer-daemon-systemd-smoke.sh
 
+      - name: Measure historical Arc Registry gas costs (read-only)
+        run: npm run verify:arc-fee-samples
+
       - name: Atomic-state end-to-end test
         run: npm run test:atomic
 
