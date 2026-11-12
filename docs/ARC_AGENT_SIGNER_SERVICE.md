@@ -92,7 +92,7 @@ The scripts assume the repository is checked out at `/opt/verigate`. The config 
 6. Before starting the agent signer, separately grant only the intended agent runtime identity access to the agent socket group. Do not grant it access to the issuer socket or either key file. Review the actual caller identity and group membership first.
 7. To roll back, run `sudo bash deploy/arc-signer/rollback.sh --check`, inspect the plan, then `sudo bash deploy/arc-signer/rollback.sh --apply`. Rollback stops/disables the two signer units and removes the unit template. It intentionally preserves keys, env files, journals, logs and service accounts for forensic review.
 
-The example environment files contain deliberate placeholders and will fail installer validation until replaced. No fee ceilings are supplied here: derive and review them from actual Arc receipts. The scripts require GNU/Linux utilities including systemd, GNU `stat`, `useradd` and `groupadd`; run them only on a disposable test host until the clean-room test gate passes.
+The example environment files contain deliberate placeholders and will fail installer validation until replaced. No fee ceilings are supplied here: derive and review them from actual Arc receipts. The scripts require GNU/Linux utilities including systemd, GNU `stat`, `useradd` and `groupadd`. CI has validated the scripts and unit file on a disposable Ubuntu runner; actual systemd service startup and restart behavior remain a separate gate.
 
 ## Required adversarial test matrix
 
@@ -115,7 +115,7 @@ The example environment files contain deliberate placeholders and will fail inst
 
 - Implementation and tests are reviewed on a dedicated GitHub branch.
 - Full repository CI passes on the exact branch head.
-- A clean-room installation test passes on a disposable Linux environment.
+- The install/rollback scripts and unit syntax pass on a disposable Linux runner; actual systemd service start/stop/restart and role-specific socket ACL behavior must still be validated before deployment.
 - Gensyn2 inventory is inspected before any write. Existing processes and project directories are left untouched.
 - Installation and rollback steps are documented and tested.
 - No mainnet transaction is broadcast during installation. Live payment requires a separate explicit decision after fee limits are measured.
