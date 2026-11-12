@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { executeAuthorizedArcPayment, ARC_CHAIN_ID } from "../integrations/arc-agent-executor.mjs";
+import { executeAuthorizedArcPayment, executeAuthorizedArcPaymentWithSignerClients, ARC_CHAIN_ID } from "../integrations/arc-agent-executor.mjs";
 
 const ISSUER = "0x1111111111111111111111111111111111111111";
 const AGENT = "0x2222222222222222222222222222222222222222";
@@ -243,4 +243,71 @@ test("fails closed if settlement is not independently confirmed", async () => {
   const f = fixture({ settlement: false });
   await assert.rejects(run(f), /unfinalized/);
   assert.equal(f.sent.length, 3);
+});
+
+
+async function runViaSignerClients(f, { issuer = ISSUER, agent = AGENT } = {}) {
+  const signerCalls = [];
+  const issuerSignerClient = {
+    async register(authorization) {
+      signerCalls.push({ role: "issuer", operation: "register", authorization });
+      return { replay: false, result: { txHash: HASH("1"), actualNativeCost: "100" } };
+    },
+  };
+  const agentSignerClient = {
+    async consume(authorization) {
+      signerCalls.push({ role: "agent", operation: "consume", authorization });
+      return { replay: false, result: { txHash: HASH("2"), actualNativeCost: "100" } };
+    },
+    async payment(authorization) {
+      signerCalls.push({ role: "agent", operation: "payment", authorization });
+      return { replay: false, result: { txHash: HASH("3"), actualNativeCost: "100" } };
+    },
+  };
+  const result = await executeAuthorizedArcPaymentWithSignerClients({
+    issuerSignerClient, agentSignerClient,
+    apiBaseUrl: "https://verigate.example/",
+    authorizationRequest: { signed: true },
+    verigatePublicKey: f.verigatePublicKey,
+    registryAddress: REGISTRY,
+    issuerAddress: issuer,
+    agentAddress: agent,
+    fetchImpl: f.fetchImpl,
+  });
+  return { result, signerCalls };
+}
+
+test("executes the Verigate Arc confirmation sequence through typed signer clients without EVM Wallets", async () => {
+  const f = fixture();
+  const { result, signerCalls } = await runViaSignerClients(f);
+  assert.equal(result.settled, true);
+  assert.equal(result.issuer, ISSUER.toLowerCase());
+  assert.equal(result.executor, AGENT.toLowerCase());
+  assert.deepEqual(signerCalls.map(x => [x.role, x.operation]), [
+    ["issuer", "register"], ["agent", "consume"], ["agent", "payment"],
+  ]);
+  assert.equal(f.sent.length, 0);
+  assert.equal(f.calls.length, 4);
+});
+
+test("socket orchestration rejects issuer or agent pin mismatch before signer requests", async () => {
+  const f = fixture();
+  const signerCalls = [];
+  const issuerSignerClient = { async register() { signerCalls.push("register"); return { result: { txHash: HASH("1") } }; } };
+  const agentSignerClient = {
+    async consume() { signerCalls.push("consume"); return { result: { txHash: HASH("2") } }; },
+    async payment() { signerCalls.push("payment"); return { result: { txHash: HASH("3") } }; },
+  };
+  await assert.rejects(executeAuthorizedArcPaymentWithSignerClients({
+    issuerSignerClient, agentSignerClient,
+    apiBaseUrl: "https://verigate.example/",
+    authorizationRequest: { signed: true },
+    verigatePublicKey: f.verigatePublicKey,
+    registryAddress: REGISTRY,
+    issuerAddress: RECIPIENT,
+    agentAddress: AGENT,
+    fetchImpl: f.fetchImpl,
+  }), /Verigate issuer does not match the pinned issuer/);
+  assert.deepEqual(signerCalls, []);
+  assert.equal(f.calls.length, 1);
 });
