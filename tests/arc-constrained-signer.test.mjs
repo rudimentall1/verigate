@@ -236,3 +236,81 @@ test("canonicalizes authorization IDs while binding journal keys to signature di
   assert.equal(bare, prefixed);
   assert.notEqual(bareOperation.authorizationKey, prefixedOperation.authorizationKey);
 });
+
+
+function linuxLockMetadata(pid, startTicks = "1") {
+  return {
+    version: 1,
+    platform: "linux",
+    pid,
+    bootId: readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim(),
+    startTicks,
+  };
+}
+
+test("journal lock recovery refuses a live owner and protects against PID reuse", { skip: process.platform !== "linux" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-lock-live-"));
+  try {
+    const journal = new OperationJournal(join(dir, "ops.jsonl"));
+    writeFileSync(journal.lockPath(), JSON.stringify(linuxLockMetadata(process.pid, (() => {
+      const stat = readFileSync(`/proc/${process.pid}/stat`, "utf8");
+      return stat.slice(stat.lastIndexOf(")") + 1).trim().split(/\s+/)[19];
+    })()) ) + "\n", { mode: 0o600 });
+    assert.equal(journal.inspectLock().status, "live");
+    assert.throws(() => journal.recoverStaleLock({ apply: true }), /owner is live/);
+
+    const reused = linuxLockMetadata(process.pid, "0");
+    writeFileSync(journal.lockPath(), JSON.stringify(reused) + "\n", { mode: 0o600 });
+    const inspection = journal.inspectLock();
+    assert.equal(inspection.status, "stale");
+    assert.equal(inspection.reason, "pid-reused");
+    assert.equal(journal.recoverStaleLock().requiresApply, true);
+    assert.equal(journal.recoverStaleLock({ apply: true }).recovered, true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("journal stale lock recovery requires explicit apply and preserves journal bytes", { skip: process.platform !== "linux" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-lock-stale-"));
+  try {
+    const path = join(dir, "ops.jsonl");
+    const journal = new OperationJournal(path);
+    const original = JSON.stringify({ authorizationId: "keep-me", operation: "consume", state: "broadcast", txHash: "0x" + "ab".repeat(32) }) + "\n";
+    writeFileSync(path, original, { mode: 0o600 });
+    writeFileSync(journal.lockPath(), JSON.stringify(linuxLockMetadata(2147483647)) + "\n", { mode: 0o600 });
+    const inspection = journal.inspectLock();
+    assert.equal(inspection.status, "stale");
+    assert.equal(inspection.reason, "owner-exited");
+    assert.equal(journal.recoverStaleLock().recovered, false);
+    assert.equal(journal.recoverStaleLock().requiresApply, true);
+    assert.equal(journal.recoverStaleLock({ apply: true }).recovered, true);
+    assert.equal(readFileSync(path, "utf8"), original);
+    assert.deepEqual(journal.records(), [JSON.parse(original)]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("journal lock recovery refuses malformed metadata and unsafe lock files", { skip: process.platform !== "linux" }, () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-lock-unsafe-"));
+  try {
+    const journal = new OperationJournal(join(dir, "ops.jsonl"));
+    writeFileSync(journal.lockPath(), "not-json\n", { mode: 0o600 });
+    assert.throws(() => journal.inspectLock(), /metadata is malformed/);
+    rmSync(journal.lockPath());
+
+    const target = join(dir, "target.lock");
+    writeFileSync(target, JSON.stringify(linuxLockMetadata(2147483647)) + "\n", { mode: 0o600 });
+    symlinkSync(target, journal.lockPath());
+    assert.throws(() => journal.inspectLock(), /regular file/);
+    rmSync(journal.lockPath());
+
+    const hard = journal.lockPath();
+    writeFileSync(hard, JSON.stringify(linuxLockMetadata(2147483647)) + "\n", { mode: 0o600 });
+    linkSync(hard, join(dir, "lock-alias"));
+    assert.throws(() => journal.inspectLock(), /additional hard links/);
+    rmSync(hard);
+    rmSync(join(dir, "lock-alias"));
+
+    writeFileSync(hard, JSON.stringify(linuxLockMetadata(2147483647)) + "\n", { mode: 0o644 });
+    chmodSync(hard, 0o644);
+    assert.throws(() => journal.inspectLock(), /permissions must be exactly 0600/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
