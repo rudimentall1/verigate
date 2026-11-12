@@ -72,7 +72,7 @@ function verifyAuthorization(authorization, pem) {
   assert(normalizeAddress(evm.to, "signed USDC token destination") === ARC_USDC_ADDRESS, "signed payment destination is not canonical Arc USDC");
   assert(BigInt(evm.value_wei ?? 0) === 0n, "signed USDC payment must not transfer native value");
   const recipient = normalizeAddress(action.target, "signed payment recipient");
-  assert(typeof action.amount_exact === "string" && /^\\d+(?:\\.\\d{1,6})?$/.test(action.amount_exact), "signed USDC amount_exact must be a decimal string with at most 6 places");
+  assert(typeof action.amount_exact === "string" && /^[0-9]+(?:[.][0-9]{1,6})?$/.test(action.amount_exact), "signed USDC amount_exact must be a decimal string with at most 6 places");
   const [whole, fraction = ""] = action.amount_exact.split(".");
   const amount = BigInt(whole) * 1000000n + BigInt(fraction.padEnd(6, "0") || "0");
   assert(amount > 0n && amount < (1n << 256n), "signed USDC amount is outside valid range");
