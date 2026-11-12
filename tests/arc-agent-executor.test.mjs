@@ -30,7 +30,7 @@ function signer(address, sent, hashes) {
 }
 
 function fixture({
-  agentAddress = AGENT, signedSender = AGENT, issuerAddress = ISSUER, chainId = BigInt(ARC_CHAIN_ID),
+  agentAddress = AGENT, signedSender = AGENT, issuerAddress = ISSUER, tokenAddress = USDC, chainId = BigInt(ARC_CHAIN_ID),
   mutate = () => {}, invalidSignature = false, settlement = true,
 } = {}) {
   const keys = generateKeyPairSync("ed25519");
@@ -48,10 +48,11 @@ function fixture({
         target: RECIPIENT,
         amount_exact: "0.1",
         metadata: {
+          arc: { chain_id: ARC_CHAIN_ID, asset: "USDC", token_address: tokenAddress, token_decimals: 6 },
           evm_transaction: {
             chain_id: ARC_CHAIN_ID,
             from: signedSender,
-            to: USDC,
+            to: tokenAddress,
             data: "0xa9059cbb" + RECIPIENT.slice(2).padStart(64, "0") + WORD(100000),
             value_wei: "0",
           },
@@ -134,11 +135,11 @@ function fixture({
   };
 }
 
-async function run(f) {
+async function run(f, { pinnedRegistry = REGISTRY } = {}) {
   return executeAuthorizedArcPayment({
     provider: f.provider, issuerSigner: f.issuerSigner, agentSigner: f.agentSigner,
     apiBaseUrl: "https://verigate.example/", authorizationRequest: { signed: true },
-    verigatePublicKey: f.verigatePublicKey, fetchImpl: f.fetchImpl,
+    verigatePublicKey: f.verigatePublicKey, registryAddress: pinnedRegistry, fetchImpl: f.fetchImpl,
   });
 }
 
@@ -162,6 +163,18 @@ test("rejects identical issuer and agent signer addresses before API calls", asy
 test("rejects invalid Verigate signature before any transaction broadcast", async () => {
   const f = fixture({ invalidSignature: true });
   await assert.rejects(run(f), /signature is invalid/);
+  assert.equal(f.sent.length, 0);
+});
+
+test("rejects a Verigate Registry address that differs from the agent's pinned Registry", async () => {
+  const f = fixture();
+  await assert.rejects(run(f, { pinnedRegistry: RECIPIENT }), /does not match the pinned Registry/);
+  assert.equal(f.sent.length, 0);
+});
+
+test("rejects a signed payment that substitutes a non-canonical USDC token", async () => {
+  const f = fixture({ tokenAddress: RECIPIENT });
+  await assert.rejects(run(f), /not canonical Arc USDC/);
   assert.equal(f.sent.length, 0);
 });
 
