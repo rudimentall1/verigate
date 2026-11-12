@@ -41,7 +41,8 @@ function authFixture(overrides = {}) {
     algorithm: "Ed25519", payload,
     signature: sign(null, Buffer.from(canonicalJson(payload)), keys.privateKey).toString("base64"),
   };
-  return { authorization, pem: keys.publicKey.export({ type: "spki", format: "pem" }).toString() };
+  const pem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+  return { authorization, pem, publicKeyPem: pem };
 }
 
 test("verifies signed authorization and derives exact USDC transfer", () => {
