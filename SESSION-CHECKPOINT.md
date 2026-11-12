@@ -477,7 +477,8 @@ Next safe dependency action:
 - Dedicated branch: `feat/arc-agent-signer-service-2026-11-12`.
 - PR #58: https://github.com/rudimentall1/verigate/pull/58
 - PR #58 is Draft/Open and stacked on PR #57 branch head `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`; it is not based on `main`.
-- Latest implementation head before this checkpoint update: `a3d6e8f7af971abe70703b55e5e93c5fb0eac682`.
+- Latest implementation/test commit: `ed65caefe7238a46283eb8e48e5e1ba66645ab47`.
+- Latest full passing CI before the new crash/restart tests: run [43191800554](https://github.com/rudimentall1/verigate/actions/runs/43191800554), on prior implementation head `a3d6e8f7af971abe70703b55e5e93c5fb0eac682`.
 - PR #57 remains separate. Do not merge either PR without explicit approval.
 - This checkpoint and all signer work are on the signer branch, not `main`.
 
@@ -514,7 +515,7 @@ Next safe dependency action:
    - Requires separate role, socket, journal, RPC, Registry, issuer, public-key and fee configuration.
    - systemd template provides separate issuer/agent users and groups, strict filesystem protection, restricted writable paths, no ambient capabilities and restricted address families.
    - Added `deploy/arc-signer/install.sh`, `rollback.sh`, role-specific `.env.example` templates and `tests/arc-signer-deploy-smoke.sh`. Installer modes are staged: `--provision-accounts`, read-only `--check`, then `--apply` to install the unit only. It never generates/imports keys or starts services. Rollback preserves keys, env files, journals, users and groups.
-   - Added disposable Ubuntu CI smoke test that provisions temporary signer users/groups, validates key/config permissions, installs the unit with a stubbed systemctl, runs `systemd-analyze verify`, verifies no service start/enable, runs rollback and checks keys/env/journals remain. This validates filesystem, unit syntax and script behavior, not an actual systemd daemon start.
+   - Disposable Ubuntu CI smoke test provisions temporary signer users/groups, validates key/config permissions, installs the unit with a stubbed systemctl, runs `systemd-analyze verify`, verifies no service start/enable, runs rollback and checks keys/env/journals remain. This validates filesystem, unit syntax and script behavior, not an actual systemd daemon start.
    - Installer validates root-owned env files, exact socket/journal/key paths, pinned Registry address/hash, HTTPS RPC, 20-byte issuer address, numeric fee limits, and separate signer-owned 0600 key/public-key files. Config/key parent directories are root-owned mode 0711.
 
 5. Existing Arc executor integration
@@ -525,31 +526,36 @@ Next safe dependency action:
 
 6. Tests and CI
    - Added policy, socket server, socket client, ethers adapter and signer-client orchestration tests.
-   - Full CI run [43186283832](https://github.com/rudimentall1/verigate/actions/runs/43186283832) passed 4/4 jobs (`contracts`, `test`, `container`, `anna-ui`) on implementation head `a4089c91e2272fc6745f081046c0798a3470a441`.
-   - CI run [43189295403](https://github.com/rudimentall1/verigate/actions/runs/43189295403) passed 4/4 jobs on `f55b5a60e96d104075f408e644465cfa5febce8c`, covering installer syntax and environment validation before the later consume-gate changes.
-   - Latest CI run [43191800554](https://github.com/rudimentall1/verigate/actions/runs/43191800554) passed 4/4 jobs (`contracts`, `test`, `container`, `anna-ui`) on implementation head `a3d6e8f7af971abe70703b55e5e93c5fb0eac682`. The contracts job includes the disposable Linux installer/rollback smoke test and `systemd-analyze verify`; both passed.
+   - Added restart regression tests for both ambiguous crash windows:
+     - reservation persisted but no transaction hash recorded;
+     - broadcast hash recorded but receipt unresolved.
+   - Both tests restart the service against the same journal and assert that the operation remains blocked and the adapter is not called a second time.
+   - Full CI run [43191800554](https://github.com/rudimentall1/verigate/actions/runs/43191800554) passed 4/4 jobs (`contracts`, `test`, `container`, `anna-ui`) on prior implementation head `a3d6e8f7af971abe70703b55e5e93c5fb0eac682`. The contracts job includes the disposable Linux installer/rollback smoke test and `systemd-analyze verify`.
+   - A fresh CI run for exact current head `ed65caefe7238a46283eb8e48e5e1ba66645ab47` is still required. Do not report the previous passing run as validation of the two new tests.
 
 ### Verified Registry pin
 
 - Registry: `0x4D09CdD490c1Ce48BCB6DA5c1A6Bf41E2f5e853D`.
 - Read-only deployment verification: [run 43160472757](https://github.com/rudimentall1/verigate/actions/runs/43160472757).
 - The run confirmed Arc chain ID 5042, the Registry address, owner, enabled issuer, deployment transaction/block and matching deployed runtime hash `0x6b229c049b9ba0007c318a10759a9827b5a798a4e511611872dcd4cf3973b160`.
-- The signer now pins this exact 20-byte address and rejects a different configured value. The earlier 41-character address in a previous checkpoint note was a transcription error, not the repository's actual deployment address.
+- The signer pins this exact 20-byte address and rejects a different configured value. The earlier 41-character address in a previous checkpoint note was a transcription error, not the repository's actual deployment address.
 
 ### Explicit limitations — not production-ready
 
 - No signer keys were created, copied or exposed.
 - No live Arc transaction was broadcast by this service.
 - Adapter tests use mocked provider/wallet objects; they are not live-chain verification.
-- No clean-room Linux install, systemd runtime test, OS account/group provisioning, or rollback test has been completed.
+- The disposable Ubuntu CI smoke test validated account provisioning, installer preflight, unit installation without starting services, unit syntax and rollback. It did not start the signer under a real systemd manager.
+- Actual systemd service startup/restart and issuer/agent socket ACL behavior remain unverified.
+- Fee ceilings still need to be measured from representative Arc receipts and reviewed.
 - Gensyn2 was not accessed or modified.
 - This is OS-isolated signing, not an HSM and not protection against root/host compromise.
 
 ### Next gates
 
-1. Finish CI on the exact current branch head and fix any failure.
-2. Recover and independently verify the correct Registry address from deployment receipt/live Arc RPC. Correct the pre-existing configuration separately; never guess the missing/extra character.
-3. Complete independent review of journal crash/replay, authorization consume gating and fee accounting. Adapter tests remain mocked; no signer live-chain transaction has been performed.
-4. Validate actual systemd manager startup/restart and issuer/agent socket ACLs in a disposable Linux environment. The CI runner has validated unit syntax and install/rollback only; it has not started the signer daemons. Do not use Gensyn2 for this gate.
+1. Obtain a fresh full CI result on exact head `ed65caefe7238a46283eb8e48e5e1ba66645ab47`; fix any failure before proceeding.
+2. Independently review stale journal-lock recovery and the operator reconciliation procedure. A crash while holding the exclusive lock can leave a lock file; fail-closed behavior is intentional, but recovery must be documented and tested without deleting unresolved operation records.
+3. Validate actual systemd manager startup/restart and issuer/agent socket ACLs in a disposable Linux environment. Do not use Gensyn2 for this gate.
+4. Measure fee ceilings from representative Arc receipts and review the per-role budgets. The two role journals enforce separate budgets, not one shared global ceiling.
 5. Only after all gates pass, inspect Gensyn2 read-only and prepare a controlled installation. Do not modify FLOP, AegisForge, OWNERA or unrelated services.
 6. No mainnet transaction or production key provisioning without a separate explicit decision.
