@@ -227,10 +227,12 @@ class ArcPaymentSettlementVerifier:
             consumption_tx = self.rpc.get_transaction_by_hash(consumption_transaction_hash)
             consumption_receipt = self.rpc.get_transaction_receipt(consumption_transaction_hash)
         except EvmRpcError as exc:
-            raise ArcPaymentVerificationError(f"Arc transaction lookup failed: {exc}") from exc
+            raise EvmRpcError(f"Arc transaction lookup failed: {exc}") from exc
 
         if payment_tx is None or payment_receipt is None:
             raise ArcPaymentVerificationError("Arc payment transaction is not mined")
+        if str(payment_tx.get("hash", "")).lower() != payment_transaction_hash.lower():
+            raise ArcPaymentVerificationError("payment transaction hash mismatch")
         if consumption_tx is None or consumption_receipt is None:
             raise ArcPaymentVerificationError("Arc Registry consumption transaction is unavailable")
         if str(consumption_tx.get("hash", "")).lower() != consumption_transaction_hash.lower():
@@ -265,10 +267,14 @@ class ArcPaymentSettlementVerifier:
             consume_index = _rpc_int(consumption_receipt.get("transactionIndex"), "consumption transaction index")
             payment_block_number = _rpc_int(payment_receipt.get("blockNumber"), "payment block number")
             consume_block_number = _rpc_int(consumption_receipt.get("blockNumber"), "consumption block number")
+            tx_block_number = _rpc_int(payment_tx.get("blockNumber"), "payment transaction block number")
+            tx_index_from_transaction = _rpc_int(payment_tx.get("transactionIndex"), "payment transaction index")
         except ArcPaymentVerificationError:
             raise
 
         tx_data = payment_tx.get("input", payment_tx.get("data", ""))
+        if tx_block_number != payment_block_number or tx_index_from_transaction != tx_index:
+            raise ArcPaymentVerificationError("payment transaction and receipt inclusion coordinates differ")
         if tx_chain_id != ARC_CHAIN_ID:
             raise ArcPaymentVerificationError("payment transaction was not sent on Arc Mainnet")
         if _address(payment_tx.get("from", ""), "payment transaction sender") != expected_sender:
