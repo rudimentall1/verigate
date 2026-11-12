@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { executeAuthorizedArcPayment, executeAuthorizedArcPaymentWithSignerClients, ARC_CHAIN_ID } from "../integrations/arc-agent-executor.mjs";
+import { executeAuthorizedArcPayment, executeAuthorizedArcPaymentWithSignerClients, registerArcAuthorizationWithIssuerSignerClient, executeRegisteredArcPaymentWithAgentSignerClient, ARC_CHAIN_ID } from "../integrations/arc-agent-executor.mjs";
 
 const ISSUER = "0x1111111111111111111111111111111111111111";
 const AGENT = "0x2222222222222222222222222222222222222222";
@@ -287,7 +287,7 @@ test("executes the Verigate Arc confirmation sequence through typed signer clien
     ["issuer", "register"], ["agent", "consume"], ["agent", "payment"],
   ]);
   assert.equal(f.sent.length, 0);
-  assert.equal(f.calls.length, 4);
+  assert.equal(f.calls.length, 5, "operator and agent phases independently confirm Registry registration");
 });
 
 test("socket orchestration rejects issuer or agent pin mismatch before signer requests", async () => {
@@ -317,4 +317,122 @@ test("accepts prefixed bytes32 authorization IDs in the Arc executor flow", asyn
   const result = await run(f);
   assert.equal(result.settled, true);
   assert.equal(f.sent.length, 3);
+});
+
+
+async function runSplitSignerClients(f) {
+  const signerCalls = [];
+  const operator = await registerArcAuthorizationWithIssuerSignerClient({
+    issuerSignerClient: {
+      async register(authorization) {
+        signerCalls.push({ role: "issuer", operation: "register", authorization });
+        return { replay: false, result: { txHash: HASH("1"), actualNativeCost: "100" } };
+      },
+    },
+    apiBaseUrl: "https://verigate.example/",
+    authorizationRequest: { signed: true },
+    verigatePublicKey: f.verigatePublicKey,
+    registryAddress: REGISTRY,
+    issuerAddress: ISSUER,
+    agentAddress: AGENT,
+    fetchImpl: f.fetchImpl,
+  });
+
+  const agent = await executeRegisteredArcPaymentWithAgentSignerClient({
+    agentSignerClient: {
+      async consume(authorization) {
+        signerCalls.push({ role: "agent", operation: "consume", authorization });
+        return { replay: false, result: { txHash: HASH("2"), actualNativeCost: "100" } };
+      },
+      async payment(authorization) {
+        signerCalls.push({ role: "agent", operation: "payment", authorization });
+        return { replay: false, result: { txHash: HASH("3"), actualNativeCost: "100" } };
+      },
+    },
+    apiBaseUrl: "https://verigate.example/",
+    authorization: operator.authorization,
+    registration_tx_hash: operator.registration_tx_hash,
+    verigatePublicKey: f.verigatePublicKey,
+    registryAddress: REGISTRY,
+    issuerAddress: ISSUER,
+    agentAddress: AGENT,
+    fetchImpl: f.fetchImpl,
+  });
+  return { operator, agent, signerCalls };
+}
+
+test("split deployment keeps issuer and agent signer access in separate process phases", async () => {
+  const f = fixture();
+  const { operator, agent, signerCalls } = await runSplitSignerClients(f);
+  assert.equal(operator.registered, true);
+  assert.equal(operator.registration_tx_hash, HASH("1"));
+  assert.equal(agent.settled, true);
+  assert.equal(agent.registration_tx_hash, HASH("1"));
+  assert.deepEqual(signerCalls.map(call => [call.role, call.operation]), [
+    ["issuer", "register"], ["agent", "consume"], ["agent", "payment"],
+  ]);
+  assert.equal(f.calls.filter(call => call.url.endsWith("/registration/confirm")).length, 2);
+  assert.equal(f.calls.length, 5);
+});
+
+test("agent phase refuses to consume until operator registration is independently reconfirmed", async () => {
+  const f = fixture();
+  let registrationConfirmations = 0;
+  const guardedFetch = async (url, options) => {
+    const response = await f.fetchImpl(url, options);
+    if (url.endsWith("/registration/confirm")) {
+      registrationConfirmations++;
+      if (registrationConfirmations === 2) {
+        return { ok: true, status: 200, async json() { return { registered: false }; } };
+      }
+    }
+    return response;
+  };
+  const issuerCalls = [];
+  const operator = await registerArcAuthorizationWithIssuerSignerClient({
+    issuerSignerClient: {
+      async register() {
+        issuerCalls.push("register");
+        return { result: { txHash: HASH("1") } };
+      },
+    },
+    apiBaseUrl: "https://verigate.example/",
+    authorizationRequest: { signed: true },
+    verigatePublicKey: f.verigatePublicKey,
+    registryAddress: REGISTRY,
+    issuerAddress: ISSUER,
+    agentAddress: AGENT,
+    fetchImpl: guardedFetch,
+  });
+  assert.deepEqual(issuerCalls, ["register"]);
+  const agentCalls = [];
+  await assert.rejects(executeRegisteredArcPaymentWithAgentSignerClient({
+    agentSignerClient: {
+      async consume() { agentCalls.push("consume"); return { result: { txHash: HASH("2") } }; },
+      async payment() { agentCalls.push("payment"); return { result: { txHash: HASH("3") } }; },
+    },
+    apiBaseUrl: "https://verigate.example/",
+    authorization: operator.authorization,
+    registration_tx_hash: operator.registration_tx_hash,
+    verigatePublicKey: f.verigatePublicKey,
+    registryAddress: REGISTRY,
+    issuerAddress: ISSUER,
+    agentAddress: AGENT,
+    fetchImpl: guardedFetch,
+  }), /operator registration is not confirmed/);
+  assert.deepEqual(agentCalls, []);
+});
+
+test("issuer registration phase cannot run without an issuer socket client", async () => {
+  const f = fixture();
+  await assert.rejects(registerArcAuthorizationWithIssuerSignerClient({
+    issuerSignerClient: {},
+    apiBaseUrl: "https://verigate.example/",
+    authorizationRequest: { signed: true },
+    verigatePublicKey: f.verigatePublicKey,
+    registryAddress: REGISTRY,
+    issuerAddress: ISSUER,
+    agentAddress: AGENT,
+    fetchImpl: f.fetchImpl,
+  }), /issuer signer client must expose register/);
 });
