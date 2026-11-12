@@ -64,11 +64,13 @@ test("Unix socket exposes typed operations, enforces role and returns idempotent
     socketPath, role: "agent", authorizationPublicKeyPem: f.publicKeyPem,
     registryAddress: REGISTRY, signerAddress: AGENT, issuerAddress: "0x1111111111111111111111111111111111111111",
     journal, feePolicy: { maxNativeCost: "100", dailyNativeBudget: "1000" },
-    executeOperation: async ({ transaction }) => {
+    executeOperation: async ({ transaction, onBroadcast }) => {
       broadcasts++;
       assert.equal(transaction.operation, "payment");
       assert.equal(transaction.to, ARC_USDC);
-      return { txHash: "0x" + "cd".repeat(32), actualNativeCost: "50" };
+      const txHash = "0x" + "cd".repeat(32);
+      await onBroadcast(txHash);
+      return { txHash, actualNativeCost: "50" };
     },
   });
   try {
