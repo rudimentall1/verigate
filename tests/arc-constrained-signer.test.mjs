@@ -179,3 +179,20 @@ test("journal rejects symlinks, hard links and group/world-readable files", () =
     assert.throws(() => new OperationJournal(broad).records(), /permissions are too broad/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("unresolved signer broadcasts remain reserved across UTC midnight", () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-signer-midnight-budget-"));
+  try {
+    const journal = new OperationJournal(join(dir, "ops.jsonl"));
+    const beforeMidnight = Date.parse("2026-11-11T23:59:00.000Z");
+    const afterMidnight = Date.parse("2026-11-12T00:01:00.000Z");
+    const firstId = "0x" + "91".repeat(32);
+    journal.reserve(firstId, "payment", {
+      maxNativeCost: "80", dailyNativeBudget: "100", now: beforeMidnight,
+    });
+    journal.markBroadcast(firstId, "payment", "0x" + "91".repeat(32));
+    assert.throws(() => journal.reserve("0x" + "92".repeat(32), "payment", {
+      maxNativeCost: "21", dailyNativeBudget: "100", now: afterMidnight,
+    }), /daily native-token budget/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
