@@ -138,3 +138,16 @@ test("journal enforces cumulative daily native-token budget across reservations 
     assert.throws(() => journal.complete("0x" + "02".repeat(32), "consume", { txHash: "0xbbb" }, "61"), /exceeds reserved/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("accepts Verigate authorization IDs encoded as bare bytes32 hex", () => {
+  const f = authFixture();
+  f.authorization.payload.authorization_id = "cc".repeat(32);
+  f.authorization.signature = sign(null, Buffer.from(canonicalJson(f.authorization.payload)), f.privateKey).toString("base64");
+  const verified = verifyExecutionAuthorization(f.authorization, f.pem);
+  assert.equal(verified.payload.authorization_id, "cc".repeat(32));
+  const tx = deriveArcOperation({
+    role: "issuer", operation: "register", ...f,
+    registryAddress: REGISTRY, signerAddress: ISSUER, issuerAddress: ISSUER,
+  });
+  assert.equal(tx.data.slice(10, 74), "cc".repeat(32));
+});
