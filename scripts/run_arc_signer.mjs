@@ -61,6 +61,8 @@ async function main() {
     privateKey,
     registryAddress,
     expectedRegistryCodeHash,
+    role,
+    issuerAddress,
     feePolicy,
     confirmations,
   });
