@@ -38,7 +38,9 @@
   "evidence": {
     "deployment_explorer_url": "https://explorer.arc.io/tx/0xe85784e81ca0069410e8555961c8403fa02adc1361c7455657106afc96855ebb",
     "runtime_hash_rpc_workflow_run": "https://github.com/rudimentall1/verigate/actions/runs/43012817343",
-    "source_metadata_hash_matches_archived_source": true
+    "source_metadata_hash_matches_archived_source": true,
+    "historical_registry_activity_workflow_run": "https://github.com/rudimentall1/verigate/actions/runs/43160229353",
+    "historical_registry_activity_verified": true
   },
   "notes": [
     "Historical deployment source and artifact snapshot; not the active source tree.",
@@ -51,21 +53,52 @@
       "selector": "0xb267748a",
       "method": "registerAuthorization",
       "expected_event": "AuthorizationRegistered",
-      "observed_in": "user-provided Arc Explorer executor transaction list"
+      "transaction_hash": "0xa6a2fb23af073085c64bb168f14ee02d90d64fbeb4629dc2724ba1d01624867f",
+      "authorization_id": "0x3c67a35b4d370c8f80a221270fcfebcf0eba20b6bad478e2761809daab2b7299",
+      "intent_hash": "0xfa87d4962e3a9e260ca77d98b9b3197f759388412a24f505ce6e1eb9bb0448cd",
+      "executor": "0x1429906b663608db6adeab8f975b47afbbe8c68c",
+      "issuer": "0x1429906b663608db6adeab8f975b47afbbe8c68c",
+      "valid_until": 1794063362,
+      "registry_state": {
+        "registered_at": 1794063096,
+        "valid_until": 1794063362,
+        "consumed": false,
+        "revoked": false
+      }
     },
     {
       "block": 30025935,
       "selector": "0xb267748a",
       "method": "registerAuthorization",
       "expected_event": "AuthorizationRegistered",
-      "observed_in": "user-provided Arc Explorer executor transaction list"
+      "transaction_hash": "0x5f45d89e0f12e42a0d00268d6125a2b05f6474f4ed786895bc7715cf39ad1696",
+      "authorization_id": "0xc208b44433c17dbe4e71aea589f5755b1408e37d46a522c1f2022592ed2fdec2",
+      "intent_hash": "0xf17c1a8a37add7e8d9af4a2f750e3035bcc4daa22e09ea03368acb747c1b9181",
+      "executor": "0x1429906b663608db6adeab8f975b47afbbe8c68c",
+      "issuer": "0x1429906b663608db6adeab8f975b47afbbe8c68c",
+      "valid_until": 1794067187,
+      "registry_state": {
+        "registered_at": 1794063708,
+        "valid_until": 1794067187,
+        "consumed": true,
+        "revoked": false
+      }
     },
     {
       "block": 30026205,
       "selector": "0xbad56b75",
       "method": "consumeAuthorization",
       "expected_event": "AuthorizationConsumed",
-      "observed_in": "user-provided Arc Explorer executor transaction list"
+      "transaction_hash": "0xc0b2a5de7973da979808ebf5f69e4736ad1eea22fc1fdd5f698b2b44cbad5de8",
+      "authorization_id": "0xc208b44433c17dbe4e71aea589f5755b1408e37d46a522c1f2022592ed2fdec2",
+      "intent_hash": "0xf17c1a8a37add7e8d9af4a2f750e3035bcc4daa22e09ea03368acb747c1b9181",
+      "executor": "0x1429906b663608db6adeab8f975b47afbbe8c68c",
+      "registry_state": {
+        "registered_at": 1794063708,
+        "valid_until": 1794067187,
+        "consumed": true,
+        "revoked": false
+      }
     }
   ]
 }
