@@ -153,6 +153,11 @@ class ArcPaymentSettlementTests(unittest.TestCase):
         with self.assertRaisesRegex(ArcPaymentVerificationError, "consumption transaction did not succeed"):
             self.confirm()
 
+    def test_rejects_registry_consumption_transaction_receipt_coordinate_mismatch(self):
+        self.rpc.consumption_tx["transactionIndex"] = "0x2"
+        with self.assertRaisesRegex(ArcPaymentVerificationError, "consumption transaction and receipt inclusion coordinates differ"):
+            self.confirm()
+
 
 if __name__ == "__main__":
     unittest.main()
