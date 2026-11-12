@@ -81,6 +81,7 @@ class FakeRpc:
             "blockHash": PAYMENT_BLOCK_HASH,
             "transactionIndex": "0x1",
         }
+        self.consumption_block_hash = PAYMENT_BLOCK_HASH
         self.finalized = {"number": "0x65", "hash": FINALIZED_BLOCK_HASH}
 
     def chain_id(self):
@@ -93,9 +94,10 @@ class FakeRpc:
         return self.payment_receipt if tx_hash == PAYMENT_HASH else self.consumption_receipt
 
     def get_block_by_number(self, block_number):
+        block_hash = self.consumption_block_hash if block_number == 99 else PAYMENT_BLOCK_HASH
         return {
             "number": hex(block_number),
-            "hash": PAYMENT_BLOCK_HASH,
+            "hash": block_hash,
             "timestamp": "0x672f0000",
         }
 
@@ -152,6 +154,16 @@ class ArcPaymentSettlementTests(unittest.TestCase):
     def test_rejects_payment_included_at_authorization_expiry(self):
         with self.assertRaisesRegex(ArcPaymentVerificationError, "at or after authorization expiry"):
             self.confirm(issued_at=1731133300, expires_at=1731133440)
+
+    def test_rejects_registry_consumption_block_hash_not_in_canonical_chain(self):
+        consumption_block_hash = "0x" + "ee" * 32
+        self.rpc.consumption_tx["blockNumber"] = "0x63"
+        self.rpc.consumption_tx["blockHash"] = consumption_block_hash
+        self.rpc.consumption_receipt["blockNumber"] = "0x63"
+        self.rpc.consumption_receipt["blockHash"] = consumption_block_hash
+        self.rpc.consumption_block_hash = "0x" + "ff" * 32
+        with self.assertRaisesRegex(ArcPaymentVerificationError, "consumption block hash does not match"):
+            self.confirm()
 
     def test_rejects_invalid_authorization_validity_window(self):
         with self.assertRaisesRegex(ArcPaymentVerificationError, "validity window is invalid"):
