@@ -623,3 +623,12 @@ Next safe dependency action:
 - The exact-head CI pass [#43193728508](https://github.com/rudimentall1/verigate/actions/runs/43193728508) validates the previous head `a4a11a2...`, **not** the stale-lock implementation above.
 - A fresh CI run for `75fd812...` has not yet appeared in the GitHub workflow-run lookup. Do not claim these new lock-recovery tests pass until the fresh run completes.
 - No Gensyn2 access or changes, no signer key provisioning, no service start and no live transaction.
+
+
+## 23. Arc signer recovery hardening and operator runbook — 2026-11-12
+
+- Added `deploy/arc-signer/LOCK-RECOVERY.md` with explicit inspect-first/apply-second instructions, service-inactive precondition, expected lock states and post-recovery journal handling.
+- Tightened recovery against lock replacement races: before unlinking, the code re-inspects owner liveness and metadata, verifies the original device/inode, then rechecks file type, hard-link count, exact 0600 mode and ownership.
+- Latest branch implementation commit: `c8bb76ae9d543cd9f2add79d18baf37b4fc1c4f4`.
+- PR #58 remains Draft/Open. No merge, service installation, key provisioning or live transaction.
+- CI for the stale-lock implementation is still not confirmed. The last confirmed full CI pass remains run #43193728508 on the earlier head `a4a11a2...`. Do not mark the new lock recovery code tested until a fresh run on the current head passes.
