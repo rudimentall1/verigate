@@ -120,25 +120,32 @@ be used to skip Registry registration and consumption.
 
 ## Wallet client transaction sequence
 
-The EIP-1193 helper is documented in
+The optional EIP-1193 helper is documented in
 [`docs/ARC_WALLET_CLIENT.md`](ARC_WALLET_CLIENT.md).
 
-1. Check the connected wallet is on Arc Mainnet.
-2. Request authorization from Verigate.
-3. Check that the connected wallet exposes the configured Registry executor
-   account, then sign and broadcast the registration transaction.
-4. Wait for a successful receipt and ask Verigate to confirm registration.
-5. Sign and broadcast the returned Registry consumption transaction.
-6. Wait for a successful receipt and ask Verigate to confirm consumption.
-7. Receive the exact authorized payment transaction only after
-   `execute === true`.
-8. Present the payment details and call
-   `broadcastAuthorizedArcPayment` only as a separate, explicit wallet
-   action.
-9. Submit the payment transaction hash to
-   `POST /v1/integrations/arc/payment/confirm` (or use the client's
-   `confirmArcPayment` helper) and retain the returned finalized settlement
-   evidence.
+The primary autonomous-agent path is implemented by
+`integrations/arc-agent-executor.mjs`:
+
+1. The agent creates and signs the exact Arc USDC intent with its Ed25519
+   identity key.
+2. Verigate verifies identity, capability, policy and the signed payment
+   envelope, then returns a signed Execution Authorization and a Registry
+   registration transaction.
+3. An operator-controlled issuer signer (preferably a restricted KMS/HSM
+   adapter) submits the registration transaction.
+4. Verigate confirms the registration receipt and on-chain state.
+5. The agent's own EVM signer submits the one-time consumption transaction.
+6. Verigate confirms consumption and returns the exact authorized payment.
+7. The agent signer broadcasts that exact USDC transaction.
+8. Verigate verifies the payment receipt, matching USDC Transfer event and
+   finalized canonical block, then returns settlement evidence.
+
+The issuer signer and agent signer are separate. The issuer private key is
+not distributed to agents and neither private key is stored by Verigate.
+
+The optional browser adapter is documented in
+`docs/ARC_WALLET_CLIENT.md`; it is for interactive wallet sessions, not the
+primary autonomous-agent architecture.
 
 The Registry executor and payment sender may be different accounts. The
 client checks the account required by each transaction.
