@@ -137,7 +137,7 @@ The helper performs the following sequence:
 7. Asks Verigate to verify the successful USDC Transfer event and finalized Arc block.
 8. Returns the three transaction hashes and settlement evidence.
 
-The issuer signing service should enforce an allowlist for the Registry contract and registration selector. Do not distribute the raw issuer private key to agents. The agent executor key must remain in the agent's runtime or an agent-scoped signer. The agent executor also needs the Arc native gas asset for transaction fees.
+The issuer signing service should enforce an allowlist for the Registry contract and registration selector. Do not distribute the raw issuer private key to agents. The agent executor key must remain in a restricted agent-scoped signing boundary. **Do not give an autonomous model or untrusted agent process unrestricted access to the raw EVM private key.** This executor validates the transaction before calling its signer, but an agent that can bypass this process and call an unrestricted key directly can bypass Verigate as well. For production, the signer service/KMS policy must independently enforce the same authorization and transaction constraints, and only expose the constrained signing operation. A raw `Wallet` loaded from an environment variable is a local integration example, not a production security boundary. The agent executor also needs the Arc native gas asset for transaction fees.
 
 ## 5. Registry issuer configuration
 
