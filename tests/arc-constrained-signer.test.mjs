@@ -216,20 +216,23 @@ test("journal blocks payment until the same authorization has a completed consum
 
 test("canonicalizes prefixed and bare authorization IDs to one journal key", () => {
   const f = authFixture();
-  const prefixed = deriveArcOperation({
+  const prefixedOperation = deriveArcOperation({
     role: "agent", operation: "consume", ...f,
     registryAddress: REGISTRY, signerAddress: AGENT,
-  }).authorizationId;
+  });
+  const prefixed = prefixedOperation.authorizationId;
   const bareAuthorization = structuredClone(f.authorization);
   bareAuthorization.payload.authorization_id = "aa".repeat(32);
   bareAuthorization.signature = sign(
     null, Buffer.from(canonicalJson(bareAuthorization.payload)), f.privateKey,
   ).toString("base64");
-  const bare = deriveArcOperation({
+  const bareOperation = deriveArcOperation({
     role: "agent", operation: "consume",
     authorization: bareAuthorization, publicKeyPem: f.pem,
     registryAddress: REGISTRY, signerAddress: AGENT,
-  }).authorizationId;
+  });
+  const bare = bareOperation.authorizationId;
   assert.equal(prefixed, "aa".repeat(32));
   assert.equal(bare, prefixed);
+  assert.notEqual(bareOperation.authorizationKey, prefixedOperation.authorizationKey);
 });
