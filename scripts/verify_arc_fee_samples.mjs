@@ -18,6 +18,10 @@ const provider = new JsonRpcProvider(RPC_URL, 5042, { staticNetwork: true });
 let archiveProvider = null;
 let archiveVerified = false;
 try {
+  // staticNetwork prevents ethers from detecting a mismatched endpoint, so
+  // validate the RPC's actual chain ID explicitly before reading any receipts.
+  const rpcChainId = BigInt(await provider.send("eth_chainId", []));
+  if (rpcChainId !== 5042n) throw new Error(`Primary Arc RPC returned chain ${rpcChainId}; expected 5042`);
   const network = await provider.getNetwork();
   if (network.chainId !== 5042n) throw new Error(`Expected Arc Mainnet 5042, got ${network.chainId}`);
   const results = [];
