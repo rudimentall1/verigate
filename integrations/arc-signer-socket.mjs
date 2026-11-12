@@ -36,7 +36,7 @@ export function createArcSignerSocketServer({
   assert(typeof socketPath === "string" && socketPath.startsWith("/"), "socketPath must be an absolute filesystem path");
   assert(role === "issuer" || role === "agent", "signer role must be issuer or agent");
   assert(typeof authorizationPublicKeyPem === "string" && authorizationPublicKeyPem.length > 0, "pinned authorization public key is required");
-  assert(journal && typeof journal.reserve === "function" && typeof journal.complete === "function", "durable operation journal is required");
+  assert(journal && typeof journal.reserve === "function" && typeof journal.markBroadcast === "function" && typeof journal.complete === "function", "durable operation journal is required");
   assert(typeof executeOperation === "function", "broadcast adapter is required");
   assert(feePolicy && feePolicy.maxNativeCost !== undefined && feePolicy.dailyNativeBudget !== undefined, "native fee budget is required");
 
@@ -81,7 +81,7 @@ export function createArcSignerSocketServer({
         }
         // The adapter receives derived transaction fields only. It must not
         // accept transaction overrides from the caller.
-        const result = await executeOperation({ transaction: derived, feePolicy, role });
+        const result = await executeOperation({\n          transaction: derived, feePolicy, role,\n          onBroadcast: txHash => journal.markBroadcast(derived.authorizationId, derived.operation, txHash),\n        });
         assert(result && typeof result === "object" && typeof result.txHash === "string", "broadcast adapter returned no transaction hash");
         assert(typeof result.actualNativeCost === "string" && /^[0-9]+$/.test(result.actualNativeCost), "broadcast adapter returned no actual native cost");
         journal.complete(derived.authorizationId, derived.operation, result, result.actualNativeCost);
