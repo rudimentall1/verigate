@@ -171,11 +171,9 @@ class ArcAuthorityRegistry:
                 raise ArcAuthorityRegistryError("registry owner() returned invalid data")
 
             owner = _address("0x" + owner_result[-40:], "on-chain owner")
-            if owner != self.issuer_address:
-                raise ArcAuthorityRegistryError(
-                    f"registry owner mismatch: expected {self.issuer_address}, received {owner}"
-                )
 
+            # The registration signer may be the owner or a separately
+            # enabled issuer installed by the owner. Do not conflate the two.
             issuer_result = self.rpc.eth_call(
                 self.contract_address,
                 ISSUER_SELECTOR + _address_word(self.issuer_address),
