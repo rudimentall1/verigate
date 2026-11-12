@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { keccak256 } from "ethers";
-import { createArcEthersAdapter, ARC_REGISTRY_ADDRESS } from "../integrations/arc-ethers-signer-adapter.mjs";
+import { createArcEthersAdapter } from "../integrations/arc-ethers-signer-adapter.mjs";
 import { ARC_CHAIN_ID } from "../integrations/arc-constrained-signer.mjs";
 
 const SIGNER = "0x2222222222222222222222222222222222222222";
+const REGISTRY = "0x3333333333333333333333333333333333333333";
 const REGISTRY_CODE = "0x60006000556001600055";
 const HASH = "0x" + "ef".repeat(32);
 const policy = {
@@ -42,10 +43,10 @@ function mocks(overrides = {}) {
 test("Arc ethers adapter pins chain and Registry code, then broadcasts only derived zero-value tx", async () => {
   const m = mocks();
   const adapter = await createArcEthersAdapter({
-    provider: m.provider, wallet: m.wallet, registryAddress: ARC_REGISTRY_ADDRESS,
+    provider: m.provider, wallet: m.wallet, registryAddress: REGISTRY,
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
-  await assert.rejects(adapter.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: ARC_REGISTRY_ADDRESS, data: "0x1234", value: 0n } }), /startup verification/);
+  await assert.rejects(adapter.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n } }), /startup verification/);
   const info = await adapter.initialize();
   assert.equal(info.chainId, ARC_CHAIN_ID);
   const result = await adapter.executeOperation({
