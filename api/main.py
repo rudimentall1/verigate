@@ -535,12 +535,42 @@ def _verified_arc_execution_authorization(
 
     payload = authorization.get("payload", {})
     action = payload.get("action", {})
-    if action.get("network") != ARC_CHAIN or action.get("action_type") != "payment":
-        raise HTTPException(status_code=400, detail="Arc registry flow requires an Arc payment authorization")
+    if (
+        action.get("network") != ARC_CHAIN
+        or action.get("action_type") != "payment"
+        or action.get("asset") != "USDC"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Arc registry flow requires an Arc Mainnet USDC payment authorization",
+        )
 
     metadata = action.get("metadata", {})
-    if not isinstance(metadata.get("evm_transaction"), dict):
+    if not isinstance(metadata, dict) or metadata.get("network_family") != "evm":
+        raise HTTPException(status_code=400, detail="signed Arc EVM payment metadata is missing")
+    arc_metadata = metadata.get("arc")
+    if not isinstance(arc_metadata, dict) or (
+        arc_metadata.get("chain_id") != ARC_CHAIN_ID
+        or arc_metadata.get("asset") != "USDC"
+        or str(arc_metadata.get("token_address", "")).lower() != ARC_USDC_ADDRESS.lower()
+        or arc_metadata.get("token_decimals") != 6
+    ):
+        raise HTTPException(status_code=400, detail="signed Arc token binding does not match canonical USDC")
+    transaction = metadata.get("evm_transaction")
+    if not isinstance(transaction, dict):
         raise HTTPException(status_code=400, detail="signed Arc payment transaction is missing")
+    amount = action.get("amount_exact")
+    if amount is None:
+        amount = action.get("amount")
+    try:
+        validate_arc_usdc_transfer(
+            transaction,
+            sender=transaction.get("from"),
+            recipient=action.get("target"),
+            amount=amount,
+        )
+    except (ArcIntegrationError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"signed Arc payment envelope is invalid: {exc}") from exc
 
     return payload
 
