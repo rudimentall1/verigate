@@ -90,6 +90,9 @@ export async function createArcEthersAdapter({
     const receipt = await response.wait(confirmations);
     assert(receipt && Number(receipt.status) === 1, "Arc transaction receipt is missing or reverted");
     assert(String(receipt.hash || receipt.transactionHash).toLowerCase() === response.hash.toLowerCase(), "receipt hash does not match submitted transaction");
+    assert(normalizeAddress(receipt.from, "receipt sender") === address, "receipt sender does not match isolated signer");
+    assert(normalizeAddress(receipt.to, "receipt destination") === normalizeAddress(tx.to, "derived transaction destination"), "receipt destination does not match derived transaction");
+    assert(Number.isSafeInteger(Number(receipt.blockNumber)) && Number(receipt.blockNumber) > 0, "receipt block number is invalid");
     const effectiveGasPrice = receipt.effectiveGasPrice ?? receipt.gasPrice;
     assert(receipt.gasUsed != null && effectiveGasPrice != null, "receipt lacks actual fee fields");
     const actualNativeCost = (BigInt(receipt.gasUsed) * BigInt(effectiveGasPrice)).toString();
