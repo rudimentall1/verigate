@@ -693,7 +693,7 @@ def confirm_arc_consumption(req: dict) -> dict:
             "Arc registry registration confirmed",
             "Arc registry consumption confirmed",
             "Verigate local one-time authorization consumed",
-            "connected wallet may now sign and broadcast wallet_transaction",
+            "agent executor signer may now sign and broadcast the exact wallet_transaction payment",
         ],
     }
 
