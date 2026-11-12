@@ -15,12 +15,12 @@ PROVISION=0
 usage() {
   cat <<'USAGE'
 Usage:
-  sudo deploy/arc-signer/install.sh --provision-accounts
-  sudo deploy/arc-signer/install.sh --check
-  sudo deploy/arc-signer/install.sh --apply
+  sudo bash deploy/arc-signer/install.sh --provision-accounts
+  sudo bash deploy/arc-signer/install.sh --check
+  sudo bash deploy/arc-signer/install.sh --apply
 
 --provision-accounts creates only the two dedicated system users/groups and
-private state/config directories. It does not create or import keys.
+private state/config directories. It does not create/import keys.
 --check is read-only and validates both role configurations and key files.
 --apply installs the systemd template after a successful read-only check.
 It does not enable/start services or send transactions.
@@ -48,8 +48,12 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 [[ -f "${REPO_ROOT}/scripts/run_arc_signer.mjs" ]] || die "signer daemon entrypoint missing"
 [[ -f "${SCRIPT_DIR}/../systemd/${UNIT_NAME}" ]] || die "systemd unit template missing"
 
-for cmd in systemctl getent id install stat grep groupadd useradd; do command -v "$cmd" >/dev/null || die "required command missing: $cmd"; done
-if (( APPLY || PROVISION )); then [[ "$(id -u)" -eq 0 ]] || die "this mode must run as root"; fi
+for cmd in systemctl getent id install stat grep groupadd useradd; do
+  command -v "$cmd" >/dev/null || die "required command missing: $cmd"
+done
+if (( APPLY || PROVISION )); then
+  [[ "$(id -u)" -eq 0 ]] || die "this mode must run as root"
+fi
 
 provision_accounts() {
   for role in "${ROLES[@]}"; do
@@ -78,16 +82,20 @@ if (( APPLY )); then
 fi
 
 validate_env() {
-  local role="$1" file="${CONFIG_ROOT}/${1}.env" expected_key expected_pub account mode
-  expected_key="${KEY_ROOT}/${role}.key"
-  expected_pub="${KEY_ROOT}/${role}-authorization-public.pem"
-  account="verigate-signer-${role}"
+  local role="$1"
+  local file="${CONFIG_ROOT}/${role}.env"
+  local expected_key="${KEY_ROOT}/${role}.key"
+  local expected_pub="${KEY_ROOT}/${role}-authorization-public.pem"
+  local account="verigate-signer-${role}"
+  local mode name
+
   id "$account" >/dev/null 2>&1 || die "missing service account $account; run --provision-accounts first"
   [[ "$(id -gn "$account")" == "$account" ]] || die "account $account must use its matching primary group"
   [[ -f "$file" && ! -L "$file" ]] || die "missing regular environment file: $file"
   [[ "$(stat -c '%U:%G' "$file")" == "root:root" ]] || die "$file must be owned by root:root"
   mode="$(stat -c '%a' "$file")"
   (( (8#$mode & 0022) == 0 )) || die "$file must not be group/world writable"
+
   grep -Fqx "VERIGATE_SIGNER_ROLE=${role}" "$file" || die "$file has incorrect signer role"
   grep -Fqx "VERIGATE_SIGNER_SOCKET=/run/verigate-signer-${role}/signer.sock" "$file" || die "$file has incorrect socket path"
   grep -Fqx "VERIGATE_SIGNER_JOURNAL=/var/lib/verigate-signer-${role}/ops.jsonl" "$file" || die "$file has incorrect journal path"
@@ -95,58 +103,27 @@ validate_env() {
   grep -Fqx "VERIGATE_AUTH_PUBLIC_KEY_FILE=${expected_pub}" "$file" || die "$file has incorrect authorization public key path"
   grep -Fqx "VERIGATE_ARC_REGISTRY_ADDRESS=${REGISTRY}" "$file" || die "$file has incorrect pinned Registry address"
   grep -Fqx "VERIGATE_ARC_REGISTRY_CODE_HASH=${REGISTRY_CODE_HASH}" "$file" || die "$file has incorrect pinned Registry code hash"
+
   for name in VERIGATE_ARC_RPC_URL VERIGATE_ARC_ISSUER_ADDRESS VERIGATE_SIGNER_GAS_LIMIT VERIGATE_SIGNER_MAX_FEE_PER_GAS VERIGATE_SIGNER_MAX_PRIORITY_FEE_PER_GAS VERIGATE_SIGNER_MAX_NATIVE_COST VERIGATE_SIGNER_DAILY_NATIVE_BUDGET VERIGATE_SIGNER_CONFIRMATIONS; do
-    grep -Eq "^${name}=.+$" "$file" || die "$file is missing ${name}"
+    grep -Eq "^${name}=.+$" "$file" || die "$file is missing $name"
   done
   for name in VERIGATE_SIGNER_GAS_LIMIT VERIGATE_SIGNER_MAX_FEE_PER_GAS VERIGATE_SIGNER_MAX_PRIORITY_FEE_PER_GAS VERIGATE_SIGNER_MAX_NATIVE_COST VERIGATE_SIGNER_DAILY_NATIVE_BUDGET VERIGATE_SIGNER_CONFIRMATIONS; do
-    grep -Eq "^${name}=[1-9][0-9]*$" "$file" || die "$file has invalid positive integer ${name}"
+    grep -Eq "^${name}=[1-9][0-9]*$" "$file" || die "$file has invalid positive integer $name"
   done
-  grep -Eq '^VERIGATE_ARC_RPC_URL=https://[^[:space:]]+
-  [[ -f "$expected_pub" && ! -L "$expected_pub" ]] || die "missing authorization public key file: $expected_pub"
-  [[ "$(stat -c '%U:%a' "$expected_key")" == "${account}:600" ]] || die "$expected_key must be owned by ${account} and mode 0600"
-  [[ "$(stat -c '%U:%a' "$expected_pub")" == "${account}:600" ]] || die "$expected_pub must be owned by ${account} and mode 0600"
-}
+  grep -Eq '^VERIGATE_ARC_RPC_URL=https://[^ ]+$' "$file" || die "$file must use an HTTPS Arc RPC URL"
+  grep -Eq '^VERIGATE_ARC_ISSUER_ADDRESS=0x[0-9a-fA-F]{40}$' "$file" || die "$file has an invalid 20-byte issuer address"
 
-for role in "${ROLES[@]}"; do validate_env "$role"; done
-log "preflight passed: both roles have root-owned configuration, distinct key files, pinned Registry and numeric fee limits"
-if (( ! APPLY )); then
-  log "read-only mode; no system changes made"
-  exit 0
-fi
-
-install -o root -g root -m 0644 "${SCRIPT_DIR}/../systemd/${UNIT_NAME}" "$TARGET_UNIT"
-systemctl daemon-reload
-log "installed unit template and reloaded systemd"
-log "units were NOT enabled or started; keys/config were NOT created or changed"
-log "agent runtime socket group membership must be reviewed and provisioned separately"
- "$file" || die "$file must use an HTTPS Arc RPC URL"
-  grep -Eq '^VERIGATE_ARC_ISSUER_ADDRESS=0x[0-9a-fA-F]{40}
-  [[ -f "$expected_pub" && ! -L "$expected_pub" ]] || die "missing authorization public key file: $expected_pub"
-  [[ "$(stat -c '%U:%a' "$expected_key")" == "${account}:600" ]] || die "$expected_key must be owned by ${account} and mode 0600"
-  [[ "$(stat -c '%U:%a' "$expected_pub")" == "${account}:600" ]] || die "$expected_pub must be owned by ${account} and mode 0600"
-}
-
-for role in "${ROLES[@]}"; do validate_env "$role"; done
-log "preflight passed: both roles have root-owned configuration, distinct key files, pinned Registry and numeric fee limits"
-if (( ! APPLY )); then
-  log "read-only mode; no system changes made"
-  exit 0
-fi
-
-install -o root -g root -m 0644 "${SCRIPT_DIR}/../systemd/${UNIT_NAME}" "$TARGET_UNIT"
-systemctl daemon-reload
-log "installed unit template and reloaded systemd"
-log "units were NOT enabled or started; keys/config were NOT created or changed"
-log "agent runtime socket group membership must be reviewed and provisioned separately"
- "$file" || die "$file has an invalid 20-byte issuer address"
   [[ -f "$expected_key" && ! -L "$expected_key" ]] || die "missing private key file: $expected_key (installer never creates keys)"
   [[ -f "$expected_pub" && ! -L "$expected_pub" ]] || die "missing authorization public key file: $expected_pub"
-  [[ "$(stat -c '%U:%a' "$expected_key")" == "${account}:600" ]] || die "$expected_key must be owned by ${account} and mode 0600"
-  [[ "$(stat -c '%U:%a' "$expected_pub")" == "${account}:600" ]] || die "$expected_pub must be owned by ${account} and mode 0600"
+  [[ "$(stat -c '%U:%a' "$expected_key")" == "${account}:600" ]] || die "$expected_key must be owned by $account and mode 0600"
+  [[ "$(stat -c '%U:%a' "$expected_pub")" == "${account}:600" ]] || die "$expected_pub must be owned by $account and mode 0600"
 }
 
-for role in "${ROLES[@]}"; do validate_env "$role"; done
+for role in "${ROLES[@]}"; do
+  validate_env "$role"
+done
 log "preflight passed: both roles have root-owned configuration, distinct key files, pinned Registry and numeric fee limits"
+
 if (( ! APPLY )); then
   log "read-only mode; no system changes made"
   exit 0
