@@ -8,7 +8,6 @@
  */
 import { createServer } from "node:net";
 import { chmodSync, lstatSync, unlinkSync } from "node:fs";
-import { dirname } from "node:path";
 import { deriveArcOperation } from "./arc-constrained-signer.mjs";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
@@ -99,9 +98,8 @@ export function createArcSignerSocketServer({
     server,
     async listen() {
       try {
-        const stat = lstatSync(socketPath);
-        assert(stat.isSocket(), "refusing to replace a non-socket path");
-        unlinkSync(socketPath);
+        lstatSync(socketPath);
+        throw new Error("socket path already exists; inspect the owning process before removing it");
       } catch (error) {
         if (error.code !== "ENOENT") throw error;
       }
