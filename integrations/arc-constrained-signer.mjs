@@ -7,7 +7,7 @@
  * Socket transport and the ethers broadcast adapter are separate layers.
  */
 import { createHash, createPublicKey, verify as verifySignature } from "node:crypto";
-import { appendFileSync, closeSync, existsSync, fsyncSync, openSync, readFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, fsyncSync, openSync, readFileSync, unlinkSync } from "node:fs";
 
 export const ARC_CHAIN_ID = 5042;
 export const ARC_USDC = "0x3600000000000000000000000000000000000000";
