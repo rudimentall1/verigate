@@ -9,7 +9,8 @@
     "test:arc-client": "node --test tests/arc-client.test.mjs",
     "compile:arc-authority": "node scripts/compile_arc_authority.mjs",
     "verify:arc-deployment": "node scripts/verify_arc_deployment.mjs",
-    "test:arc-agent-executor": "node --test tests/arc-agent-executor.test.mjs"
+    "test:arc-agent-executor": "node --test tests/arc-agent-executor.test.mjs",
+    "test:arc-constrained-signer": "node --test tests/arc-constrained-signer.test.mjs"
   },
   "devDependencies": {
     "ethers": "^6.17.0",
