@@ -643,7 +643,7 @@ Next safe dependency action:
 - Before any deployment discussion, obtain a full CI run for the latest head and inspect the `contracts` job output for the lock recovery tests. Then test the real systemd runtime/ACL behavior in a disposable Linux VM.
 
 
-## 25. Arc integration and constrained signer current state — 2026-11-12 17:xx +05:00
+## 25. Arc integration and constrained signer current state — 2026-11-12
 
 This section supersedes earlier stale-lock, systemd and CI status statements in sections 20–24 below/above. Older entries remain as historical checkpoints, not current status.
 
