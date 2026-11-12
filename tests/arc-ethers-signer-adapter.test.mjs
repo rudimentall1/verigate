@@ -32,7 +32,7 @@ function mocks(overrides = {}) {
       return {
         hash: HASH,
         wait: async () => ({
-          hash: HASH, status: 1, blockNumber: 123,
+          hash: HASH, status: 1, blockNumber: 123, from: SIGNER, to: tx.to,
           gasUsed: 21000n, gasPrice: 3n,
         }),
       };
@@ -121,4 +121,46 @@ test("Arc agent signer cannot reuse the Registry issuer address", async () => {
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
   await assert.rejects(adapter.initialize(), /distinct address from the Registry issuer/);
+});
+
+test("Arc adapter rejects receipt sender or destination substitution", async () => {
+  const badSender = mocks({ wallet: {
+    sendTransaction: async tx => ({
+      hash: HASH,
+      wait: async () => ({
+        hash: HASH, status: 1, blockNumber: 123, from: ISSUER, to: tx.to,
+        gasUsed: 21000n, gasPrice: 3n,
+      }),
+    }),
+  } });
+  const a = await createArcEthersAdapter({
+    provider: badSender.provider, wallet: badSender.wallet, registryAddress: REGISTRY,
+    role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await a.initialize();
+  await assert.rejects(a.executeOperation({
+    transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n },
+    onBroadcast: async () => {},
+  }), /receipt sender does not match/);
+
+  const badDestination = mocks({ wallet: {
+    sendTransaction: async tx => ({
+      hash: HASH,
+      wait: async () => ({
+        hash: HASH, status: 1, blockNumber: 123, from: SIGNER, to: ISSUER,
+        gasUsed: 21000n, gasPrice: 3n,
+      }),
+    }),
+  } });
+  const b = await createArcEthersAdapter({
+    provider: badDestination.provider, wallet: badDestination.wallet, registryAddress: REGISTRY,
+    role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await b.initialize();
+  await assert.rejects(b.executeOperation({
+    transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n },
+    onBroadcast: async () => {},
+  }), /receipt destination does not match/);
 });
