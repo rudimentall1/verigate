@@ -59,7 +59,7 @@ The signer must set and enforce transaction limits itself, not accept them from 
 - Maximum fee per gas.
 - Maximum priority fee per gas.
 - Maximum native-token cost per transaction.
-- Aggregate daily native-token budget and optional rate limit.
+- Per-instance daily native-token budget and optional rate limit. Each signer role enforces its own budget from its own journal; the system-wide daily ceiling is the sum of the issuer and agent budgets. This is not a shared global budget. A strict shared ceiling requires a shared ledger or budget broker before deployment.
 
 No fee numbers are hard-coded in this specification. The initial values must be measured from representative Arc registration, consumption and USDC transfer receipts and reviewed by the operator. Startup must fail if required limits are missing, malformed, internally inconsistent or exceed the configured cost budget. The signer must fail closed if live fee data cannot be validated.
 
@@ -71,9 +71,9 @@ The checked-in systemd template is `deploy/systemd/verigate-arc-signer@.service`
 - Only the intended agent runtime user is added to group `verigate-signer-agent`. The issuer socket must be accessible only to the operator/issuer caller.
 - Private key files are owned by the matching signer user and mode 0600 (or stricter); key files must not be shared between roles.
 - Runtime paths: `/run/verigate-signer-issuer/signer.sock` and `/run/verigate-signer-agent/signer.sock`, directory mode 0750, socket mode 0660.
-- Journals: `/var/lib/verigate-signer-issuer/ops.jsonl` and `/var/lib/verigate-signer-agent/ops.jsonl`; each role has its own state.
+- Journals: `/var/lib/verigate-signer-issuer/ops.jsonl` and `/var/lib/verigate-signer-agent/ops.jsonl`; each role has its own state. The parent directory must be owned by that signer user and mode 0700; the journal must be a regular, single-link file owned by that user and mode 0600 or stricter. Symlinks, hard links and broader permissions are rejected. Each journal enforces only its own role budget; configure the two limits so their sum is within the intended total daily spend ceiling.
 - Each `/etc/verigate-signer/{issuer,agent}.env` file is root-owned and readable by the service manager. It sets `VERIGATE_SIGNER_ROLE`, `VERIGATE_SIGNER_SOCKET`, `VERIGATE_SIGNER_JOURNAL`, `VERIGATE_SIGNER_PRIVATE_KEY_FILE`, `VERIGATE_AUTH_PUBLIC_KEY_FILE`, `VERIGATE_ARC_RPC_URL`, `VERIGATE_ARC_ISSUER_ADDRESS`, `VERIGATE_ARC_REGISTRY_ADDRESS`, `VERIGATE_ARC_REGISTRY_CODE_HASH`, and all six `VERIGATE_SIGNER_*` fee/confirmation limits.
-- The signer entrypoint rejects a private key file not owned by its service user or readable by group/other. It rejects symlinks and non-regular files.
+- The signer entrypoint rejects a private key file not owned by its service user or readable by group/other. It rejects symlinks and non-regular files. It also requires the journal directory to be owned by the signer user and mode 0700; journal reads reject symlinks, hard links, foreign ownership and group/other permissions.
 - Verified Registry pin: `0x4D09CdD490c1Ce48BCB6DA5c1A6Bf41E2f5e853D`. The read-only deployment verification in run [43160472757](https://github.com/rudimentall1/verigate/actions/runs/43160472757) confirmed this exact address, Arc chain ID 5042, owner, enabled issuer and deployed runtime hash. The signer requires `VERIGATE_ARC_REGISTRY_ADDRESS` and rejects any value that differs from this pinned deployment.
 - systemd hardening: no-new-privileges, private tmp, strict filesystem protections, restricted writable paths, no ambient capabilities, and restricted address families.
 - Do not use Docker as a prerequisite.
