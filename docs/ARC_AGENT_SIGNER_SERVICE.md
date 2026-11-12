@@ -27,7 +27,7 @@ The issuer instance must not share its key file, Unix socket, process identity o
 - Implemented: ethers v6 adapter with Arc chain-ID check, pinned Registry address and runtime bytecode hash verification at startup, live fee-data validation, gas estimation, configured gas/fee ceilings, pending nonce lookup, serialized local broadcasts, receipt status/hash checks, confirmation wait and actual native-cost accounting.
 - Implemented: Linux daemon entrypoint with file-based private-key loading, owner/mode checks, role-specific configuration, no key in command-line arguments or environment variables, and startup failure if the Registry pin or fee policy is invalid.
 - Implemented tests: policy authorization, role separation, daily budget, socket replay and request validation, typed client operations and server errors, adapter chain/code-hash/issuer/fee/gas checks and receipt accounting, and full mocked Verigate confirmation orchestration through signer clients.
-- Added but not validated: systemd unit template. Not implemented: installation/rollback scripts and automated OS account/group provisioning. Not yet verified: clean-room Linux installation and live Arc broadcast. The current tests use mocked provider/wallet objects; they are not live-chain verification.
+- Added but not validated: systemd unit template plus guarded install/rollback scripts. The installer separates account provisioning (`--provision-accounts`), read-only validation (`--check`) and unit installation (`--apply`). It never creates/imports keys, writes role environment files, enables/starts services or broadcasts transactions. The rollback defaults to read-only and, with `--apply`, stops/disables only the two signer units and removes only the signer unit template while preserving keys, configuration, journals, users and groups. These scripts have not yet been executed on a Linux host. Not yet verified: clean-room Linux installation, systemd runtime behavior and live Arc broadcast. The current tests use mocked provider/wallet objects; they are not live-chain verification.
 - This remains an OS-isolated signer design, not an HSM and not protection against root/host compromise. Separate Linux users, groups, key files, journals and socket paths must be provisioned before the two role instances are safe to operate.
 
 ## Interface requirements
@@ -78,6 +78,20 @@ The checked-in systemd template is `deploy/systemd/verigate-arc-signer@.service`
 - systemd hardening: no-new-privileges, private tmp, strict filesystem protections, restricted writable paths, no ambient capabilities, and restricted address families.
 - Do not use Docker as a prerequisite.
 - Do not change, restart or stop FLOP, AegisForge, OWNERA or unrelated services.
+
+### Installer and rollback procedure (not yet executed)
+
+The scripts assume the repository is checked out at `/opt/verigate`. They are intentionally staged:
+
+1. Review `deploy/arc-signer/install.sh`. Run `sudo deploy/arc-signer/install.sh --provision-accounts` only when explicitly approved. This creates the two dedicated system users/groups and private state/config directories. It does not create keys.
+2. Provision distinct EVM private-key files and separate copies of the pinned Verigate authorization public key at the paths in the role templates. Each file must be owned by its matching signer account and mode 0600. Key generation/import is an operator action and is not automated by these scripts.
+3. Copy `issuer.env.example` and `agent.env.example` to `/etc/verigate-signer/{issuer,agent}.env`. Replace every placeholder, measure fee limits from real representative receipts, verify the issuer address, then set owner root:root and mode 0640. Never put private keys in environment files.
+4. Run `sudo deploy/arc-signer/install.sh --check`. It is read-only and must pass for both roles.
+5. After independent review, run `sudo deploy/arc-signer/install.sh --apply`. It installs the unit template and reloads systemd only. It does not enable or start either service.
+6. Before starting the agent signer, separately grant only the intended agent runtime identity access to the agent socket group. Do not grant it access to the issuer socket or either key file. Review the actual caller identity and group membership first.
+7. To roll back, run `sudo deploy/arc-signer/rollback.sh --check`, inspect the plan, then `sudo deploy/arc-signer/rollback.sh --apply`. Rollback stops/disables the two signer units and removes the unit template. It intentionally preserves keys, env files, journals, logs and service accounts for forensic review.
+
+The example environment files contain deliberate placeholders and will fail installer validation until replaced. No fee ceilings are supplied here: derive and review them from actual Arc receipts. The scripts require GNU/Linux utilities including systemd, GNU `stat`, `useradd` and `groupadd`; run them only on a disposable test host until the clean-room test gate passes.
 
 ## Required adversarial test matrix
 
