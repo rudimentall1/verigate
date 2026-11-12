@@ -1,7 +1,6 @@
-# Arc Mainnet wallet client
+# Arc Mainnet browser wallet adapter
 
-The Arc client helper is an EIP-1193 orchestration layer. It does not hold keys
-and does not automatically broadcast the final payment.
+The Arc browser helper is an optional EIP-1193 adapter for interactive wallet demos. It does not hold keys and does not automatically broadcast the final payment. The primary agent path is headless and uses separate issuer and agent signers via `integrations/arc-agent-executor.mjs`.
 
 ## Network
 
