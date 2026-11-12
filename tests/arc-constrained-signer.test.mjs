@@ -191,7 +191,7 @@ test("unresolved signer broadcasts remain reserved across UTC midnight", () => {
       maxNativeCost: "80", dailyNativeBudget: "100", now: beforeMidnight,
     });
     journal.markBroadcast(firstId, "consume", "0x" + "91".repeat(32));
-    assert.throws(() => journal.reserve("0x" + "92".repeat(32), "payment", {
+    assert.throws(() => journal.reserve("0x" + "92".repeat(32), "consume", {
       maxNativeCost: "21", dailyNativeBudget: "100", now: afterMidnight,
     }), /daily native-token budget/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
