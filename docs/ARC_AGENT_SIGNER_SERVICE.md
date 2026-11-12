@@ -72,8 +72,9 @@ The checked-in systemd template is `deploy/systemd/verigate-arc-signer@.service`
 - Private key files are owned by the matching signer user and mode 0600 (or stricter); key files must not be shared between roles.
 - Runtime paths: `/run/verigate-signer-issuer/signer.sock` and `/run/verigate-signer-agent/signer.sock`, directory mode 0750, socket mode 0660.
 - Journals: `/var/lib/verigate-signer-issuer/ops.jsonl` and `/var/lib/verigate-signer-agent/ops.jsonl`; each role has its own state.
-- Each `/etc/verigate-signer/{issuer,agent}.env` file is root-owned and readable by the service manager. It sets `VERIGATE_SIGNER_ROLE`, `VERIGATE_SIGNER_SOCKET`, `VERIGATE_SIGNER_JOURNAL`, `VERIGATE_SIGNER_PRIVATE_KEY_FILE`, `VERIGATE_AUTH_PUBLIC_KEY_FILE`, `VERIGATE_ARC_RPC_URL`, `VERIGATE_ARC_ISSUER_ADDRESS`, `VERIGATE_ARC_REGISTRY_CODE_HASH`, and all five `VERIGATE_SIGNER_*` fee/confirmation limits.
+- Each `/etc/verigate-signer/{issuer,agent}.env` file is root-owned and readable by the service manager. It sets `VERIGATE_SIGNER_ROLE`, `VERIGATE_SIGNER_SOCKET`, `VERIGATE_SIGNER_JOURNAL`, `VERIGATE_SIGNER_PRIVATE_KEY_FILE`, `VERIGATE_AUTH_PUBLIC_KEY_FILE`, `VERIGATE_ARC_RPC_URL`, `VERIGATE_ARC_ISSUER_ADDRESS`, `VERIGATE_ARC_REGISTRY_ADDRESS`, `VERIGATE_ARC_REGISTRY_CODE_HASH`, and all six `VERIGATE_SIGNER_*` fee/confirmation limits.
 - The signer entrypoint rejects a private key file not owned by its service user or readable by group/other. It rejects symlinks and non-regular files.
+- The legacy repository Registry default currently contains 41 hex characters and is not a valid EVM address. The signer deliberately requires an explicit, valid 20-byte `VERIGATE_ARC_REGISTRY_ADDRESS`; do not copy the legacy default. Reconcile the actual deployed address against the deployment receipt and live chain before provisioning either signer role.
 - systemd hardening: no-new-privileges, private tmp, strict filesystem protections, restricted writable paths, no ambient capabilities, and restricted address families.
 - Do not use Docker as a prerequisite.
 - Do not change, restart or stop FLOP, AegisForge, OWNERA or unrelated services.
