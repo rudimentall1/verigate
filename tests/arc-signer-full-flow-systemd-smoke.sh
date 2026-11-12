@@ -108,7 +108,11 @@ const [keyPath, certPath, portPath, methodsPath, registry, usdc, issuer, agent, 
 const receipts = new Map();
 const transactions = new Map();
 const nonces = new Map();
+let registeredAuthorization = null;
+let authorizationConsumed = false;
 const blockHash = "0x" + "ab".repeat(32);
+const paymentRecipient = "0x3333333333333333333333333333333333333333";
+const expectedPaymentData = "0xa9059cbb" + paymentRecipient.slice(2).padStart(64, "0") + (1250000n).toString(16).padStart(64, "0");
 const zero32 = "0x" + "00".repeat(32);
 const gasPrice = 25750000000n;
 const toHex = value => "0x" + BigInt(value).toString(16);
@@ -150,12 +154,23 @@ function handle(item) {
       let gasUsed;
       if (selector === "0xb267748a") {
         if (from !== issuer.toLowerCase() || to !== registry.toLowerCase()) throw new Error("registration signer or destination mismatch");
+        if (String(tx.data).length !== 266) throw new Error("registration calldata length mismatch");
+        const authId = tx.data.slice(10, 74).toLowerCase();
+        const intentHash = tx.data.slice(74, 138).toLowerCase();
+        const executorWord = tx.data.slice(138, 202).toLowerCase();
+        if (executorWord !== agent.slice(2).toLowerCase().padStart(64, "0")) throw new Error("registration executor is not the agent signer");
+        registeredAuthorization = { authId, intentHash };
         gasUsed = 94914n;
       } else if (selector === "0xbad56b75") {
         if (from !== agent.toLowerCase() || to !== registry.toLowerCase()) throw new Error("consume signer or destination mismatch");
+        if (!registeredAuthorization || tx.data.length !== 138) throw new Error("consume has no matching registration");
+        if (tx.data.slice(10, 74).toLowerCase() !== registeredAuthorization.authId
+          || tx.data.slice(74, 138).toLowerCase() !== registeredAuthorization.intentHash) throw new Error("consume does not bind to registered authorization");
+        authorizationConsumed = true;
         gasUsed = 34267n;
       } else if (selector === "0xa9059cbb") {
         if (from !== agent.toLowerCase() || to !== usdc.toLowerCase()) throw new Error("payment signer or destination mismatch");
+        if (!authorizationConsumed || tx.data.toLowerCase() !== expectedPaymentData) throw new Error("payment does not match the consumed authorization recipient and amount");
         gasUsed = 48722n;
       } else throw new Error("unexpected transaction selector");
       const hash = keccak256(raw);
