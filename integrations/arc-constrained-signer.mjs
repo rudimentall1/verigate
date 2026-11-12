@@ -84,19 +84,20 @@ export function deriveArcOperation({ role, operation, authorization, publicKeyPe
     `verigate.arc.authority.registry:v2:${ARC_CHAIN_ID}:${registry}:${authorization.algorithm}:${authorization.signature}`, "ascii",
   ).digest("hex");
   const id = p.authorization_id.replace(/^0x/i, "").toLowerCase();
+  const authorizationKey = id + ":" + intentHash;
   if (operation === "register") {
     assert(role === "issuer", "agent signer cannot register authorizations");
     assert(signer === normalizeAddress(issuerAddress, "configured issuer"), "issuer signer address mismatch");
     const data = REGISTER_SELECTOR + id + intentHash + addressWord(verified.sender, "agent sender") + uintWord(p.expires_at, "expiry");
-    return { chainId: ARC_CHAIN_ID, to: registry, data, value: 0n, operation, authorizationId: id };
+    return { chainId: ARC_CHAIN_ID, to: registry, data, value: 0n, operation, authorizationId: id, authorizationKey };
   }
   assert(role === "agent", "issuer signer cannot execute agent operations");
   assert(signer === verified.sender, "agent signer does not match signed sender");
   if (operation === "consume") {
-    return { chainId: ARC_CHAIN_ID, to: registry, data: CONSUME_SELECTOR + id + intentHash, value: 0n, operation, authorizationId: id };
+    return { chainId: ARC_CHAIN_ID, to: registry, data: CONSUME_SELECTOR + id + intentHash, value: 0n, operation, authorizationId: id, authorizationKey };
   }
   if (operation === "payment") {
-    return { chainId: ARC_CHAIN_ID, to: ARC_USDC, data: verified.expectedTransfer, value: 0n, operation, authorizationId: id };
+    return { chainId: ARC_CHAIN_ID, to: ARC_USDC, data: verified.expectedTransfer, value: 0n, operation, authorizationId: id, authorizationKey };
   }
   throw new Error("unsupported signer operation");
 }
@@ -144,19 +145,19 @@ export class OperationJournal {
     try { return callback(); }
     finally { closeSync(lock); try { unlinkSync(lockPath); } catch {} }
   }
-  reserve(authorizationId, operation, budget = {}) {
+  reserve(authorizationId, operation, budget = {}, authorizationKey = authorizationId) {
     return this.withLock(() => {
       const rows = this.records();
       if (operation === "payment") {
-        const consume = rows.filter(x => x.authorizationId === authorizationId && x.operation === "consume").at(-1);
+        const consume = rows.filter(x => (x.authorizationKey ?? x.authorizationId) === authorizationKey && x.operation === "consume").at(-1);
         assert(consume?.state === "complete", "payment requires a completed consume operation for this authorization");
       }
-      const prior = rows.filter(x => x.authorizationId === authorizationId && x.operation === operation).at(-1);
+      const prior = rows.filter(x => (x.authorizationKey ?? x.authorizationId) === authorizationKey && x.operation === operation).at(-1);
       if (prior) {
         if (prior.state === "complete") return { replay: true, result: prior.result };
         throw new Error("operation has an unresolved reservation; operator reconciliation required");
       }
-      let reservation = { authorizationId, operation, state: "reserved", at: Date.now() };
+      let reservation = { authorizationId, authorizationKey, operation, state: "reserved", at: Date.now() };
       if (budget.maxNativeCost !== undefined || budget.dailyNativeBudget !== undefined) {
         let cap, daily;
         try { cap = BigInt(budget.maxNativeCost); daily = BigInt(budget.dailyNativeBudget); }
@@ -165,7 +166,7 @@ export class OperationJournal {
         assert(cap <= daily, "per-operation native cost exceeds daily budget");
         const budgetDay = new Date(budget.now ?? Date.now()).toISOString().slice(0, 10);
         const latest = new Map();
-        for (const row of rows) latest.set(row.authorizationId + ":" + row.operation, row);
+        for (const row of rows) latest.set((row.authorizationKey ?? row.authorizationId) + ":" + row.operation, row);
         let committed = 0n;
         for (const row of latest.values()) {
           if (row.state === "reserved" || row.state === "broadcast") {
@@ -187,13 +188,13 @@ export class OperationJournal {
       return { replay: false };
     });
   }
-  markBroadcast(authorizationId, operation, txHash) {
+  markBroadcast(authorizationId, operation, txHash, authorizationKey = authorizationId) {
     return this.withLock(() => {
       const rows = this.records();
-      const prior = rows.filter(x => x.authorizationId === authorizationId && x.operation === operation).at(-1);
+      const prior = rows.filter(x => (x.authorizationKey ?? x.authorizationId) === authorizationKey && x.operation === operation).at(-1);
       assert(prior?.state === "reserved", "broadcast recording requires an existing reservation");
       assert(typeof txHash === "string" && /^0x[0-9a-fA-F]{64}$/.test(txHash), "broadcast transaction hash must be bytes32");
-      const record = { authorizationId, operation, state: "broadcast", txHash, at: Date.now() };
+      const record = { authorizationId, authorizationKey, operation, state: "broadcast", txHash, at: Date.now() };
       for (const key of ["budgetDay", "reservedNativeCost", "dailyNativeBudget"]) {
         if (prior[key] !== undefined) record[key] = prior[key];
       }
@@ -204,10 +205,10 @@ export class OperationJournal {
       } finally { closeSync(fd); }
     });
   }
-  complete(authorizationId, operation, result, actualNativeCost) {
+  complete(authorizationId, operation, result, actualNativeCost, authorizationKey = authorizationId) {
     return this.withLock(() => {
       const rows = this.records();
-      const prior = rows.filter(x => x.authorizationId === authorizationId && x.operation === operation).at(-1);
+      const prior = rows.filter(x => (x.authorizationKey ?? x.authorizationId) === authorizationKey && x.operation === operation).at(-1);
       assert(prior?.state === "broadcast", "completion requires a durably recorded broadcast transaction");
       assert(typeof result?.txHash === "string" && result.txHash.toLowerCase() === prior.txHash.toLowerCase(), "completion transaction hash must match the durable broadcast record");
       let actual;
@@ -216,7 +217,7 @@ export class OperationJournal {
         assert(actual >= 0n, "actualNativeCost cannot be negative");
         if (prior.reservedNativeCost !== undefined) assert(actual <= BigInt(prior.reservedNativeCost), "actual native cost exceeds reserved per-operation ceiling");
       }
-      const record = { authorizationId, operation, state: "complete", txHash: prior.txHash, result, at: Date.now() };
+      const record = { authorizationId, authorizationKey, operation, state: "complete", txHash: prior.txHash, result, at: Date.now() };
       if (actual !== undefined) record.actualNativeCost = actual.toString();
       if (prior.budgetDay !== undefined) {
         record.budgetDay = prior.budgetDay;
