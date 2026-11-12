@@ -49,6 +49,9 @@ jobs:
       - name: Arc wallet client workflow tests
         run: npm run test:arc-client
 
+      - name: Headless Arc agent executor workflow tests
+        run: npm run test:arc-agent-executor
+
       - name: Atomic-state end-to-end test
         run: npm run test:atomic
 
@@ -130,6 +133,10 @@ jobs:
           assert env["VERIGATE_REQUIRE_SIGNED_INTENT"] == "1"
           assert env["VERIGATE_ENV"] == "production"
           assert env["VERIGATE_REQUIRE_ENCRYPTED_KEY"] == "1"
+          assert env["VERIGATE_ARC_RPC_URL"] == "https://rpc.mainnet.arc.io"
+          assert env["VERIGATE_ARC_REGISTRY_ADDRESS"] == "0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D"
+          assert env["VERIGATE_ARC_ISSUER_ADDRESS"] == "0x1429906b663608DB6aDeAb8F975B47aFbbe8c68C"
+          assert env["VERIGATE_ARC_REGISTRY_CODE_HASH"] == "0x6b229c049b9ba0007c318a10759a9827b5a798a4e511611872dcd4cf3973b160"
           assert "VERIGATE_KEY_PASSPHRASE" in env
           PY
 
