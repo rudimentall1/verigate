@@ -142,7 +142,7 @@ export class OperationJournal {
       }
       const fd = openSync(this.path, "a", 0o600);
       try {
-        appendFileSync(fd, JSON.stringify({ authorizationId, operation, state: "reserved", at: Date.now() }) + "\\n");
+        appendFileSync(fd, JSON.stringify({ authorizationId, operation, state: "reserved", at: Date.now() }) + "\n");
         fsyncSync(fd);
       } finally { closeSync(fd); }
       return { replay: false };
@@ -155,7 +155,7 @@ export class OperationJournal {
       assert(prior?.state === "reserved", "completion requires an existing unresolved reservation");
       const fd = openSync(this.path, "a", 0o600);
       try {
-        appendFileSync(fd, JSON.stringify({ authorizationId, operation, state: "complete", result, at: Date.now() }) + "\\n");
+        appendFileSync(fd, JSON.stringify({ authorizationId, operation, state: "complete", result, at: Date.now() }) + "\n");
         fsyncSync(fd);
       } finally { closeSync(fd); }
     });
