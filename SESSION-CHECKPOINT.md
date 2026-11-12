@@ -724,3 +724,60 @@ This section supersedes earlier stale-lock, systemd and CI status statements in 
 3. Finish a separate fee review after a real Verigate USDC payment receipt exists; do not substitute the Guardian reference for Verigate settlement. Do not set production max-fee or daily-budget values until reviewed.
 4. Only after code/CI review and explicit approval, inventory Gensyn2 read-only and identify the real issuer/agent client service accounts. Do not install or start the signer in that step.
 5. Keep PR #57 and #58 Draft/Open until their integration boundary, release plan and live evidence are reviewed. No merge, production key provisioning or mainnet broadcast without separate explicit approval.
+
+
+## 26. Arc signer orchestrator split — 2026-11-12
+
+This section updates the deployment architecture described in section 25. The prior single-process convenience wrapper is retained only for a trusted coordinator; production roles are now exposed as separate application phases.
+
+### Problem found
+
+- The first signer-client orchestration entrypoint accepted both `issuerSignerClient` and `agentSignerClient`.
+- A process using it therefore needed permission to access both Unix sockets. That contradicted the deployment trust boundary: the autonomous agent runtime must not be able to access the operator-controlled issuer socket.
+- This was an architecture/deployment mismatch, not a private-key leak. Socket access grants the typed role operation, so it is still a meaningful authority boundary and must remain separated.
+
+### Implemented split
+
+- Added `registerArcAuthorizationWithIssuerSignerClient()`:
+  - intended for an operator-controlled issuer controller only;
+  - accepts the authorization request, calls Verigate `/authorize`, checks the signed authorization and pinned Registry/issuer/agent, validates independently derived registration calldata;
+  - submits `register` using only the issuer socket;
+  - calls Verigate `/registration/confirm`;
+  - returns the signed authorization and confirmed `registration_tx_hash` as the hand-off to the agent phase.
+- Added `executeRegisteredArcPaymentWithAgentSignerClient()`:
+  - intended for the agent runtime;
+  - accepts only the authorization and operator-confirmed registration transaction hash;
+  - re-confirms registration through Verigate before any agent signer request;
+  - validates independently derived consume calldata, consumes with the agent socket, confirms consume, validates exact USDC payment calldata, pays with the agent socket and confirms settlement;
+  - requires no issuer signer client or issuer socket access.
+- Retained `executeAuthorizedArcPaymentWithSignerClients()` as a backward-compatible trusted-coordinator wrapper. Its code comment and docs explicitly prohibit using it inside the autonomous agent runtime because it requires both socket permissions.
+- Updated `docs/ARC_AGENT_SIGNER_SERVICE.md` to prescribe separate operator and agent controller processes.
+
+### Tests and CI
+
+- Added split-phase tests in `tests/arc-agent-executor.test.mjs`:
+  - separate issuer and agent phases execute the confirmation sequence;
+  - agent phase re-checks operator registration and refuses to consume if Verigate no longer confirms it;
+  - issuer phase requires only an issuer signer client;
+  - agent phase receives only the agent signer client.
+- The new tests passed in CI run [#43228511154](https://github.com/rudimentall1/verigate/actions/runs/43228511154):
+  - `Headless Arc agent executor workflow tests`: PASS, including tests 18–20 for split roles;
+  - `Constrained Arc signer policy tests`: PASS;
+  - real systemd runtime test: PASS;
+  - actual signer daemon mock-RPC startup/restart test: PASS;
+  - full issuer → agent register/consume/payment local mock flow: PASS;
+  - `test` and `container`: PASS.
+  - `anna-ui` was still running at the time of this update. Do not report this run as 4/4 until it completes.
+- Latest signer branch head at this checkpoint: `b4567fe08bc3746aef339d858568edf7f6125b47`. PR #58 remains Draft/Open, stacked on PR #57, not merged.
+
+### Current role deployment rule
+
+- Operator controller: may access the issuer socket only; runs `registerArcAuthorizationWithIssuerSignerClient`.
+- Agent runtime: may access the agent socket only; receives the signed authorization and registration transaction hash; runs `executeRegisteredArcPaymentWithAgentSignerClient`.
+- Neither process receives either private key. The OS user/group mapping must enforce the boundary; application code alone is insufficient.
+- Do not deploy the backward-compatible two-client wrapper as the agent runtime entrypoint.
+
+### Immediate next gate
+
+- Wait for the remaining Anna UI job in run #43228511154 and capture the final 4/4 result.
+- Then review the role-to-systemd-user configuration and target host account mapping in a separately approved read-only inventory. Do not install or start signers on Gensyn2 at this stage.
