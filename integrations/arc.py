@@ -309,11 +309,14 @@ class ArcPaymentSettlementVerifier:
 
         payment_block_hash = payment_block.get("hash")
         receipt_block_hash = payment_receipt.get("blockHash")
+        transaction_block_hash = payment_tx.get("blockHash")
         if (
             not isinstance(payment_block_hash, str)
             or not _TX_HASH_RE.fullmatch(payment_block_hash)
             or not isinstance(receipt_block_hash, str)
+            or not isinstance(transaction_block_hash, str)
             or payment_block_hash.lower() != receipt_block_hash.lower()
+            or payment_block_hash.lower() != transaction_block_hash.lower()
         ):
             raise ArcPaymentVerificationError("payment receipt block hash does not match the canonical block")
         finalized_number = _rpc_int(finalized_block.get("number"), "finalized block number")
