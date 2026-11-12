@@ -305,14 +305,40 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
       await sleep(30);
     },
     async clickWallet({ stopAtConsume = false } = {}) {
-      $("wallet-execute-btn").click();
+      const button = $("wallet-execute-btn");
+      const diagnostic = () => {
+        let authorizationPresent = false;
+        try {
+          authorizationPresent = Boolean(JSON.parse($("execution-json").textContent)?.payload?.authorization_id);
+        } catch { /* keep diagnostic path non-throwing */ }
+        return JSON.stringify({
+          buttonDisplay: button.style.display,
+          buttonDisabled: button.disabled,
+          executionStatus: $("execution-status").textContent,
+          status: $("status").textContent,
+          errorVisible: $("error").style.display === "block",
+          errorText: $("error").textContent,
+          authorizationPresent,
+          executionJsonLength: $("execution-json").textContent.length,
+          walletProviderPresent: Boolean(window.ethereum && typeof window.ethereum.request === "function"),
+          overlayHidden: $("approval-overlay").hidden,
+        });
+      };
+      for (let i = 0; i < 200; i++) {
+        if (!button.disabled && button.style.display !== "none") break;
+        await sleep(10);
+      }
+      if (button.style.display === "none" || button.disabled) {
+        throw new Error("wallet action was not ready before click: " + diagnostic());
+      }
+      button.click();
       for (let i = 0; i < 200; i++) {
         if (!$("approval-overlay").hidden) break;
         await sleep(10);
       }
-      if ($("approval-overlay").hidden) throw new Error("in-app wallet confirmation overlay did not open");
+      if ($("approval-overlay").hidden) throw new Error("in-app wallet confirmation overlay did not open: " + diagnostic());
       if (!$("approval-message").textContent.includes("25 USDC") || !$("approval-message").textContent.includes("Wallet:")) {
-        throw new Error("wallet confirmation does not show the exact transfer and wallet");
+        throw new Error("wallet confirmation does not show the exact transfer and wallet: " + diagnostic());
       }
       $("approval-accept").click();
       for (let i = 0; i < 400; i++) {
