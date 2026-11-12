@@ -61,8 +61,8 @@ provision_accounts() {
     [[ "$(id -gn "$account")" == "$account" ]] || die "account $account must use its matching primary group"
     install -d -o "$account" -g "$account" -m 0700 "/var/lib/verigate-signer-${role}"
   done
-  install -d -o root -g root -m 0750 "$CONFIG_ROOT"
-  install -d -o root -g root -m 0755 "$KEY_ROOT"
+  install -d -o root -g root -m 0711 "$CONFIG_ROOT"
+  install -d -o root -g root -m 0711 "$KEY_ROOT"
 }
 
 if (( PROVISION )); then
