@@ -18,6 +18,7 @@ function mocks(overrides = {}) {
   const sent = [];
   const provider = {
     getNetwork: async () => ({ chainId: BigInt(ARC_CHAIN_ID) }),
+    send: async method => { if (method === "eth_chainId") return "0x13b2"; throw new Error("unexpected provider.send method: " + method); },
     getCode: async () => REGISTRY_CODE,
     call: async () => "0x" + "0".repeat(63) + "1",
     getFeeData: async () => ({ maxFeePerGas: 90n, maxPriorityFeePerGas: 2n }),
@@ -77,6 +78,15 @@ test("Arc ethers adapter fails closed on chain, bytecode, fee and gas mismatches
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
   await assert.rejects(a.initialize(), /not Arc Mainnet/);
+
+  // A provider statically configured for Arc must still reject an RPC that
+  // actually answers with a different chain ID.
+  const wrongRpcChain = mocks({ provider: { send: async method => method === "eth_chainId" ? "0x1" : "0x13b2" } });
+  const wrongRpcAdapter = await createArcEthersAdapter({
+    provider: wrongRpcChain.provider, wallet: wrongRpcChain.wallet, registryAddress: REGISTRY, role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await assert.rejects(wrongRpcAdapter.initialize(), /RPC endpoint is not Arc Mainnet/);
 
   const wrongCode = mocks({ provider: { getCode: async () => "0x6001" } });
   const b = await createArcEthersAdapter({
