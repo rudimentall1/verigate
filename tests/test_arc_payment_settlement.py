@@ -45,6 +45,8 @@ class FakeRpc:
             "to": ARC_USDC_ADDRESS,
             "input": EXPECTED_DATA,
             "value": "0x0",
+            "blockNumber": "0x64",
+            "transactionIndex": "0x2",
         }
         self.consumption_tx = {"hash": CONSUME_HASH}
         self.payment_receipt = {
