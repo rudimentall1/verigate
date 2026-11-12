@@ -11,6 +11,8 @@ import {
   ARC_CHAIN_ID, normalizeAddress, validateFeePolicy,
 } from "./arc-constrained-signer.mjs";
 
+export const ARC_REGISTRY_ADDRESS = "0x4D09CdD490c1Ce48BCB6DA5c1A6Bf41E2f5e853D";
+
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
@@ -33,6 +35,7 @@ export async function createArcEthersAdapter({
   assert(feePolicy && feePolicy.gasLimit !== undefined, "complete signer fee policy is required");
   assert(Number.isSafeInteger(confirmations) && confirmations >= 1, "confirmations must be a positive integer");
   const registry = normalizeAddress(registryAddress, "Arc Registry");
+  assert(registry === ARC_REGISTRY_ADDRESS.toLowerCase(), "Registry address differs from the verified Arc Mainnet deployment");
   assert(role === "issuer" || role === "agent", "signer role must be issuer or agent");
   const issuer = normalizeAddress(issuerAddress, "configured Registry issuer");
 
