@@ -294,5 +294,42 @@ class ArcApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+    def test_arc_confirmation_rejects_invalid_signed_usdc_envelope_before_registry_access(self):
+        metadata = arc_payment_metadata(SENDER, RECIPIENT, "1.25")
+        metadata["evm_transaction"]["chain_id"] = 1
+        authorization = {
+            "payload": {
+                "authorization_id": "ab" * 32,
+                "issued_at": 1000,
+                "expires_at": 2000,
+                "action": {
+                    "network": "arc",
+                    "action_type": "payment",
+                    "asset": "USDC",
+                    "target": RECIPIENT,
+                    "amount_exact": "1.25",
+                    "metadata": metadata,
+                },
+            },
+            "signature": "signed",
+            "algorithm": "Ed25519",
+        }
+        with patch.object(main, "verify_execution_authorization", return_value=(True, "ok")), patch.object(
+            main, "issuer_public_key", return_value=None
+        ), patch.object(
+            main, "ArcAuthorityRegistry", side_effect=AssertionError("Registry must not be accessed")
+        ):
+            with TestClient(main.app) as client:
+                response = client.post(
+                    "/v1/integrations/arc/registration/confirm",
+                    json={
+                        "authorization": authorization,
+                        "registration_tx_hash": "0x" + "11" * 32,
+                    },
+                )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("signed Arc payment envelope is invalid", response.json()["detail"])
+
+
 if __name__ == "__main__":
     unittest.main()
