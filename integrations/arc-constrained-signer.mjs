@@ -51,10 +51,11 @@ export function verifyExecutionAuthorization(authorization, publicKeyPem, now = 
   assert(key.asymmetricKeyType === "ed25519", "pinned key must be Ed25519");
   assert(verifySignature(null, Buffer.from(canonicalJson(authorization.payload)), key, signature), "invalid Verigate authorization signature");
   const p = authorization.payload;
-  assert(Number.isSafeInteger(p.issued_at) && Number.isSafeInteger(p.expires_at), "authorization timestamps must be integer seconds");
+  assert(p.authorization_version === 1, "unsupported authorization version");
+  assert(typeof p.authorization_id === "string" && /^(?:0x)?[0-9a-fA-F]{64}$/.test(p.authorization_id), "authorization_id must be bytes32");
+  assert(Number.isSafeInteger(p.issued_at) && p.issued_at > 0 && Number.isSafeInteger(p.expires_at) && p.expires_at > 0, "authorization timestamps must be positive integer seconds");
   assert(p.issued_at <= now && p.expires_at > now, "authorization is not currently valid");
   assert(p.expires_at > p.issued_at && p.expires_at - p.issued_at <= MAX_AUTH_LIFETIME_SECONDS, "authorization lifetime exceeds 300 seconds");
-  assert(typeof p.authorization_id === "string" && /^0x[0-9a-fA-F]{64}$/.test(p.authorization_id), "authorization_id must be bytes32");
   const action = p.action;
   const evm = action?.metadata?.evm_transaction;
   assert(action?.network === "arc" && action?.asset === "USDC" && action?.action_type === "payment", "authorization is not an Arc USDC payment");
@@ -82,7 +83,7 @@ export function deriveArcOperation({ role, operation, authorization, publicKeyPe
   const intentHash = createHash("sha256").update(
     `verigate.arc.authority.registry:v2:${ARC_CHAIN_ID}:${registry}:${authorization.algorithm}:${authorization.signature}`, "ascii",
   ).digest("hex");
-  const id = p.authorization_id.slice(2).toLowerCase();
+  const id = p.authorization_id.replace(/^0x/i, "").toLowerCase();
   if (operation === "register") {
     assert(role === "issuer", "agent signer cannot register authorizations");
     assert(signer === normalizeAddress(issuerAddress, "configured issuer"), "issuer signer address mismatch");
