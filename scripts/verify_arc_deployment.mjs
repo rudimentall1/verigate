@@ -98,6 +98,9 @@ try {
   const [issuerEnabled] = registryInterface.decodeFunctionResult("issuers", issuerResult);
   requireCondition(issuerEnabled === true, "Configured executor is not an enabled Registry issuer");
 
+  const finalized = await provider.getBlock("finalized");
+  requireCondition(finalized?.number != null && finalized.hash, "Arc RPC did not return a verifiable finalized block");
+
   const activityInterface = new Interface([
     "event AuthorizationRegistered(bytes32 indexed authorizationId, bytes32 indexed intentHash, address indexed executor, uint64 validUntil, address issuer)",
     "event AuthorizationConsumed(bytes32 indexed authorizationId, bytes32 indexed intentHash, address indexed executor)",
@@ -109,6 +112,7 @@ try {
   for (const expectedCall of manifest.historical_registry_calls || []) {
     const block = await provider.getBlock(expectedCall.block, true);
     requireCondition(block?.hash, `Historical Registry activity block ${expectedCall.block} was not returned`);
+    requireCondition(block.number <= finalized.number, `Historical Registry activity block ${expectedCall.block} is not finalized`);
     const transactions = block.prefetchedTransactions?.length
       ? block.prefetchedTransactions
       : await Promise.all((block.transactions || []).map((hash) => provider.getTransaction(hash)));
@@ -221,6 +225,9 @@ try {
   process.stdout.write(`deployment_block_hash=${deploymentBlock.hash}\nfinalized_block=${finalized.number} ${finalized.hash}\n`);
   process.stdout.write(`source_keccak256=${sourceHash}\nreviewed_artifact_runtime_keccak256=${artifactHash}\ndeployed_runtime_keccak256=${deployedHash}\n`);
   process.stdout.write(`VERIGATE_ARC_REGISTRY_CODE_HASH=${deployedHash}\n`);
+  for (const call of observedRegistryCalls) {
+    process.stdout.write(`historical_registry_call=${JSON.stringify(call)}\n`);
+  }
 } finally {
   await provider.destroy();
 }
