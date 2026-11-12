@@ -477,7 +477,7 @@ Next safe dependency action:
 - Dedicated branch: `feat/arc-agent-signer-service-2026-11-12`.
 - PR #58: https://github.com/rudimentall1/verigate/pull/58
 - PR #58 is Draft/Open and stacked on PR #57 branch head `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`; it is not based on `main`.
-- Latest implementation head before this checkpoint update: `a9f0a7d39135a878dfa28cb6dee5e36dca49bf05`.
+- Latest implementation head before this checkpoint update: `5f85702f2bdd9cd0aef7dcc90d72bc155c40c202`.
 - PR #57 remains separate. Do not merge either PR without explicit approval.
 - This checkpoint and all signer work are on the signer branch, not `main`.
 
@@ -513,7 +513,8 @@ Next safe dependency action:
    - Loads EVM private key from a protected file, checks file type, owner and restrictive permissions, and does not accept the private key through command-line arguments or environment variables.
    - Requires separate role, socket, journal, RPC, Registry, issuer, public-key and fee configuration.
    - systemd template provides separate issuer/agent users and groups, strict filesystem protection, restricted writable paths, no ambient capabilities and restricted address families.
-   - Added `deploy/arc-signer/install.sh`, `rollback.sh`, and role-specific `.env.example` templates. Installer modes are staged: `--provision-accounts`, read-only `--check`, then `--apply` to install the unit only. It never generates/imports keys or starts services. Rollback preserves keys, env files, journals, users and groups.
+   - Added `deploy/arc-signer/install.sh`, `rollback.sh`, role-specific `.env.example` templates and `tests/arc-signer-deploy-smoke.sh`. Installer modes are staged: `--provision-accounts`, read-only `--check`, then `--apply` to install the unit only. It never generates/imports keys or starts services. Rollback preserves keys, env files, journals, users and groups.
+   - Added disposable Ubuntu CI smoke test that provisions temporary signer users/groups, validates key/config permissions, installs the unit with a stubbed systemctl, verifies no service start/enable, runs rollback and checks keys/env/journals remain. This validates filesystem and script behavior, not an actual systemd daemon start.
    - Installer validates root-owned env files, exact socket/journal/key paths, pinned Registry address/hash, HTTPS RPC, 20-byte issuer address, numeric fee limits, and separate signer-owned 0600 key/public-key files. Config/key parent directories are root-owned mode 0711.
 
 5. Existing Arc executor integration
@@ -526,7 +527,7 @@ Next safe dependency action:
    - Added policy, socket server, socket client, ethers adapter and signer-client orchestration tests.
    - Full CI run [43186283832](https://github.com/rudimentall1/verigate/actions/runs/43186283832) passed 4/4 jobs (`contracts`, `test`, `container`, `anna-ui`) on implementation head `a4089c91e2272fc6745f081046c0798a3470a441`.
    - CI run [43189295403](https://github.com/rudimentall1/verigate/actions/runs/43189295403) passed 4/4 jobs on `f55b5a60e96d104075f408e644465cfa5febce8c`, covering installer syntax and environment validation before the later consume-gate changes.
-   - Latest CI run [43190736419](https://github.com/rudimentall1/verigate/actions/runs/43190736419) passed 4/4 jobs (`contracts`, `test`, `container`, `anna-ui`) on implementation head `a9f0a7d39135a878dfa28cb6dee5e36dca49bf05`. This run includes the signature-bound consume gate, pre-broadcast authorization revalidation, receipt identity checks and deployment script syntax validation.
+   - Latest CI run [43191258492](https://github.com/rudimentall1/verigate/actions/runs/43191258492) is running on implementation head `5f85702f2bdd9cd0aef7dcc90d72bc155c40c202`. `contracts`, `test` and `container` passed; `anna-ui` remains in progress. The contracts job includes the disposable Linux installer/rollback smoke test.
 
 ### Verified Registry pin
 
