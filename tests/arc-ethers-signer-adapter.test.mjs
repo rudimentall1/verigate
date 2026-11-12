@@ -50,7 +50,7 @@ test("Arc ethers adapter pins chain and Registry code, then broadcasts only deri
   const info = await adapter.initialize();
   assert.equal(info.chainId, ARC_CHAIN_ID);
   const result = await adapter.executeOperation({
-    transaction: { chainId: ARC_CHAIN_ID, to: ARC_REGISTRY_ADDRESS, data: "0x1234", value: 0n },
+    transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n },
   });
   assert.equal(result.txHash, HASH);
   assert.equal(result.actualNativeCost, "63000");
@@ -63,31 +63,31 @@ test("Arc ethers adapter pins chain and Registry code, then broadcasts only deri
 test("Arc ethers adapter fails closed on chain, bytecode, fee and gas mismatches", async () => {
   const wrongChain = mocks({ provider: { getNetwork: async () => ({ chainId: 1n }) } });
   const a = await createArcEthersAdapter({
-    provider: wrongChain.provider, wallet: wrongChain.wallet,
+    provider: wrongChain.provider, wallet: wrongChain.wallet, registryAddress: REGISTRY,
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
   await assert.rejects(a.initialize(), /not Arc Mainnet/);
 
   const wrongCode = mocks({ provider: { getCode: async () => "0x6001" } });
   const b = await createArcEthersAdapter({
-    provider: wrongCode.provider, wallet: wrongCode.wallet,
+    provider: wrongCode.provider, wallet: wrongCode.wallet, registryAddress: REGISTRY,
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
   await assert.rejects(b.initialize(), /bytecode hash mismatch/);
 
   const highFee = mocks({ provider: { getFeeData: async () => ({ maxFeePerGas: 101n, maxPriorityFeePerGas: 2n }) } });
   const c = await createArcEthersAdapter({
-    provider: highFee.provider, wallet: highFee.wallet,
+    provider: highFee.provider, wallet: highFee.wallet, registryAddress: REGISTRY,
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
   await c.initialize();
-  await assert.rejects(c.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: ARC_REGISTRY_ADDRESS, data: "0x1234", value: 0n } }), /exceeds signer policy/);
+  await assert.rejects(c.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n } }), /exceeds signer policy/);
 
   const highGas = mocks({ provider: { estimateGas: async () => 100001n } });
   const d = await createArcEthersAdapter({
-    provider: highGas.provider, wallet: highGas.wallet,
+    provider: highGas.provider, wallet: highGas.wallet, registryAddress: REGISTRY,
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
   await d.initialize();
-  await assert.rejects(d.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: ARC_REGISTRY_ADDRESS, data: "0x1234", value: 0n } }), /estimated gas exceeds/);
+  await assert.rejects(d.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n } }), /estimated gas exceeds/);
 });
