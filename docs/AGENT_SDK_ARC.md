@@ -112,6 +112,7 @@ const result = await executeAuthorizedArcPayment({
   apiBaseUrl: process.env.VERIGATE_API_URL,
   authorizationRequest: request,
   verigatePublicKey,
+  registryAddress: process.env.VERIGATE_ARC_REGISTRY_ADDRESS,
   headers: { Authorization: `Bearer ${process.env.VERIGATE_API_KEY}` },
 });
 
@@ -124,7 +125,7 @@ console.log({
 });
 ```
 
-The executor requires a pinned Verigate Ed25519 public key (`verigatePublicKey`) provisioned out-of-band for the tenant. It verifies the signed execution authorization locally before any transaction is submitted. Fetching the key from the same API endpoint at runtime would be trust-on-first-use and would not protect against an API or transport key substitution.
+The executor requires a pinned Verigate Ed25519 public key (`verigatePublicKey`) and pinned Arc Registry address (`registryAddress` / `VERIGATE_ARC_REGISTRY_ADDRESS`) provisioned out-of-band. It also independently enforces the canonical Arc USDC contract address and derives ERC-20 transfer calldata from the signed recipient and exact six-decimal amount. It verifies the signed execution authorization locally before any transaction is submitted. Fetching the key from the same API endpoint at runtime would be trust-on-first-use and would not protect against an API or transport key substitution.
 
 The helper performs the following sequence:
 
