@@ -102,7 +102,7 @@ test("journal reserves once and returns completed result without a second reserv
     journal.markBroadcast(id, "consume", txHash);
     assert.throws(() => journal.complete(id, "consume", { txHash: "0x" + "ff".repeat(32) }), /must match the durable broadcast record/);
     journal.complete(id, "consume", { txHash });
-    assert.deepEqual(journal.reserve(id, "payment"), { replay: true, result: { txHash } });
+    assert.deepEqual(journal.reserve(id, "consume"), { replay: true, result: { txHash } });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
