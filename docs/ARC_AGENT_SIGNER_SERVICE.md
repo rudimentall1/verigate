@@ -48,7 +48,7 @@ Use a durable append-only operation journal. Before broadcast, persist and fsync
 
 - A repeated operation with a completed record returns the existing result; it never broadcasts again.
 - A reservation without a recorded transaction hash is ambiguous (the process may have crashed after broadcast but before the hash was durably recorded). A `broadcast` record contains the exact transaction hash but is still unresolved until receipt verification is persisted. Both states reject retries and require operator reconciliation; never auto-retry an unresolved operation.
-- Serialize journal mutation and requests. Daily budget accounting includes reserved and broadcast-but-unresolved operations. Fail closed on lock, parse, fsync or persistence errors.
+- Serialize journal mutation and requests. Daily budget accounting includes reserved and broadcast-but-unresolved operations even across UTC midnight, because a pending transaction may be mined on the following day. Completed operations are charged by their UTC settlement day. Fail closed on lock, parse, fsync or persistence errors.
 - Do not permit an operator to clear the journal as a routine retry mechanism. Reconciliation must inspect the nonce, transaction pool, chain receipt and Registry state and leave an audit record.
 
 ## Fee and spend policy
