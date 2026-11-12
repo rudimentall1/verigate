@@ -83,6 +83,13 @@ async function submitAndConfirm(signer, transaction, label) {
   const receipt = await response.wait();
   const status = receipt?.status;
   assert(status === 1 || status === "1" || status === "0x1", `${label} transaction failed: ${transactionHash}`);
+  const minedHash = receipt?.hash ?? receipt?.transactionHash;
+  if (minedHash != null) {
+    assert(
+      normalizeHash(minedHash, `${label} receipt hash`) === transactionHash,
+      `${label} receipt hash does not match the submitted transaction hash`,
+    );
+  }
   return transactionHash;
 }
 
