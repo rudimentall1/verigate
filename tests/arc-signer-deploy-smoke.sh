@@ -8,8 +8,12 @@ readonly REPO_SOURCE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly UNIT_FILE="/etc/systemd/system/verigate-arc-signer@.service"
 readonly CONFIG_ROOT="/etc/verigate-signer"
 readonly ROLES=(issuer agent)
+readonly SOCKET_ALLOW_USER="verigate-agent-client-smoke"
+readonly SOCKET_DENY_USER="verigate-unrelated-client-smoke"
+readonly SOCKET_ACL_ROOT="/var/tmp/verigate-arc-signer-acl-$"
 readonly TMP_DIR="$(mktemp -d)"
 readonly SYSTEMCTL_LOG="${TMP_DIR}/systemctl.log"
+SOCKET_SERVER_PID=""
 CREATED_ACCOUNTS=0
 CREATED_LINK=0
 
@@ -22,6 +26,11 @@ for role in "${ROLES[@]}"; do
   getent group "$account" >/dev/null && fail "test group already exists: $account"
   [[ ! -e "/var/lib/verigate-signer-${role}" && ! -L "/var/lib/verigate-signer-${role}" ]] || fail "state directory already exists for $role"
 done
+for client in "$SOCKET_ALLOW_USER" "$SOCKET_DENY_USER"; do
+  id "$client" >/dev/null 2>&1 && fail "socket ACL test account already exists: $client"
+  getent group "$client" >/dev/null && fail "socket ACL test group already exists: $client"
+done
+[[ ! -e "$SOCKET_ACL_ROOT" && ! -L "$SOCKET_ACL_ROOT" ]] || fail "socket ACL test path already exists"
 [[ ! -e "$CONFIG_ROOT" && ! -L "$CONFIG_ROOT" ]] || fail "$CONFIG_ROOT already exists"
 [[ ! -e /opt/verigate && ! -L /opt/verigate ]] || fail "/opt/verigate already exists"
 [[ ! -e "$UNIT_FILE" && ! -L "$UNIT_FILE" ]] || fail "$UNIT_FILE already exists"
@@ -29,6 +38,12 @@ done
 cleanup() {
   set +e
   rm -f "$UNIT_FILE"
+  if [[ -n "$SOCKET_SERVER_PID" ]]; then kill "$SOCKET_SERVER_PID" 2>/dev/null; wait "$SOCKET_SERVER_PID" 2>/dev/null; fi
+  rm -rf "$SOCKET_ACL_ROOT"
+  for client in "$SOCKET_ALLOW_USER" "$SOCKET_DENY_USER"; do
+    userdel "$client" 2>/dev/null
+    groupdel "$client" 2>/dev/null
+  done
   for role in "${ROLES[@]}"; do
     account="verigate-signer-${role}"
     userdel "$account" 2>/dev/null
@@ -62,6 +77,29 @@ export PATH="${TMP_DIR}/fakebin:$PATH"
 log "provisioning disposable system users and directories"
 bash /opt/verigate/deploy/arc-signer/install.sh --provision-accounts
 CREATED_ACCOUNTS=1
+
+log "testing Unix socket ACL: supplementary signer group can connect; unrelated user is denied"
+useradd --system --user-group --home-dir /nonexistent --shell /usr/sbin/nologin "$SOCKET_ALLOW_USER"
+useradd --system --user-group --home-dir /nonexistent --shell /usr/sbin/nologin "$SOCKET_DENY_USER"
+usermod --append --groups verigate-signer-agent "$SOCKET_ALLOW_USER"
+install -d -o root -g root -m 0755 "$SOCKET_ACL_ROOT"
+install -d -o verigate-signer-agent -g verigate-signer-agent -m 0750 "$SOCKET_ACL_ROOT/runtime"
+SOCKET_TEST_PATH="$SOCKET_ACL_ROOT/runtime/signer.sock"
+runuser -u verigate-signer-agent -- python3 -c 'import os,socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); os.chmod(sys.argv[1],0o660); s.listen(1); c,_=s.accept(); c.sendall(b"ok"); c.close(); s.close()' "$SOCKET_TEST_PATH" >"${TMP_DIR}/socket-server.log" 2>&1 &
+SOCKET_SERVER_PID=$!
+for attempt in $(seq 1 50); do
+  [[ -S "$SOCKET_TEST_PATH" ]] && break
+  kill -0 "$SOCKET_SERVER_PID" 2>/dev/null || fail "test signer could not create its Unix socket"
+  sleep 0.1
+done
+[[ -S "$SOCKET_TEST_PATH" ]] || fail "test signer socket did not appear"
+[[ "$(stat -c '%U:%G:%a' "$SOCKET_TEST_PATH")" == "verigate-signer-agent:verigate-signer-agent:660" ]] || fail "unexpected signer socket owner/group/mode"
+if runuser -u "$SOCKET_DENY_USER" -- python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1])' "$SOCKET_TEST_PATH" >/dev/null 2>&1; then
+  fail "unrelated user unexpectedly connected to signer socket"
+fi
+runuser -u "$SOCKET_ALLOW_USER" -- python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); assert s.recv(2)==b"ok"; s.close()' "$SOCKET_TEST_PATH"
+wait "$SOCKET_SERVER_PID"
+SOCKET_SERVER_PID=""
 
 for role in "${ROLES[@]}"; do
   account="verigate-signer-${role}"
