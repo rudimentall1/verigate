@@ -44,8 +44,8 @@ Anna is an interface, not the security boundary. Developers can integrate agents
 
 ## Evidence and current status
 
-- Main CI reports **613 Python tests passed** and **64/64 Anna UI end-to-end tests passed**, alongside contract tests, strict Anna schema validation and a Linux Executa build/smoke check: [CI run](https://github.com/rudimentall1/verigate/actions/runs/42874904974).
-- Four-platform Executa reproducible builds and extracted-package smoke tests passed: [build run](https://github.com/rudimentall1/verigate/actions/runs/42959224224).
+- The latest `main` CI run completed successfully across all four jobs: **662 Python tests passed**, **64/64 Anna UI end-to-end tests passed**, contract tests, container/API-auth checks, strict Anna schema-4 validation and Linux Executa 0.1.18 build/smoke: [CI run](https://github.com/rudimentall1/verigate/actions/runs/43179226473), on commit `9f7b2e4c5d052fd37839ad14a0799243a56bc14d`.
+- Four-platform Executa 0.1.18 reproducible builds, extracted-package smoke tests and SHA-256 verification passed for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel: [build run](https://github.com/rudimentall1/verigate/actions/runs/42989643581). The workflow artifacts were independently inspected; the GitHub Release step was intentionally skipped.
 - The current Anna Console cut is **App 0.1.31** with bundled **Executa 0.1.18**. It remains a Draft and has not been submitted for Marketplace review or publication.
 - A live Cloud Agent invocation was verified with the previous App 0.1.30 / Executa 0.1.17 combination. A fresh live invocation of 0.1.18 is not yet verified.
 - One **0.000001 USDC** transfer on Base was submitted through the Anna App and independently checked through Base RPC. This is a single successful micro-transfer, not evidence of broad production readiness.
