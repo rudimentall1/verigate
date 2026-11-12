@@ -72,14 +72,14 @@ test("Arc ethers adapter fails closed on chain, bytecode, fee and gas mismatches
 
   const wrongCode = mocks({ provider: { getCode: async () => "0x6001" } });
   const b = await createArcEthersAdapter({
-    provider: wrongCode.provider, wallet: wrongCode.wallet, registryAddress: REGISTRY,
+    provider: wrongCode.provider, wallet: wrongCode.wallet, registryAddress: REGISTRY, role: "agent", issuerAddress: ISSUER,
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
   await assert.rejects(b.initialize(), /bytecode hash mismatch/);
 
   const highFee = mocks({ provider: { getFeeData: async () => ({ maxFeePerGas: 101n, maxPriorityFeePerGas: 2n }) } });
   const c = await createArcEthersAdapter({
-    provider: highFee.provider, wallet: highFee.wallet, registryAddress: REGISTRY,
+    provider: highFee.provider, wallet: highFee.wallet, registryAddress: REGISTRY, role: "agent", issuerAddress: ISSUER,
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
   await c.initialize();
@@ -87,7 +87,7 @@ test("Arc ethers adapter fails closed on chain, bytecode, fee and gas mismatches
 
   const highGas = mocks({ provider: { estimateGas: async () => 100001n } });
   const d = await createArcEthersAdapter({
-    provider: highGas.provider, wallet: highGas.wallet, registryAddress: REGISTRY,
+    provider: highGas.provider, wallet: highGas.wallet, registryAddress: REGISTRY, role: "agent", issuerAddress: ISSUER,
     expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
   });
   await d.initialize();
