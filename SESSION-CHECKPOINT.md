@@ -477,7 +477,7 @@ Next safe dependency action:
 - Dedicated branch: `feat/arc-agent-signer-service-2026-11-12`.
 - PR #58: https://github.com/rudimentall1/verigate/pull/58
 - PR #58 is Draft/Open and stacked on PR #57 branch head `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`; it is not based on `main`.
-- Latest implementation head before this checkpoint update: `5f85702f2bdd9cd0aef7dcc90d72bc155c40c202`.
+- Latest implementation head before this checkpoint update: `a3d6e8f7af971abe70703b55e5e93c5fb0eac682`.
 - PR #57 remains separate. Do not merge either PR without explicit approval.
 - This checkpoint and all signer work are on the signer branch, not `main`.
 
@@ -514,7 +514,7 @@ Next safe dependency action:
    - Requires separate role, socket, journal, RPC, Registry, issuer, public-key and fee configuration.
    - systemd template provides separate issuer/agent users and groups, strict filesystem protection, restricted writable paths, no ambient capabilities and restricted address families.
    - Added `deploy/arc-signer/install.sh`, `rollback.sh`, role-specific `.env.example` templates and `tests/arc-signer-deploy-smoke.sh`. Installer modes are staged: `--provision-accounts`, read-only `--check`, then `--apply` to install the unit only. It never generates/imports keys or starts services. Rollback preserves keys, env files, journals, users and groups.
-   - Added disposable Ubuntu CI smoke test that provisions temporary signer users/groups, validates key/config permissions, installs the unit with a stubbed systemctl, verifies no service start/enable, runs rollback and checks keys/env/journals remain. This validates filesystem and script behavior, not an actual systemd daemon start.
+   - Added disposable Ubuntu CI smoke test that provisions temporary signer users/groups, validates key/config permissions, installs the unit with a stubbed systemctl, runs `systemd-analyze verify`, verifies no service start/enable, runs rollback and checks keys/env/journals remain. This validates filesystem, unit syntax and script behavior, not an actual systemd daemon start.
    - Installer validates root-owned env files, exact socket/journal/key paths, pinned Registry address/hash, HTTPS RPC, 20-byte issuer address, numeric fee limits, and separate signer-owned 0600 key/public-key files. Config/key parent directories are root-owned mode 0711.
 
 5. Existing Arc executor integration
@@ -527,7 +527,7 @@ Next safe dependency action:
    - Added policy, socket server, socket client, ethers adapter and signer-client orchestration tests.
    - Full CI run [43186283832](https://github.com/rudimentall1/verigate/actions/runs/43186283832) passed 4/4 jobs (`contracts`, `test`, `container`, `anna-ui`) on implementation head `a4089c91e2272fc6745f081046c0798a3470a441`.
    - CI run [43189295403](https://github.com/rudimentall1/verigate/actions/runs/43189295403) passed 4/4 jobs on `f55b5a60e96d104075f408e644465cfa5febce8c`, covering installer syntax and environment validation before the later consume-gate changes.
-   - Latest CI run [43191258492](https://github.com/rudimentall1/verigate/actions/runs/43191258492) passed 4/4 jobs (`contracts`, `test`, `container`, `anna-ui`) on implementation head `5f85702f2bdd9cd0aef7dcc90d72bc155c40c202`. The contracts job includes the disposable Linux installer/rollback smoke test, which passed.
+   - Latest CI run [43191800554](https://github.com/rudimentall1/verigate/actions/runs/43191800554) passed 4/4 jobs (`contracts`, `test`, `container`, `anna-ui`) on implementation head `a3d6e8f7af971abe70703b55e5e93c5fb0eac682`. The contracts job includes the disposable Linux installer/rollback smoke test and `systemd-analyze verify`; both passed.
 
 ### Verified Registry pin
 
@@ -550,6 +550,6 @@ Next safe dependency action:
 1. Finish CI on the exact current branch head and fix any failure.
 2. Recover and independently verify the correct Registry address from deployment receipt/live Arc RPC. Correct the pre-existing configuration separately; never guess the missing/extra character.
 3. Complete independent review of journal crash/replay, authorization consume gating and fee accounting. Adapter tests remain mocked; no signer live-chain transaction has been performed.
-4. Run the new install/rollback scripts and systemd unit in a disposable clean-room Linux environment. Do not use Gensyn2 for this gate.
+4. Validate actual systemd manager startup/restart and issuer/agent socket ACLs in a disposable Linux environment. The CI runner has validated unit syntax and install/rollback only; it has not started the signer daemons. Do not use Gensyn2 for this gate.
 5. Only after all gates pass, inspect Gensyn2 read-only and prepare a controlled installation. Do not modify FLOP, AegisForge, OWNERA or unrelated services.
 6. No mainnet transaction or production key provisioning without a separate explicit decision.
