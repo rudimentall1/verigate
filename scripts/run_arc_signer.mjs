@@ -6,7 +6,7 @@
 import { readFileSync, lstatSync } from "node:fs";
 import { OperationJournal, ARC_CHAIN_ID } from "../integrations/arc-constrained-signer.mjs";
 import { createArcSignerSocketServer } from "../integrations/arc-signer-socket.mjs";
-import { createArcEthersAdapter, ARC_REGISTRY_ADDRESS } from "../integrations/arc-ethers-signer-adapter.mjs";
+import { createArcEthersAdapter } from "../integrations/arc-ethers-signer-adapter.mjs";
 
 function required(name) {
   const value = process.env[name];
@@ -45,6 +45,7 @@ async function main() {
   if (!/^0x[0-9a-fA-F]{64}$/.test(privateKey)) throw new Error("Signer private key file must contain one 32-byte EVM key");
   const publicKeyPem = readProtectedFile(publicKeyPath, "Verigate authorization public key");
   const issuerAddress = required("VERIGATE_ARC_ISSUER_ADDRESS");
+  const registryAddress = required("VERIGATE_ARC_REGISTRY_ADDRESS");
   const expectedRegistryCodeHash = required("VERIGATE_ARC_REGISTRY_CODE_HASH");
   const feePolicy = {
     gasLimit: integerEnv("VERIGATE_SIGNER_GAS_LIMIT"),
@@ -58,7 +59,7 @@ async function main() {
   const adapter = await createArcEthersAdapter({
     rpcUrl: required("VERIGATE_ARC_RPC_URL"),
     privateKey,
-    registryAddress: ARC_REGISTRY_ADDRESS,
+    registryAddress,
     expectedRegistryCodeHash,
     feePolicy,
     confirmations,
@@ -67,7 +68,7 @@ async function main() {
   const journal = new OperationJournal(journalPath);
   const service = createArcSignerSocketServer({
     socketPath, role, authorizationPublicKeyPem: publicKeyPem,
-    registryAddress: ARC_REGISTRY_ADDRESS,
+    registryAddress,
     signerAddress: identity.address,
     issuerAddress,
     journal, feePolicy,
