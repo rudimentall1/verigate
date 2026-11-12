@@ -1,6 +1,6 @@
 # Verigate Session Checkpoint
 
-**Updated:** 2026-11-12 10:55 +05:00
+**Updated:** 2026-11-12 10:57 +05:00
 **Repository:** rudimentall1/verigate  
 **Default branch:** main  
 **Latest product merge before this checkpoint refresh:** 6ab3a289c300cb6d614d27bb7134ae251f7db261  
@@ -519,10 +519,11 @@ The evidence document explicitly labels this as source implementation under CI r
 Latest PR CI run: [43162858818](https://github.com/rudimentall1/verigate/actions/runs/43162858818).
 
 At last inspection:
+- Latest PR CI: [run 43162858818](https://github.com/rudimentall1/verigate/actions/runs/43162858818) — all four jobs **PASS**.
 - Full Python test suite: **PASS**, 669 tests.
 - Contract tooling and Arc wallet client tests: **PASS**.
 - Container build/auth smoke: **PASS**.
-- Anna UI E2E: still in progress; Linux Executa build/smoke has not yet run in this attempt.
+- Anna UI E2E, strict manifest validation, Linux Executa build and smoke: **PASS**.
 
 Earlier intermediate CI attempts had one test assertion failure because the negative-order test changed the receipt index but not the corresponding transaction index. The test fixture was corrected to keep transaction/receipt coordinates consistent before asserting the ordering rule. The latest full Python test suite passes.
 
