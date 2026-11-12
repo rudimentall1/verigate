@@ -30,7 +30,7 @@ function signer(address, sent, hashes) {
 }
 
 function fixture({
-  agentAddress = AGENT, signedSender = AGENT, issuerAddress = ISSUER, tokenAddress = USDC, calldataRecipient = RECIPIENT, calldataAmount = 100000, chainId = BigInt(ARC_CHAIN_ID),
+  agentAddress = AGENT, signedSender = AGENT, issuerAddress = ISSUER, tokenAddress = USDC, calldataRecipient = RECIPIENT, calldataAmount = 100000, chainId = BigInt(ARC_CHAIN_ID), authorizationId = "aa".repeat(32),
   mutate = () => {}, invalidSignature = false, settlement = true, expired = false,
 } = {}) {
   const keys = generateKeyPairSync("ed25519");
@@ -40,7 +40,7 @@ function fixture({
     algorithm: "Ed25519",
     payload: {
       authorization_version: 1,
-      authorization_id: "aa".repeat(32),
+      authorization_id: authorizationId,
       issued_at: issuedAt,
       expires_at: expiresAt,
       action: {
@@ -73,13 +73,13 @@ function fixture({
   ).digest("hex");
   const registrationTx = {
     chainId: "0x13b2", from: issuerAddress, to: REGISTRY,
-    data: "0xb267748a" + authorization.payload.authorization_id + intentHash
+    data: "0xb267748a" + authorization.payload.authorization_id.replace(/^0x/i, "") + intentHash
       + signedSender.slice(2).toLowerCase().padStart(64, "0") + WORD(expiresAt),
     value: "0x0",
   };
   const consumeTx = {
     chainId: "0x13b2", from: signedSender, to: REGISTRY,
-    data: "0xbad56b75" + authorization.payload.authorization_id + intentHash,
+    data: "0xbad56b75" + authorization.payload.authorization_id.replace(/^0x/i, "") + intentHash,
     value: "0x0",
   };
   const paymentTx = {
@@ -310,4 +310,11 @@ test("socket orchestration rejects issuer or agent pin mismatch before signer re
   }), /Verigate issuer does not match the pinned issuer/);
   assert.deepEqual(signerCalls, []);
   assert.equal(f.calls.length, 1);
+});
+
+test("accepts prefixed bytes32 authorization IDs in the Arc executor flow", async () => {
+  const f = fixture({ authorizationId: "0x" + "aa".repeat(32) });
+  const result = await run(f);
+  assert.equal(result.settled, true);
+  assert.equal(f.sent.length, 3);
 });
