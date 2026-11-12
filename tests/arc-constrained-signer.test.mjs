@@ -214,7 +214,7 @@ test("journal blocks payment until the same authorization has a completed consum
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("canonicalizes prefixed and bare authorization IDs to one journal key", () => {
+test("canonicalizes authorization IDs while binding journal keys to signature digests", () => {
   const f = authFixture();
   const prefixedOperation = deriveArcOperation({
     role: "agent", operation: "consume", ...f,
