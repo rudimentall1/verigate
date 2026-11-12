@@ -201,6 +201,7 @@ export class OperationJournal {
       const rows = this.records();
       const prior = rows.filter(x => x.authorizationId === authorizationId && x.operation === operation).at(-1);
       assert(prior?.state === "broadcast", "completion requires a durably recorded broadcast transaction");
+      assert(typeof result?.txHash === "string" && result.txHash.toLowerCase() === prior.txHash.toLowerCase(), "completion transaction hash must match the durable broadcast record");
       let actual;
       if (actualNativeCost !== undefined) {
         try { actual = BigInt(actualNativeCost); } catch { throw new Error("actualNativeCost must be an integer"); }
