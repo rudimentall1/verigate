@@ -113,6 +113,7 @@ test("journal fails closed on unresolved reservation and duplicate completion", 
     journal.reserve(id, "consume");
     assert.throws(() => journal.reserve(id, "consume"), /operator reconciliation/);
     journal.markBroadcast(id, "consume", "0x" + "45".repeat(32));
+    assert.throws(() => journal.reserve(id, "consume"), /operator reconciliation/);
     journal.complete(id, "consume", { txHash: "0x" + "45".repeat(32) });
     assert.throws(() => journal.complete(id, "consume", { txHash: "0x" + "78".repeat(32) }), /durably recorded broadcast/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
