@@ -12,6 +12,8 @@ from integrations.arc_authority_registry import (
     ArcAuthorityRegistry,
 )
 
+AGENT_EXECUTOR = "0x3333333333333333333333333333333333333333"
+
 
 def _test_runtime_hash():
     hasher = keccak.new(digest_bits=256)
@@ -48,6 +50,11 @@ class ArcAuthorityRegistryEncodingTest(unittest.TestCase):
                 "authorization_id": "ab" * 32,
                 "expires_at": 1999999999,
                 "intent_id": "arc-test-intent",
+                "action": {
+                    "metadata": {
+                        "evm_transaction": {"from": AGENT_EXECUTOR},
+                    },
+                },
             },
             "signature": "test-signature",
             "algorithm": "Ed25519",
@@ -85,7 +92,10 @@ class ArcAuthorityRegistryEncodingTest(unittest.TestCase):
         tx = result["registration_transaction"]
         self.assertEqual(tx["chainId"], hex(ARC_CHAIN_ID))
         self.assertEqual(tx["from"], DEFAULT_EXECUTOR.lower())
+        self.assertEqual(result["issuer"], DEFAULT_EXECUTOR.lower())
+        self.assertEqual(result["executor"], AGENT_EXECUTOR.lower())
         self.assertEqual(tx["to"], DEFAULT_REGISTRY.lower())
+        self.assertIn(AGENT_EXECUTOR.lower()[2:].rjust(64, "0"), tx["data"])
         self.assertTrue(tx["data"].startswith(REGISTER_SELECTOR))
         self.assertEqual(result["authorization_id"], "0x" + "ab" * 32)
         self.assertEqual(len(result["intent_hash"]), 66)
@@ -412,13 +422,15 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
         )
     
         registry_address = DEFAULT_REGISTRY.lower()
-        executor = DEFAULT_EXECUTOR.lower()
+        issuer = DEFAULT_EXECUTOR.lower()
+        executor = AGENT_EXECUTOR.lower()
         authorization = {
             "payload": {
                 "authorization_id": "ab" * 32,
                 "issued_at": 90,
                 "expires_at": 2000,
                 "intent_id": "arc-registry-flow",
+                "action": {"metadata": {"evm_transaction": {"from": executor}}},
             },
             "signature": "test-signature",
             "algorithm": "Ed25519",
@@ -426,7 +438,8 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
     
         registry = ArcAuthorityRegistry.__new__(ArcAuthorityRegistry)
         registry.contract_address = registry_address
-        registry.executor_address = executor
+        registry.executor_address = issuer
+        registry.issuer_address = issuer
         registry.expected_code_hash = _test_runtime_hash()
         authorization_id, intent_hash, valid_until = registry._authorization_values(
             authorization, require_unexpired=False
@@ -451,7 +464,7 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
                 "0x" + intent_hash,
                 topic_address(executor),
             ],
-            "data": "0x" + word(valid_until) + word(int(executor, 16)),
+            "data": "0x" + word(valid_until) + word(int(issuer, 16)),
         }
         consumption_log = {
             "address": registry_address,
@@ -464,12 +477,12 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
             "data": "0x",
         }
     
-        def make_transaction(tx_hash, calldata):
+        def make_transaction(tx_hash, calldata, sender):
             return {
                 "hash": tx_hash,
                 "chainId": hex(ARC_CHAIN_ID),
                 "to": registry_address,
-                "from": executor,
+                "from": sender,
                 "input": calldata,
                 "value": "0x0",
             }
@@ -516,7 +529,7 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
                         "transactionHash": registration_hash,
                         "status": "0x1",
                         "to": registry_address,
-                        "from": executor,
+                        "from": issuer,
                         "blockNumber": "0x64",
                         "blockHash": registration_block_hash,
                         "logs": [registration_log],
@@ -535,9 +548,9 @@ class ArcAuthorityRegistryFlowTest(unittest.TestCase):
     
             def get_transaction_by_hash(self, tx_hash):
                 if tx_hash == registration_hash:
-                    return make_transaction(registration_hash, registration_calldata)
+                    return make_transaction(registration_hash, registration_calldata, issuer)
                 if tx_hash == consumption_hash:
-                    return make_transaction(consumption_hash, consumption_calldata)
+                    return make_transaction(consumption_hash, consumption_calldata, executor)
                 return None
     
             def get_block_by_tag(self, tag):
@@ -610,6 +623,7 @@ def test_find_event_rejects_topic0_with_matching_four_byte_prefix_only():
             REGISTERED_EVENT,
             authorization_id,
             intent_hash,
+            DEFAULT_EXECUTOR,
         )
 
 
@@ -641,6 +655,7 @@ def test_find_event_accepts_exact_full_topic0_hash():
         REGISTERED_EVENT,
         authorization_id,
         intent_hash,
+        DEFAULT_EXECUTOR,
     ) == exact_log
 
 
