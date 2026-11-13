@@ -105,7 +105,7 @@ class EVMExecutionAdapter(ExecutionAdapter):
             raise ValueError("EVM transaction calldata does not match atomic guard commitment")
         return binding
 
-    def execute_bound_after_consume(
+    def _execute_bound_after_consume(
         self,
         authorization: dict[str, Any],
         external_state: dict[str, Any],
@@ -127,9 +127,9 @@ class EVMExecutionAdapter(ExecutionAdapter):
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return self.execute_bound_after_consume(authorization, external_state, broadcaster)
+        return self._execute_bound_after_consume(authorization, external_state, broadcaster)
 
-    def execute_after_consume(
+    def _execute_after_consume(
         self,
         authorization: dict[str, Any],
         broadcaster: Callable[[dict[str, Any]], Any],
@@ -145,4 +145,4 @@ class EVMExecutionAdapter(ExecutionAdapter):
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return self.execute_after_consume(authorization, broadcaster)
+        return self._execute_after_consume(authorization, broadcaster)
