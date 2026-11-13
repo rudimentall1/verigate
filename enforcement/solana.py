@@ -82,7 +82,7 @@ class SolanaExecutionAdapter(ExecutionAdapter):
         permit: ExecutionPermit,
     ) -> Any:
         permit.claim(authorization)
-        return self.execute_after_consume(authorization, broadcaster, permit=_issue_execution_permit(authorization))
+        return self._execute_after_consume(authorization, broadcaster)
 
     def execute(
         self,
@@ -97,4 +97,6 @@ class SolanaExecutionAdapter(ExecutionAdapter):
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return self._execute_after_consume(authorization, broadcaster)
+        return self.execute_after_consume(
+            authorization, broadcaster, permit=_issue_execution_permit(authorization)
+        )
