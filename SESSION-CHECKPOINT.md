@@ -895,3 +895,49 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 2. If green, update the PR description and checkpoint with the exact final run result.
 3. Continue with operator reconciliation for ambiguous `reserved`/`broadcast` journal states. Do not auto-rebroadcast or erase records.
 4. No Gensyn2 inventory or changes, production key provisioning, service installation, or live signer broadcast without separate explicit approval.
+
+
+## 31. Arc signer CI completion and read-only journal reconciliation — 2026-11-13
+
+### CI completion for the previous implementation slice
+
+- CI run [#43365056806](https://github.com/rudimentall1/verigate/actions/runs/43365056806) completed **4/4 PASS**: `contracts`, `test`, `container`, `anna-ui`.
+- Tested implementation commit: `8b81df4d45a5ceacfd1a41083ceef96b24551c80`.
+- The run includes the handoff-tampering regression: an altered issuer registration transaction hash is rejected by Verigate registration confirmation before either agent `consume()` or `payment()` signer method is invoked.
+- The run does not test a live Arc signer transaction. The full signer flow remains local mock-RPC evidence only.
+
+### New read-only journal inspection
+
+- Added `scripts/inspect_arc_signer_journal.mjs` and npm command `npm run inspect:arc-signer-journal -- /absolute/path/to/operations.jsonl`.
+- The CLI reads the existing append-only journal through `OperationJournal.records()`, inheriting its regular-file, owner, link-count and permission checks.
+- It groups operation events by authorization key and operation, validates allowed state transitions, and reports the latest `reserved`, `broadcast` or `complete` state.
+- Exit code 3 indicates one or more unresolved operations; exit code 1 means inspection was refused or the journal is malformed.
+- Added tests proving the inspector:
+  - reports reserved-without-hash as ambiguous, not as proof that no broadcast occurred;
+  - reports broadcast transaction hashes for exact receipt inspection;
+  - preserves journal bytes;
+  - refuses invalid state transitions.
+- Added the new tests and syntax check to `test:arc-constrained-signer`.
+
+### Operator reconciliation policy
+
+- Updated `deploy/arc-signer/LOCK-RECOVERY.md` and `docs/ARC_AGENT_SIGNER_SERVICE.md`.
+- `broadcast`: inspect the exact hash and verify chain ID, signer, nonce, destination, calldata, value, receipt status, block/finality and actual fee against the derived operation.
+- `reserved`: no durable hash is present, but broadcast may have happened before the crash. Inspect signer nonce, pending pool, account history and independent RPC evidence. A missing hash or a single RPC miss is not proof of no broadcast.
+- Pending, pruned, reverted, inconsistent or otherwise ambiguous outcomes remain blocked. Never auto-rebroadcast, clear the journal, issue a replacement authorization to bypass the block, or manually edit journal records.
+- The inspector is deliberately read-only. It does not query RPC, append terminal records, change budgets, resolve operations or authorize a retry. Any future state-transition tool requires separate security review and explicit operator approval.
+
+### Current branch / CI status
+
+- New inspector implementation, tests, package wiring and runbook changes are on `feat/arc-agent-signer-service-2026-11-12`.
+- Latest code/docs branch head at checkpoint time: `f12a32fc5a6acff16609623413325448aa0732f1`.
+- The previous exact implementation head `8b81df4d...` passed run #43365056806 4/4. The new journal-inspector changes are **not yet CI-verified**; wait for a fresh run on the new head before calling them tested.
+- PR #58 remains Draft/Open and stacked on PR #57. Do not merge or change Draft state without explicit approval.
+
+### Safety boundary unchanged
+
+- No Gensyn2 access or changes.
+- No production keys provisioned.
+- No signer service installed or started on Gensyn2.
+- No live Arc signer transaction broadcast.
+- FLOP, AegisForge, OWNERA and unrelated services remain untouched.
