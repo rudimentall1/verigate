@@ -84,6 +84,7 @@ class SolanaExecutionAdapter(ExecutionAdapter):
         *,
         permit: ExecutionPermit,
     ) -> Any:
+        authorization = copy.deepcopy(authorization)
         permit.claim(authorization)
         return self._execute_after_consume(authorization, broadcaster)
 
