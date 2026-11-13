@@ -4,6 +4,40 @@ from __future__ import annotations
 from typing import Any, Callable, Protocol, runtime_checkable
 
 
+_PERMIT_ISSUER = object()
+
+
+class ExecutionPermit:
+    """One-shot proof that the router consumed this exact authorization."""
+
+    __slots__ = ("authorization_id", "nonce", "_used")
+
+    def __init__(self, authorization_id: str, nonce: str, *, _issuer: object = None):
+        if _issuer is not _PERMIT_ISSUER:
+            raise TypeError("execution permits can only be issued by ExecutionRouter")
+        self.authorization_id = authorization_id
+        self.nonce = nonce
+        self._used = False
+
+    def claim(self, authorization: dict[str, Any]) -> None:
+        payload = authorization.get("payload", {})
+        if (
+            payload.get("authorization_id") != self.authorization_id
+            or payload.get("nonce") != self.nonce
+        ):
+            raise PermissionError("execution permit does not match authorization")
+        if self._used:
+            raise PermissionError("execution permit already used")
+        self._used = True
+
+
+def _issue_execution_permit(authorization: dict[str, Any]) -> ExecutionPermit:
+    payload = authorization["payload"]
+    return ExecutionPermit(
+        payload["authorization_id"], payload["nonce"], _issuer=_PERMIT_ISSUER
+    )
+
+
 @runtime_checkable
 class ExecutionAdapter(Protocol):
     """Adapter contract for consuming Verigate execution capabilities.
@@ -36,12 +70,24 @@ class ExecutionAdapter(Protocol):
     ) -> Any:
         ...
 
-    def execute_bound(
+    def execute_after_consume(
+        self,
+        authorization: dict[str, Any],
+        side_effect: Callable[[dict[str, Any]], Any],
+        *,
+        permit: ExecutionPermit,
+    ) -> Any:
+        """Execute after router consumption with a one-shot router permit."""
+        ...
+
+    def execute_bound_after_consume(
         self,
         authorization: dict[str, Any],
         external_state: dict[str, Any],
         side_effect: Callable[[dict[str, Any]], Any],
+        *,
+        permit: ExecutionPermit,
     ) -> Any:
-        """Execute while enforcing the supplied state precondition atomically."""
+        """Execute atomically after router consumption with a one-shot permit."""
         ...
 
