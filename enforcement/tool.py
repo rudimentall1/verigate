@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Callable
 import hashlib
 import marshal
+from types import MappingProxyType
 
 def tool_handler_fingerprint(handler: Callable[..., Any]) -> str:
     """Stable identity for the registered executable handler.
@@ -77,7 +78,9 @@ class ToolExecutionAdapter(ExecutionGate):
         handlers: dict[str, Callable[[dict[str, Any]], Any]],
     ):
         super().__init__(storage, public_key)
-        self.handlers = dict(handlers)
+        # Freeze the registry so a concurrent caller cannot swap the selected
+        # handler between path validation and the eventual execution lookup.
+        self.handlers = MappingProxyType(dict(handlers))
 
     @staticmethod
     def _tool_name(authorization: dict[str, Any]) -> str:
