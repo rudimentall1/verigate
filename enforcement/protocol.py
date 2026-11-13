@@ -8,8 +8,9 @@ from typing import Any, Callable, Protocol, runtime_checkable
 class ExecutionAdapter(Protocol):
     """Adapter contract for consuming Verigate execution capabilities.
 
-    Adapters must fail closed: the supplied side effect may run only after
-    the adapter has accepted the one-time ExecutionAuthorization.
+    Adapters must own one-time nonce consumption inside ``execute`` or
+    ``execute_bound``. The router calls only these self-consuming methods;
+    post-consumption implementation hooks remain private to each adapter.
 
     ``execution_external_state_scope`` is required to opt into policy-bound
     external-state execution. ``atomic`` means the adapter contract claims the
