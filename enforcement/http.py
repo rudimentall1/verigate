@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, Callable
+import copy
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
@@ -43,10 +44,12 @@ class HTTPExecutionAdapter(ExecutionGate):
         transport: Callable[[dict[str, Any]], Any],
     ) -> Any:
         """Consume authority and invoke the transport with signed request data."""
+        authorization = copy.deepcopy(authorization)
         request = self._request(authorization)
         return self.execute(authorization, lambda _action: transport(request))
 
     def validate(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+        authorization = copy.deepcopy(authorization)
         try:
             self._request(authorization)
         except (KeyError, TypeError, ValueError) as exc:
@@ -54,6 +57,7 @@ class HTTPExecutionAdapter(ExecutionGate):
         return super().validate(authorization)
 
     def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+        authorization = copy.deepcopy(authorization)
         ok, reason = self.validate(authorization)
         if not ok:
             return False, reason
