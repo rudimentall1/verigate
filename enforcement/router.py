@@ -1,6 +1,7 @@
 """Universal execution router for Verigate."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 
@@ -251,6 +252,10 @@ class ExecutionRouter:
             return False, str(exc)
 
     def execute(self, authorization: dict[str, Any], broadcaster: Callable[[dict[str, Any]], Any]) -> Any:
+        # Freeze caller-owned input before verification. All validation,
+        # nonce consumption, permit issuance and adapter execution must use
+        # the same snapshot, not a mutable object the caller can race.
+        authorization = copy.deepcopy(authorization)
         self._verify_authorization(authorization)
         adapter = self._adapter(authorization)
         self._validate_adapter(adapter, authorization)
@@ -309,6 +314,9 @@ class ExecutionRouter:
         if self.private_key is None:
             raise ValueError("execution receipt signing key is required")
 
+        # Keep receipt identity, authorization verification and execution
+        # bound to one immutable-by-ownership snapshot.
+        authorization = copy.deepcopy(authorization)
         existing = self.storage.execution_receipt_by_authorization(authorization["payload"]["authorization_id"])
         if existing is not None:
             return ExecutionReceipt(
