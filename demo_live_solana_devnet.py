@@ -308,6 +308,8 @@ def main() -> None:
             },
         )
         blocked_decision = engine.evaluate_action(blocked_intent)
+        if blocked_decision.decision != Decision.BLOCK:
+            raise RuntimeError(f"Expected policy BLOCK for the oversized transfer: {blocked_decision}")
         blocked_artifacts = AuthorizationService().issue(
             blocked_intent,
             blocked_decision,
@@ -318,7 +320,6 @@ def main() -> None:
             signed_policy=engine.signed_policy_version(issuer_key),
         )
         engine._persist_authorization(blocked_artifacts, blocked_intent.intent_id)
-        blocked_broadcasts = []
         if blocked_artifacts["execution_authorization"] is not None:
             raise RuntimeError("BLOCK unexpectedly minted executable authorization")
         print()
@@ -327,7 +328,7 @@ def main() -> None:
         print("Oversized transfer:", blocked_decision.decision.value)
         print("Oversized rule:", ", ".join(match.rule_id for match in blocked_decision.matched_rules))
         print("Oversized transfer execution authorization: NONE")
-        print("Oversized transfer broadcasts:", len(blocked_broadcasts))
+        print("Oversized transfer broadcasts: 0 (no execution authorization)")
 
         router = ExecutionRouter(
             NetworkRegistry(),
