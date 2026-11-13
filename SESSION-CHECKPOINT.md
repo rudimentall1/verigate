@@ -941,3 +941,24 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 - No signer service installed or started on Gensyn2.
 - No live Arc signer transaction broadcast.
 - FLOP, AegisForge, OWNERA and unrelated services remain untouched.
+
+
+## 32. Journal inspector hardening and CI run — 2026-11-13
+
+### Additional fail-safe correction
+
+- The read-only inspector now refuses a missing journal path rather than reporting a zero-record empty journal. A typo or wrong mount path must not be mistaken for a clean journal.
+- Added a regression test for this behavior.
+- Latest implementation/test head: `fe2547cd88338cd2b22fc7bd8cdac8d868117ebe`.
+
+### CI
+
+- Fresh PR CI run [#43366379519](https://github.com/rudimentall1/verigate/actions/runs/43366379519) was created for exact head `fe2547cd88338cd2b22fc7bd8cdac8d868117ebe`.
+- At checkpoint time all four jobs were queued: `contracts`, `test`, `container`, `anna-ui`. No result is claimed yet.
+- An earlier push-triggered run [#43366374151](https://github.com/rudimentall1/verigate/actions/runs/43366374151) also targets the same exact head. Use the PR-triggered run #43366379519 as the primary evidence record; wait for all four jobs before declaring the inspector validated.
+
+### Current state
+
+- PR #58 remains Draft/Open, stacked on PR #57.
+- The inspector remains read-only: it does not query RPC, append operation outcomes, alter budgets, clear replay protection or authorize rebroadcast.
+- Gensyn2 remains untouched. No keys provisioned, no signer installed or started, and no live Arc signer transaction broadcast.
