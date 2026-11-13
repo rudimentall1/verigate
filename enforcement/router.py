@@ -187,6 +187,9 @@ class ExecutionRouter:
             "target": action.get("target"),
             "enforcement_scope": getattr(adapter, "execution_enforcement_scope", "direct"),
         }
+        binding = getattr(adapter, "execution_graph_binding", None)
+        if callable(binding):
+            actual.update(binding(authorization))
         ok, reason = verify_execution_graph(expected, actual)
         if not ok:
             raise ValueError(reason)
