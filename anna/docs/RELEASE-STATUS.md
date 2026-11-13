@@ -1,3 +1,14 @@
+## Latest source/CI checkpoint — 13 November 2026 (PR #59)
+
+- Current PR head at this checkpoint: `b51b7114a874a41fe62491ff451e35ffcbf42cb2`.
+- GitHub Actions run [43381228492](https://github.com/rudimentall1/verigate/actions/runs/43381228492) completed with **success** on that exact HEAD. All four jobs passed: `test`, `container`, `anna-ui`, and `contracts`.
+- The strict published-manifest/runtime-`describe` parity regression test passed; it was not weakened. The previous mismatch was the missing active-reservation explanation in `tools[2].description`.
+- Source review confirms the current Anna flow is single-turn; Agent Session remains out of scope. App approvals are read from App scope and consumed with ETag `if_match`; the current authorization test uses a fake APS implementation, so live Anna concurrency and isolation remain unverified.
+- Reservation tests cover ALLOW, REJECTED (EIP-1193 4001), ABORTED, UNKNOWN, SUBMITTED, forged/missing Router consumption, app approval binding, and idempotent/conflicting receipts. The signed negative outcomes are explicitly `wallet_outcome_self_report`, not wallet-signed or independently chain-confirmed evidence.
+- **Release decision remains NOT 100% READY.** CI/source gates are green, but a fresh Cloud Agent install/invocation and live APS ETag/concurrency/reconnect/user-isolation acceptance are still required. No Desktop Commander session or Anna tokens were used for this checkpoint.
+
+---
+
 # Anna App — current release status
 
 > **13 November 2026 checkpoint:** Second-profile Console cut is now App 0.1.34 (App ID 851, version ID 2182) with bundled Executa 0.1.20 (Executa ID 1314, version ID 1086). The UI bundle is ready and the frozen Executa reference points to the second-profile tool ID. The App remains Draft, unpublished, and not submitted for review. This does not prove a fresh Anna Cloud Agent installation or live invocation.
