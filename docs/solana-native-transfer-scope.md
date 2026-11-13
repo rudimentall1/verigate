@@ -108,22 +108,24 @@ prove blockhash freshness or simulate arbitrary program effects.
 
 ## Cluster identity boundary
 
-The live Devnet demo calls `getGenesisHash` and compares it with the canonical
-Solana Devnet genesis hash before creating keys, requesting an airdrop, reading
-balances, or broadcasting. A mismatch aborts the demo.
+The Solana execution path requires `metadata.solana_genesis_hash` inside the
+signed ActionIntent and a live genesis-hash provider configured on
+`NetworkRegistry`. The adapter compares the signed expected hash with the
+configured RPC provider during validation, before one-time authorization
+consumption, and checks again immediately before broadcast. Missing provider,
+missing signed hash, invalid RPC response, or mismatch fails closed.
 
-This check is currently demo-scoped. The generic `SolanaExecutionAdapter` and
-`ExecutionRouter` do not yet bind a Solana genesis hash into the signed
-ActionIntent or compare the configured broadcaster's cluster identity at the
-execution boundary. The network name `solana` identifies the network family,
-not a specific cluster. RPC preflight is not a substitute for explicit cluster
-binding.
+The Devnet demo binds the canonical Devnet genesis hash into both ALLOW and
+BLOCK intents and injects `rpc.get_genesis_hash` into the registry. This
+protects the execution boundary against accidental use of an RPC endpoint
+connected to a different Solana cluster, provided the configured provider
+queries the same RPC endpoint used by the broadcaster.
 
-Consequently, the generic adapter must not be presented as production-ready
-multi-cluster execution. Before using it with Mainnet or multiple Solana
-clusters, add a configured expected genesis hash to the signed authorization
-and enforce a live RPC genesis-hash match inside the execution path before
-authorization consumption and broadcast.
+The network name `solana` still identifies only the network family. Each
+deployment must configure its own trusted RPC genesis-hash provider and ensure
+the broadcaster uses that same endpoint. This is cluster identity binding,
+not proof that an RPC provider is honest or that the provider and broadcaster
+cannot be misconfigured independently.
 
 
 ## Recorded live Devnet evidence
