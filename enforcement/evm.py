@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Any, Callable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -61,6 +62,7 @@ class EVMExecutionAdapter(ExecutionAdapter):
         return result
 
     def validate(self, authorization: dict[str, Any], *, verification_time: int | None = None) -> tuple[bool, str]:
+        authorization = copy.deepcopy(authorization)
         action = authorization["payload"]["action"]
         try:
             self._transaction(action)
@@ -69,6 +71,7 @@ class EVMExecutionAdapter(ExecutionAdapter):
         return self.gate.validate(authorization, verification_time=verification_time)
 
     def consume(self, authorization: dict[str, Any], *, verification_time: int | None = None) -> tuple[bool, str]:
+        authorization = copy.deepcopy(authorization)
         ok, reason = self.validate(authorization, verification_time=verification_time)
         if not ok:
             return False, reason
@@ -135,6 +138,7 @@ class EVMExecutionAdapter(ExecutionAdapter):
         external_state: dict[str, Any],
         broadcaster: Callable[[dict[str, Any]], Any],
     ) -> Any:
+        authorization = copy.deepcopy(authorization)
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
@@ -166,6 +170,7 @@ class EVMExecutionAdapter(ExecutionAdapter):
         authorization: dict[str, Any],
         broadcaster: Callable[[dict[str, Any]], Any],
     ) -> Any:
+        authorization = copy.deepcopy(authorization)
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
