@@ -322,7 +322,7 @@ export class OperationJournal {
       } finally { closeSync(fd); }
     });
   }
-  complete(authorizationId, operation, result, actualNativeCost, authorizationKey = authorizationId) {
+  complete(authorizationId, operation, result, actualNativeCost, authorizationKey = authorizationId, now = Date.now()) {
     return this.withLock(() => {
       const rows = this.records();
       const prior = rows.filter(x => (x.authorizationKey ?? x.authorizationId) === authorizationKey && x.operation === operation).at(-1);
@@ -334,11 +334,11 @@ export class OperationJournal {
         assert(actual >= 0n, "actualNativeCost cannot be negative");
         if (prior.reservedNativeCost !== undefined) assert(actual <= BigInt(prior.reservedNativeCost), "actual native cost exceeds reserved per-operation ceiling");
       }
-      const record = { authorizationId, authorizationKey, operation, state: "complete", txHash: prior.txHash, result, at: Date.now() };
+      const record = { authorizationId, authorizationKey, operation, state: "complete", txHash: prior.txHash, result, at: now };
       if (actual !== undefined) record.actualNativeCost = actual.toString();
       if (prior.budgetDay !== undefined) {
         record.budgetDay = prior.budgetDay;
-        record.settlementDay = new Date().toISOString().slice(0, 10);
+        record.settlementDay = new Date(now).toISOString().slice(0, 10);
         record.reservedNativeCost = prior.reservedNativeCost;
         record.dailyNativeBudget = prior.dailyNativeBudget;
       }
