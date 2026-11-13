@@ -138,7 +138,7 @@ test("journal enforces cumulative daily native-token budget across reservations 
     const day = Date.parse("2026-11-12T10:00:00.000Z");
     journal.reserve("0x" + "01".repeat(32), "register", { maxNativeCost: "40", dailyNativeBudget: "100", now: day });
     journal.markBroadcast("0x" + "01".repeat(32), "register", "0x" + "aa".repeat(32));
-    journal.complete("0x" + "01".repeat(32), "register", { txHash: "0x" + "aa".repeat(32) }, "30");
+    journal.complete("0x" + "01".repeat(32), "register", { txHash: "0x" + "aa".repeat(32) }, "30", undefined, day + 500);
     journal.reserve("0x" + "02".repeat(32), "consume", { maxNativeCost: "60", dailyNativeBudget: "100", now: day + 1000 });
     assert.throws(() => journal.reserve("0x" + "03".repeat(32), "consume", { maxNativeCost: "11", dailyNativeBudget: "100", now: day + 2000 }), /daily native-token budget/);
     journal.markBroadcast("0x" + "02".repeat(32), "consume", "0x" + "bb".repeat(32));
