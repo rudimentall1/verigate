@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 import hashlib
+import marshal
 
 def tool_handler_fingerprint(handler: Callable[..., Any]) -> str:
     """Stable identity for the registered executable handler.
@@ -27,11 +28,10 @@ def tool_handler_fingerprint(handler: Callable[..., Any]) -> str:
     payload = {
         "module": getattr(handler, "__module__", ""),
         "qualname": getattr(handler, "__qualname__", ""),
-        "code": getattr(code, "co_code", b"").hex(),
-        "consts": repr(getattr(code, "co_consts", ())),
-        "names": tuple(getattr(code, "co_names", ())),
-        "varnames": tuple(getattr(code, "co_varnames", ())),
-        "freevars": tuple(getattr(code, "co_freevars", ())),
+        # marshal serializes nested code constants recursively without repr()
+        # memory addresses, so equivalent code has a stable process-independent
+        # fingerprint within the supported Python runtime.
+        "code_marshaled": marshal.dumps(code).hex(),
         "defaults": repr(defaults),
         "kwdefaults": repr(kwdefaults),
     }
