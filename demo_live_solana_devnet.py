@@ -236,6 +236,7 @@ def main() -> None:
             metadata={
                 "solana_transaction": raw_tx,
                 "network_environment": "devnet",
+                "solana_sender": sender_address,
                 "destination": recipient_address,
             },
         )
