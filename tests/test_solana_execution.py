@@ -117,7 +117,7 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
                     authority=authority,
                     policy=Policy(),
                 )
-                adapter = SolanaExecutionAdapter(storage, load_public_key(public))
+                adapter = SolanaExecutionAdapter(storage, load_public_key(public), lambda: DEVNET_GENESIS_HASH)
                 ok, reason = adapter.consume(artifacts["execution_authorization"])
                 self.assertFalse(ok)
                 self.assertEqual(reason, "invalid Solana transaction encoding")
