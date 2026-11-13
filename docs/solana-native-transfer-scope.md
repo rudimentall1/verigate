@@ -106,6 +106,25 @@ guard; it is not represented as an on-chain transaction.
 The RPC preflight remains enabled on broadcast. This adapter does not itself
 prove blockhash freshness or simulate arbitrary program effects.
 
+## Cluster identity boundary
+
+The live Devnet demo calls `getGenesisHash` and compares it with the canonical
+Solana Devnet genesis hash before creating keys, requesting an airdrop, reading
+balances, or broadcasting. A mismatch aborts the demo.
+
+This check is currently demo-scoped. The generic `SolanaExecutionAdapter` and
+`ExecutionRouter` do not yet bind a Solana genesis hash into the signed
+ActionIntent or compare the configured broadcaster's cluster identity at the
+execution boundary. The network name `solana` identifies the network family,
+not a specific cluster. RPC preflight is not a substitute for explicit cluster
+binding.
+
+Consequently, the generic adapter must not be presented as production-ready
+multi-cluster execution. Before using it with Mainnet or multiple Solana
+clusters, add a configured expected genesis hash to the signed authorization
+and enforce a live RPC genesis-hash match inside the execution path before
+authorization consumption and broadcast.
+
 
 ## Recorded live Devnet evidence
 
