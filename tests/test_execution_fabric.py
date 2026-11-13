@@ -252,6 +252,9 @@ print(tool_handler_fingerprint(stable_handler))
         )
         with self.assertRaises(TypeError):
             adapter.handlers["github.create_issue"] = lambda _action: "substituted"
+        with self.assertRaises(AttributeError):
+            adapter.handlers = {"github.create_issue": lambda _action: "substituted"}
+        self.assertIs(adapter.handlers["github.create_issue"], handler)
 
     def test_direct_execution_scope_remains_compatible(self):
         target = "github.create_issue"
