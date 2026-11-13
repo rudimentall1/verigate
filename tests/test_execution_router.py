@@ -1,4 +1,3 @@
-import base64
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +12,7 @@ from enforcement.evm import EVMExecutionAdapter
 from enforcement.networks import NetworkRegistry, UnsupportedNetworkError
 from enforcement.router import ExecutionRouter
 from enforcement.solana import SolanaExecutionAdapter
+from solana_fixtures import make_signed_transfer
 
 
 class ExecutionRouterTest(unittest.TestCase):
@@ -77,10 +77,15 @@ class ExecutionRouterTest(unittest.TestCase):
         self.assertEqual(sent[0]["chain_id"], 8453)
 
     def test_routes_solana_to_solana_adapter(self):
-        raw = base64.b64encode(b"signed-solana").decode("ascii")
+        raw, sender_address, recipient_address = make_signed_transfer()
         intent = ActionIntent(
-            agent_id="router-agent", action_type="token.transfer", target="recipient",
-            asset="USDC", network="solana", metadata={"solana_transaction": raw},
+            agent_id="router-agent", action_type="native.transfer", target=recipient_address,
+            amount=0.001, asset="SOL", network="solana",
+            metadata={
+                "solana_transaction": raw,
+                "solana_sender": sender_address,
+                "destination": recipient_address,
+            },
         )
         auth = self._authorization(intent)["execution_authorization"]
         self.assertIsInstance(self.router._adapter(auth), SolanaExecutionAdapter)
