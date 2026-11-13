@@ -135,6 +135,7 @@ function fixture({
   };
   return {
     provider: { async getNetwork() { return { chainId }; } },
+    authorization: responseData.authorization,
     verigatePublicKey: keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
     issuerSigner, agentSigner, sent, calls, fetchImpl,
   };
@@ -450,7 +451,7 @@ test("agent phase rejects a tampered issuer registration hash before consume", a
       async payment() { agentCalls.push("payment"); return { result: { txHash: HASH("3") } }; },
     },
     apiBaseUrl: "https://verigate.example/",
-    authorization: f.calls.authorization ?? fixture().authorization,
+    authorization: f.authorization,
     registration_tx_hash: HASH("9"),
     verigatePublicKey: f.verigatePublicKey,
     registryAddress: REGISTRY,
