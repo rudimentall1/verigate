@@ -1,5 +1,33 @@
 # Anna App — current release status
 
+> **13 November 2026 checkpoint:** Second-profile Console cut is now App 0.1.34 (App ID 851, version ID 2182) with bundled Executa 0.1.20 (Executa ID 1314, version ID 1086). The UI bundle is ready and the frozen Executa reference points to the second-profile tool ID. The App remains Draft, unpublished, and not submitted for review. This does not prove a fresh Anna Cloud Agent installation or live invocation.
+
+**Updated:** 2026-11-13  
+**Second-profile App:** ID 851 | immutable version 0.1.34 | version ID 2182  
+**Second-profile Executa:** ID 1314 | immutable version 0.1.20 | version ID 1086  
+**Executa tool ID:** tool-verigate-authority-verigate-authority-28x5jku8
+
+## 13 November 2026 Console cut
+
+- App 0.1.34 was cut successfully in the second Anna profile. The server returned version ID 2182 and froze Executa ID 1314, version ID 1086 (0.1.20).
+- The UI bundle upload returned ready: 3 files, 100,577 bytes.
+- Executa 0.1.20 metadata reports four platform assets (darwin-arm64, darwin-x86_64, linux-x86_64, windows-x86_64) with SHA-256 references. The four platform build, reproducibility, extracted-package smoke and checksum evidence is in GitHub Actions run 43376084717.
+- Post-cut CLI reads confirmed App ID 851, latest version 0.1.34, Draft, is_published=false, review_candidate_version=null; Executa ID 1314, latest version 0.1.20, app_bundled, is_published=false.
+- No Marketplace release or review submission was performed. No wallet transaction was made.
+- Local identity and generated tool map were restored to the first profile after the second-profile upload. First-profile App ID 382 and its original tool ID were not intentionally modified.
+
+## Current blockers
+
+- CI run 43376065204 on source commit e1bcfe3 failed 1 of 664 tests: the checked-in Executa manifest icon was corrupted by UTF-8 mojibake and did not match the runtime describe manifest. The manifest was corrected in commit 25d6b06f680a6d0512610d9621f3e67a1bb56530. Do not report CI green until a successful run on the corrected head is observed.
+- Fresh install and live tool invocation on an Anna Cloud Agent using App 0.1.34 / Executa 0.1.20 remain unverified.
+- Live APS ETag conflict handling, concurrent writes, recovery after refresh/reconnect, and user isolation remain unverified.
+- Reservation lifecycle tests exist in source, but acceptance requires the full CI pass and a controlled Cloud Agent verification of the deployed build.
+- The prior live Cloud Agent evidence for App 0.1.30 / Executa 0.1.17 must not be attributed to this cut.
+
+See [PRE-RELEASE-INSPECTION-2026-11-13.md](PRE-RELEASE-INSPECTION-2026-11-13.md) for the acceptance checklist and evidence boundaries.
+
+---
+
 > **Latest verified Anna deployment — 11 November 2026:** App 0.1.31 (version ID 2110) and bundled Executa 0.1.18 (version ID 1064) have been uploaded to Anna Console from source baseline `3731ae66c3ed9e8bd5ef36f0c00e48457db746c3`. All four 0.1.18 binaries were uploaded; post-cut reads through the official Anna CLI confirm the App remains Draft (`is_published=false`, no review candidate) and the Executa remains app-bundled / unpublished. The 0.1.18 build and four-platform SHA-256 evidence is in [the build verification report](EXECUTA-0.1.18-BUILD-VERIFICATION.md). This is a successful immutable Console cut, not a Marketplace release or proof of a fresh Cloud Agent runtime on Executa 0.1.18.
 
 
