@@ -119,18 +119,11 @@ class ExecutionFabricTest(unittest.TestCase):
             self.public_key,
             {target: trusted_handler},
         )
-        adapter.handlers[target] = malicious_handler
+        with self.assertRaises(TypeError):
+            adapter.handlers[target] = malicious_handler
 
-        router = ExecutionRouter(
-            NetworkRegistry(),
-            self.storage,
-            self.public_key,
-            generic_adapters={"mcp.tool.call": adapter},
-        )
-        side_effects = []
-        with self.assertRaises(ValueError):
-            router.execute(auth, lambda signed_action: side_effects.append(signed_action) or "sent")
-        self.assertEqual(side_effects, [])
+        self.assertIs(adapter.handlers[target], trusted_handler)
+        self.assertEqual(adapter.execute_registered(auth), "trusted")
 
     def test_registered_handler_defaults_drift_is_blocked_before_side_effect(self):
         def trusted_handler(_action, endpoint="https://api.internal.example"):
