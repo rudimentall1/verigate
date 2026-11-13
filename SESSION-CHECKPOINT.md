@@ -828,3 +828,47 @@ The full systemd mock-RPC test already created distinct service users and client
 - Deterministic journal settlement timestamp: `200f71c001b035aee1472b9c6893477810924be4`.
 - Deterministic budget test: `a571fcf1a399b0bf925e91917eb361e308c91dbd`.
 - A fresh CI run for the latest head is required. Do not treat failed run #43364690275 as validation of the new cross-role assertions.
+
+
+## 29. Cross-role ACL and deterministic budget tests — verified — 2026-11-13
+
+This section supersedes the pending CI status in sections 27–28.
+
+### CI result
+
+- CI run [#43364796152](https://github.com/rudimentall1/verigate/actions/runs/43364796152) completed **4/4 PASS**: `contracts`, `test`, `container`, `anna-ui`.
+- Tested implementation commit: `a571fcf1a399b0bf925e91917eb361e308c91dbd`.
+- Latest branch/PR #58 head at checkpoint update: `e52c8557dcc21b42eb166a3b4763643d7b4fdd81`; this adds checkpoint documentation after the tested code. PR #58 remains Draft/Open and stacked on PR #57.
+
+### Security boundary now covered in CI
+
+The `contracts` job's full systemd mock-RPC flow passed with these explicit OS-level access checks:
+
+- issuer client can connect to issuer signer socket;
+- agent client can connect to agent signer socket;
+- issuer client is denied access to agent signer socket;
+- agent client is denied access to issuer signer socket;
+- unrelated user is denied access to both sockets.
+
+The same test then ran the actual issuer and agent signer daemons under distinct systemd users against local HTTPS mock RPC, completed `register → consume → payment`, and verified completed retries replay journal results. Exactly three local raw transactions were accepted. These are synthetic local mock-RPC transactions, not Arc Mainnet transactions.
+
+### Budget test clock fix
+
+- Run #43364690275 exposed a test-only mismatch between a fixed 2026-11-12 budget day and `complete()` using the real 2026-11-13 settlement day.
+- `OperationJournal.complete()` now accepts an optional injected timestamp for deterministic tests; its production default remains `Date.now()`.
+- The daily-budget test now completes the reservation on its injected test day. Production accounting still records the actual settlement UTC day, and unresolved reservations remain charged against later-day limits until reconciled.
+- The corrected test passed in #43364796152.
+
+### PR state and evidence boundary
+
+- PR #58 description updated with the successful 4/4 run and cross-role socket ACL evidence.
+- PR #58 remains Draft/Open; PR #57 remains separate and unmerged.
+- No Gensyn2 access or changes, no production key provisioning, no signer service installation, and no live Arc signer transaction.
+- This remains OS-isolated constrained signing, not HSM/KMS isolation and not protection against host-root compromise.
+
+### Next engineering work
+
+1. Continue a targeted adversarial review of the API-to-signer handoff: signed authorization integrity, registration hash confirmation, altered handoff data, expired authorization at each boundary, and duplicate/concurrent requests.
+2. Review journal reconciliation after ambiguous RPC outcomes; the service intentionally fails closed and does not auto-rebroadcast. Define a safe operator procedure for resolving `reserved` and `broadcast` records.
+3. Review per-role daily budget limitations and production fee policy only after a real Verigate-authorized Arc USDC payment receipt exists. Do not use synthetic mock receipts as fee evidence.
+4. Only after this code review and separate explicit approval, perform read-only Gensyn2 account/group/process inventory. Do not provision keys or install/start units without a further explicit decision.
