@@ -84,7 +84,7 @@ The checked-in systemd template is `deploy/systemd/verigate-arc-signer@.service`
 
 ### Installer and rollback procedure (not yet executed)
 
-The scripts assume the repository is checked out at `/opt/verigate`. The config and key parent directories are root-owned mode 0711 so signer users can traverse to their own key files without listing the directory. The scripts are intentionally staged:
+The scripts assume the repository is checked out at `/opt/verigate`. Install the signer runtime with `npm ci --omit=dev`; `ethers` is a production dependency because the isolated signer adapter imports it at runtime. The repository CI includes a production-only install/import check. The config and key parent directories are root-owned mode 0711 so signer users can traverse to their own key files without listing the directory. The scripts are intentionally staged:
 
 1. Review `deploy/arc-signer/install.sh`. Run `sudo bash deploy/arc-signer/install.sh --provision-accounts` only when explicitly approved. This creates the two dedicated system users/groups and private state/config directories. It does not create keys. Existing signer accounts are accepted only with the matching primary group, home `/nonexistent` and shell `/usr/sbin/nologin`.
 2. Provision distinct EVM private-key files and separate copies of the pinned Verigate authorization public key at the paths in the role templates. Each file must be owned by its matching signer account and mode 0600. The signer can traverse the root-owned mode-0711 parent directories but cannot list their contents. Key generation/import is an operator action and is not automated by these scripts.
