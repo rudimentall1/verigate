@@ -93,7 +93,8 @@ jobs:
       - name: Arc signer full issuer-agent flow under systemd (local mock RPC)
         run: sudo -n bash tests/arc-signer-full-flow-systemd-smoke.sh
 
-      - name: Measure historical Arc Registry gas costs (read-only)
+      - name: Best-effort historical Arc Registry gas sample (read-only; external archive RPC)
+        continue-on-error: true
         run: npm run verify:arc-fee-samples
 
       - name: Atomic-state end-to-end test
