@@ -3,7 +3,7 @@
   "required_executas": [
     {
       "tool_id": "bundled:verigate-authority",
-      "min_version": "0.1.18",
+      "min_version": "0.1.19",
       "version": "latest"
     }
   ],

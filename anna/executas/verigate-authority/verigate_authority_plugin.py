@@ -34,7 +34,7 @@ _storage = StorageClient()
 _route_response = make_response_router(_sampling, _storage)
 _loop = None
 
-VERSION = "0.1.18"
+VERSION = "0.1.19"
 _POLICY_PATH = _BUNDLE_ROOT / "policies" / "anna.yaml"
 
 # Anna Executa protocol 2.0: negotiate APS support in `initialize`; keep
