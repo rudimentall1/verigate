@@ -1,3 +1,25 @@
+## Fresh Executa 0.1.21 build verified — 13 November 2026
+
+The stale 0.1.20 Console cut is superseded as the *current source candidate* by a new four-platform Executa 0.1.21 build. This does not alter or replace immutable Console versions 0.1.20 / App 0.1.34.
+
+- Source / PR #59 HEAD: `f67854823c4a45b4781cb3460612e77bda545d0f`.
+- Four-platform build workflow: [run 43384617316](https://github.com/rudimentall1/verigate/actions/runs/43384617316), **success**; push CI [43384617386](https://github.com/rudimentall1/verigate/actions/runs/43384617386) and PR CI [43384623272](https://github.com/rudimentall1/verigate/actions/runs/43384623272), both **success**.
+- All four platform jobs ran the reproducibility check (two builds, matching binary hashes), packaged version 0.1.21, ran extracted-package smoke tests, and uploaded artifacts. Smoke output confirms describe, signed ALLOW decision, one-time App approval consumption, one-time wallet handoff consumption, and persisted/verified SUBMITTED receipt in the local package harness. This is not live Anna-host or chain evidence.
+- All four downloaded ZIP artifacts were independently inspected. Each contains exactly one platform archive and its SHA-256 sidecar; every recomputed archive checksum matches its sidecar. Each extracted manifest declares version 0.1.21 and the expected tool ID / entrypoint.
+
+| Platform | Artifact ID | Release archive SHA-256 |
+|---|---:|---|
+| macOS Intel x86_64 | 14017684573 | `e950d7a6d2ef25ef248455f6a2a0a566275d45feec7ba363740b55c139cd63f9` |
+| Linux x86_64 | 14018420735 | `309bbadfac7b8769980825af6d1510f15f4f5a327e183faee3f4139fb547df9a` |
+| Windows x86_64 | 14018385820 | `9f7c956392cbc44d47e3b46b651bdd36a9ca02ae30af05e61bbadccfaeef55d4` |
+| macOS ARM64 | 14018735045 | `d4855b5e6766bd9e61fa9d6c987dd904b30259007cbd0e509ecac798bd2b0ea2` |
+
+The release job was **skipped**, as intended; no GitHub Release was published. Artifacts are CI workflow artifacts, not Anna Console uploads.
+
+**Current decision: binary/source package gate PASS; Console cut and live acceptance remain OPEN.** Next: upload Executa 0.1.21 as a new immutable version in the second Anna profile, verify its server-side metadata, create a new App version frozen to 0.1.21, then run the compact live Cloud Agent acceptance plan. Do not overwrite Executa 0.1.20 or touch first-profile App ID 382. No Desktop Commander or Anna tokens were used for this build and inspection.
+
+---
+
 ## Immutable Executa artifact freshness blocker — 13 November 2026
 
 The Console-uploaded Executa 0.1.20 binaries were built by workflow run [43376084717](https://github.com/rudimentall1/verigate/actions/runs/43376084717) from source commit `e1bcfe3e915a2058321d2c26ede115dd7f14f445` (06:03:30Z). The published manifest fixes were committed later: `25d6b06f680a6d0512610d9621f3e67a1bb56530` (06:29:49Z) and `3f0576d573ae35d3c261305302b67993900c7357` (06:47:44Z). Therefore the immutable Console package predates the final manifest parity corrections and must be treated as stale relative to the current source. CI success on later commits does not rebuild or replace those uploaded binaries.
