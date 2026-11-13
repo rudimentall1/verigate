@@ -76,6 +76,12 @@ jobs:
       - name: Guard access-control test
         run: npm run test:guard
 
+      - name: Verify Arc signer production-only installation
+        run: |
+          npm ci --omit=dev --ignore-scripts
+          node --input-type=module -e "await import('./integrations/arc-ethers-signer-adapter.mjs'); console.log('Arc signer runtime imports: PASS')"
+
+
   anna-ui:
     runs-on: ubuntu-24.04
     steps:
