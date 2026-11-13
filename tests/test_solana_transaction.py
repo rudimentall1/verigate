@@ -93,6 +93,12 @@ class SolanaTransactionBindingTests(unittest.TestCase):
             allowed_networks=["solana"],
             allowed_assets=["SOL"],
             per_tx_cap={"SOL": 0.01},
+            raw={
+                "allowed_action_types": ["native.transfer"],
+                "allowed_networks": ["solana"],
+                "allowed_assets": ["SOL"],
+                "per_tx_cap": {"SOL": 0.01},
+            },
         )
         with tempfile.TemporaryDirectory() as td:
             private_path = Path(td) / "issuer.key"
