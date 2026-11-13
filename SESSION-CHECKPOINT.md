@@ -989,3 +989,37 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 - Separate evidence classes: Verigate Registry register/consume receipts versus the Guardian ERC-20 transfer reference. Do not treat the latter as a Verigate payment sample.
 - Production payment fee ceiling cannot be approved without a real Verigate-controlled USDC payment receipt. Existing historical samples are informative only.
 - Do not invent fee limits, set production budgets, provision keys, deploy or start services. Keep Gensyn2 untouched until separately approved.
+
+
+## 34. Arc fee evidence review and production dependency correction — 2026-11-13
+
+### Historical receipt evidence read from CI
+
+- Run [#43366379519](https://github.com/rudimentall1/verigate/actions/runs/43366379519) executed `npm run verify:arc-fee-samples` successfully against Arc Mainnet read-only RPC.
+- Verigate Registry registration receipt 1: tx `0xa6a2fb23af073085c64bb168f14ee02d90d64fbeb4629dc2724ba1d01624867f`, block 30024727, gasUsed 94914, effectiveGasPrice 25.75 gwei, fee `0.0024440355` native USDC.
+- Verigate Registry registration receipt 2: tx `0x5f45d89e0f12e42a0d00268d6125a2b05f6474f4ed786895bc7715cf39ad1696`, block 30025935, gasUsed 94914, effectiveGasPrice 25 gwei, fee `0.00237285` native USDC.
+- Verigate Registry consumption receipt: tx `0xc0b2a5de7973da979808ebf5f69e4736ad1eea22fc1fdd5f698b2b44cbad5de8`, block 30026205, gasUsed 34267, effectiveGasPrice 25.75 gwei, fee `0.00088237525` native USDC.
+- Separate Agentic Wallet Guardian v3 ERC-20 transfer reference: tx `0xd781e8b04b5ca89c3a34fcec50a6636049f7647d2b0e1b2bb64d5b1ee54daadf`, block 21448559, fee `0.001023844108` native USDC. This is explicitly not Verigate payment evidence.
+- The full-flow systemd smoke produced a local mock payment cost of `0.0012545915` native USDC. It is synthetic mock-RPC evidence and must not be treated as a real receipt.
+- Conclusion: there is still no independently verified live Verigate-controlled Arc USDC payment receipt. Do not set production payment fee ceiling or daily budget from the unrelated transfer reference or mock-RPC output.
+
+### Production dependency defect found and corrected in source
+
+- `integrations/arc-ethers-signer-adapter.mjs` imports `ethers` at runtime, but `package.json` previously declared ethers only under `devDependencies`. A production install using `npm ci --omit=dev` would therefore omit a required runtime package.
+- Moved `ethers: ^6.17.0` to production `dependencies`, removed it from `devDependencies`, and updated the lockfile production dependency graph (ethers plus eight transitive packages).
+- Added CI step `Verify Arc signer production-only installation`: run `npm ci --omit=dev --ignore-scripts` and import `integrations/arc-ethers-signer-adapter.mjs`.
+- Updated deployment docs to require `npm ci --omit=dev` for the signer runtime.
+- Implementation/CI workflow head: `b8ac89d69cb94f8c3a1b543302fb1201b18b82e9`. Fresh CI run [#43367601961](https://github.com/rudimentall1/verigate/actions/runs/43367601961) was queued for this head; the production-only install/import check is not yet verified.
+- A later documentation-only commit updated deployment instructions. Current PR head at checkpoint time: `f32e9c08285e07669db452b1008bac18b468d9da`.
+
+### Dependency security note
+
+- The preceding `npm ci` in CI reported 36 audit findings: 1 low, 5 moderate, 25 high and 5 critical. No blanket `npm audit fix --force` was applied. Before release, inspect the exact advisories and dependency paths, distinguish dev-only tooling from production runtime exposure, and update only with compatibility tests.
+- The production-only install check is intended to prove runtime packaging, not to certify the full dependency tree as vulnerability-free.
+
+### Release state
+
+- PR #58 remains Draft/Open and stacked on PR #57.
+- No live Arc signer payment has been broadcast.
+- No production keys, service accounts, or target-host deployment have been provisioned.
+- Gensyn2 and unrelated services remain untouched.
