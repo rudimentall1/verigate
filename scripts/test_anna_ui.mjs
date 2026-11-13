@@ -20,7 +20,7 @@ if (appSource.includes("import {")) throw new Error("app.js import line was not 
 const VALID = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function callPlugin(method, args, { dataDir, appStorage = new Map(), appContext = true, samplingHandler = {} } = {}) {
+function callPlugin(method, args, { dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-ui-plugin-")), appStorage = new Map(), appContext = true, samplingHandler = {} } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(PY, [PLUGIN], {
       env: { ...process.env, VERIGATE_ANNA_DATA_DIR: dataDir, PYTHONPATH: root },
@@ -146,10 +146,9 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
-  // Isolate each UI scenario: plugin subprocesses within one launch share state,
-  // but independent scenarios must not inherit issuer keys or SQLite records.
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-ui-"));
+async function launch({ interpret, explain, dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-ui-")), appStorage = new Map(), connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+  // Each launch is isolated by default. Tests for explicit cross-session history
+  // pass a shared dataDir and appStorage deliberately.
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows && window.HTMLDialogElement) {
@@ -157,7 +156,6 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
       throw new Error("native modal dialogs are unsupported in this embedded webview");
     };
   }
-  const appStorage = new Map();
   const calls = { tools: [], llm: 0, sampling: [], toolArgs: {}, storage: [] };
   const anna = {
     window: { set_title: async () => {}, ready: async () => {} },
@@ -425,6 +423,7 @@ await test("policy-summary installation principal mismatch fails closed", async 
 await test("dynamic authority ceiling disables permission before an otherwise-ALLOW payment", async () => {
   const agentId = "ui-dynamic-limit-agent";
   const appStorage = new Map();
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-ui-dynamic-"));
   const nonce = "d".repeat(48);
   const now = Date.now();
   const seed = {
@@ -450,10 +449,11 @@ await test("dynamic authority ceiling disables permission before an otherwise-AL
   const seeded = await callPlugin("verigate_authorize_payment", {
     ...seed,
     confirmation_nonce: nonce
-  }, { appStorage });
+  }, { dataDir, appStorage });
   ok(seeded?.success === true, "seed authorization failed: " + JSON.stringify(seeded));
 
   const ui = await launch({
+    dataDir, appStorage,
     description: "Pay 123.456789 USDC on Base to " + VALID + " for a repeat invoice",
     interpret: () => interpretJson({
       payee: VALID,
@@ -479,17 +479,19 @@ await test("dynamic authority ceiling disables permission before an otherwise-AL
 });
 
 await test("authorization history is clearly distinguished from completed on-chain spend", async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-ui-history-"));
+  const appStorage = new Map();
   const testRecipient = "0x" + require("node:crypto").randomBytes(20).toString("hex");
   const description = "Pay 25 USDC on Base to " + testRecipient + " for authorization-history regression";
   const interpret = () => interpretJson({ ...GOOD, payee: testRecipient, resource: "authorization-history regression" });
 
-  const first = await launch({ description, interpret });
+  const first = await launch({ dataDir, appStorage, description, interpret });
   await first.click();
   eq(first.text("decision"), "ALLOW", "initial request is allowed");
   await first.clickExecution();
   ok(first.text("execution-json").includes("authorization_id"), "first authorization was recorded");
 
-  const repeat = await launch({ description, interpret });
+  const repeat = await launch({ dataDir, appStorage, description, interpret });
   await repeat.click();
   eq(repeat.text("decision"), "ALLOW", "repeat request remains within policy limits");
   const limits = repeat.$("limits-table").textContent;
