@@ -216,6 +216,14 @@ class ExecutionFabricTest(unittest.TestCase):
         self.assertIn("transitive enforcement", str(exc.exception))
         self.assertEqual(side_effects, [])
 
+    def test_registered_handler_mapping_is_immutable(self):
+        handler = lambda _action: "registered"
+        adapter = ToolExecutionAdapter(
+            self.storage, self.public_key, {"github.create_issue": handler},
+        )
+        with self.assertRaises(TypeError):
+            adapter.handlers["github.create_issue"] = lambda _action: "substituted"
+
     def test_direct_execution_scope_remains_compatible(self):
         target = "github.create_issue"
         handler = lambda _signed_action: "registered"
