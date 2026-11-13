@@ -119,6 +119,7 @@ class ExecutionGateTest(unittest.TestCase):
     def test_direct_consume_uses_gate_owned_authorization_snapshot(self):
         auth, action = self._auth_pair()
         original_nonce = auth["payload"]["nonce"]
+        original_authorization_id = auth["payload"]["authorization_id"]
         storage = Storage(self.db)
         try:
             gate = ExecutionGate(storage, load_public_key(self.pub))
@@ -137,7 +138,7 @@ class ExecutionGateTest(unittest.TestCase):
 
             self.assertTrue(ok, reason)
             auth["payload"]["nonce"] = original_nonce
-            auth["payload"]["authorization_id"] = self._authorization()["execution_authorization"]["payload"]["authorization_id"]
+            auth["payload"]["authorization_id"] = original_authorization_id
             ok, reason = gate.consume(auth)
             self.assertFalse(ok)
             self.assertEqual(reason, "execution authorization already consumed")
