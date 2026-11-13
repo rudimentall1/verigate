@@ -1,5 +1,17 @@
 # Changelog
 
+## Anna App 0.1.33 / Executa 0.1.19
+
+### Authority Desk interface refresh
+
+- Replace the long single-column form with a responsive two-column Authority Desk based on the Grok workspace visual direction.
+- Put the payment request first, with quick examples for an ordinary ALLOW, a human-review WARN, a hard-cap BLOCK and a missing-details clarification.
+- Keep extracted payment fields available in a collapsed review section; the existing Executa extraction, deterministic policy, signed Decision Receipt, App-scope confirmation, Execution Authorization and wallet hand-off remain unchanged.
+- Explain the three separate roles in the first screen: AI interpretation, Verigate policy decision and wallet execution.
+- Preserve the existing DOM contract and add an E2E check proving example buttons only populate the request field; they do not invoke AI or Verigate.
+- Do not import Grok's separate browser-local ledger, key storage or wallet execution implementation. The Anna App continues to use the existing Verigate Executa and App-scope approval flow.
+- Source candidate only: App 0.1.33 / Executa 0.1.19 has not been uploaded to Anna Console, cut as an immutable version, submitted for review or published.
+
 ## Anna App 0.1.30 / Executa 0.1.17
 
 ### Signed wallet outcome receipts and Anna invoke diagnostics

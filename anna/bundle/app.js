@@ -11,6 +11,15 @@ const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], 
 const buttons = [$("check-btn"), $("execution-btn"), $("wallet-execute-btn")];
 const inputs = ["action-description", "agent-id", "target", "asset", "network", "amount", "resource", "confirm-details"].map($);
 const FIELD_IDS = ["target", "asset", "network", "amount"];
+document.addEventListener("click", (event) => {
+  const button = event.target?.closest?.("[data-example]");
+  if (!button) return;
+  const field = $("action-description");
+  if (field && !state.busy) {
+    field.value = button.dataset.example || "";
+    field.focus();
+  }
+});
 const FIELD_LABELS = { target: "recipient", asset: "asset", network: "network", amount: "amount" };
 const normalizeAgentLabel = (value) => Array.from(String(value ?? "").trim().replace(/\s+/g, " ")).slice(0, 128).join("");
 

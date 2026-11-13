@@ -339,6 +339,16 @@ async function test(name, fn) {
 const eq = (a, b, m) => { if (a !== b) throw new Error((m || "") + " expected " + JSON.stringify(b) + " got " + JSON.stringify(a)); };
 const ok = (c, m) => { if (!c) throw new Error(m); };
 
+await test("quick examples populate the payment request without bypassing the normal check", async () => {
+  const ui = await launch({});
+  const example = ui.window.document.querySelector("[data-example]");
+  ok(example, "quick example button exists");
+  example.click();
+  eq(ui.$("action-description").value, example.dataset.example, "example fills the ordinary request field");
+  eq(ui.calls.tools.length, 0, "example selection does not invoke Verigate tools");
+  eq(ui.calls.llm, 0, "example selection does not call Anna AI");
+});
+
 await test("valid request: AI reads it, Verigate allows, limits table is shown", async () => {
   const ui = await launch({});
   await ui.click();
