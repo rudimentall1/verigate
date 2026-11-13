@@ -1,6 +1,7 @@
 """Fail-closed Solana execution adapter for bound native SOL transfers."""
 from __future__ import annotations
 
+import copy
 from typing import Any, Callable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -50,6 +51,7 @@ class SolanaExecutionAdapter(ExecutionAdapter):
         }
 
     def validate(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+        authorization = copy.deepcopy(authorization)
         try:
             action = authorization["payload"]["action"]
             self._validate_cluster(action)
@@ -59,6 +61,7 @@ class SolanaExecutionAdapter(ExecutionAdapter):
         return self.gate.validate(authorization)
 
     def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+        authorization = copy.deepcopy(authorization)
         ok, reason = self.validate(authorization)
         if not ok:
             return False, reason
@@ -91,6 +94,7 @@ class SolanaExecutionAdapter(ExecutionAdapter):
     ) -> Any:
         # Validate cluster and transaction semantics before consuming the
         # one-time grant. Recheck the cluster immediately before broadcasting.
+        authorization = copy.deepcopy(authorization)
         action = authorization["payload"]["action"]
         self._validate_cluster(action)
         self._transaction(action)
