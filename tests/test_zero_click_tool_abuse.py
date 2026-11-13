@@ -97,16 +97,6 @@ class ZeroClickToolAbuseTest(unittest.TestCase):
         authority = DynamicAuthorityService(self.storage).snapshot(
             action.agent_id, capability.capability_id
         )
-        auth = AuthorizationService().issue(
-            action,
-            decision,
-            self.policy.digest,
-            self.private_key,
-            capability=capability,
-            authority=authority,
-            policy=self.policy,
-        )["execution_authorization"]
-
         calls = []
         def registered_handler(signed_action):
             calls.append(signed_action)
