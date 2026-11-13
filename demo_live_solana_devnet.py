@@ -271,6 +271,7 @@ def main() -> None:
             metadata={
                 "solana_transaction": raw_tx,
                 "network_environment": "devnet",
+                "solana_genesis_hash": genesis_hash,
                 "solana_sender": sender_address,
                 "destination": recipient_address,
             },
@@ -353,7 +354,7 @@ def main() -> None:
         print("Oversized transfer broadcasts: 0 (no execution authorization)")
 
         router = ExecutionRouter(
-            NetworkRegistry(),
+            NetworkRegistry(solana_genesis_hash_provider=rpc.get_genesis_hash),
             storage,
             load_public_key(issuer_public),
             issuer_key,
