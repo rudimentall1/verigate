@@ -78,9 +78,14 @@ class ToolExecutionAdapter(ExecutionGate):
         handlers: dict[str, Callable[[dict[str, Any]], Any]],
     ):
         super().__init__(storage, public_key)
-        # Freeze the registry so a concurrent caller cannot swap the selected
-        # handler between path validation and the eventual execution lookup.
-        self.handlers = MappingProxyType(dict(handlers))
+        # Freeze the registry and expose it through a read-only property.
+        # This prevents both item mutation and ordinary attribute replacement.
+        self._handlers = MappingProxyType(dict(handlers))
+
+    @property
+    def handlers(self) -> MappingProxyType:
+        """Read-only view of the registered tool handlers."""
+        return self._handlers
 
     @staticmethod
     def _tool_name(authorization: dict[str, Any]) -> str:
