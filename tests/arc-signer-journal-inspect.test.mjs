@@ -53,3 +53,15 @@ test("journal inspector refuses invalid state transitions", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("journal inspector refuses a missing journal instead of reporting it empty", () => {
+  const dir = mkdtempSync(join(tmpdir(), "verigate-journal-inspect-missing-"));
+  try {
+    const path = join(dir, "missing.jsonl");
+    const result = spawnSync(process.execPath, [script, path], { encoding: "utf8" });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /journal file does not exist/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
