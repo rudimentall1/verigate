@@ -5,7 +5,7 @@ from demo_live_solana_devnet import b58decode, b58encode
 
 class SolanaDemoBase58Tests(unittest.TestCase):
     def test_round_trip_preserves_leading_zero_bytes(self):
-        for raw in (bytes(32), b"\\x00\\x00\\x01", bytes(range(32)), bytes([0xFF]) * 32):
+        for raw in (bytes(32), b"\x00\x00\x01", bytes(range(32)), bytes([0xFF]) * 32):
             with self.subTest(raw=raw.hex()):
                 self.assertEqual(b58decode(b58encode(raw)), raw)
 
