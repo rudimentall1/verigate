@@ -6,6 +6,7 @@
  * Usage: node scripts/inspect_arc_signer_journal.mjs /path/to/operations.jsonl
  */
 import { resolve } from "node:path";
+import { lstatSync } from "node:fs";
 import { OperationJournal } from "../integrations/arc-constrained-signer.mjs";
 
 const args = process.argv.slice(2);
@@ -16,6 +17,11 @@ if (args.length !== 1 || args[0] === "--help" || args[0] === "-h") {
 } else {
   try {
     const path = resolve(args[0]);
+    try { lstatSync(path); }
+    catch (error) {
+      if (error.code === "ENOENT") throw new Error("journal file does not exist; refusing to report an empty journal");
+      throw error;
+    }
     const rows = new OperationJournal(path).records();
     const grouped = new Map();
     for (const row of rows) {
