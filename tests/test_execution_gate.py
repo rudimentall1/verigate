@@ -116,6 +116,34 @@ class ExecutionGateTest(unittest.TestCase):
         finally:
             storage.close()
 
+    def test_direct_consume_uses_gate_owned_authorization_snapshot(self):
+        auth, action = self._auth_pair()
+        original_nonce = auth["payload"]["nonce"]
+        storage = Storage(self.db)
+        try:
+            gate = ExecutionGate(storage, load_public_key(self.pub))
+            original_validate = gate.validate
+
+            def validate_then_mutate(snapshot, *, verification_time=None):
+                result = original_validate(snapshot, verification_time=verification_time)
+                # Mutate the caller-owned object after verification. The gate
+                # must consume the nonce from its own pre-verification copy.
+                auth["payload"]["nonce"] = "attacker-nonce"
+                auth["payload"]["authorization_id"] = "f" * 64
+                return result
+
+            with patch.object(gate, "validate", side_effect=validate_then_mutate):
+                ok, reason = gate.consume(auth)
+
+            self.assertTrue(ok, reason)
+            auth["payload"]["nonce"] = original_nonce
+            auth["payload"]["authorization_id"] = self._authorization()["execution_authorization"]["payload"]["authorization_id"]
+            ok, reason = gate.consume(auth)
+            self.assertFalse(ok)
+            self.assertEqual(reason, "execution authorization already consumed")
+        finally:
+            storage.close()
+
     def test_tampered_authorization_is_rejected(self):
         auth, action = self._auth_pair()
         auth["payload"]["intent_id"] = "attacker-intent"
