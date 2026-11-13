@@ -19,7 +19,6 @@ if (appSource.includes("import {")) throw new Error("app.js import line was not 
 
 const VALID = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-ui-"));
 
 function callPlugin(method, args, { appStorage = new Map(), appContext = true, samplingHandler = {} } = {}) {
   return new Promise((resolve, reject) => {
@@ -148,6 +147,9 @@ function interpretJson(o) {
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
 async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+  // Isolate each UI scenario: plugin subprocesses within one launch share state,
+  // but independent scenarios must not inherit issuer keys or SQLite records.
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-ui-"));
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows && window.HTMLDialogElement) {
