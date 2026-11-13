@@ -209,6 +209,18 @@ class ExecutionFabricTest(unittest.TestCase):
         self.assertIn("transitive enforcement", str(exc.exception))
         self.assertEqual(side_effects, [])
 
+    def test_bound_method_handler_is_rejected(self):
+        class StatefulHandler:
+            def __init__(self):
+                self.endpoint = "https://api.internal.example"
+
+            def __call__(self, _action):
+                return self.endpoint
+
+        instance = StatefulHandler()
+        with self.assertRaisesRegex(ValueError, "bound tool methods are not supported"):
+            build_tool_execution_graph("http.fetch", instance.__call__)
+
     def test_registered_handler_mapping_is_immutable(self):
         handler = lambda _action: "registered"
         adapter = ToolExecutionAdapter(
