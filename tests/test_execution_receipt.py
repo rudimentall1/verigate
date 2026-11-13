@@ -1,4 +1,3 @@
-import base64
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +13,7 @@ from enforcement.evm import EVMExecutionAdapter
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
 from enforcement.solana import SolanaExecutionAdapter
+from solana_fixtures import make_signed_transfer
 
 
 class ExecutionReceiptTest(unittest.TestCase):
@@ -37,11 +37,22 @@ class ExecutionReceiptTest(unittest.TestCase):
         self.tmpdir.cleanup()
 
     def _authorization(self, network, metadata):
+        if network == "solana":
+            action_type = "native.transfer"
+            target = metadata["destination"]
+            asset = "SOL"
+            amount = 0.001
+        else:
+            action_type = "token.transfer"
+            target = "merchant"
+            asset = "USDC"
+            amount = None
         intent = ActionIntent(
             agent_id="receipt-agent",
-            action_type="token.transfer",
-            target="merchant",
-            asset="USDC",
+            action_type=action_type,
+            target=target,
+            amount=amount,
+            asset=asset,
             network=network,
             metadata=metadata,
         )
@@ -54,10 +65,10 @@ class ExecutionReceiptTest(unittest.TestCase):
         capability = Capability(
             capability_id=f"cap-receipt-{intent.intent_id}",
             agent_id=intent.agent_id,
-            allowed_actions=("token.transfer",),
-            allowed_targets=("merchant",),
+            allowed_actions=(action_type,),
+            allowed_targets=(target,),
             allowed_networks=(network,),
-            allowed_assets=("USDC",),
+            allowed_assets=(asset,),
         )
         self.storage.register_capability(capability)
         authority = DynamicAuthorityService(self.storage).snapshot(
@@ -107,8 +118,15 @@ class ExecutionReceiptTest(unittest.TestCase):
         self.assertEqual(len(self.storage.execution_receipts("receipt-agent")), 1)
 
     def test_solana_receipt_uses_signature_reference(self):
-        raw = base64.b64encode(b"signed-solana").decode("ascii")
-        auth = self._authorization("solana", {"solana_transaction": raw})
+        raw, sender_address, recipient_address = make_signed_transfer()
+        auth = self._authorization(
+            "solana",
+            {
+                "solana_transaction": raw,
+                "solana_sender": sender_address,
+                "destination": recipient_address,
+            },
+        )
         receipt = self.router.execute_with_receipt(auth, lambda tx: "5nSolSig")
         self.assertIsInstance(self.router._adapter(auth), SolanaExecutionAdapter)
         self.assertEqual(receipt.payload["transaction_ref"], "5nSolSig")
