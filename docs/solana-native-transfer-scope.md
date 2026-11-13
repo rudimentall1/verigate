@@ -104,3 +104,22 @@ transaction and independently verify its execution receipt.
 
 The RPC preflight remains enabled on broadcast. This adapter does not itself
 prove blockhash freshness or simulate arbitrary program effects.
+
+
+## Recorded live Devnet evidence
+
+Run completed on 2026-11-13 at 07:44:32 UTC (RPC blockTime).
+
+- Tested code commit: `f6ff6f8db32c1e2c55078cb874bb5dfd53800553`.
+- Network: Solana Devnet (`https://api.devnet.solana.com`).
+- Sender: `9GaArQHbeG1PLre3T12yL66frQuJcdJWwmRKL8JYg28F`.
+- Recipient: `Aow21CH2NQbm6P4Q2owPiMbFJMpLifmtkSeGqKnzwB1Y`.
+- Policy: 0.001 SOL `ALLOW`; 0.02 SOL `BLOCK` with rule `per_tx_cap_exceeded`.
+- Blocked path: no execution authorization; zero broadcasts.
+- Allowed path: broadcast returned `SUBMITTED`, then `CONFIRMED`.
+- Signature: `5QUhbFF7NGLtv5P2u2jmmhrKfE7Jmm9hbLbE8CbmJjpkDFJECLZmu8Zdtp5VQM7EdiSfsMAFNGE37mU9TjhVBEV7`.
+- Slot: `521752939`.
+- Independent read-only `getTransaction` response at commitment `confirmed`: transaction found; `meta.err = null`; System Program `transfer`; source and destination match; amount is 1,000,000 lamports (0.001 SOL); fee is 5,000 lamports (0.000005 SOL).
+- Explorer: https://explorer.solana.com/tx/5QUhbFF7NGLtv5P2u2jmmhrKfE7Jmm9hbLbE8CbmJjpkDFJECLZmu8Zdtp5VQM7EdiSfsMAFNGE37mU9TjhVBEV7?cluster=devnet
+
+The demo result and separate RPC transaction lookup agree. This is a live Devnet execution with independent RPC transaction-data verification at `confirmed` commitment. It is not a claim of `finalized` commitment or third-party audit. The oversized BLOCK/no-broadcast result is established by the demo's execution output; it is not a second on-chain transaction.
