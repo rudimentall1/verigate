@@ -108,6 +108,61 @@ jobs:
       - name: Verify Arc signer production-only installation
         run: |
           npm ci --omit=dev --ignore-scripts
+          npm ls --omit=dev --all --json > "$RUNNER_TEMP/npm-production-tree.json"
+          python3 - "$RUNNER_TEMP/npm-production-tree.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              tree = json.load(handle)
+
+          audit_only_packages = {
+              "@microsoft/api-extractor",
+              "@microsoft/api-extractor-model",
+              "@microsoft/tsdoc-config",
+              "@rushstack/node-core-library",
+              "ajv",
+              "bn.js",
+              "brace-expansion",
+              "braces",
+              "browserify-sign",
+              "browserslist",
+              "cipher-base",
+              "cross-spawn",
+              "diff",
+              "js-yaml",
+              "json5",
+              "micromatch",
+              "minimatch",
+              "mocha",
+              "nanoid",
+              "pbkdf2",
+              "picomatch",
+              "semver",
+              "serialize-javascript",
+              "sha.js",
+              "terser-webpack-plugin",
+              "validator",
+              "webpack",
+          }
+
+          found = []
+
+          def walk(node, parent=""):
+              for name, dependency in node.get("dependencies", {}).items():
+                  path = f"{parent} > {name}" if parent else name
+                  if name in audit_only_packages:
+                      found.append(path)
+                  walk(dependency, path)
+
+          walk(tree)
+          if found:
+              print("Unexpected audit-only packages in production install:")
+              print("\\n".join(found))
+              raise SystemExit(1)
+
+          print("Production dependency tree excludes Ganache's 27 bundled audit-only packages: PASS")
+          PY
           node --input-type=module -e "await import('./integrations/arc-ethers-signer-adapter.mjs'); console.log('Arc signer runtime imports: PASS')"
 
 
