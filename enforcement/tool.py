@@ -12,7 +12,16 @@ def tool_handler_fingerprint(handler: Callable[..., Any]) -> str:
     claim to sandbox arbitrary globals or child side effects inside a trusted
     handler.
     """
+    if not callable(handler):
+        raise ValueError("tool handler must be callable")
     code = getattr(handler, "__code__", None)
+    if code is None:
+        function = getattr(handler, "__func__", None)
+        code = getattr(function, "__code__", None)
+    if code is None:
+        raise ValueError(
+            "tool handler must be a Python function or bound method with inspectable code"
+        )
     defaults = getattr(handler, "__defaults__", None)
     kwdefaults = getattr(handler, "__kwdefaults__", None)
     payload = {
@@ -93,12 +102,12 @@ class ToolExecutionAdapter(ExecutionGate):
         graph = metadata.get("execution_graph") if isinstance(metadata, dict) else None
         if not isinstance(graph, dict):
             return False, "signed execution graph with handler fingerprint is required"
-        expected = graph.get("handler_sha256")
-        if not isinstance(expected, str) or len(expected) != 64:
-            return False, "signed execution graph is missing a valid handler_sha256"
-        actual = tool_handler_fingerprint(handler)
-        if expected != actual:
-            return False, "execution handler drift"
+        try:
+            expected_graph = build_tool_execution_graph(tool, handler)
+        except (TypeError, ValueError) as exc:
+            return False, str(exc)
+        if graph != expected_graph:
+            return False, "signed execution graph or execution handler drift"
         return super().validate(authorization)
 
     def execution_graph_binding(self, authorization: dict[str, Any]) -> dict[str, str]:
