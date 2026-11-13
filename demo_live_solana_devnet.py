@@ -60,7 +60,7 @@ def b58encode(raw: bytes) -> str:
     while number:
         number, remainder = divmod(number, 58)
         chars.append(_ALPHABET[remainder])
-    leading_zeroes = len(raw) - len(raw.lstrip(b"\\x00"))
+    leading_zeroes = len(raw) - len(raw.lstrip(b"\x00"))
     return "1" * leading_zeroes + "".join(reversed(chars or ["1"]))
 
 
@@ -70,7 +70,7 @@ def b58decode(value: str) -> bytes:
         number = number * 58 + _ALPHABET.index(char)
     raw = number.to_bytes((number.bit_length() + 7) // 8, "big")
     leading_ones = len(value) - len(value.lstrip("1"))
-    return b"\\x00" * leading_ones + raw
+    return b"\x00" * leading_ones + raw
 
 
 def raw_public_key(private_key: Ed25519PrivateKey) -> bytes:
