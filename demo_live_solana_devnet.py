@@ -61,7 +61,7 @@ def b58encode(raw: bytes) -> str:
         number, remainder = divmod(number, 58)
         chars.append(_ALPHABET[remainder])
     leading_zeroes = len(raw) - len(raw.lstrip(b"\x00"))
-    return "1" * leading_zeroes + "".join(reversed(chars or ["1"]))
+    return "1" * leading_zeroes + "".join(reversed(chars))
 
 
 def b58decode(value: str) -> bytes:
