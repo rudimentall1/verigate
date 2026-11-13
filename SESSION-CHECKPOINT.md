@@ -1,6 +1,6 @@
 # Verigate Session Checkpoint
 
-**Updated:** 2026-11-12 10:42 +05:00
+**Updated:** 2026-11-13 11:10 +05:00
 **Repository:** rudimentall1/verigate  
 **Default branch:** main  
 **Latest product merge before this checkpoint refresh:** 6ab3a289c300cb6d614d27bb7134ae251f7db261  
@@ -1089,3 +1089,37 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 - No Verigate-controlled live Arc USDC payment receipt exists. Production payment fee ceilings and budgets remain unapproved.
 - No production keys, Gensyn2 access, service installation/start or live signer broadcast.
 - FLOP, AegisForge, OWNERA and unrelated services remain untouched.
+
+
+## 37. Production dependency audit classification and CI verification — 2026-11-13
+
+### Latest CI result
+
+- Latest signer branch head: `d6feea638f9acf80f981024e4589c519ac768725`.
+- CI run [#43375129799](https://github.com/rudimentall1/verigate/actions/runs/43375129799) completed **4/4 PASS**: `contracts`, `test`, `container`, `anna-ui`.
+- The production-only installation check ran `npm ci --omit=dev --ignore-scripts`, inspected the actual installed dependency tree with `npm ls --omit=dev --all`, and imported `integrations/arc-ethers-signer-adapter.mjs`.
+- The check found none of the listed audit-only packages, including Ganache and the 27 packages previously reported by the npm audit diagnostic.
+- This is evidence that the listed findings are absent from the installed production dependency tree for this package configuration. It does not mean the full development/test dependency tree is vulnerability-free.
+
+### Dependency audit disposition
+
+- No blanket or targeted dependency upgrades were applied.
+- The previous `npm audit --omit=dev` report listed 27 transitive findings, but the clean production install tree explicitly excludes Ganache and every named package in that finding set.
+- Do not spend engineering time upgrading Ganache's bundled tooling solely to clear a production-runtime blocker that the installed production tree does not contain. Revisit if dependency configuration changes or any of those packages become production dependencies.
+
+### Adversarial review
+
+- Reviewed the split issuer/agent executor handoff and signer boundary.
+- The agent phase re-confirms the exact issuer registration transaction hash with Verigate before calling the agent signer.
+- The signer socket independently re-derives and re-verifies the signed authorization immediately before broadcast, including expiry; an existing socket regression test advances time to the authorization expiry between reservation and broadcast and verifies refusal.
+- The ethers adapter performs fee, gas and pending nonce preflight before invoking the immediate pre-broadcast validation callback.
+- Existing tests cover altered registration hash rejection, expired authorization, role separation, durable journal replay and fail-closed unresolved operations. The latest CI run passes these tests.
+
+### Current release blockers and boundaries
+
+- Existing Arc Mainnet Registry remains deployed and pinned; no redeployment is required.
+- No live Verigate-controlled Arc USDC payment has been broadcast through this new signer service.
+- Production signer keys and fee ceilings/daily budgets are not provisioned/approved.
+- Target-host account/group/process inventory and service installation remain unperformed. Gensyn2 access still requires separate explicit approval.
+- PR #58 remains Draft/Open and stacked on PR #57. Neither PR is merged; do not merge or change Draft state without explicit approval.
+- No live transaction, key provisioning, Gensyn2 access, or unrelated service changes were performed.
