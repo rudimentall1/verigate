@@ -27,7 +27,7 @@ from enforcement.router import ExecutionRouter
 from enforcement.networks import NetworkRegistry
 from enforcement.chain_verification import EVMChainVerifier
 from enforcement.evm_rpc import EvmRpcClient
-from enforcement.tool import ToolExecutionAdapter
+from enforcement.tool import ToolExecutionAdapter, build_tool_execution_graph
 
 
 class OutcomeAttestationTest(unittest.TestCase):
@@ -79,11 +79,15 @@ class OutcomeAttestationTest(unittest.TestCase):
             self.storage,
             policy_source_ref=str(policy_path),
         )
+        handler = lambda _action: "ready"
         action = ActionIntent(
             agent_id=identity.agent_id,
             action_type="mcp.tool.call",
             target="github.create_issue",
-            metadata={"arguments": {"title": "outcome"}},
+            metadata={
+                "arguments": {"title": "outcome"},
+                "execution_graph": build_tool_execution_graph("github.create_issue", handler),
+            },
         )
         signature = sign_action_intent(action, identity_id, agent_key)
         artifacts = engine.authorize_action(
@@ -98,7 +102,7 @@ class OutcomeAttestationTest(unittest.TestCase):
         adapter = ToolExecutionAdapter(
             self.storage,
             self.public_key,
-            {"github.create_issue": lambda _action: "ready"},
+            {"github.create_issue": handler},
         )
         router = ExecutionRouter(
             NetworkRegistry(),
