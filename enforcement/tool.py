@@ -9,17 +9,17 @@ from types import MappingProxyType
 def tool_handler_fingerprint(handler: Callable[..., Any]) -> str:
     """Stable identity for the registered executable handler.
 
-    Bind the code object plus callable configuration that can change behavior
-    without replacing the function object itself. This deliberately does not
-    claim to sandbox arbitrary globals or child side effects inside a trusted
-    handler.
+    Bind a plain Python function's code and default arguments. Bound methods
+    are rejected because their instance state is not represented by this
+    fingerprint. Closure cells and mutable globals are not sandboxed; handlers
+    remain trusted in-process capabilities and must not use mutable closure
+    state as an authorization boundary.
     """
     if not callable(handler):
         raise ValueError("tool handler must be callable")
+    if getattr(handler, "__self__", None) is not None:
+        raise ValueError("bound tool methods are not supported; register a plain function")
     code = getattr(handler, "__code__", None)
-    if code is None:
-        function = getattr(handler, "__func__", None)
-        code = getattr(function, "__code__", None)
     if code is None:
         raise ValueError(
             "tool handler must be a Python function or bound method with inspectable code"
