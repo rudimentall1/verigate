@@ -42,9 +42,9 @@ def _issue_execution_permit(authorization: dict[str, Any]) -> ExecutionPermit:
 class ExecutionAdapter(Protocol):
     """Adapter contract for consuming Verigate execution capabilities.
 
-    Adapters must own one-time nonce consumption inside ``execute`` or
-    ``execute_bound``. The router calls only these self-consuming methods;
-    post-consumption implementation hooks remain private to each adapter.
+    ExecutionRouter owns persistent one-time nonce consumption. It then issues
+    an unforgeable-by-public-constructor, one-shot ExecutionPermit. Adapters
+    must claim that permit before any post-consumption side effect.
 
     ``execution_external_state_scope`` is required to opt into policy-bound
     external-state execution. ``atomic`` means the adapter contract claims the
@@ -66,6 +66,14 @@ class ExecutionAdapter(Protocol):
     def execute(
         self,
         authorization: dict[str, Any],
+        side_effect: Callable[[dict[str, Any]], Any],
+    ) -> Any:
+        ...
+
+    def execute_bound(
+        self,
+        authorization: dict[str, Any],
+        external_state: dict[str, Any],
         side_effect: Callable[[dict[str, Any]], Any],
     ) -> Any:
         ...
