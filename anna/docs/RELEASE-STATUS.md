@@ -16,6 +16,13 @@
 - No Marketplace release or review submission was performed. No wallet transaction was made.
 - Local identity and generated tool map were restored to the first profile after the second-profile upload. First-profile App ID 382 and its original tool ID were not intentionally modified.
 
+## 13 November 2026 manifest parity follow-up
+
+- CI run 43381054466 on diagnostic commit 49702682bc95ca07718e6e10cbe65c8db06f2617 exposed the exact remaining mismatch: `tools[2].description` in the published JSON manifest omitted the rolling 24-hour active-reservation explanation present in runtime `MANIFEST`.
+- Updated `anna/executas/verigate-authority/manifest.json` to match the runtime description in commit 3f0576d573ae35d3c261305302b67993900c7357.
+- The equality regression test remains strict and now reports precise JSON paths for future drift.
+- CI run 43381188517 is running on commit 3f0576d573ae35d3c261305302b67993900c7357. Do not mark the release gate green until every job completes successfully.
+
 ## Current blockers
 
 - CI run 43376065204 on source commit e1bcfe3 failed 1 of 664 tests: the checked-in Executa manifest icon was corrupted by UTF-8 mojibake and did not match the runtime describe manifest. The manifest was corrected in commit 25d6b06f680a6d0512610d9621f3e67a1bb56530. Do not report CI green until a successful run on the corrected head is observed.
