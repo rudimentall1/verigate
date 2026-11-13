@@ -115,7 +115,10 @@ function fixture({
         },
       };
     } else if (url.endsWith("/registration/confirm")) {
-      payload = { registered: true, consume_transaction: responseData.consumeTx };
+      payload = {
+        registered: body.registration_tx_hash === HASH("1"),
+        consume_transaction: responseData.consumeTx,
+      };
     } else if (url.endsWith("/consume/confirm")) {
       payload = {
         execute: true, wallet_transaction: responseData.paymentTx,
@@ -435,4 +438,27 @@ test("issuer registration phase cannot run without an issuer socket client", asy
     agentAddress: AGENT,
     fetchImpl: f.fetchImpl,
   }), /issuer signer client must expose register/);
+});
+
+
+test("agent phase rejects a tampered issuer registration hash before consume", async () => {
+  const f = fixture();
+  const agentCalls = [];
+  await assert.rejects(executeRegisteredArcPaymentWithAgentSignerClient({
+    agentSignerClient: {
+      async consume() { agentCalls.push("consume"); return { result: { txHash: HASH("2") } }; },
+      async payment() { agentCalls.push("payment"); return { result: { txHash: HASH("3") } }; },
+    },
+    apiBaseUrl: "https://verigate.example/",
+    authorization: f.calls.authorization ?? fixture().authorization,
+    registration_tx_hash: HASH("9"),
+    verigatePublicKey: f.verigatePublicKey,
+    registryAddress: REGISTRY,
+    issuerAddress: ISSUER,
+    agentAddress: AGENT,
+    fetchImpl: f.fetchImpl,
+  }), /operator registration is not confirmed/);
+  assert.deepEqual(agentCalls, []);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].body.registration_tx_hash, HASH("9"));
 });
