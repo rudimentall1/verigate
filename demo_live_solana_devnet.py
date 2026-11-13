@@ -21,7 +21,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.authorization import AuthorizationService
-from core.models import ActionIntent, Decision, GuardrailDecision
+from core.authority_state import DynamicAuthorityService
+from core.engine import GuardrailEngine
+from core.models import ActionIntent, Capability, Decision
+from core.policy import Policy
 from core.storage import Storage
 from enforcement.monitor import ExecutionMonitor
 from enforcement.networks import NetworkRegistry
@@ -226,6 +229,16 @@ def main() -> None:
             TRANSFER_LAMPORTS,
         )
 
+        issuer_key = load_private_key(issuer_private)
+        policy = Policy(
+            allowed_action_types=["native.transfer"],
+            allowed_networks=["solana"],
+            allowed_assets=["SOL"],
+            per_tx_cap={"SOL": 0.01},
+        )
+        storage = Storage(audit_db)
+        engine = GuardrailEngine(policy, storage, policy_source_ref="verigate:solana-devnet-demo")
+
         intent = ActionIntent(
             agent_id="verigate-live-solana",
             action_type="native.transfer",
@@ -240,33 +253,88 @@ def main() -> None:
                 "destination": recipient_address,
             },
         )
-        decision = GuardrailDecision(
-            intent_id=intent.intent_id,
-            agent_id=intent.agent_id,
-            decision=Decision.ALLOW,
-            matched_rules=(),
-        )
+        decision = engine.evaluate_action(intent)
+        if decision.decision != Decision.ALLOW:
+            raise RuntimeError(f"Expected policy ALLOW for the small transfer: {decision}")
 
-        auth = AuthorizationService().issue(
+        capability = Capability(
+            capability_id="solana-devnet-demo-capability",
+            agent_id=intent.agent_id,
+            allowed_actions=("native.transfer",),
+            allowed_targets=(recipient_address,),
+            allowed_networks=("solana",),
+            allowed_assets=("SOL",),
+        )
+        storage.register_capability(capability)
+        authority = DynamicAuthorityService(storage).snapshot(
+            intent.agent_id, capability.capability_id
+        )
+        artifacts = AuthorizationService().issue(
             intent,
             decision,
-            "live-solana-devnet-policy",
-            load_private_key(issuer_private),
+            policy.digest,
+            issuer_key,
             nonce=intent.intent_id,
-        )["execution_authorization"]
+            capability=capability,
+            authority=authority,
+            policy=policy,
+            signed_policy=engine.signed_policy_version(issuer_key),
+        )
+        engine._persist_authorization(artifacts, intent.intent_id)
+        auth = artifacts["execution_authorization"]
 
-        storage = Storage(audit_db)
+        # A second, validly signed but over-limit transaction is evaluated
+        # independently. BLOCK must produce no execution authorization and
+        # therefore cannot reach the broadcaster.
+        blocked_lamports = 20_000_000
+        blocked_tx = sign_system_transfer(
+            sender,
+            raw_public_key(recipient),
+            latest["blockhash"],
+            blocked_lamports,
+        )
+        blocked_intent = ActionIntent(
+            agent_id="verigate-live-solana",
+            action_type="native.transfer",
+            target=recipient_address,
+            amount=blocked_lamports / LAMPORTS_PER_SOL,
+            asset="SOL",
+            network="solana",
+            metadata={
+                "solana_transaction": blocked_tx,
+                "network_environment": "devnet",
+                "solana_sender": sender_address,
+                "destination": recipient_address,
+            },
+        )
+        blocked_decision = engine.evaluate_action(blocked_intent)
+        blocked_artifacts = AuthorizationService().issue(
+            blocked_intent,
+            blocked_decision,
+            policy.digest,
+            issuer_key,
+            nonce=blocked_intent.intent_id,
+            policy=policy,
+            signed_policy=engine.signed_policy_version(issuer_key),
+        )
+        engine._persist_authorization(blocked_artifacts, blocked_intent.intent_id)
+        blocked_broadcasts = []
+        if blocked_artifacts["execution_authorization"] is not None:
+            raise RuntimeError("BLOCK unexpectedly minted executable authorization")
+        print()
+        print("2) Verigate Policy Engine")
+        print("Small transfer:", decision.decision.value)
+        print("Oversized transfer:", blocked_decision.decision.value)
+        print("Oversized rule:", ", ".join(match.rule_id for match in blocked_decision.matched_rules))
+        print("Oversized transfer execution authorization: NONE")
+        print("Oversized transfer broadcasts:", len(blocked_broadcasts))
+
         router = ExecutionRouter(
             NetworkRegistry(),
             storage,
             load_public_key(issuer_public),
-            load_private_key(issuer_private),
+            issuer_key,
         )
-
-        print()
-        print("2) Verigate authorization")
-        print("Decision: ALLOW")
-        print("Execution authorization:", "ISSUED")
 
         try:
             print()
