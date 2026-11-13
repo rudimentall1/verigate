@@ -781,3 +781,33 @@ This section updates the deployment architecture described in section 25. The pr
 
 - Wait for the remaining Anna UI job in run #43228511154 and capture the final 4/4 result.
 - Then review the role-to-systemd-user configuration and target host account mapping in a separately approved read-only inventory. Do not install or start signers on Gensyn2 at this stage.
+
+
+## 27. Cross-role Unix socket ACL regression — 2026-11-13
+
+### Finding
+
+The full systemd mock-RPC test already created distinct service users and client users, and verified each client could use its own role socket. It did not explicitly assert the inverse boundary: issuer client must not connect to agent socket, and agent client must not connect to issuer socket. The service unit and runtime-directory permissions were designed to enforce this, but the exact cross-role denial was not directly tested.
+
+### Change
+
+- Updated `tests/arc-signer-full-flow-systemd-smoke.sh` so `assert_denied` accepts an explicit caller identity.
+- The test now checks:
+  - unrelated user denied from issuer socket;
+  - unrelated user denied from agent socket;
+  - issuer client denied from agent socket;
+  - agent client denied from issuer socket.
+- Existing positive checks remain: issuer client uses issuer socket; agent client uses agent socket.
+- The test continues to run the actual two signer daemons under separate systemd users against local HTTPS mock RPC. It performs only synthetic local broadcasts, never a public Arc transaction.
+
+### CI status
+
+- Change commit: `6c54460e627b4c3b40a60fc187528e57aff2edbc`.
+- CI run [#43364690275](https://github.com/rudimentall1/verigate/actions/runs/43364690275) was **in progress** when this checkpoint was written. Do not claim the new cross-role ACL assertions passed until the `contracts` job completes successfully.
+- PR #58 remains Draft/Open, stacked on PR #57. No merge, Gensyn2 access, production key provisioning or live signer broadcast.
+
+### Next
+
+1. Inspect run #43364690275, especially the full-flow systemd test. If cross-role denial fails, fix the group/directory ACL model rather than weakening the test.
+2. If CI passes 4/4, update PR #58 evidence and this checkpoint with the exact successful run.
+3. Continue adversarial review of handoff integrity, duplicate authorization, concurrent signer requests and ambiguous RPC outcomes. Do not install on Gensyn2 until code review is complete and a separate read-only inventory is explicitly approved.
