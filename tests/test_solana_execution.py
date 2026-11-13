@@ -12,6 +12,8 @@ from enforcement.solana import SolanaExecutionAdapter
 from core.storage import Storage
 from solana_fixtures import make_signed_transfer
 
+DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+
 
 class SolanaExecutionAdapterTest(unittest.TestCase):
     def test_exact_serialized_transaction_is_broadcast_once(self):
@@ -29,7 +31,7 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
                     amount=0.001,
                     asset="SOL",
                     network="solana",
-                    metadata={"solana_transaction": raw, "solana_sender": sender_address, "destination": recipient_address},
+                    metadata={"solana_transaction": raw, "solana_sender": sender_address, "destination": recipient_address, "solana_genesis_hash": DEVNET_GENESIS_HASH},
                 )
                 decision = GuardrailDecision(
                     intent_id=intent.intent_id,
@@ -59,7 +61,7 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
                     authority=authority,
                     policy=Policy(),
                 )
-                adapter = SolanaExecutionAdapter(storage, load_public_key(public))
+                adapter = SolanaExecutionAdapter(storage, load_public_key(public), lambda: DEVNET_GENESIS_HASH)
                 sent = []
                 result = adapter.execute(artifacts["execution_authorization"], lambda tx: sent.append(tx) or "sig")
                 self.assertEqual(result, "sig")
