@@ -7,6 +7,7 @@ the request to Valta. This module does not create wallets or move funds.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -171,6 +172,7 @@ class ValtaProxyExecutionAdapter:
         self.client = client
 
     def validate(self, authorization: dict[str, Any]) -> tuple[bool, str]:
+        authorization = copy.deepcopy(authorization)
         try:
             payload = authorization["payload"]
             action = payload["action"]
@@ -207,7 +209,9 @@ class ValtaProxyExecutionAdapter:
         *,
         permit: ExecutionPermit,
     ) -> Any:
+        # Snapshot before permit claim, matching the other execution adapters.
         # A direct call without a router-issued, one-shot permit is rejected.
+        authorization = copy.deepcopy(authorization)
         permit.claim(authorization)
         return self.client.chat_completions(self.request_body, self.run_id)
 
