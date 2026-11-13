@@ -25,7 +25,7 @@ from core.policy import Policy
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
-from enforcement.tool import ToolExecutionAdapter
+from enforcement.tool import ToolExecutionAdapter, build_tool_execution_graph
 
 
 def _governance_approval(action, private_key):
@@ -108,11 +108,15 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         engine = GuardrailEngine(
             Policy.load(policy_path), self.storage, policy_source_ref=policy_source_ref or str(policy_path)
         )
+        handler = lambda _action: {"order_id": "order-1", "status": "created"}
         action = ActionIntent(
             agent_id=identity.agent_id,
             action_type="mcp.tool.call",
             target="orders.create",
-            metadata={"arguments": {"sku": "VERIGATE", "quantity": 1}},
+            metadata={
+                "arguments": {"sku": "VERIGATE", "quantity": 1},
+                "execution_graph": build_tool_execution_graph("orders.create", handler),
+            },
         )
         artifacts = engine.authorize_action(
             action,
@@ -127,8 +131,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertEqual(genesis_binding["intent_graph_node_id"], action.intent_id)
         self.assertTrue(genesis_binding["authority_assessment_digest"])
         adapter = ToolExecutionAdapter(
-            self.storage, self.public_key,
-            {"orders.create": lambda _action: {"order_id": "order-1", "status": "created"}},
+            self.storage, self.public_key, {"orders.create": handler},
         )
         router = ExecutionRouter(
             NetworkRegistry(), self.storage, self.public_key, self.private_key,
