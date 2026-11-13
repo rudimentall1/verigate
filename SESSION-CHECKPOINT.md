@@ -1134,3 +1134,30 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 - Fix commit: `c01de5ad178aec4c8663c92b066e24c58ea2d07e`.
 - CI for this exact commit is pending; do not claim the flake is resolved until the new run passes. The previous same-commit rerun on `9ead902` passed, but the isolated-harness change still needs its own CI evidence.
 - No production application/plugin behavior, signer service, Arc contracts, keys, or live transactions changed.
+
+## 39. Arc signer CI follow-up and explicit Anna test-state isolation — 2026-11-13
+
+### CI diagnosis
+
+- CI runs [#43382241358](https://github.com/rudimentall1/verigate/actions/runs/43382241358) and [#43382257036](https://github.com/rudimentall1/verigate/actions/runs/43382257036) on the preceding test-harness fix completed `contracts`, `test`, and `container` successfully, but `anna-ui` failed 62/64.
+- The two remaining failures were not Arc signer failures:
+  - Dynamic authority test seeded an authorization in a plugin data directory that was not shared with the UI launch.
+  - Authorization-history test intentionally expected policy history across two UI sessions, but the new default per-launch isolation correctly prevented cross-session leakage.
+- Updated `scripts/test_anna_ui.mjs` so `callPlugin()` receives a per-test data directory explicitly; `launch()` remains isolated by default, while the dynamic-authority and authorization-history tests explicitly share a temporary data directory and app-storage map within their own test boundary.
+- Fix commit: `be7cbace8d126473e051ed487f7a53724eaaaaeb`.
+
+### Latest CI on the fix
+
+- Push run [#43383506254](https://github.com/rudimentall1/verigate/actions/runs/43383506254) is running on `be7cbace8d126473e051ed487f7a53724eaaaaeb`.
+- At checkpoint update: `container`, `test`, and `contracts` jobs completed successfully; the `anna-ui` E2E step is still running. Do not claim 4/4 until it completes.
+- The contracts job includes Arc wallet client, headless executor, constrained signer, systemd runtime, daemon mock-RPC, two-role issuer-agent flow, historical fee sampler, Registry compile/access-control and production-only signer install/import checks. All completed successfully in this run.
+- The historical Arc fee sampler's CI step is configured as best-effort because the external Arcscan endpoint intermittently returned HTTP 530. Its result remains visible as a warning/failure and is not treated as fee evidence or a signer test PASS.
+
+### Current branch and release boundaries
+
+- PR #58 head: `be7cbace8d126473e051ed487f7a53724eaaaaeb`; Draft/Open, stacked on PR #57.
+- PR #57 and PR #58 remain unmerged.
+- Existing Arc Registry remains deployed; no redeployment is needed.
+- No production signer keys, target-host install/start, Gensyn2 access, or live signer payment broadcast.
+- No production payment fee ceiling or daily budget approved; still requires a representative live Verigate-controlled Arc USDC payment receipt.
+- Do not touch FLOP, AegisForge, OWNERA, or unrelated services.
