@@ -1123,3 +1123,14 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 - Target-host account/group/process inventory and service installation remain unperformed. Gensyn2 access still requires separate explicit approval.
 - PR #58 remains Draft/Open and stacked on PR #57. Neither PR is merged; do not merge or change Draft state without explicit approval.
 - No live transaction, key provisioning, Gensyn2 access, or unrelated service changes were performed.
+
+
+## 38. Anna UI E2E test isolation — 2026-11-13
+
+- Investigated the one-off Anna UI E2E failure on commit `9ead9024a1643723eec4b215dda157cecea3b5e9`: 63/64 tests passed; the lost-consume-response scenario failed because a Decision Receipt signature did not match its canonical payload.
+- A rerun of the same commit passed 4/4, indicating test nondeterminism rather than a reproducible signer failure.
+- Root cause candidate found in the test harness: every independent UI scenario launched its own plugin subprocess but all scenarios shared one temporary `VERIGATE_ANNA_DATA_DIR`, including the same issuer key and SQLite database. That allowed state from unrelated UI scenarios to leak into later scenarios.
+- Changed `scripts/test_anna_ui.mjs` so each `launch()` scenario gets a unique temporary data directory. Plugin subprocesses belonging to the same UI scenario still share that directory, preserving intended per-scenario persistence and consume/replay behavior.
+- Fix commit: `c01de5ad178aec4c8663c92b066e24c58ea2d07e`.
+- CI for this exact commit is pending; do not claim the flake is resolved until the new run passes. The previous same-commit rerun on `9ead902` passed, but the isolated-harness change still needs its own CI evidence.
+- No production application/plugin behavior, signer service, Arc contracts, keys, or live transactions changed.
