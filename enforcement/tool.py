@@ -102,6 +102,8 @@ class ToolExecutionAdapter(ExecutionGate):
         graph = metadata.get("execution_graph") if isinstance(metadata, dict) else None
         if not isinstance(graph, dict):
             return False, "signed execution graph with handler fingerprint is required"
+        if graph.get("enforcement_scope", "direct") == "transitive":
+            return False, "transitive enforcement is not supported by the direct-only tool adapter"
         try:
             expected_graph = build_tool_execution_graph(tool, handler)
         except (TypeError, ValueError) as exc:
