@@ -9,6 +9,7 @@ from core.storage import Storage
 from enforcement.local import ExecutionGate
 from enforcement.protocol import ExecutionAdapter
 from enforcement.solana_transaction import parse_authorized_native_transfer
+from enforcement.protocol import ExecutionPermit, _issue_execution_permit
 
 
 class SolanaExecutionAdapter(ExecutionAdapter):
@@ -72,6 +73,16 @@ class SolanaExecutionAdapter(ExecutionAdapter):
         self._validate_cluster(action)
         tx = self._transaction(action)
         return broadcaster(tx)
+
+    def execute_after_consume(
+        self,
+        authorization: dict[str, Any],
+        broadcaster: Callable[[dict[str, Any]], Any],
+        *,
+        permit: ExecutionPermit,
+    ) -> Any:
+        permit.claim(authorization)
+        return self.execute_after_consume(authorization, broadcaster, permit=_issue_execution_permit(authorization))
 
     def execute(
         self,
