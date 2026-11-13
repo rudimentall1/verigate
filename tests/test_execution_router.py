@@ -66,6 +66,39 @@ class ExecutionRouterTest(unittest.TestCase):
             policy=Policy(),
         )
 
+    def test_concrete_solana_transaction_cannot_be_overridden_by_generic_adapter(self):
+        raw, sender_address, recipient_address = make_signed_transfer()
+        intent = ActionIntent(
+            agent_id="router-agent", action_type="native.transfer", target=recipient_address,
+            amount=0.001, asset="SOL", network="solana",
+            metadata={
+                "solana_transaction": raw,
+                "solana_sender": sender_address,
+                "destination": recipient_address,
+                "solana_genesis_hash": DEVNET_GENESIS_HASH,
+            },
+        )
+        auth = self._authorization(intent)["execution_authorization"]
+
+        class PermissiveGenericAdapter:
+            def validate(self, authorization):
+                return True, "accepted"
+
+            def execute_after_consume(self, authorization, broadcaster):
+                return broadcaster({"bypassed_chain_validation": True})
+
+        generic = PermissiveGenericAdapter()
+        router = ExecutionRouter(
+            NetworkRegistry(),
+            self.storage,
+            load_public_key(self.public),
+            generic_adapters={"native.transfer": generic},
+        )
+        sent = []
+        with self.assertRaisesRegex(ValueError, "genesis hash provider"):
+            router.execute(auth, lambda tx: sent.append(tx) or "unexpected")
+        self.assertEqual(sent, [])
+
     def test_routes_base_to_evm_adapter(self):
         intent = ActionIntent(
             agent_id="router-agent", action_type="token.transfer", target="merchant",
