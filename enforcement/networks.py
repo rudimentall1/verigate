@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from core.storage import Storage
 from enforcement.evm import EVMExecutionAdapter
@@ -35,7 +35,13 @@ DEFAULT_NETWORKS: tuple[NetworkDescriptor, ...] = (
 
 class NetworkRegistry:
     """Resolve networks and select the matching execution adapter."""
-    def __init__(self, networks: tuple[NetworkDescriptor, ...] = DEFAULT_NETWORKS):
+    def __init__(
+        self,
+        networks: tuple[NetworkDescriptor, ...] = DEFAULT_NETWORKS,
+        *,
+        solana_genesis_hash_provider: Callable[[], str] | None = None,
+    ):
+        self.solana_genesis_hash_provider = solana_genesis_hash_provider
         self._by_name: dict[str, NetworkDescriptor] = {}
         self._by_chain_id: dict[int, NetworkDescriptor] = {}
         for network in networks:
@@ -73,7 +79,7 @@ class NetworkRegistry:
         if descriptor.family == "evm":
             return EVMExecutionAdapter(storage, public_key)
         if descriptor.family == "solana":
-            return SolanaExecutionAdapter(storage, public_key)
+            return SolanaExecutionAdapter(storage, public_key, self.solana_genesis_hash_provider)
         raise UnsupportedNetworkError(f"no execution adapter for {descriptor.name} ({descriptor.family})")
 
     def evm_adapter(self, chain_id: int, storage: Storage, public_key: Ed25519PublicKey) -> EVMExecutionAdapter:
