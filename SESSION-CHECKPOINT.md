@@ -811,3 +811,20 @@ The full systemd mock-RPC test already created distinct service users and client
 1. Inspect run #43364690275, especially the full-flow systemd test. If cross-role denial fails, fix the group/directory ACL model rather than weakening the test.
 2. If CI passes 4/4, update PR #58 evidence and this checkpoint with the exact successful run.
 3. Continue adversarial review of handoff integrity, duplicate authorization, concurrent signer requests and ambiguous RPC outcomes. Do not install on Gensyn2 until code review is complete and a separate read-only inventory is explicitly approved.
+
+
+## 28. CI regression found while adding cross-role ACL checks — 2026-11-13
+
+### CI failure diagnosis
+
+- Run [#43364690275](https://github.com/rudimentall1/verigate/actions/runs/43364690275) failed in the existing `journal enforces cumulative daily native-token budget` unit test before the new systemd cross-role ACL smoke test ran.
+- Root cause was a brittle test clock, not a budget implementation regression: the test reserved against hard-coded UTC date 2026-11-12, while `OperationJournal.complete()` stamped settlement using the real current date (2026-11-13). The completed reservation therefore correctly fell outside the test's artificial day, and the test's expected budget exception did not occur.
+- Fixed determinism by allowing `OperationJournal.complete(..., authorizationKey, now)` to accept an optional timestamp (production default remains `Date.now()`), and changed the budget test to complete against its injected test day.
+- This does not alter production settlement accounting: completed operations continue to count against their actual settlement UTC day. Unresolved reservations remain charged against new-day budgets until reconciled.
+
+### Current code commits
+
+- Cross-role ACL assertions: `6c54460e627b4c3b40a60fc187528e57aff2edbc`.
+- Deterministic journal settlement timestamp: `200f71c001b035aee1472b9c6893477810924be4`.
+- Deterministic budget test: `a571fcf1a399b0bf925e91917eb361e308c91dbd`.
+- A fresh CI run for the latest head is required. Do not treat failed run #43364690275 as validation of the new cross-role assertions.
