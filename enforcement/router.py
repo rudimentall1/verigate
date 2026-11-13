@@ -238,6 +238,9 @@ class ExecutionRouter:
         return True, "execution authorization consumed"
 
     def consume(self, authorization: dict[str, Any], *, verification_time: int | None = None) -> tuple[bool, str]:
+        # Snapshot caller-owned data before verification so nonce consumption
+        # cannot be redirected by a concurrent mutation after signature check.
+        authorization = copy.deepcopy(authorization)
         try:
             # The router owns the one-time execution capability. Adapters may
             # validate their own execution prerequisites but cannot forge nonce
