@@ -11,7 +11,7 @@ from core.policy import Policy
 from enforcement.http import HTTPExecutionAdapter
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
-from enforcement.tool import ToolExecutionAdapter, _handler_fingerprint
+from enforcement.tool import ToolExecutionAdapter, _handler_fingerprint, build_tool_execution_graph
 
 
 class ExecutionFabricTest(unittest.TestCase):
@@ -57,19 +57,21 @@ class ExecutionFabricTest(unittest.TestCase):
         )["execution_authorization"]
 
     def test_tool_execution_uses_signed_action_arguments(self):
+        calls = []
+        handler = lambda signed_action: calls.append(signed_action) or "ok"
         action = ActionIntent(
             agent_id="tool-agent",
             action_type="mcp.tool.call",
             target="github.create_issue",
             resource="repo:verigate",
-            metadata={"arguments": {"title": "signed-title"}},
+            metadata={
+                "arguments": {"title": "signed-title"},
+                "execution_graph": build_tool_execution_graph("github.create_issue", handler),
+            },
         )
         auth = self._auth(action)
-        calls = []
         adapter = ToolExecutionAdapter(
-            self.storage,
-            self.public_key,
-            {"github.create_issue": lambda signed_action: calls.append(signed_action) or "ok"},
+            self.storage, self.public_key, {"github.create_issue": handler},
         )
         self.assertEqual(adapter.execute_registered(auth), "ok")
         self.assertEqual(calls[0]["metadata"]["arguments"]["title"], "signed-title")
@@ -106,6 +108,7 @@ class ExecutionFabricTest(unittest.TestCase):
                     "hook": "ToolExecutionAdapter",
                     "router": "ExecutionRouter",
                     "target": target,
+                    "enforcement_scope": "direct",
                     "handler_sha256": _handler_fingerprint(trusted_handler),
                 },
             },
@@ -145,6 +148,7 @@ class ExecutionFabricTest(unittest.TestCase):
                     "hook": "ToolExecutionAdapter",
                     "router": "ExecutionRouter",
                     "target": target,
+                    "enforcement_scope": "direct",
                     "handler_sha256": _handler_fingerprint(trusted_handler),
                 },
             },
@@ -226,6 +230,7 @@ class ExecutionFabricTest(unittest.TestCase):
                     "router": "ExecutionRouter",
                     "target": target,
                     "enforcement_scope": "direct",
+                    "handler_sha256": _handler_fingerprint(lambda _signed_action: "registered"),
                 },
             },
         )
@@ -265,18 +270,20 @@ class ExecutionFabricTest(unittest.TestCase):
         self.assertEqual(requests[0]["body"], {"name": "signed"})
 
     def test_router_dispatches_generic_tool_action_to_fabric(self):
+        calls = []
+        handler = lambda _signed_action: "registered"
         action = ActionIntent(
             agent_id="router-agent",
             action_type="mcp.tool.call",
             target="github.create_issue",
-            metadata={"arguments": {"title": "via-router"}},
+            metadata={
+                "arguments": {"title": "via-router"},
+                "execution_graph": build_tool_execution_graph("github.create_issue", handler),
+            },
         )
         auth = self._auth(action)
-        calls = []
         adapter = ToolExecutionAdapter(
-            self.storage,
-            self.public_key,
-            {"github.create_issue": lambda _signed_action: "registered"},
+            self.storage, self.public_key, {"github.create_issue": handler},
         )
         router = ExecutionRouter(
             NetworkRegistry(),
