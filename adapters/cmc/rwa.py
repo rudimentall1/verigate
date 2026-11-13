@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 import json
+import math
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +115,40 @@ class RwaPurchaseEvaluator:
     ) -> GuardrailDecision:
         matches: list[RuleMatch] = []
 
+        # The quote and amount are evidence inputs, not caller-controlled
+        # parameters that may disagree with the signed action being evaluated.
+        metadata = action.metadata or {}
+        try:
+            action_amount_matches = (
+                Decimal(str(action.amount)) == Decimal(str(purchase_usd))
+            )
+        except (InvalidOperation, TypeError, ValueError):
+            action_amount_matches = False
+        if (
+            action.action_type != "rwa.purchase"
+            or action.target != quote.symbol
+            or action.resource != f"cmc:rwa:{quote.rwa_id}"
+            or action.asset != "USD"
+            or not action_amount_matches
+            or metadata.get("source") != "coinmarketcap.rwa.v5"
+            or metadata.get("rwa_id") != quote.rwa_id
+            or metadata.get("asset_type") != quote.asset_type
+        ):
+            matches.append(
+                RuleMatch(
+                    "rwa_action_quote_mismatch",
+                    Severity.BLOCK,
+                    "signed action does not match the supplied RWA quote and purchase amount",
+                )
+            )
+
+        try:
+            purchase_value = float(purchase_usd)
+            purchase_is_finite = math.isfinite(purchase_value)
+        except (TypeError, ValueError, OverflowError):
+            purchase_value = 0.0
+            purchase_is_finite = False
+
         if quote.asset_type not in {item.lower() for item in self.policy.allowed_asset_types}:
             matches.append(
                 RuleMatch(
@@ -149,16 +185,16 @@ class RwaPurchaseEvaluator:
                 )
             )
 
-        if purchase_usd <= 0:
+        if not purchase_is_finite or purchase_value <= 0:
             matches.append(
-                RuleMatch("rwa_invalid_purchase_amount", Severity.BLOCK, "purchase amount must be positive")
+                RuleMatch("rwa_invalid_purchase_amount", Severity.BLOCK, "purchase amount must be a finite positive number")
             )
-        elif purchase_usd > self.policy.max_purchase_usd:
+        elif purchase_value > self.policy.max_purchase_usd:
             matches.append(
                 RuleMatch(
                     "rwa_purchase_cap_exceeded",
                     Severity.BLOCK,
-                    f"purchase {purchase_usd:.2f} USD exceeds cap {self.policy.max_purchase_usd:.2f} USD",
+                    f"purchase {purchase_value:.2f} USD exceeds cap {self.policy.max_purchase_usd:.2f} USD",
                 )
             )
 
@@ -170,7 +206,7 @@ class RwaPurchaseEvaluator:
                     "CMC returned no positive tokenized 24h volume",
                 )
             )
-        elif purchase_usd / quote.tokenized_volume_24h > self.policy.max_volume_fraction:
+        elif purchase_value / quote.tokenized_volume_24h > self.policy.max_volume_fraction:
             matches.append(
                 RuleMatch(
                     "rwa_volume_fraction_high",
@@ -180,7 +216,7 @@ class RwaPurchaseEvaluator:
             )
 
         if quote.tokenized_market_cap and quote.tokenized_market_cap > 0:
-            if purchase_usd / quote.tokenized_market_cap > self.policy.max_market_cap_fraction:
+            if purchase_value / quote.tokenized_market_cap > self.policy.max_market_cap_fraction:
                 matches.append(
                     RuleMatch(
                         "rwa_market_cap_fraction_high",
