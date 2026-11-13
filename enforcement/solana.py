@@ -12,8 +12,29 @@ from enforcement.solana_transaction import parse_authorized_native_transfer
 
 
 class SolanaExecutionAdapter(ExecutionAdapter):
-    def __init__(self, storage: Storage, public_key: Ed25519PublicKey):
+    def __init__(
+        self,
+        storage: Storage,
+        public_key: Ed25519PublicKey,
+        genesis_hash_provider: Callable[[], str] | None = None,
+    ):
         self.gate = ExecutionGate(storage, public_key)
+        self.genesis_hash_provider = genesis_hash_provider
+
+    def _validate_cluster(self, action: dict[str, Any]) -> None:
+        metadata = action.get("metadata")
+        expected = metadata.get("solana_genesis_hash") if isinstance(metadata, dict) else None
+        if not isinstance(expected, str) or not expected:
+            raise ValueError("signed Solana genesis hash is required")
+        if self.genesis_hash_provider is None:
+            raise ValueError("live Solana genesis hash provider is required")
+        actual = self.genesis_hash_provider()
+        if not isinstance(actual, str) or not actual:
+            raise ValueError("Solana RPC returned an invalid genesis hash")
+        if actual != expected:
+            raise ValueError(
+                f"Solana genesis hash mismatch: authorized={expected} actual={actual}"
+            )
 
     @staticmethod
     def _transaction(action: dict[str, Any]) -> dict[str, Any]:
@@ -29,8 +50,10 @@ class SolanaExecutionAdapter(ExecutionAdapter):
 
     def validate(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         try:
-            self._transaction(authorization["payload"]["action"])
-        except (KeyError, TypeError, ValueError) as exc:
+            action = authorization["payload"]["action"]
+            self._validate_cluster(action)
+            self._transaction(action)
+        except (KeyError, TypeError, ValueError, RuntimeError) as exc:
             return False, str(exc)
         return self.gate.validate(authorization)
 
@@ -46,6 +69,7 @@ class SolanaExecutionAdapter(ExecutionAdapter):
         broadcaster: Callable[[dict[str, Any]], Any],
     ) -> Any:
         action = authorization["payload"]["action"]
+        self._validate_cluster(action)
         tx = self._transaction(action)
         return broadcaster(tx)
 
@@ -54,8 +78,10 @@ class SolanaExecutionAdapter(ExecutionAdapter):
         authorization: dict[str, Any],
         broadcaster: Callable[[dict[str, Any]], Any],
     ) -> Any:
-        # Validate transaction semantics before consuming the one-time grant.
+        # Validate cluster and transaction semantics before consuming the
+        # one-time grant. Recheck the cluster immediately before broadcasting.
         action = authorization["payload"]["action"]
+        self._validate_cluster(action)
         self._transaction(action)
         ok, reason = self.gate.consume(authorization)
         if not ok:
