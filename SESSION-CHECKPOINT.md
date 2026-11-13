@@ -1060,3 +1060,32 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 - PR #58 stays Draft/Open; do not merge PR #57 or #58 without explicit approval.
 - No Gensyn2 access or changes; no production keys, signer install/start, or live signer transaction.
 - FLOP, AegisForge, OWNERA and unrelated services remain untouched.
+
+
+## 36. Fee sampler hardening verified; npm audit exposure identified — 2026-11-13
+
+### CI result on latest PR head
+
+- PR head: `b63e7d8cfd92270e2b929ac52495d7dcce21442b`.
+- CI run [#43373136405](https://github.com/rudimentall1/verigate/actions/runs/43373136405) completed **4/4 PASS**: `contracts`, `test`, `container`, `anna-ui`.
+- The contracts job checked out PR merge commit `5ab5493462dad90a2cfbb73962366a1a94757bf9`, which merges PR head `b63e7d8...` into base `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`.
+- Hardened historical fee sampler passed against Arc Mainnet read-only RPC with sender, chain ID, zero native value, destination, selector, receipt sender/destination, transaction hash and inclusion block/hash binding checks.
+- Systemd runtime, signer daemon mock-RPC and two-role full mock-RPC flow passed. These remain local/mock execution evidence; they do not constitute a live signer payment.
+- Production-only install/import check passed: `npm ci --omit=dev --ignore-scripts` and import of the ethers signer adapter.
+
+### npm audit diagnostics (same CI run)
+
+- Full dependency tree: 36 findings (1 low, 5 moderate, 25 high, 5 critical).
+- Production dependency tree: 27 findings (1 low, 5 moderate, 17 high, 4 critical).
+- All 27 production-tree vulnerable package entries were reported as transitive (`isDirect: false`); npm reported a fix available for each entry. This does not establish exploitability or runtime reachability; dependency paths and actual installed versions still need to be mapped.
+- Production-tree critical packages: `cipher-base`, `pbkdf2`, `sha.js`, `webpack`.
+- Production-tree high-severity entries include `@microsoft/api-extractor`, `@microsoft/api-extractor-model`, `@rushstack/node-core-library`, `brace-expansion`, `braces`, `browserify-sign`, `browserslist`, `cross-spawn`, `js-yaml`, `json5`, `minimatch`, `mocha`, `nanoid`, `picomatch`, `serialize-javascript`, `validator`.
+- Production-tree moderate entries include `@microsoft/tsdoc-config`, `ajv`, `bn.js`, `micromatch`, `terser-webpack-plugin`; low: `diff`.
+- Do not assume all entries are runtime-reachable merely because `npm audit --omit=dev` includes them. Next step is trace each critical/high package to its parent chain and classify runtime vs build/test-only. No dependency upgrades have been applied; no `npm audit fix --force`.
+
+### Current state and safety
+
+- PR #58 remains Draft/Open, stacked on PR #57. No merge or draft-state change.
+- No Verigate-controlled live Arc USDC payment receipt exists. Production payment fee ceilings and budgets remain unapproved.
+- No production keys, Gensyn2 access, service installation/start or live signer broadcast.
+- FLOP, AegisForge, OWNERA and unrelated services remain untouched.
