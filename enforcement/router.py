@@ -94,14 +94,20 @@ class ExecutionRouter:
     def _adapter(self, authorization: dict[str, Any]) -> ExecutionAdapter:
         action = self._action(authorization)
         action_type = action.get("action_type")
-        generic = self.generic_adapters.get(action_type)
-        if generic is not None:
-            return generic
+        family, _ = self._execution_artifact(action)
+
+        # A concrete signed wire transaction must always select its chain
+        # family adapter. Generic action-type adapters are only for abstract
+        # actions without a transaction artifact; otherwise they could bypass
+        # chain-specific signature, destination, amount and network checks.
+        if family is None:
+            generic = self.generic_adapters.get(action_type)
+            if generic is not None:
+                return generic
+
         network = action.get("network")
         if not isinstance(network, str) or not network.strip():
             raise UnsupportedNetworkError("authorized action has no network")
-
-        family, _ = self._execution_artifact(action)
 
         try:
             descriptor = self.registry.resolve(network)
