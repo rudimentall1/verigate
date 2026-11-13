@@ -71,10 +71,20 @@ class ExecutionRouter:
         metadata = action.get("metadata")
         if not isinstance(metadata, dict):
             return None, None
-        if isinstance(metadata.get("evm_transaction"), dict):
-            return "evm", metadata["evm_transaction"]
-        if isinstance(metadata.get("solana_transaction"), str):
-            return "solana", {"serialized_transaction": metadata["solana_transaction"]}
+        has_evm = "evm_transaction" in metadata
+        has_solana = "solana_transaction" in metadata
+        if has_evm and has_solana:
+            raise ValueError("authorization contains ambiguous execution transaction artifacts")
+        if has_evm:
+            evm_transaction = metadata["evm_transaction"]
+            if not isinstance(evm_transaction, dict):
+                raise ValueError("authorized EVM transaction artifact must be an object")
+            return "evm", evm_transaction
+        if has_solana:
+            solana_transaction = metadata["solana_transaction"]
+            if not isinstance(solana_transaction, str) or not solana_transaction:
+                raise ValueError("authorized Solana transaction artifact must be a non-empty string")
+            return "solana", {"serialized_transaction": solana_transaction}
         return None, None
 
     @staticmethod
