@@ -82,6 +82,7 @@ class ExecutionGate(ExecutionAdapter):
         *,
         permit: ExecutionPermit,
     ) -> Any:
+        authorization = copy.deepcopy(authorization)
         permit.claim(authorization)
         return self._execute_after_consume(authorization, side_effect)
 
@@ -118,6 +119,8 @@ class ExecutionGate(ExecutionAdapter):
         *,
         permit: ExecutionPermit,
     ) -> Any:
+        authorization = copy.deepcopy(authorization)
+        external_state = copy.deepcopy(external_state)
         permit.claim(authorization)
         return self._execute_bound_after_consume(authorization, external_state, side_effect)
 
