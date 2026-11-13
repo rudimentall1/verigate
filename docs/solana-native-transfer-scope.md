@@ -47,14 +47,15 @@ negative tests.
 
 ## Remaining proof work
 
-The current unit tests exercise parsing, signature verification, and sender,
-recipient, amount, and replay mismatches using locally generated signed
-transactions. They do not constitute a live Devnet verification.
+The unit tests exercise parsing, signature verification, and sender, recipient,
+amount, replay, and policy-cap mismatches using locally generated signed
+transactions. A policy BLOCK must produce no execution authorization.
 
-The live demo still uses a directly constructed ALLOW decision. A subsequent
-integration step must route the intent through the configured policy engine,
-demonstrate a policy BLOCK with zero RPC broadcasts, and independently verify
-the successful Devnet transaction and execution receipt.
+The live Devnet demo now evaluates both a small transfer and an oversized
+transfer through Verigate's GuardrailEngine. The small transfer must receive
+ALLOW before it can be broadcast; the oversized transfer must receive BLOCK
+and no execution authorization. A live Devnet run is still required to prove
+the successful transaction and independently verify its execution receipt.
 
 The RPC preflight remains enabled on broadcast. This adapter does not itself
 prove blockhash freshness or simulate arbitrary program effects.
