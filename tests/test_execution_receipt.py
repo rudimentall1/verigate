@@ -26,7 +26,7 @@ class ExecutionReceiptTest(unittest.TestCase):
         generate_keypair(self.private, self.public)
         self.storage = Storage(self.db)
         self.router = ExecutionRouter(
-            NetworkRegistry(),
+            NetworkRegistry(solana_genesis_hash_provider=lambda: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"),
             self.storage,
             load_public_key(self.public),
             load_private_key(self.private),
@@ -125,6 +125,7 @@ class ExecutionReceiptTest(unittest.TestCase):
                 "solana_transaction": raw,
                 "solana_sender": sender_address,
                 "destination": recipient_address,
+                "solana_genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
             },
         )
         receipt = self.router.execute_with_receipt(auth, lambda tx: "5nSolSig")
