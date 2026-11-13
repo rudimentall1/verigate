@@ -1,12 +1,6 @@
-"""Dependency-light Solana execution adapter.
-
-The adapter gates an exact base64-encoded Solana transaction. It does not
-need a Solana SDK because the signed transaction is treated as an opaque
-wire artifact and is handed unchanged to the broadcaster after authorization.
-"""
+"""Fail-closed Solana execution adapter for bound native SOL transfers."""
 from __future__ import annotations
 
-import base64
 from typing import Any, Callable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -14,6 +8,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from core.storage import Storage
 from enforcement.local import ExecutionGate
 from enforcement.protocol import ExecutionAdapter
+from enforcement.solana_transaction import parse_authorized_native_transfer
 
 
 class SolanaExecutionAdapter(ExecutionAdapter):
@@ -22,17 +17,15 @@ class SolanaExecutionAdapter(ExecutionAdapter):
 
     @staticmethod
     def _transaction(action: dict[str, Any]) -> dict[str, Any]:
-        metadata = action.get("metadata")
-        if not isinstance(metadata, dict):
-            raise ValueError("authorized action is missing metadata")
-        raw = metadata.get("solana_transaction")
-        if not isinstance(raw, str) or not raw:
-            raise ValueError("authorized action is missing solana_transaction")
-        try:
-            base64.b64decode(raw, validate=True)
-        except (ValueError, TypeError):
-            raise ValueError("invalid Solana transaction encoding")
-        return {"encoding": "base64", "serialized_transaction": raw}
+        # Parsing is deliberately repeated at the execution boundary. The
+        # authorization binds the exact serialized bytes, while this parser
+        # independently proves their sender, recipient and amount semantics.
+        parse_authorized_native_transfer(action)
+        metadata = action["metadata"]
+        return {
+            "encoding": "base64",
+            "serialized_transaction": metadata["solana_transaction"],
+        }
 
     def validate(self, authorization: dict[str, Any]) -> tuple[bool, str]:
         try:
@@ -61,6 +54,9 @@ class SolanaExecutionAdapter(ExecutionAdapter):
         authorization: dict[str, Any],
         broadcaster: Callable[[dict[str, Any]], Any],
     ) -> Any:
+        # Validate transaction semantics before consuming the one-time grant.
+        action = authorization["payload"]["action"]
+        self._transaction(action)
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
