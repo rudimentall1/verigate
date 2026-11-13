@@ -14,6 +14,8 @@ from enforcement.router import ExecutionRouter
 from enforcement.solana import SolanaExecutionAdapter
 from solana_fixtures import make_signed_transfer
 
+DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+
 
 class ExecutionRouterTest(unittest.TestCase):
     def setUp(self):
@@ -24,7 +26,7 @@ class ExecutionRouterTest(unittest.TestCase):
         self.db = root / "audit.db"
         generate_keypair(self.private, self.public)
         self.storage = Storage(self.db)
-        self.router = ExecutionRouter(NetworkRegistry(), self.storage, load_public_key(self.public))
+        self.router = ExecutionRouter(NetworkRegistry(solana_genesis_hash_provider=lambda: DEVNET_GENESIS_HASH), self.storage, load_public_key(self.public))
 
     def tearDown(self):
         self.storage.close()
@@ -85,6 +87,7 @@ class ExecutionRouterTest(unittest.TestCase):
                 "solana_transaction": raw,
                 "solana_sender": sender_address,
                 "destination": recipient_address,
+                "solana_genesis_hash": DEVNET_GENESIS_HASH,
             },
         )
         auth = self._authorization(intent)["execution_authorization"]
@@ -92,6 +95,25 @@ class ExecutionRouterTest(unittest.TestCase):
         sent = []
         self.assertEqual(self.router.execute(auth, lambda tx: sent.append(tx) or "sol-sig"), "sol-sig")
         self.assertEqual(sent[0]["serialized_transaction"], raw)
+
+    def test_solana_execution_fails_closed_without_live_cluster_provider(self):
+        raw, sender_address, recipient_address = make_signed_transfer()
+        intent = ActionIntent(
+            agent_id="router-agent", action_type="native.transfer", target=recipient_address,
+            amount=0.001, asset="SOL", network="solana",
+            metadata={
+                "solana_transaction": raw,
+                "solana_sender": sender_address,
+                "destination": recipient_address,
+                "solana_genesis_hash": DEVNET_GENESIS_HASH,
+            },
+        )
+        auth = self._authorization(intent)["execution_authorization"]
+        router = ExecutionRouter(NetworkRegistry(), self.storage, load_public_key(self.public))
+        sent = []
+        with self.assertRaisesRegex(ValueError, "genesis hash provider"):
+            router.execute(auth, lambda tx: sent.append(tx) or "unexpected")
+        self.assertEqual(sent, [])
 
     def test_unknown_evm_name_routes_by_signed_chain_id_when_family_is_explicit(self):
         intent = ActionIntent(
