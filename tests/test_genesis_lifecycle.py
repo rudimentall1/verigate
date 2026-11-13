@@ -30,7 +30,7 @@ from core.proof_package import serialize_proof_package, verify_proof_package
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
-from enforcement.tool import ToolExecutionAdapter
+from enforcement.tool import ToolExecutionAdapter, build_tool_execution_graph
 
 
 def _governance_approval(action, private_key):
@@ -112,18 +112,22 @@ class GenesisLifecycleTest(unittest.TestCase):
             authority_service=authority_service,
         )
 
+        handler = lambda _action: {"order_id": "order-1"}
         action = ActionIntent(
             agent_id="genesis-agent",
             action_type="mcp.tool.call",
             target="orders.create",
             asset="USDC",
             amount=5.0,
-            metadata={"arguments": {"sku": "VERIGATE", "quantity": 1}},
+            metadata={
+                "arguments": {"sku": "VERIGATE", "quantity": 1},
+                "execution_graph": build_tool_execution_graph("orders.create", handler),
+            },
         )
         adapter = ToolExecutionAdapter(
             self.storage,
             self.public,
-            {"orders.create": lambda _action: {"order_id": "order-1"}},
+            {"orders.create": handler},
         )
         router = ExecutionRouter(
             NetworkRegistry(),
