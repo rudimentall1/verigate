@@ -95,9 +95,10 @@ completes and the transaction is independently confirmed.
 The targeted local Solana test modules passed 15/15 on tested code commit
 `f6ff6f8db32c1e2c55078cb874bb5dfd53800553`.
 
-A live Devnet run and a separate read-only RPC transaction lookup are recorded
-below. The lookup verified the transaction at `confirmed` commitment. It does
-not establish `finalized` commitment or a third-party audit.
+A live Devnet run and two separate read-only RPC lookups are recorded below.
+`getTransaction` verified transaction contents at `confirmed` commitment;
+`getSignatureStatuses` subsequently returned `finalized` with `err = null`.
+This is RPC-level Devnet verification, not a third-party audit.
 
 The BLOCK/no-broadcast path is evidenced by the demo output and its execution
 guard; it is not represented as an on-chain transaction.
@@ -120,6 +121,7 @@ Run completed on 2026-11-13 at 07:44:32 UTC (RPC blockTime).
 - Signature: `5QUhbFF7NGLtv5P2u2jmmhrKfE7Jmm9hbLbE8CbmJjpkDFJECLZmu8Zdtp5VQM7EdiSfsMAFNGE37mU9TjhVBEV7`.
 - Slot: `521752939`.
 - Independent read-only `getTransaction` response at commitment `confirmed`: transaction found; `meta.err = null`; System Program `transfer`; source and destination match; amount is 1,000,000 lamports (0.001 SOL); fee is 5,000 lamports (0.000005 SOL).
+- Independent read-only `getSignatureStatuses` response: `confirmationStatus = finalized`; `err = null`; `status = {"Ok": null}`; transaction slot `521752939`; RPC context slot `521754267`.
 - Explorer: https://explorer.solana.com/tx/5QUhbFF7NGLtv5P2u2jmmhrKfE7Jmm9hbLbE8CbmJjpkDFJECLZmu8Zdtp5VQM7EdiSfsMAFNGE37mU9TjhVBEV7?cluster=devnet
 
-The demo result and separate RPC transaction lookup agree. This is a live Devnet execution with independent RPC transaction-data verification at `confirmed` commitment. It is not a claim of `finalized` commitment or third-party audit. The oversized BLOCK/no-broadcast result is established by the demo's execution output; it is not a second on-chain transaction.
+The demo result and separate RPC lookups agree. The live Devnet transaction contents were independently checked at `confirmed` commitment, and a subsequent signature-status query returned `finalized` with no execution error. This is independent RPC verification, not a third-party audit. The oversized BLOCK/no-broadcast result is established by the demo's execution output; it is not a second on-chain transaction.
