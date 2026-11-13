@@ -954,7 +954,7 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 ### CI
 
 - Fresh PR CI run [#43366379519](https://github.com/rudimentall1/verigate/actions/runs/43366379519) was created for exact head `fe2547cd88338cd2b22fc7bd8cdac8d868117ebe`.
-- At checkpoint time all four jobs were queued: `contracts`, `test`, `container`, `anna-ui`. No result is claimed yet.
+- Latest inspected state: `contracts`, `test`, `container` **PASS**; `anna-ui` is still running the Anna app E2E step. Do not call this run 4/4 until `anna-ui` completes.
 - An earlier push-triggered run [#43366374151](https://github.com/rudimentall1/verigate/actions/runs/43366374151) also targets the same exact head. Use the PR-triggered run #43366379519 as the primary evidence record; wait for all four jobs before declaring the inspector validated.
 
 ### Current state
