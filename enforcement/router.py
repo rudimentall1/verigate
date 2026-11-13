@@ -260,25 +260,23 @@ class ExecutionRouter:
         if state_required and external_state:
             if getattr(adapter, "execution_external_state_scope", None) != "atomic":
                 raise ValueError("atomic external state enforcement is required: adapter does not provide atomic enforcement")
-            bound = getattr(adapter, "execute_bound_after_consume", None)
-            if not callable(bound):
+            execute_bound = getattr(adapter, "execute_bound", None)
+            if not callable(execute_bound):
                 raise ValueError(
                     "atomic external state enforcement is required for this authorization"
                 )
-        else:
-            bound = None
-            execute_after_consume = getattr(adapter, "execute_after_consume", None)
-            if not callable(execute_after_consume):
-                raise ValueError(
-                    "execution adapter lacks the router-side consumption contract"
-                )
+            # The adapter owns nonce consumption and the atomic state-bound
+            # side effect. The router never calls an after-consume hook.
+            return execute_bound(authorization, external_state, broadcaster)
 
-        ok, reason = self._consume_authorization_once(authorization)
-        if not ok:
-            raise PermissionError(reason)
-        if bound is not None:
-            return bound(authorization, external_state, broadcaster)
-        return execute_after_consume(authorization, broadcaster)
+        execute = getattr(adapter, "execute", None)
+        if not callable(execute):
+            raise ValueError(
+                "execution adapter lacks the self-consuming execution contract"
+            )
+        # Built-in adapters consume the one-time authorization themselves
+        # before invoking their private post-consumption implementation.
+        return execute(authorization, broadcaster)
 
 
     @staticmethod
