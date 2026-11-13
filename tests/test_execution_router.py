@@ -99,6 +99,50 @@ class ExecutionRouterTest(unittest.TestCase):
             router.execute(auth, lambda tx: sent.append(tx) or "unexpected")
         self.assertEqual(sent, [])
 
+    def test_malformed_solana_artifact_cannot_fall_back_to_generic_adapter(self):
+        raw, sender_address, recipient_address = make_signed_transfer()
+        intent = ActionIntent(
+            agent_id="router-agent", action_type="native.transfer", target=recipient_address,
+            amount=0.001, asset="SOL", network="solana",
+            metadata={
+                "solana_transaction": None,
+                "solana_sender": sender_address,
+                "destination": recipient_address,
+                "solana_genesis_hash": DEVNET_GENESIS_HASH,
+            },
+        )
+        auth = self._authorization(intent)["execution_authorization"]
+
+        class PermissiveGenericAdapter:
+            def validate(self, authorization):
+                return True, "accepted"
+
+        router = ExecutionRouter(
+            NetworkRegistry(),
+            self.storage,
+            load_public_key(self.public),
+            generic_adapters={"native.transfer": PermissiveGenericAdapter()},
+        )
+        with self.assertRaisesRegex(ValueError, "non-empty string"):
+            router._adapter(auth)
+
+    def test_ambiguous_evm_and_solana_artifacts_are_rejected(self):
+        raw, sender_address, recipient_address = make_signed_transfer()
+        intent = ActionIntent(
+            agent_id="router-agent", action_type="native.transfer", target=recipient_address,
+            amount=0.001, asset="SOL", network="solana",
+            metadata={
+                "solana_transaction": raw,
+                "evm_transaction": {},
+                "solana_sender": sender_address,
+                "destination": recipient_address,
+                "solana_genesis_hash": DEVNET_GENESIS_HASH,
+            },
+        )
+        auth = self._authorization(intent)["execution_authorization"]
+        with self.assertRaisesRegex(ValueError, "ambiguous execution transaction"):
+            self.router._adapter(auth)
+
     def test_routes_base_to_evm_adapter(self):
         intent = ActionIntent(
             agent_id="router-agent", action_type="token.transfer", target="merchant",
