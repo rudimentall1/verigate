@@ -36,6 +36,20 @@ RPC_URL = os.environ.get("VERIGATE_SOLANA_DEVNET_RPC_URL", "https://api.devnet.s
 LAMPORTS_PER_SOL = 1_000_000_000
 TRANSFER_LAMPORTS = 1_000_000
 
+EXPECTED_DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+
+
+def require_devnet_cluster(rpc: SolanaRpcClient) -> str:
+    """Fail closed unless the configured RPC endpoint is Solana Devnet."""
+    actual = rpc.get_genesis_hash()
+    if actual != EXPECTED_DEVNET_GENESIS_HASH:
+        raise RuntimeError(
+            "Refusing to run Solana Devnet demo: RPC cluster genesis hash mismatch "
+            f"(expected {EXPECTED_DEVNET_GENESIS_HASH}, got {actual!r})."
+        )
+    return actual
+
+
 
 def shortvec(value: int) -> bytes:
     if value < 0:
@@ -171,6 +185,7 @@ def main() -> None:
     if use_funded_sender and not sender_keypair.exists():
         raise FileNotFoundError(f"Solana keypair not found: {sender_keypair}")
     rpc = SolanaRpcClient(RPC_URL)
+    genesis_hash = require_devnet_cluster(rpc)
 
     with tempfile.TemporaryDirectory(prefix="verigate-live-solana-") as td:
         root = Path(td)
@@ -192,6 +207,7 @@ def main() -> None:
         print("VERIGATE | LIVE SOLANA DEVNET EXECUTION")
         print("=" * 62)
         print("RPC:", RPC_URL)
+        print("Cluster genesis hash:", genesis_hash)
         print("Sender:", sender_address)
         print("Recipient:", recipient_address)
 
