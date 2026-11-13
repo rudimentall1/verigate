@@ -218,27 +218,21 @@ class ExecutionFabricTest(unittest.TestCase):
 
     def test_direct_execution_scope_remains_compatible(self):
         target = "github.create_issue"
+        handler = lambda _signed_action: "registered"
         action = ActionIntent(
             agent_id="tool-agent",
             action_type="mcp.tool.call",
             target=target,
             metadata={
                 "arguments": {"title": "signed"},
-                "execution_graph": {
-                    "module": "enforcement.tool",
-                    "hook": "ToolExecutionAdapter",
-                    "router": "ExecutionRouter",
-                    "target": target,
-                    "enforcement_scope": "direct",
-                    "handler_sha256": _handler_fingerprint(lambda _signed_action: "registered"),
-                },
+                "execution_graph": build_tool_execution_graph(target, handler),
             },
         )
         auth = self._auth(action)
         adapter = ToolExecutionAdapter(
             self.storage,
             self.public_key,
-            {target: lambda _signed_action: "registered"},
+            {target: handler},
         )
         router = ExecutionRouter(
             NetworkRegistry(),
