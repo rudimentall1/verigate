@@ -1023,3 +1023,40 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 - No live Arc signer payment has been broadcast.
 - No production keys, service accounts, or target-host deployment have been provisioned.
 - Gensyn2 and unrelated services remain untouched.
+
+
+## 35. Arc signer CI green; receipt binding and dependency audit diagnostics — 2026-11-13
+
+### Completed CI run
+
+- CI run [#43367601961](https://github.com/rudimentall1/verigate/actions/runs/43367601961) completed **4/4 PASS**: `contracts`, `test`, `container`, `anna-ui`.
+- The production-only dependency check passed: `npm ci --omit=dev --ignore-scripts` followed by importing `integrations/arc-ethers-signer-adapter.mjs`.
+- The run validates workflow head `b8ac89d69cb94f8c3a1b543302fb1201b18b82e9`; it does not validate later fee-sampler/audit-diagnostic edits.
+- PR #58 remains Draft/Open and stacked on PR #57.
+
+### Dependency audit numbers
+
+- Full install reported 36 findings: 1 low, 5 moderate, 25 high, 5 critical.
+- Production-only install reported 27 findings: 1 low, 5 moderate, 17 high, 4 critical.
+- These are counts only; exact advisories and dependency paths have not yet been reviewed. Do not treat the production-only runtime import check as a vulnerability clearance.
+- Added a CI diagnostic step to print full and production-only npm audit advisory names, severity, directness, affected range, and fix availability. Await a fresh CI run for exact results. No blanket `npm audit fix --force`.
+
+### Fee sampler audit and correction
+
+- Review found the previous sampler checked transaction destination and selector plus receipt hash/status, but did not pin expected sender, verify the transaction's own chain ID, compare receipt sender/destination to the transaction, require zero native value, or bind transaction inclusion block/hash to the receipt.
+- Hardened `scripts/verify_arc_fee_samples.mjs` with those checks. Expected sender is now explicit for each historical sample; Registry samples use the configured issuer address, while the separate Guardian transfer remains clearly marked as reference-only.
+- Added no claim that these are Verigate payment receipts. There is still no live Verigate-controlled Arc USDC payment receipt, so production payment fee ceilings and daily budgets remain blocked.
+- CI must pass on the hardened sampler before its stronger checks are considered verified.
+
+### Latest branch changes awaiting CI
+
+- `dd98f6636d7343070f5ebf0f6c7929d989699a2c`: fee sampler receipt-binding hardening.
+- `b81c05d88a3fdd2c45b9153e405668e8887f81b9`: CI diagnostic output for full and production npm audit advisories.
+- Current PR head: `b81c05d88a3fdd2c45b9153e405668e8887f81b9`.
+- Do not claim the fee-sampler hardening or audit diagnostic has passed until a fresh CI run completes.
+
+### Safety boundary
+
+- PR #58 stays Draft/Open; do not merge PR #57 or #58 without explicit approval.
+- No Gensyn2 access or changes; no production keys, signer install/start, or live signer transaction.
+- FLOP, AegisForge, OWNERA and unrelated services remain untouched.
