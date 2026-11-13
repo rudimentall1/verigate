@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - integrate/anna-0.1.9-mainline
+      - fix/anna-receipt-verification-agent-scope
     paths:
       - ".github/workflows/anna-executa-binaries.yml"
       - "anna/**"
@@ -70,17 +71,17 @@ jobs:
         run: python anna/verify_reproducible_binary.py
 
       - name: Package binary
-        run: python anna/package_binary.py "${{ matrix.target }}" "${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.20' }}"
+        run: python anna/package_binary.py "${{ matrix.target }}" "${{ github.event_name == 'workflow_dispatch' && inputs.version || (github.ref == 'refs/heads/fix/anna-receipt-verification-agent-scope' && '0.1.21' || '0.1.20') }}"
 
       - name: Smoke-test extracted release package
-        run: python anna/smoke_package.py "${{ matrix.target }}" "${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.20' }}"
+        run: python anna/smoke_package.py "${{ matrix.target }}" "${{ github.event_name == 'workflow_dispatch' && inputs.version || (github.ref == 'refs/heads/fix/anna-receipt-verification-agent-scope' && '0.1.21' || '0.1.20') }}"
 
       - name: Upload release package
         uses: actions/upload-artifact@v7
         with:
           name: verigate-authority-${{ matrix.target }}
           path: |
-            anna/executas/verigate-authority/dist/verigate-authority-${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.20' }}-${{ matrix.target }}.*
+            anna/executas/verigate-authority/dist/verigate-authority-${{ github.event_name == 'workflow_dispatch' && inputs.version || (github.ref == 'refs/heads/fix/anna-receipt-verification-agent-scope' && '0.1.21' || '0.1.20') }}-${{ matrix.target }}.*
           if-no-files-found: error
 
   release:
@@ -105,7 +106,7 @@ jobs:
       - name: Create or refresh candidate GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '0.1.20' }}
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || (github.ref == 'refs/heads/fix/anna-receipt-verification-agent-scope' && '0.1.21' || '0.1.20') }}
           EVENT_NAME: ${{ github.event_name }}
           PUBLISH_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release || false }}
         run: |
