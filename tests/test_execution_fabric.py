@@ -1,3 +1,5 @@
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -208,6 +210,28 @@ class ExecutionFabricTest(unittest.TestCase):
             router.execute(auth, lambda signed_action: side_effects.append(signed_action) or "sent")
         self.assertIn("transitive enforcement", str(exc.exception))
         self.assertEqual(side_effects, [])
+
+    def test_handler_fingerprint_is_stable_across_processes(self):
+        script = """
+from enforcement.tool import tool_handler_fingerprint
+
+def stable_handler(action, endpoint="https://api.internal.example"):
+    return endpoint
+
+print(tool_handler_fingerprint(stable_handler))
+"""
+        repo_root = Path(__file__).resolve().parents[1]
+        fingerprints = []
+        for _ in range(2):
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                cwd=repo_root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            fingerprints.append(result.stdout.strip())
+        self.assertEqual(fingerprints[0], fingerprints[1])
 
     def test_bound_method_handler_is_rejected(self):
         class StatefulHandler:
