@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.authorization import AuthorizationService
@@ -142,6 +143,37 @@ class ExecutionRouterTest(unittest.TestCase):
         auth = self._authorization(intent)["execution_authorization"]
         with self.assertRaisesRegex(ValueError, "ambiguous execution transaction"):
             self.router._adapter(auth)
+
+
+    def test_execute_uses_authorization_snapshot_after_verification(self):
+        intent = ActionIntent(
+            agent_id="router-agent", action_type="token.transfer", target="merchant",
+            asset="USDC", network="base",
+            metadata={"evm_transaction": {"chain_id": 8453, "to": "0xMerchant", "value_wei": 0, "data": "0x"}},
+        )
+        caller_authorization = self._authorization(intent)["execution_authorization"]
+        original_verify = self.router._verify_authorization
+
+        def verify_then_mutate(snapshot):
+            original_verify(snapshot)
+            # Simulate the caller mutating its original object immediately
+            # after verification. Router execution must continue from its
+            # owned snapshot, not this caller-controlled object.
+            caller_authorization["payload"]["action"]["metadata"]["evm_transaction"]["to"] = "0xAttacker"
+
+        sent = []
+        with patch.object(self.router, "_verify_authorization", side_effect=verify_then_mutate):
+            result = self.router.execute(
+                caller_authorization,
+                lambda tx: sent.append(tx) or "0xsnapshot",
+            )
+
+        self.assertEqual(result, "0xsnapshot")
+        self.assertEqual(sent[0]["to"], "0xMerchant")
+        self.assertEqual(
+            caller_authorization["payload"]["action"]["metadata"]["evm_transaction"]["to"],
+            "0xAttacker",
+        )
 
     def test_routes_base_to_evm_adapter(self):
         intent = ActionIntent(
