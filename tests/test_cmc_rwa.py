@@ -96,6 +96,44 @@ class RwaPolicyTest(unittest.TestCase):
         decision = evaluator.evaluate(action, self.quote, 500)
         self.assertEqual(decision.decision.value, "ALLOW")
 
+    def test_evaluator_blocks_action_quote_mismatch(self):
+        evaluator = RwaPurchaseEvaluator()
+        other_quote = CmcRwaQuote(
+            rwa_id=99, name="Silver", symbol="SILVER", slug="silver",
+            asset_type="commodity", rwa_rank=2, has_tokens=True,
+            average_tokenized_price=50.0, tokenized_market_cap=1_000_000.0,
+            tokenized_volume_24h=100_000.0,
+            tokens=({"symbol": "SILVER", "price": 50.0,
+                     "issuer_id": "issuer-silver", "issuer_name": "Silver Issuer"},),
+        )
+        action = evaluator.build_action(self.quote, 500, agent_id="agent-rwa")
+        decision = evaluator.evaluate(action, other_quote, 500)
+        self.assertEqual(decision.decision.value, "BLOCK")
+        self.assertIn(
+            "rwa_action_quote_mismatch",
+            {rule.rule_id for rule in decision.matched_rules},
+        )
+
+    def test_evaluator_blocks_action_amount_mismatch(self):
+        evaluator = RwaPurchaseEvaluator()
+        action = evaluator.build_action(self.quote, 500, agent_id="agent-rwa")
+        decision = evaluator.evaluate(action, self.quote, 400)
+        self.assertEqual(decision.decision.value, "BLOCK")
+        self.assertIn(
+            "rwa_action_quote_mismatch",
+            {rule.rule_id for rule in decision.matched_rules},
+        )
+
+    def test_evaluator_blocks_non_finite_purchase_amount(self):
+        evaluator = RwaPurchaseEvaluator()
+        action = evaluator.build_action(self.quote, float("nan"), agent_id="agent-rwa")
+        decision = evaluator.evaluate(action, self.quote, float("nan"))
+        self.assertEqual(decision.decision.value, "BLOCK")
+        self.assertIn(
+            "rwa_invalid_purchase_amount",
+            {rule.rule_id for rule in decision.matched_rules},
+        )
+
     def test_large_share_of_volume_is_block(self):
         evaluator = RwaPurchaseEvaluator()
         action = evaluator.build_action(self.quote, 2_000, agent_id="agent-rwa")
