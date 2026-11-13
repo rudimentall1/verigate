@@ -86,23 +86,7 @@ class ZeroClickToolAbuseTest(unittest.TestCase):
         self.assertIsNone(result["execution_authorization"])
 
     def test_allowed_destination_can_execute_through_registered_tool(self):
-        handler = lambda signed_action: "fetched"
         action = self._action("https://api.internal.example")
-        action = ActionIntent(
-            agent_id=action.agent_id,
-            action_type=action.action_type,
-            target=action.target,
-            purpose=action.purpose,
-            declared_context=action.declared_context,
-            input_provenance=action.input_provenance,
-            metadata={
-                **action.metadata,
-                "execution_graph": build_tool_execution_graph("http.fetch", handler),
-            },
-        )
-        decision = self.engine.evaluate_action(action)
-        self.assertEqual(decision.decision, Decision.ALLOW)
-
         capability = Capability(
             capability_id="cap-zero-click-safe",
             agent_id=action.agent_id,
@@ -152,6 +136,70 @@ class ZeroClickToolAbuseTest(unittest.TestCase):
             calls[0]["metadata"]["tool_invocation"]["destination"],
             "https://api.internal.example",
         )
+
+    def test_tool_handler_fingerprint_is_required(self):
+        action = self._action("https://api.internal.example")
+        decision = self.engine.evaluate_action(action)
+        capability = Capability(
+            capability_id="cap-zero-click-missing-fingerprint",
+            agent_id=action.agent_id,
+            allowed_actions=("mcp.tool.call",),
+            allowed_targets=("http.fetch",),
+        )
+        self.storage.register_capability(capability)
+        authority = DynamicAuthorityService(self.storage).snapshot(
+            action.agent_id, capability.capability_id
+        )
+        auth = AuthorizationService().issue(
+            action, decision, self.policy.digest, self.private_key,
+            capability=capability, authority=authority, policy=self.policy,
+        )["execution_authorization"]
+        calls = []
+        adapter = ToolExecutionAdapter(
+            self.storage, self.public_key,
+            {"http.fetch": lambda signed_action: calls.append(signed_action)},
+        )
+        ok, reason = adapter.validate(auth)
+        self.assertFalse(ok)
+        self.assertIn("handler fingerprint", reason)
+        self.assertEqual(calls, [])
+
+    def test_changed_handler_is_rejected_before_tool_side_effect(self):
+        original = lambda signed_action: "original"
+        action = self._action("https://api.internal.example")
+        action = ActionIntent(
+            agent_id=action.agent_id,
+            action_type=action.action_type,
+            target=action.target,
+            purpose=action.purpose,
+            declared_context=action.declared_context,
+            input_provenance=action.input_provenance,
+            metadata={**action.metadata,
+                      "execution_graph": build_tool_execution_graph("http.fetch", original)},
+        )
+        decision = self.engine.evaluate_action(action)
+        capability = Capability(
+            capability_id="cap-zero-click-handler-drift",
+            agent_id=action.agent_id,
+            allowed_actions=("mcp.tool.call",),
+            allowed_targets=("http.fetch",),
+        )
+        self.storage.register_capability(capability)
+        authority = DynamicAuthorityService(self.storage).snapshot(
+            action.agent_id, capability.capability_id
+        )
+        auth = AuthorizationService().issue(
+            action, decision, self.policy.digest, self.private_key,
+            capability=capability, authority=authority, policy=self.policy,
+        )["execution_authorization"]
+        calls = []
+        replacement = lambda signed_action: calls.append(signed_action) or "replaced"
+        adapter = ToolExecutionAdapter(
+            self.storage, self.public_key, {"http.fetch": replacement}
+        )
+        with self.assertRaises(PermissionError):
+            adapter.execute_registered(auth)
+        self.assertEqual(calls, [])
 
     def test_provenance_tamper_invalidates_signed_decision(self):
         action = self._action("https://api.internal.example", trust="trusted")
