@@ -35,14 +35,6 @@ class ExecutionAdapter(Protocol):
     ) -> Any:
         ...
 
-    def execute_after_consume(
-        self,
-        authorization: dict[str, Any],
-        side_effect: Callable[[dict[str, Any]], Any],
-    ) -> Any:
-        """Execute only after the router has consumed the authorization."""
-        ...
-
     def execute_bound(
         self,
         authorization: dict[str, Any],
@@ -52,11 +44,3 @@ class ExecutionAdapter(Protocol):
         """Execute while enforcing the supplied state precondition atomically."""
         ...
 
-    def execute_bound_after_consume(
-        self,
-        authorization: dict[str, Any],
-        external_state: dict[str, Any],
-        side_effect: Callable[[dict[str, Any]], Any],
-    ) -> Any:
-        """Execute an atomic-state action after router-side consumption."""
-        ...
