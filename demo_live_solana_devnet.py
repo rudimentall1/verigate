@@ -235,6 +235,12 @@ def main() -> None:
             allowed_networks=["solana"],
             allowed_assets=["SOL"],
             per_tx_cap={"SOL": 0.01},
+            raw={
+                "allowed_action_types": ["native.transfer"],
+                "allowed_networks": ["solana"],
+                "allowed_assets": ["SOL"],
+                "per_tx_cap": {"SOL": 0.01},
+            },
         )
         storage = Storage(audit_db)
         engine = GuardrailEngine(policy, storage, policy_source_ref="verigate:solana-devnet-demo")
