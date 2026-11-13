@@ -1009,7 +1009,7 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 - Moved `ethers: ^6.17.0` to production `dependencies`, removed it from `devDependencies`, and updated the lockfile production dependency graph (ethers plus eight transitive packages).
 - Added CI step `Verify Arc signer production-only installation`: run `npm ci --omit=dev --ignore-scripts` and import `integrations/arc-ethers-signer-adapter.mjs`.
 - Updated deployment docs to require `npm ci --omit=dev` for the signer runtime.
-- Implementation/CI workflow head: `b8ac89d69cb94f8c3a1b543302fb1201b18b82e9`. Fresh CI run [#43367601961](https://github.com/rudimentall1/verigate/actions/runs/43367601961) was queued for this head; the production-only install/import check is not yet verified.
+- Implementation/CI workflow head: `b8ac89d69cb94f8c3a1b543302fb1201b18b82e9`. CI run [#43367601961](https://github.com/rudimentall1/verigate/actions/runs/43367601961): `contracts`, `test` and `container` have passed; `anna-ui` is still running. Crucially, the `Verify Arc signer production-only installation` step completed **PASS**, confirming `npm ci --omit=dev --ignore-scripts` and runtime import of the signer adapter.
 - A later documentation-only commit updated deployment instructions. Current PR head at checkpoint time: `f32e9c08285e07669db452b1008bac18b468d9da`.
 
 ### Dependency security note
