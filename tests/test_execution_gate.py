@@ -11,7 +11,7 @@ from core.policy import Policy
 from core.storage import Storage
 from core.models import Capability, PaymentIntent
 from enforcement.local import ExecutionGate
-from enforcement.protocol import ExecutionAdapter, _issue_execution_permit
+from enforcement.protocol import ExecutionAdapter, ExecutionPermit, _issue_execution_permit
 
 
 class ExecutionGateTest(unittest.TestCase):
@@ -177,13 +177,13 @@ class ExecutionGateTest(unittest.TestCase):
             ok, reason = gate.consume(auth)
             self.assertTrue(ok, reason)
             permit = _issue_execution_permit(auth)
-            original_claim = permit.claim
+            original_claim = ExecutionPermit.claim
 
-            def claim_then_mutate(snapshot):
-                original_claim(snapshot)
+            def claim_then_mutate(permit_instance, snapshot):
+                original_claim(permit_instance, snapshot)
                 auth["payload"]["action"]["target"] = "attacker-target"
 
-            with patch.object(permit, "claim", side_effect=claim_then_mutate):
+            with patch.object(ExecutionPermit, "claim", autospec=True, side_effect=claim_then_mutate):
                 gate.execute_after_consume(
                     auth, lambda authorized_action: calls.append(authorized_action["target"]),
                     permit=permit,
