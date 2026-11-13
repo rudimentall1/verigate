@@ -1186,3 +1186,14 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 - Target-host inventory remains blocked pending explicit user approval for read-only Gensyn2 inspection. Installation, key provisioning and live transaction each require separate approval.
 - Production fee ceilings and daily budgets remain unapproved pending representative live Verigate-controlled payment evidence.
 - FLOP, AegisForge, OWNERA and unrelated services remain untouched.
+
+
+## 41. Gensyn2 read-only authorization and access availability — 2026-11-13
+
+- User explicitly authorized **read-only inspection of Gensyn2**.
+- The authorization is limited to inventory/observation. It does not authorize service installation, process termination/restart, configuration changes, key provisioning, deployment, or live transactions.
+- User emphasized that Gensyn2 hosts multiple active nodes and bots. Any future inventory must preserve all existing workloads and must not stop, restart, signal, or modify unrelated processes/services.
+- Desktop Commander device discovery currently lists only `WIN-RUIG7JUH12D`, status Offline, last seen 49 minutes ago. No connected Gensyn2 device is currently available.
+- Therefore no Gensyn2 command or host inspection has been executed; host inventory remains pending reconnection.
+- Arc PR #58 current head is `7579bfb2d089d3667307349acd6f2b966c3852c4`, Open/Draft and unmerged. Current-head CI run [#43383994959](https://github.com/rudimentall1/verigate/actions/runs/43383994959) completed 4/4 PASS (test, anna-ui, container, contracts).
+- No changes to Gensyn2, production keys, signer services, or live Arc transactions were made.
