@@ -1161,3 +1161,28 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 - No production signer keys, target-host install/start, Gensyn2 access, or live signer payment broadcast.
 - No production payment fee ceiling or daily budget approved; still requires a representative live Verigate-controlled Arc USDC payment receipt.
 - Do not touch FLOP, AegisForge, OWNERA, or unrelated services.
+
+
+## 40. Arc signer CI final result on checkpointed implementation — 2026-11-13
+
+### Final CI verification
+
+- PR #58 head at verification: `a31a6ac39e5fd4a8d15b0c8312f1b4f13a16bee8`.
+- Pull-request workflow run [#43383643926](https://github.com/rudimentall1/verigate/actions/runs/43383643926) completed **4/4 PASS**:
+  - `test`: success
+  - `anna-ui`: success
+  - `container`: success
+  - `contracts`: success
+- Matching push workflow run [#43383637718](https://github.com/rudimentall1/verigate/actions/runs/43383637718) also completed **4/4 PASS**.
+- Earlier push and PR runs on fix commit `be7cbace8d126473e051ed487f7a53724eaaaaeb` also completed 4/4 PASS: [#43383506254](https://github.com/rudimentall1/verigate/actions/runs/43383506254) and [#43383511977](https://github.com/rudimentall1/verigate/actions/runs/43383511977).
+- This supersedes the in-progress CI status recorded at the end of section 39. The Anna UI isolation fix and Linux binary smoke-test both passed on the later runs.
+
+### PR and deployment boundary
+
+- PR #58 remains Open/Draft and unmerged. PR #57 remains unmerged. No merge or draft-state change was made.
+- CI evidence is GitHub-hosted CI evidence, including mock-RPC/systemd tests; it is not evidence of installation or a live Arc Mainnet payment on the target host.
+- Existing Arc Registry remains deployed; no redeployment is required.
+- No production keys were provisioned, no signer service was installed or started on Gensyn2, and no live signer payment was broadcast.
+- Target-host inventory remains blocked pending explicit user approval for read-only Gensyn2 inspection. Installation, key provisioning and live transaction each require separate approval.
+- Production fee ceilings and daily budgets remain unapproved pending representative live Verigate-controlled payment evidence.
+- FLOP, AegisForge, OWNERA and unrelated services remain untouched.
