@@ -84,8 +84,8 @@ class ExecutionRouterTest(unittest.TestCase):
             def validate(self, authorization):
                 return True, "accepted"
 
-            def execute_after_consume(self, authorization, broadcaster):
-                return broadcaster({"bypassed_chain_validation": True})
+            def execute(self, authorization, broadcaster):
+                raise AssertionError("generic adapter must not receive a concrete Solana transaction")
 
         generic = PermissiveGenericAdapter()
         router = ExecutionRouter(
