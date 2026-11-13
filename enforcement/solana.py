@@ -63,7 +63,7 @@ class SolanaExecutionAdapter(ExecutionAdapter):
             return False, reason
         return self.gate.consume(authorization)
 
-    def execute_after_consume(
+    def _execute_after_consume(
         self,
         authorization: dict[str, Any],
         broadcaster: Callable[[dict[str, Any]], Any],
@@ -86,4 +86,4 @@ class SolanaExecutionAdapter(ExecutionAdapter):
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return self.execute_after_consume(authorization, broadcaster)
+        return self._execute_after_consume(authorization, broadcaster)
