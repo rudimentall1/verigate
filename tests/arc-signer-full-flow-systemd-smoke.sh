@@ -313,14 +313,16 @@ request_rejected() {
   runuser -u "$user" -- python3 -c 'import json,socket,sys; path,auth,op,expected=sys.argv[1:]; body={"operation":op,"authorization":json.load(open(auth,encoding="utf-8"))}; s=socket.socket(socket.AF_UNIX); s.settimeout(5); s.connect(path); s.sendall(json.dumps(body).encode()+bytes([10])); data=s.makefile("rb").readline(); s.close(); result=json.loads(data); assert result.get("ok") is False,result; assert expected in result.get("error",""),result; print(result.get("error"))' "$socket" "$AUTH_FILE" "$operation" "$expected"
 }
 assert_denied() {
-  local socket="$1"
-  if runuser -u "$DENY_USER" -- python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1])' "$socket" >/dev/null 2>&1; then fail "unrelated user connected to $socket"; fi
+  local user="$1" socket="$2"
+  if runuser -u "$user" -- python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1])' "$socket" >/dev/null 2>&1; then fail "user $user unexpectedly connected to $socket"; fi
 }
 
 ISSUER_SOCKET=/run/verigate-arc-flow-issuer/signer.sock
 AGENT_SOCKET=/run/verigate-arc-flow-agent/signer.sock
-assert_denied "$ISSUER_SOCKET"
-assert_denied "$AGENT_SOCKET"
+assert_denied "$DENY_USER" "$ISSUER_SOCKET"
+assert_denied "$DENY_USER" "$AGENT_SOCKET"
+assert_denied "$ISSUER_CLIENT" "$AGENT_SOCKET"
+assert_denied "$AGENT_CLIENT" "$ISSUER_SOCKET"
 request_rejected "$AGENT_CLIENT" "$AGENT_SOCKET" register "agent signer cannot register"
 request_rejected "$ISSUER_CLIENT" "$ISSUER_SOCKET" consume "issuer signer cannot execute"
 
