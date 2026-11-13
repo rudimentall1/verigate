@@ -117,6 +117,7 @@ jobs:
               tree = json.load(handle)
 
           audit_only_packages = {
+              "ganache",
               "@microsoft/api-extractor",
               "@microsoft/api-extractor-model",
               "@microsoft/tsdoc-config",
@@ -161,7 +162,7 @@ jobs:
               print("\\n".join(found))
               raise SystemExit(1)
 
-          print("Production dependency tree excludes Ganache's 27 bundled audit-only packages: PASS")
+          print("Production dependency tree excludes Ganache and its 27 bundled audit-only packages: PASS")
           PY
           node --input-type=module -e "await import('./integrations/arc-ethers-signer-adapter.mjs'); console.log('Arc signer runtime imports: PASS')"
 
