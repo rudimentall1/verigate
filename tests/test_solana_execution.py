@@ -62,8 +62,10 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
                     policy=Policy(),
                 )
                 adapter = SolanaExecutionAdapter(storage, load_public_key(public), lambda: DEVNET_GENESIS_HASH)
-                self.assertFalse(hasattr(adapter, "execute_after_consume"))
-                self.assertFalse(hasattr(adapter, "execute_bound_after_consume"))
+                with self.assertRaises(TypeError):
+                    adapter.execute_after_consume(artifacts["execution_authorization"], lambda tx: sent.append(tx))
+                with self.assertRaises(TypeError):
+                    adapter.execute_bound_after_consume(artifacts["execution_authorization"], {}, lambda tx: sent.append(tx))
                 sent = []
                 result = adapter.execute(artifacts["execution_authorization"], lambda tx: sent.append(tx) or "sig")
                 self.assertEqual(result, "sig")
