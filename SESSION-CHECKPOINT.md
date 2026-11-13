@@ -872,3 +872,26 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 2. Review journal reconciliation after ambiguous RPC outcomes; the service intentionally fails closed and does not auto-rebroadcast. Define a safe operator procedure for resolving `reserved` and `broadcast` records.
 3. Review per-role daily budget limitations and production fee policy only after a real Verigate-authorized Arc USDC payment receipt exists. Do not use synthetic mock receipts as fee evidence.
 4. Only after this code review and separate explicit approval, perform read-only Gensyn2 account/group/process inventory. Do not provision keys or install/start units without a further explicit decision.
+
+
+## 30. Registration handoff tamper regression — 2026-11-13
+
+### New test
+
+- The agent-side orchestration receives a signed authorization plus the issuer registration transaction hash. The authorization signature protects the authorization payload; Verigate's registration-confirm endpoint must independently confirm the supplied transaction hash before the agent signer is called.
+- Strengthened the test API fixture so `/registration/confirm` returns `registered: true` only for the expected issuer transaction hash.
+- Added a regression test that substitutes a different valid-format bytes32 registration hash. The agent phase forwards that hash for independent confirmation, receives `registered: false`, and refuses to call either `consume()` or `payment()`.
+- Test file: `tests/arc-agent-executor.test.mjs`.
+
+### CI
+
+- Implementation/test commit: `8b81df4d45a5ceacfd1a41083ceef96b24551c80`.
+- CI run [#43365056806](https://github.com/rudimentall1/verigate/actions/runs/43365056806) is running. At checkpoint update, `contracts`, `test`, and `container` are successful; `anna-ui` is still running. The `Headless Arc agent executor workflow tests` step passed, including the new handoff-hash test. Do not claim this run is 4/4 until `anna-ui` finishes.
+- Latest PR #58 head: `8b81df4d45a5ceacfd1a41083ceef96b24551c80`. PR #58 remains Draft/Open and stacked on PR #57.
+
+### Next
+
+1. Confirm run #43365056806 reaches 4/4.
+2. If green, update the PR description and checkpoint with the exact final run result.
+3. Continue with operator reconciliation for ambiguous `reserved`/`broadcast` journal states. Do not auto-rebroadcast or erase records.
+4. No Gensyn2 inventory or changes, production key provisioning, service installation, or live signer broadcast without separate explicit approval.
