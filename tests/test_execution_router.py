@@ -139,6 +139,30 @@ class ExecutionRouterTest(unittest.TestCase):
             router.execute(auth, lambda tx: sent.append(tx) or "unexpected")
         self.assertEqual(sent, [])
 
+    def test_solana_cluster_change_before_broadcast_fails_closed(self):
+        raw, sender_address, recipient_address = make_signed_transfer()
+        intent = ActionIntent(
+            agent_id="router-agent", action_type="native.transfer", target=recipient_address,
+            amount=0.001, asset="SOL", network="solana",
+            metadata={
+                "solana_transaction": raw,
+                "solana_sender": sender_address,
+                "destination": recipient_address,
+                "solana_genesis_hash": DEVNET_GENESIS_HASH,
+            },
+        )
+        auth = self._authorization(intent)["execution_authorization"]
+        observed = iter([DEVNET_GENESIS_HASH, "changed-genesis"])
+        router = ExecutionRouter(
+            NetworkRegistry(solana_genesis_hash_provider=lambda: next(observed)),
+            self.storage,
+            load_public_key(self.public),
+        )
+        sent = []
+        with self.assertRaisesRegex(ValueError, "genesis hash mismatch"):
+            router.execute(auth, lambda tx: sent.append(tx) or "unexpected")
+        self.assertEqual(sent, [])
+
     def test_solana_cluster_mismatch_does_not_consume_authorization(self):
         raw, sender_address, recipient_address = make_signed_transfer()
         intent = ActionIntent(
