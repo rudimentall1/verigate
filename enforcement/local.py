@@ -5,6 +5,7 @@ followed by persistent, atomic nonce consumption before a side effect.
 """
 from __future__ import annotations
 
+import copy
 import time
 from typing import Any, Callable
 
@@ -24,6 +25,7 @@ class ExecutionGate(ExecutionAdapter):
 
     def validate(self, authorization: dict[str, Any], *, verification_time: int | None = None) -> tuple[bool, str]:
         """Verify prerequisites without consuming the authorization."""
+        authorization = copy.deepcopy(authorization)
         ok, reason = verify_execution_authorization(
             authorization,
             self.public_key,
@@ -44,6 +46,8 @@ class ExecutionGate(ExecutionAdapter):
         execute after it returns (True, ...). Nonce consumption is persistent
         and protected by a UNIQUE database constraint.
         """
+        # Bind verification and nonce consumption to one gate-owned envelope.
+        authorization = copy.deepcopy(authorization)
         if verification_time is None:
             ok, reason = self.validate(authorization)
         else:
@@ -91,6 +95,7 @@ class ExecutionGate(ExecutionAdapter):
         The callback is unreachable unless authorization verification and
         one-time nonce consumption both succeed.
         """
+        authorization = copy.deepcopy(authorization)
         ok, reason = self.consume(authorization)
         if not ok:
             raise PermissionError(reason)
@@ -122,6 +127,7 @@ class ExecutionGate(ExecutionAdapter):
         external_state: dict[str, Any],
         side_effect: Callable[[dict[str, Any]], Any],
     ) -> Any:
+        authorization = copy.deepcopy(authorization)
         ok, reason = self.consume(authorization)
         if not ok:
             raise PermissionError(reason)
