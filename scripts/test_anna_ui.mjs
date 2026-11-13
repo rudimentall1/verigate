@@ -20,7 +20,7 @@ if (appSource.includes("import {")) throw new Error("app.js import line was not 
 const VALID = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function callPlugin(method, args, { appStorage = new Map(), appContext = true, samplingHandler = {} } = {}) {
+function callPlugin(method, args, { dataDir, appStorage = new Map(), appContext = true, samplingHandler = {} } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(PY, [PLUGIN], {
       env: { ...process.env, VERIGATE_ANNA_DATA_DIR: dataDir, PYTHONPATH: root },
@@ -215,6 +215,7 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
           ? { ...args, ...decisionIntentOverride }
           : args;
         const result = await callPlugin(method, pluginArgs, {
+          dataDir,
           appStorage,
           appContext: true,
           samplingHandler: { interpret, explain }
