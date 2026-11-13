@@ -6,7 +6,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from core.storage import Storage
 from enforcement.local import ExecutionGate
-from enforcement.protocol import ExecutionAdapter
+from enforcement.protocol import ExecutionAdapter, ExecutionPermit, _issue_execution_permit
 
 
 class EVMExecutionAdapter(ExecutionAdapter):
@@ -118,6 +118,17 @@ class EVMExecutionAdapter(ExecutionAdapter):
         tx = self._transaction(authorization["payload"]["action"])
         return broadcaster(tx)
 
+    def execute_bound_after_consume(
+        self,
+        authorization: dict[str, Any],
+        external_state: dict[str, Any],
+        broadcaster: Callable[[dict[str, Any]], Any],
+        *,
+        permit: ExecutionPermit,
+    ) -> Any:
+        permit.claim(authorization)
+        return self._execute_bound_after_consume(authorization, external_state, broadcaster)
+
     def execute_bound(
         self,
         authorization: dict[str, Any],
@@ -127,7 +138,10 @@ class EVMExecutionAdapter(ExecutionAdapter):
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return self._execute_bound_after_consume(authorization, external_state, broadcaster)
+        return self.execute_bound_after_consume(
+            authorization, external_state, broadcaster,
+            permit=_issue_execution_permit(authorization),
+        )
 
     def _execute_after_consume(
         self,
@@ -137,6 +151,16 @@ class EVMExecutionAdapter(ExecutionAdapter):
         tx = self._transaction(authorization["payload"]["action"])
         return broadcaster(tx)
 
+    def execute_after_consume(
+        self,
+        authorization: dict[str, Any],
+        broadcaster: Callable[[dict[str, Any]], Any],
+        *,
+        permit: ExecutionPermit,
+    ) -> Any:
+        permit.claim(authorization)
+        return self._execute_after_consume(authorization, broadcaster)
+
     def execute(
         self,
         authorization: dict[str, Any],
@@ -145,4 +169,6 @@ class EVMExecutionAdapter(ExecutionAdapter):
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return self._execute_after_consume(authorization, broadcaster)
+        return self.execute_after_consume(
+            authorization, broadcaster, permit=_issue_execution_permit(authorization)
+        )
