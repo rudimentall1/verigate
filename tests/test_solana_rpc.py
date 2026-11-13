@@ -92,7 +92,7 @@ class SolanaExecutionIntegrationTest(unittest.TestCase):
                     amount=0.001,
                     asset="SOL",
                     network="solana",
-                    metadata={"solana_transaction": raw, "solana_sender": sender_address, "destination": recipient_address},
+                    metadata={"solana_transaction": raw, "solana_sender": sender_address, "destination": recipient_address, "solana_genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"},
                 )
                 decision = GuardrailDecision(
                     intent_id=intent.intent_id,
@@ -127,7 +127,7 @@ class SolanaExecutionIntegrationTest(unittest.TestCase):
                     "https://example.invalid",
                     transport=lambda *_: b'{"jsonrpc":"2.0","id":1,"result":"5nSig"}',
                 )
-                adapter = SolanaExecutionAdapter(storage, load_public_key(public))
+                adapter = SolanaExecutionAdapter(storage, load_public_key(public), lambda: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG")
                 self.assertEqual(adapter.execute(auth, rpc.send_transaction), "5nSig")
             finally:
                 storage.close()
