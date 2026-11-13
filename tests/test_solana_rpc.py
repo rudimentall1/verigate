@@ -14,6 +14,38 @@ from solana_fixtures import make_signed_transfer
 
 
 class SolanaRpcClientTest(unittest.TestCase):
+    def test_get_genesis_hash_parses_cluster_identity(self):
+        calls = []
+
+        def transport(endpoint, payload, headers, timeout):
+            calls.append(payload)
+            return b'{"jsonrpc":"2.0","id":1,"result":"EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"}'
+
+        client = SolanaRpcClient("https://example.invalid", transport=transport)
+        self.assertEqual(
+            client.get_genesis_hash(),
+            "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+        )
+        self.assertEqual(len(calls), 1)
+        self.assertIn(b'"method":"getGenesisHash"', calls[0])
+        self.assertIn(b'"params":[]', calls[0])
+
+    def test_get_genesis_hash_rejects_missing_result(self):
+        client = SolanaRpcClient(
+            "https://example.invalid",
+            transport=lambda *_: b'{"jsonrpc":"2.0","id":1,"result":null}',
+        )
+        with self.assertRaises(SolanaRpcError):
+            client.get_genesis_hash()
+
+    def test_get_genesis_hash_propagates_rpc_error(self):
+        client = SolanaRpcClient(
+            "https://example.invalid",
+            transport=lambda *_: b'{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"bad"}}',
+        )
+        with self.assertRaises(SolanaRpcError):
+            client.get_genesis_hash()
+
     def test_get_balance_parses_lamports(self):
         client = SolanaRpcClient(
             "https://example.invalid",
