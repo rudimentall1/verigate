@@ -100,7 +100,7 @@ The example environment files contain deliberate placeholders and will fail inst
 
 Arc exposes one USDC balance through two interfaces. Native USDC, which funds gas and native value, has 18 decimals. The ERC-20 contract at `0x3600000000000000000000000000000000000000` has 6 decimals. The signer computes actual transaction cost as `gasUsed × effectiveGasPrice`; this is native USDC in 18-decimal units. Do not compare that integer directly with ERC-20 `transfer` amounts or six-decimal ledger entries. Divide native values by `10^12` when converting to six-decimal USDC units.
 
-The read-only receipt sampler checks three historical Verigate Registry lifecycle transactions (two registrations and one consumption) plus one canonical ERC-20 USDC transfer from the separate Agentic Wallet Guardian v3 project. The latter is strictly a gas-cost reference, not evidence of a Verigate-authorized payment. The sampler validates transaction destination and method selector, then retrieves receipt fee fields. It does not send transactions. These four samples help estimate the payment operation cost, but one separate-project transfer is not a substitute for a Verigate-controlled payment receipt; production payment limits still require a real receipt and an explicit operator review.
+The read-only receipt sampler checks three historical Verigate Registry lifecycle transactions (two registrations and one consumption) plus one canonical ERC-20 USDC transfer from the separate Agentic Wallet Guardian v3 project. The latter is strictly a gas-cost reference, not evidence of a Verigate-authorized payment. The sampler validates each sample's expected sender, Arc chain ID, zero native value, transaction hash, destination and selector, then checks receipt status, sender, destination and inclusion block/hash binding before reporting fee fields. It is read-only and does not send transactions. These four samples help estimate the payment operation cost, but one separate-project transfer is not a substitute for a Verigate-controlled payment receipt; production payment limits still require a real receipt and an explicit operator review.
 
 ## Required adversarial test matrix
 
@@ -123,7 +123,7 @@ The read-only receipt sampler checks three historical Verigate Registry lifecycl
 
 - Implementation and tests are reviewed on a dedicated GitHub branch.
 - Full repository CI passes on the exact branch head.
-- The install/rollback scripts and unit syntax pass on a disposable Linux runner; actual systemd service start/stop/restart and role-specific socket ACL behavior must still be validated before deployment.
+- The install/rollback scripts, unit syntax, actual systemd manager start/stop/restart, signer-daemon startup against local HTTPS mock RPC, and positive/negative role-specific socket ACL behavior pass on disposable Ubuntu CI workers. Target-host UID/GID mapping, existing account/process conflicts and actual host ACLs remain unverified until a separately approved read-only inventory.
 - Gensyn2 inventory is inspected before any write. Existing processes and project directories are left untouched.
 - Installation and rollback steps are documented and tested.
 - No mainnet transaction is broadcast during installation. Live payment requires a separate explicit decision after fee limits are measured.
