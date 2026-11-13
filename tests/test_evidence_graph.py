@@ -29,7 +29,7 @@ from core.outcome import (
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
-from enforcement.tool import ToolExecutionAdapter
+from enforcement.tool import ToolExecutionAdapter, handler_fingerprint
 
 
 class EvidenceGraphTest(unittest.TestCase):
@@ -87,11 +87,24 @@ class EvidenceGraphTest(unittest.TestCase):
             self.storage,
             policy_source_ref=str(policy_path),
         )
+        def tool_handler(_action):
+            return {"transaction_hash": "effect-evidence-1"}
+
         action = ActionIntent(
             agent_id=identity.agent_id,
             action_type="mcp.tool.call",
             target="github.create_issue",
-            metadata={"arguments": {"title": "evidence"}},
+            metadata={
+                "arguments": {"title": "evidence"},
+                "execution_graph": {
+                    "module": "enforcement.tool",
+                    "hook": "ToolExecutionAdapter",
+                    "router": "ExecutionRouter",
+                    "target": "github.create_issue",
+                    "enforcement_scope": "direct",
+                    "handler_sha256": handler_fingerprint(tool_handler),
+                },
+            },
         )
         agent_signature = sign_action_intent(action, identity.key_id, agent_key)
         artifacts = engine.authorize_action(
@@ -105,7 +118,7 @@ class EvidenceGraphTest(unittest.TestCase):
         adapter = ToolExecutionAdapter(
             self.storage,
             self.public_key,
-            {"github.create_issue": lambda _action: "tool-ready"},
+            {"github.create_issue": tool_handler},
         )
         router = ExecutionRouter(
             NetworkRegistry(),
@@ -116,7 +129,7 @@ class EvidenceGraphTest(unittest.TestCase):
         )
         submitted = router.execute_with_receipt(
             authorization,
-            lambda _action: {"transaction_hash": "effect-evidence-1"},
+            lambda _action: self.fail("unbound router callback must not execute"),
             executor="evidence-test",
         )
         confirmed = router.confirm_execution_receipt(

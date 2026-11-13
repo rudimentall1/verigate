@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
@@ -102,6 +103,32 @@ class RwaPolicyTest(unittest.TestCase):
         decision = evaluator.evaluate(action, self.quote, 2_000)
         self.assertEqual(decision.decision.value, "BLOCK")
         self.assertIn("rwa_volume_fraction_high", {rule.rule_id for rule in decision.matched_rules})
+
+    def test_action_quote_and_amount_must_be_bound(self):
+        evaluator = RwaPurchaseEvaluator()
+        action = evaluator.build_action(self.quote, 500, agent_id="agent-rwa")
+        other_quote = replace(self.quote, rwa_id=2, symbol="SILVER")
+        cases = (
+            (action, self.quote, 501),
+            (replace(action, target="SILVER"), self.quote, 500),
+            (action, other_quote, 500),
+            (
+                replace(action, metadata={**action.metadata, "rwa_id": 999}),
+                self.quote,
+                500,
+            ),
+        )
+        for candidate_action, candidate_quote, amount in cases:
+            with self.subTest(amount=amount, quote=candidate_quote.symbol):
+                decision = evaluator.evaluate(candidate_action, candidate_quote, amount)
+                self.assertEqual(decision.decision.value, "BLOCK")
+                self.assertEqual(decision.matched_rules[0].rule_id, "rwa_action_quote_mismatch")
+
+    def test_action_quote_binding_accepts_exact_purchase(self):
+        evaluator = RwaPurchaseEvaluator()
+        action = evaluator.build_action(self.quote, 500, agent_id="agent-rwa")
+        decision = evaluator.evaluate(action, self.quote, 500)
+        self.assertEqual(decision.decision.value, "ALLOW")
     def test_purchase_cap_is_block(self):
         evaluator = RwaPurchaseEvaluator(RwaPolicy(max_purchase_usd=100))
         action = evaluator.build_action(self.quote, 101, agent_id="agent-rwa")
