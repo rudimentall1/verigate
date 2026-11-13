@@ -26,7 +26,7 @@ from core.external_state import (
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.local import ExecutionGate
 from enforcement.networks import NetworkRegistry, UnsupportedNetworkError
-from enforcement.protocol import ExecutionAdapter
+from enforcement.protocol import ExecutionAdapter, _issue_execution_permit
 
 
 class ExecutionRouter:
@@ -260,23 +260,27 @@ class ExecutionRouter:
         if state_required and external_state:
             if getattr(adapter, "execution_external_state_scope", None) != "atomic":
                 raise ValueError("atomic external state enforcement is required: adapter does not provide atomic enforcement")
-            execute_bound = getattr(adapter, "execute_bound", None)
-            if not callable(execute_bound):
+            execute_after_consume = getattr(adapter, "execute_bound_after_consume", None)
+            if not callable(execute_after_consume):
                 raise ValueError(
                     "atomic external state enforcement is required for this authorization"
                 )
-            # The adapter owns nonce consumption and the atomic state-bound
-            # side effect. The router never calls an after-consume hook.
-            return execute_bound(authorization, external_state, broadcaster)
+        else:
+            execute_after_consume = getattr(adapter, "execute_after_consume", None)
+            if not callable(execute_after_consume):
+                raise ValueError(
+                    "execution adapter lacks the router-side consumption contract"
+                )
 
-        execute = getattr(adapter, "execute", None)
-        if not callable(execute):
-            raise ValueError(
-                "execution adapter lacks the self-consuming execution contract"
+        ok, reason = self._consume_authorization_once(authorization)
+        if not ok:
+            raise PermissionError(reason)
+        permit = _issue_execution_permit(authorization)
+        if state_required and external_state:
+            return execute_after_consume(
+                authorization, external_state, broadcaster, permit=permit
             )
-        # Built-in adapters consume the one-time authorization themselves
-        # before invoking their private post-consumption implementation.
-        return execute(authorization, broadcaster)
+        return execute_after_consume(authorization, broadcaster, permit=permit)
 
 
     @staticmethod
