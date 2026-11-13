@@ -90,17 +90,17 @@ Record the transaction signature, slot, RPC response, and run timestamp in the
 PR evidence. Do not describe the integration as live-tested until this run
 completes and the transaction is independently confirmed.
 
-## Remaining proof work
+## Verification status
 
-The unit tests exercise parsing, signature verification, and sender, recipient,
-amount, replay, and policy-cap mismatches using locally generated signed
-transactions. A policy BLOCK must produce no execution authorization.
+The targeted local Solana test modules passed 15/15 on tested code commit
+`f6ff6f8db32c1e2c55078cb874bb5dfd53800553`.
 
-The live Devnet demo evaluates both a small transfer and an oversized transfer
-through Verigate's GuardrailEngine. The small transfer must receive ALLOW before
-it can be broadcast; the oversized transfer must receive BLOCK and no execution
-authorization. A live Devnet run is still required to prove the successful
-transaction and independently verify its execution receipt.
+A live Devnet run and a separate read-only RPC transaction lookup are recorded
+below. The lookup verified the transaction at `confirmed` commitment. It does
+not establish `finalized` commitment or a third-party audit.
+
+The BLOCK/no-broadcast path is evidenced by the demo output and its execution
+guard; it is not represented as an on-chain transaction.
 
 The RPC preflight remains enabled on broadcast. This adapter does not itself
 prove blockhash freshness or simulate arbitrary program effects.
