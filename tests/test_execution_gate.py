@@ -11,7 +11,7 @@ from core.policy import Policy
 from core.storage import Storage
 from core.models import Capability, PaymentIntent
 from enforcement.local import ExecutionGate
-from enforcement.protocol import ExecutionAdapter
+from enforcement.protocol import ExecutionAdapter, _issue_execution_permit
 
 
 class ExecutionGateTest(unittest.TestCase):
@@ -161,6 +161,33 @@ class ExecutionGateTest(unittest.TestCase):
 
             with patch.object(gate, "validate", side_effect=validate_then_mutate):
                 gate.execute(auth, lambda authorized_action: calls.append(authorized_action["target"]))
+
+            self.assertEqual(calls, [original_target])
+            self.assertEqual(auth["payload"]["action"]["target"], "attacker-target")
+        finally:
+            storage.close()
+
+    def test_post_consume_hook_uses_snapshot_after_permit_claim(self):
+        auth, action = self._auth_pair()
+        original_target = auth["payload"]["action"]["target"]
+        calls = []
+        storage = Storage(self.db)
+        try:
+            gate = ExecutionGate(storage, load_public_key(self.pub))
+            ok, reason = gate.consume(auth)
+            self.assertTrue(ok, reason)
+            permit = _issue_execution_permit(auth)
+            original_claim = permit.claim
+
+            def claim_then_mutate(snapshot):
+                original_claim(snapshot)
+                auth["payload"]["action"]["target"] = "attacker-target"
+
+            with patch.object(permit, "claim", side_effect=claim_then_mutate):
+                gate.execute_after_consume(
+                    auth, lambda authorized_action: calls.append(authorized_action["target"]),
+                    permit=permit,
+                )
 
             self.assertEqual(calls, [original_target])
             self.assertEqual(auth["payload"]["action"]["target"], "attacker-target")
