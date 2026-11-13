@@ -17,9 +17,11 @@
     "verify:arc-fee-samples": "node scripts/verify_arc_fee_samples.mjs"
   },
   "devDependencies": {
-    "ethers": "^6.17.0",
     "ganache": "^7.9.2",
     "jsdom": "^26.1.0",
     "solc": "^0.8.37"
+  },
+  "dependencies": {
+    "ethers": "^6.17.0"
   }
 }
