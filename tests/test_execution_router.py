@@ -139,6 +139,34 @@ class ExecutionRouterTest(unittest.TestCase):
             router.execute(auth, lambda tx: sent.append(tx) or "unexpected")
         self.assertEqual(sent, [])
 
+    def test_solana_cluster_mismatch_does_not_consume_authorization(self):
+        raw, sender_address, recipient_address = make_signed_transfer()
+        intent = ActionIntent(
+            agent_id="router-agent", action_type="native.transfer", target=recipient_address,
+            amount=0.001, asset="SOL", network="solana",
+            metadata={
+                "solana_transaction": raw,
+                "solana_sender": sender_address,
+                "destination": recipient_address,
+                "solana_genesis_hash": DEVNET_GENESIS_HASH,
+            },
+        )
+        auth = self._authorization(intent)["execution_authorization"]
+        wrong_router = ExecutionRouter(
+            NetworkRegistry(solana_genesis_hash_provider=lambda: "wrong-genesis"),
+            self.storage,
+            load_public_key(self.public),
+        )
+        with self.assertRaisesRegex(ValueError, "genesis hash mismatch"):
+            wrong_router.execute(auth, lambda tx: "must-not-broadcast")
+
+        sent = []
+        self.assertEqual(
+            self.router.execute(auth, lambda tx: sent.append(tx) or "solana-retry-sig"),
+            "solana-retry-sig",
+        )
+        self.assertEqual(len(sent), 1)
+
     def test_unknown_evm_name_routes_by_signed_chain_id_when_family_is_explicit(self):
         intent = ActionIntent(
             agent_id="router-agent", action_type="token.transfer", target="merchant",
