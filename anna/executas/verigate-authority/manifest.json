@@ -88,7 +88,7 @@
     },
     {
       "name": "verigate_policy_summary",
-      "description": "Return active policy limits and this installation accounting principal. The optional agent_id is a display label only and never selects or resets accounting state. Read-only.",
+      "description": "Return active policy limits and this installation accounting principal. The rolling 24-hour value is active reserved capacity, released only by a verified REJECTED or ABORTED execution receipt. The optional agent_id is a display label only and never selects or resets accounting state. Read-only.",
       "timeout": 15,
       "parameters": [
         {
