@@ -1,3 +1,23 @@
+## Fresh Executa 0.1.21 build — verified 2026-11-13
+
+This section supersedes the earlier statement that a new four-platform build is still required. It does **not** mean the Console upload or App cut has happened.
+
+- Source: PR #59 HEAD `f67854823c4a45b4781cb3460612e77bda545d0f`.
+- Build: [Actions run 43384617316](https://github.com/rudimentall1/verigate/actions/runs/43384617316) **success**; all four platform jobs passed.
+- CI: [43384617386](https://github.com/rudimentall1/verigate/actions/runs/43384617386) and [43384623272](https://github.com/rudimentall1/verigate/actions/runs/43384623272) both **success**.
+- Every platform passed two-build reproducibility verification, package extraction/smoke tests and upload. Four downloaded artifact ZIPs were inspected locally; package version, tool ID, entrypoint and archive SHA-256 sidecars were checked. All recomputed checksums matched.
+- macOS Intel artifact 14017684573: `e950d7a6d2ef25ef248455f6a2a0a566275d45feec7ba363740b55c139cd63f9`.
+- Linux x86_64 artifact 14018420735: `309bbadfac7b8769980825af6d1510f15f4f5a327e183faee3f4139fb547df9a`.
+- Windows x86_64 artifact 14018385820: `9f7c956392cbc44d47e3b46b651bdd36a9ca02ae30af05e61bbadccfaeef55d4`.
+- macOS ARM64 artifact 14018735045: `d4855b5e6766bd9e61fa9d6c987dd904b30259007cbd0e509ecac798bd2b0ea2`.
+- Release job skipped; no GitHub Release, Anna Console upload, App version cut, live Cloud Agent invocation, wallet operation or Anna token use occurred.
+
+## Updated gate decision
+
+**Binary/source package: PASS. Overall release: NOT READY.** The remaining steps are Console upload of Executa 0.1.21 as a new immutable version, server-side verification, creation of a new App version bound to it, then live Cloud Agent/APS acceptance. Preserve old immutable Executa 0.1.20 and App 0.1.34 as historical drafts. Do not touch first-profile App ID 382. No Marketplace submission or publication.
+
+---
+
 # Anna App pre-release inspection — 2026-11-13
 
 Scope: Verigate Authority App 0.1.34 / bundled Executa 0.1.20, Anna App ID 851, Executa ID 1314. This is a source, CI and Console-state inspection. No Desktop Commander session, Anna Cloud Agent, wallet, or paid token-consuming test was used.
