@@ -296,3 +296,18 @@ Two test-only changes were merged after the App 0.1.30 / Executa 0.1.17 immutabl
 - [Historical release-gate record](history/RELEASE-GATE-2026-11-09.md)
 - [Repository threat model](../../docs/threat-model.md)
 - [Anna release CI](https://github.com/rudimentall1/verigate/actions)
+
+## 13 November 2026 — Executa 0.1.21 cut in both Anna accounts
+
+The user authorized updating App IDs `851` and `382`, without Marketplace publication. Both accounts now have immutable App `0.1.35` and bundled Executa `0.1.21` versions. Existing immutable history was preserved.
+
+| Account | App version | App version ID | Executa ID | Executa version | Executa version ID | Current state |
+|---|---:|---:|---:|---:|---:|---|
+| App 851 | 0.1.35 | 2186 | 1314 | 0.1.21 | 1087 | Draft/private |
+| App 382 | 0.1.35 | 2189 | 1164 | 0.1.21 | 1089 | Pending review; review remains pinned to 0.1.32 (ID 2179) |
+
+App 382 bundle is ready (3 files, 100,564 bytes). The four Executa platform assets resolved to Anna CDN URLs; the CLI reported them as already present/skipped rather than newly uploaded. App 382's new immutable cut explicitly freezes Executa ID 1164, version ID 1089, version 0.1.21.
+
+The source package was built by GitHub Actions run [43384617316](https://github.com/rudimentall1/verigate/actions/runs/43384617316), with all four platform jobs and smoke tests passing. This is build and Anna Console version evidence only. Fresh Cloud Agent acceptance for both accounts remains outstanding. Do not state that the new versions have passed live Cloud Agent invoke tests. No review resubmission or Marketplace publication was performed.
+
+Next release gate: verify each immutable App version in a fresh/appropriate Cloud Agent session, confirm the account-specific bundled Executa identity and version, then test positive and negative invocation paths and record the observed runtime evidence.
