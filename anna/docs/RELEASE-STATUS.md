@@ -1,3 +1,9 @@
+## Immutable Executa artifact freshness blocker — 13 November 2026
+
+The Console-uploaded Executa 0.1.20 binaries were built by workflow run [43376084717](https://github.com/rudimentall1/verigate/actions/runs/43376084717) from source commit `e1bcfe3e915a2058321d2c26ede115dd7f14f445` (06:03:30Z). The published manifest fixes were committed later: `25d6b06f680a6d0512610d9621f3e67a1bb56530` (06:29:49Z) and `3f0576d573ae35d3c261305302b67993900c7357` (06:47:44Z). Therefore the immutable Console package predates the final manifest parity corrections and must be treated as stale relative to the current source. CI success on later commits does not rebuild or replace those uploaded binaries.
+
+**New release blocker:** build a new Executa version from the final source (do not overwrite immutable 0.1.20), verify all four platform packages and checksums, then create a matching new App version frozen to that Executa version. Only after the new package is uploaded should live Cloud Agent acceptance be considered. Current 0.1.20/0.1.34 Console cut remains Draft and must not be submitted.
+
 ## Latest source/CI checkpoint — 13 November 2026 (PR #59)
 
 - Current PR head at this checkpoint: `b51b7114a874a41fe62491ff451e35ffcbf42cb2`.
