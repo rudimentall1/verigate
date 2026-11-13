@@ -356,11 +356,13 @@ def main() -> None:
             print()
             print("4) ExecutionMonitor -> getSignatureStatuses")
             monitor = ExecutionMonitor({"solana": rpc})
-            confirmation = wait_for_confirmed(
-                rpc,
-                submitted.payload["transaction_ref"],
-                timeout_seconds=30,
-            )
+            deadline = time.time() + 30
+            confirmation = {"state": "PENDING", "transaction_ref": submitted.payload["transaction_ref"]}
+            while time.time() < deadline:
+                confirmation = monitor.check(submitted.as_dict())
+                if confirmation["state"] != "PENDING":
+                    break
+                time.sleep(1)
             print("RPC state:", confirmation["state"])
 
             confirmed = router.confirm_execution_receipt(
