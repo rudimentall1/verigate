@@ -1,3 +1,4 @@
+import copy
 import tempfile
 import unittest
 from pathlib import Path
@@ -174,6 +175,30 @@ class ExecutionRouterTest(unittest.TestCase):
             caller_authorization["payload"]["action"]["metadata"]["evm_transaction"]["to"],
             "0xAttacker",
         )
+
+    def test_consume_uses_authorization_snapshot_after_verification(self):
+        intent = ActionIntent(
+            agent_id="router-agent", action_type="token.transfer", target="merchant",
+            asset="USDC", network="base",
+            metadata={"evm_transaction": {"chain_id": 8453, "to": "0xMerchant", "value_wei": 0, "data": "0x"}},
+        )
+        caller_authorization = self._authorization(intent)["execution_authorization"]
+        original_authorization = copy.deepcopy(caller_authorization)
+        original_verify = self.router._verify_authorization
+
+        def verify_then_mutate(snapshot, verification_time=None):
+            original_verify(snapshot, verification_time=verification_time)
+            caller_authorization["payload"]["nonce"] = "attacker-nonce"
+            caller_authorization["payload"]["authorization_id"] = "f" * 64
+
+        with patch.object(self.router, "_verify_authorization", side_effect=verify_then_mutate):
+            ok, reason = self.router.consume(caller_authorization)
+
+        self.assertTrue(ok, reason)
+        sent = []
+        with self.assertRaisesRegex(PermissionError, "already consumed"):
+            self.router.execute(original_authorization, lambda tx: sent.append(tx) or "unexpected")
+        self.assertEqual(sent, [])
 
     def test_routes_base_to_evm_adapter(self):
         intent = ActionIntent(
