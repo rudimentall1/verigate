@@ -599,21 +599,34 @@ class Storage:
 
             return row is not None
 
-    def spent_today(self, agent_id: str, asset: str) -> float:
-        """Return spend in the rolling 24-hour window.
+    def reserved_today(self, agent_id: str, asset: str) -> float:
+        """Return active payment reservations in the rolling 24-hour window.
 
-        BLOCK decisions are excluded from spend accounting.
+        Non-BLOCK authorizations reserve policy capacity until their execution
+        outcome is known. A cryptographically verified, persisted REJECTED or
+        ABORTED execution receipt releases that reservation. UNKNOWN and
+        SUBMITTED remain reserved: neither proves that funds were not moved.
+        Legacy/non-executable audit rows remain reserved conservatively.
         """
         since = time.time() - 24 * 3600
 
         with self._lock:
             rows = self._conn.execute(
-                "SELECT amount "
-                "FROM audit_log "
-                "WHERE agent_id = ? "
-                "AND asset = ? "
-                "AND created_at >= ? "
-                "AND decision != 'BLOCK'",
+                "SELECT a.amount "
+                "FROM audit_log AS a "
+                "WHERE a.agent_id = ? "
+                "AND a.asset = ? "
+                "AND a.created_at >= ? "
+                "AND a.decision != 'BLOCK' "
+                "AND NOT EXISTS ("
+                "  SELECT 1 "
+                "  FROM authorization_artifacts AS aa "
+                "  JOIN execution_receipts AS er "
+                "    ON er.authorization_id = aa.authorization_id "
+                "   AND er.intent_id = aa.intent_id "
+                "  WHERE aa.intent_id = a.intent_id "
+                "    AND er.status IN ('REJECTED', 'ABORTED')"
+                ")",
                 (agent_id, asset, since),
             ).fetchall()
 
@@ -622,6 +635,10 @@ class Storage:
         from .money import to_decimal
 
         return float(sum((to_decimal(r[0]) for r in rows if r[0] is not None), Decimal(0)))
+
+    def spent_today(self, agent_id: str, asset: str) -> float:
+        """Backward-compatible alias for active rolling-24-hour reservations."""
+        return self.reserved_today(agent_id, asset)
 
     def calls_last_minute(self, agent_id: str) -> int:
         """Return all recorded payment attempts in the last 60 seconds."""

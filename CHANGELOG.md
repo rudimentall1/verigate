@@ -1,5 +1,17 @@
 # Changelog
 
+## Anna App 0.1.34 / Executa 0.1.20
+
+### Reservation lifecycle accounting
+
+- Treat non-BLOCK authorizations as rolling 24-hour reservations rather than completed spend.
+- Release a reservation only after a persisted, verified REJECTED or ABORTED execution receipt bound to the same authorization and intent.
+- Keep UNKNOWN and SUBMITTED reservations active; a wallet error without a definitive rejection and a transaction hash without chain confirmation do not prove funds were not moved or settled.
+- Preserve the legacy `spent_today` method and `rolling_24h_spend` field as compatibility aliases; expose `reserved_today` and `rolling_24h_reserved` for explicit semantics.
+- Add integration assertions for reserve, release, and fail-closed UNKNOWN/SUBMITTED behavior.
+- Document the accounting lifecycle and trust limitations in `anna/docs/RESERVATION-ACCOUNTING.md`.
+- Source candidate only: Executa 0.1.20 binaries must be rebuilt and verified on all four platforms before Anna Console upload.
+
 ## Anna App 0.1.33 / Executa 0.1.19
 
 ### Authority Desk interface refresh

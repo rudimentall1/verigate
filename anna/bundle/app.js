@@ -743,7 +743,7 @@ function buildLimitRows(limits, values, ruleIds) {
   if (daily !== null) {
     const used = Number(limits.rolling_24h_spend || 0);
     add(
-      "Projected 24-hour authorization total",
+      "Projected 24-hour reserved capacity",
       String(used + values.amount) + " (including this request)",
       String(daily),
       ruleIds.has("daily_cap_exceeded") ? "review" : "ok"

@@ -98,7 +98,7 @@
       <div class="result-top"><span id="decision" class="decision">RESULT</span><div><h2 id="result-title">Authority decision</h2><div id="result-meta" class="result-meta"></div></div></div>
       <p id="result-summary" class="result-summary"></p><p id="suggestion" class="suggestion"></p>
       <div id="ai-review"><h2>Anna AI contextual risk review (advisory)</h2><p class="helper">Source: bundled Verigate Executa → Anna protocol-v2 reverse Sampling. Findings are advisory; policy authority stays in Verigate.</p><p id="ai-review-summary" class="helper"></p><ul id="ai-flags" class="rules"></ul></div>
-      <div id="limits"><h2>Policy limits</h2><table id="limits-table"></table><p class="helper">The 24-hour counter and recipient history are policy-history counters, not proof that an on-chain transfer was signed, submitted, or settled. They record non-BLOCK Verigate authorizations. A wallet rejection or cancellation does not automatically release this reservation.</p></div>
+      <div id="limits"><h2>Policy limits</h2><table id="limits-table"></table><p class="helper">The 24-hour counter tracks active policy reservations, not chain-confirmed spend. A verified signed REJECTED or ABORTED wallet outcome releases its reservation. UNKNOWN and SUBMITTED remain reserved until the outcome is resolved.</p></div>
       <h2 id="rules-heading">Policy checks</h2><ul id="rules" class="rules"></ul>
       <div class="proof" id="proof"></div>
       <details><summary>Issuer public key (for independent verification)</summary><pre id="issuer-public-key"></pre></details>
