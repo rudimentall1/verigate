@@ -10,7 +10,7 @@ from core.policy import Policy
 from core.storage import Storage
 from core.authority_state import DynamicAuthorityService
 from core.authorization import AuthorizationService
-from enforcement.tool import ToolExecutionAdapter
+from enforcement.tool import ToolExecutionAdapter, build_tool_execution_graph
 
 
 class ZeroClickToolAbuseTest(unittest.TestCase):
@@ -86,7 +86,20 @@ class ZeroClickToolAbuseTest(unittest.TestCase):
         self.assertIsNone(result["execution_authorization"])
 
     def test_allowed_destination_can_execute_through_registered_tool(self):
+        handler = lambda signed_action: "fetched"
         action = self._action("https://api.internal.example")
+        action = ActionIntent(
+            agent_id=action.agent_id,
+            action_type=action.action_type,
+            target=action.target,
+            purpose=action.purpose,
+            declared_context=action.declared_context,
+            input_provenance=action.input_provenance,
+            metadata={
+                **action.metadata,
+                "execution_graph": build_tool_execution_graph("http.fetch", handler),
+            },
+        )
         decision = self.engine.evaluate_action(action)
         self.assertEqual(decision.decision, Decision.ALLOW)
 
@@ -111,10 +124,28 @@ class ZeroClickToolAbuseTest(unittest.TestCase):
         )["execution_authorization"]
 
         calls = []
+        def registered_handler(signed_action):
+            calls.append(signed_action)
+            return "fetched"
+
+        # The fingerprint is computed from the exact callable registered below.
+        action_graph = build_tool_execution_graph("http.fetch", registered_handler)
+        action = ActionIntent(
+            agent_id=action.agent_id,
+            action_type=action.action_type,
+            target=action.target,
+            purpose=action.purpose,
+            declared_context=action.declared_context,
+            input_provenance=action.input_provenance,
+            metadata={**action.metadata, "execution_graph": action_graph},
+        )
+        decision = self.engine.evaluate_action(action)
+        auth = AuthorizationService().issue(
+            action, decision, self.policy.digest, self.private_key,
+            capability=capability, authority=authority, policy=self.policy,
+        )["execution_authorization"]
         adapter = ToolExecutionAdapter(
-            self.storage,
-            self.public_key,
-            {"http.fetch": lambda signed_action: calls.append(signed_action) or "fetched"},
+            self.storage, self.public_key, {"http.fetch": registered_handler},
         )
         self.assertEqual(adapter.execute_registered(auth), "fetched")
         self.assertEqual(
