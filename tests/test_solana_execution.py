@@ -87,7 +87,7 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
                     amount=0.001,
                     asset="SOL",
                     network="solana",
-                    metadata={"solana_transaction": "not-base64", "solana_sender": sender_address},
+                    metadata={"solana_transaction": "not-base64", "solana_sender": sender_address, "solana_genesis_hash": DEVNET_GENESIS_HASH},
                 )
                 decision = GuardrailDecision(
                     intent_id=intent.intent_id,
