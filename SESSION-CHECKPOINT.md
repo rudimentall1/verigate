@@ -1,6 +1,6 @@
 # Verigate Session Checkpoint
 
-**Updated:** 2026-11-12 10:42 +05:00
+**Updated:** 2026-11-13 11:10 +05:00
 **Repository:** rudimentall1/verigate  
 **Default branch:** main  
 **Latest product merge before this checkpoint refresh:** 6ab3a289c300cb6d614d27bb7134ae251f7db261  
@@ -468,3 +468,732 @@ Next safe dependency action:
 - Arc read-only deployment verification in that run: **PASS**.
 - Full CI run [43161791702](https://github.com/rudimentall1/verigate/actions/runs/43161791702): test, contracts and container jobs passed at last inspection; `anna-ui` was still in progress.
 - No dependency update, lockfile change, server change or production deployment was made.
+
+
+## 20. Arc constrained signer service — 2026-11-12
+
+### Workstream and branch
+
+- Dedicated branch: `feat/arc-agent-signer-service-2026-11-12`.
+- PR #58: https://github.com/rudimentall1/verigate/pull/58
+- PR #58 is Draft/Open and stacked on PR #57 branch head `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`; it is not based on `main`.
+- Latest implementation/test commit: `ed65caefe7238a46283eb8e48e5e1ba66645ab47`.
+- Latest full passing CI before the new crash/restart tests: run [43191800554](https://github.com/rudimentall1/verigate/actions/runs/43191800554), on prior implementation head `a3d6e8f7af971abe70703b55e5e93c5fb0eac682`.
+- PR #57 remains separate. Do not merge either PR without explicit approval.
+- This checkpoint and all signer work are on the signer branch, not `main`.
+
+### Implemented
+
+1. `integrations/arc-constrained-signer.mjs`
+   - Verifies pinned Verigate Ed25519 authorization signatures, version 1, positive timestamps and the 300-second validity window.
+   - Accepts API-compatible bytes32 authorization IDs both with and without `0x`.
+   - Validates Arc Mainnet chain 5042, canonical Arc USDC, six decimals, zero native value and exact transfer calldata.
+   - Derives Registry registration, Registry consumption and USDC payment calldata internally.
+   - Enforces issuer-only registration and agent-only consumption/payment.
+   - Validates configured fee ceilings and live fee data.
+   - Uses an append-only fsync-backed journal with locking, replay protection, cumulative per-instance daily budget reservations and fail-closed unresolved operations.
+   - Journal file reads reject symlinks, hard links, foreign ownership and group/other permissions; journal directories must be owned by the signer and mode 0700.
+   - Operation state is `reserved` → `broadcast` → `complete`: transaction hash is fsynced immediately after RPC submission and before receipt waiting; completion must match the durable broadcast hash.
+   - Journal keys bind the canonical lowercase bare bytes32 authorization ID to the signed authorization digest. Different signed intents reusing one ID cannot share replay or consume state.
+   - Agent `payment` reservation is rejected unless the same signed authorization digest has a completed `consume` receipt in that agent journal.
+
+2. `integrations/arc-signer-socket.mjs` and `integrations/arc-signer-client.mjs`
+   - Unix-domain socket only; typed operations are `register`, `consume`, and `payment`.
+   - Rejects arbitrary transaction fields, oversized requests and existing socket paths.
+   - Uses socket mode 0660 and a durable reservation before adapter execution.
+   - Completed requests replay the saved result instead of broadcasting twice.
+   - Client exposes only the three typed operations; no generic sign or send-transaction method.
+
+3. `integrations/arc-ethers-signer-adapter.mjs`
+   - Ethers v6 adapter pins Arc chain ID, a configured 20-byte Registry address and the expected Registry runtime code hash.
+   - Startup checks the configured issuer mapping on-chain; issuer role also requires the loaded signer address to match the configured issuer.
+   - Enforces live fee data, gas estimation, configured gas/fee ceilings, pending nonce lookup, serialized local broadcasts, receipt status/hash/sender/destination/block checks, confirmation wait and actual native-cost accounting.
+
+4. `scripts/run_arc_signer.mjs` and `deploy/systemd/verigate-arc-signer@.service`
+   - Linux-only daemon entrypoint.
+   - Loads EVM private key from a protected file, checks file type, owner and restrictive permissions, and does not accept the private key through command-line arguments or environment variables.
+   - Requires separate role, socket, journal, RPC, Registry, issuer, public-key and fee configuration.
+   - systemd template provides separate issuer/agent users and groups, strict filesystem protection, restricted writable paths, no ambient capabilities and restricted address families.
+   - Added `deploy/arc-signer/install.sh`, `rollback.sh`, role-specific `.env.example` templates and `tests/arc-signer-deploy-smoke.sh`. Installer modes are staged: `--provision-accounts`, read-only `--check`, then `--apply` to install the unit only. It never generates/imports keys or starts services. Rollback preserves keys, env files, journals, users and groups.
+   - Disposable Ubuntu CI smoke test provisions temporary signer users/groups, validates key/config permissions, installs the unit with a stubbed systemctl, runs `systemd-analyze verify`, verifies no service start/enable, runs rollback and checks keys/env/journals remain. This validates filesystem, unit syntax and script behavior, not an actual systemd daemon start.
+   - Installer validates root-owned env files, exact socket/journal/key paths, pinned Registry address/hash, HTTPS RPC, 20-byte issuer address, numeric fee limits, and separate signer-owned 0600 key/public-key files. Config/key parent directories are root-owned mode 0711.
+
+5. Existing Arc executor integration
+   - Added `executeAuthorizedArcPaymentWithSignerClients` to `integrations/arc-agent-executor.mjs`.
+   - Preserves the existing API sequence: authorize → issuer register → registration confirm → agent consume → consumption confirm → agent payment → payment confirm.
+   - Validates the API-provided transaction envelopes against independently derived calldata before requesting signer operations.
+   - Orchestrator uses typed socket clients and does not load EVM Wallets or private keys.
+
+6. Tests and CI
+   - Added policy, socket server, socket client, ethers adapter and signer-client orchestration tests.
+   - Added restart regression tests for both ambiguous crash windows:
+     - reservation persisted but no transaction hash recorded;
+     - broadcast hash recorded but receipt unresolved.
+   - Both tests restart the service against the same journal and assert that the operation remains blocked and the adapter is not called a second time.
+   - Full CI run [43191800554](https://github.com/rudimentall1/verigate/actions/runs/43191800554) passed 4/4 jobs (`contracts`, `test`, `container`, `anna-ui`) on prior implementation head `a3d6e8f7af971abe70703b55e5e93c5fb0eac682`. The contracts job includes the disposable Linux installer/rollback smoke test and `systemd-analyze verify`.
+   - A fresh CI run for exact current head `ed65caefe7238a46283eb8e48e5e1ba66645ab47` is still required. Do not report the previous passing run as validation of the two new tests.
+
+### Verified Registry pin
+
+- Registry: `0x4D09CdD490c1Ce48BCB6DA5c1A6Bf41E2f5e853D`.
+- Read-only deployment verification: [run 43160472757](https://github.com/rudimentall1/verigate/actions/runs/43160472757).
+- The run confirmed Arc chain ID 5042, the Registry address, owner, enabled issuer, deployment transaction/block and matching deployed runtime hash `0x6b229c049b9ba0007c318a10759a9827b5a798a4e511611872dcd4cf3973b160`.
+- The signer pins this exact 20-byte address and rejects a different configured value. The earlier 41-character address in a previous checkpoint note was a transcription error, not the repository's actual deployment address.
+
+### Explicit limitations — not production-ready
+
+- No signer keys were created, copied or exposed.
+- No live Arc transaction was broadcast by this service.
+- Adapter tests use mocked provider/wallet objects; they are not live-chain verification.
+- The disposable Ubuntu CI smoke test validated account provisioning, installer preflight, unit installation without starting services, unit syntax and rollback. It did not start the signer under a real systemd manager.
+- Actual systemd service startup/restart and issuer/agent socket ACL behavior remain unverified.
+- Fee ceilings still need to be measured from representative Arc receipts and reviewed.
+- Gensyn2 was not accessed or modified.
+- This is OS-isolated signing, not an HSM and not protection against root/host compromise.
+
+### Next gates
+
+1. Obtain a fresh full CI result on exact head `ed65caefe7238a46283eb8e48e5e1ba66645ab47`; fix any failure before proceeding.
+2. Independently review stale journal-lock recovery and the operator reconciliation procedure. A crash while holding the exclusive lock can leave a lock file; fail-closed behavior is intentional, but recovery must be documented and tested without deleting unresolved operation records.
+3. Validate actual systemd manager startup/restart and issuer/agent socket ACLs in a disposable Linux environment. Do not use Gensyn2 for this gate.
+4. Measure fee ceilings from representative Arc receipts and review the per-role budgets. The two role journals enforce separate budgets, not one shared global ceiling.
+5. Only after all gates pass, inspect Gensyn2 read-only and prepare a controlled installation. Do not modify FLOP, AegisForge, OWNERA or unrelated services.
+6. No mainnet transaction or production key provisioning without a separate explicit decision.
+
+
+## 21. Arc constrained signer: exact-head CI and stale lock gate — 2026-11-12
+
+### Exact-head CI verification
+
+- Current PR #58 head: `a4a11a2501f316e257f2cdc3352840e170aa0345`.
+- GitHub Actions CI run [#43193728508](https://github.com/rudimentall1/verigate/actions/runs/43193728508) is associated with that exact commit and completed with conclusion **success**.
+- All four jobs passed:
+  - `contracts`: includes constrained signer policy tests, signer client/orchestration tests, Arc compile/access-control tests.
+  - `test`: full repository test suite, SDK/wallet client tests, end-to-end demo and API smoke check.
+  - `container`: protected Compose configuration, production image build and API auth smoke test.
+  - `anna-ui`: manifest validation, app/plugin E2E UI test, Linux Executa build/smoke test.
+- This exact-head run supersedes the earlier note that a fresh CI run was still required for the crash/restart tests. Both restart regression tests are now covered by a successful exact-head full CI run.
+- PR #58 remains Draft/Open and unmerged. PR #57 remains separate. No merge or readiness-state change was made.
+
+### Remaining journal-lock issue
+
+- `OperationJournal.withLock()` still creates an exclusive `.lock` file with `openSync(..., "wx")` and removes it in `finally`.
+- A hard process termination can leave the lock file behind. The service correctly fails closed, but the current lock contains no owner metadata and cannot safely distinguish a live owner from a stale lock.
+- No stale-lock recovery code or operator recovery command has been implemented yet.
+- Next implementation must add owner identity (PID, Linux boot ID and process start ticks), fsync lock metadata, and provide explicit inspect/recover behavior. Recovery must refuse malformed/unsafe/live-owner locks, require an explicit apply flag, never run automatically at service startup, and must not alter or delete journal records.
+- Add tests for live-owner refusal, stale PID/start-time detection, PID reuse protection, malformed metadata, symlink/hardlink/permission rejection, and byte-for-byte journal preservation.
+
+### Deployment gates unchanged
+
+- Actual systemd manager startup/restart and issuer/agent socket ACL behavior remain unverified.
+- Fee ceilings still require measurement from representative Arc receipts. Issuer and agent journals have separate budgets, not one shared global budget.
+- No signer keys were provisioned and no live Arc transaction was broadcast by the signer.
+- Gensyn2 remains untouched. Do not modify FLOP, AegisForge, OWNERA or unrelated services.
+- Do not merge PR #57 or #58, provision production keys, start signer services or send live transactions without separate explicit approval.
+
+
+## 22. Arc signer stale-lock recovery implementation — 2026-11-12
+
+### Implemented on the signer branch
+
+- Updated `OperationJournal.withLock()` to write owner metadata into the exclusive lock file and fsync it before running the protected operation:
+  - signer PID;
+  - Linux boot ID;
+  - Linux process start ticks from `/proc/<pid>/stat`;
+  - metadata version and platform.
+- Added `OperationJournal.inspectLock()`:
+  - checks regular-file type, one hard link, exact 0600 permissions and signer ownership;
+  - opens with `O_NOFOLLOW` where supported and checks the opened inode against the initial `lstat`;
+  - rejects malformed or unsupported metadata;
+  - distinguishes a live process from a stale lock using boot ID, PID liveness and process start ticks, protecting against PID reuse.
+- Added `OperationJournal.recoverStaleLock({ apply })`:
+  - default behavior is inspect-only;
+  - requires `apply: true` to unlink a provably stale lock;
+  - refuses a live owner or any uncertain/unsafe lock;
+  - checks the lock inode again immediately before unlinking;
+  - never reads, rewrites, truncates or deletes journal operation records.
+- Added operator command `scripts/recover_arc_signer_lock.mjs` and npm alias `npm run recover:arc-signer-lock -- /path/to/journal.jsonl [--apply]`.
+- Added tests for live-owner refusal, PID reuse, stale PID recovery, explicit-apply requirement, malformed metadata, symlink/hardlink/broad-permission rejection, journal byte preservation, lock owner metadata and concurrent acquisition refusal.
+- Recovery is not called automatically at service startup. Non-Linux environments can continue to use the journal, but stale-lock recovery is intentionally unsupported there.
+
+### Verification status
+
+- Latest implementation commit at this checkpoint: `75fd812bc7495be646b7dac1bc491a99f8ba36cd`.
+- PR #58 remains Draft/Open and unmerged.
+- The exact-head CI pass [#43193728508](https://github.com/rudimentall1/verigate/actions/runs/43193728508) validates the previous head `a4a11a2...`, **not** the stale-lock implementation above.
+- A fresh CI run for `75fd812...` has not yet appeared in the GitHub workflow-run lookup. Do not claim these new lock-recovery tests pass until the fresh run completes.
+- No Gensyn2 access or changes, no signer key provisioning, no service start and no live transaction.
+
+
+## 23. Arc signer recovery hardening and operator runbook — 2026-11-12
+
+- Added `deploy/arc-signer/LOCK-RECOVERY.md` with explicit inspect-first/apply-second instructions, service-inactive precondition, expected lock states and post-recovery journal handling.
+- Tightened recovery against lock replacement races: before unlinking, the code re-inspects owner liveness and metadata, verifies the original device/inode, then rechecks file type, hard-link count, exact 0600 mode and ownership.
+- Latest branch implementation commit: `c8bb76ae9d543cd9f2add79d18baf37b4fc1c4f4`.
+- PR #58 remains Draft/Open. No merge, service installation, key provisioning or live transaction.
+- CI for the stale-lock implementation is still not confirmed. The last confirmed full CI pass remains run #43193728508 on the earlier head `a4a11a2...`. Do not mark the new lock recovery code tested until a fresh run on the current head passes.
+
+
+## 24. Arc signer PR metadata and latest checkpoint — 2026-11-12
+
+- PR #58 description now includes the stale-lock owner metadata, explicit recovery command, PID-reuse protection, unsafe-lock rejection and operator runbook.
+- PR remains **Draft/Open**, based on PR #57. No merge or base change.
+- Latest signer branch head: `2d080d9bc431acdad87e7ea7d2db0b1764926611`.
+- Latest confirmed full CI pass remains run [#43193728508](https://github.com/rudimentall1/verigate/actions/runs/43193728508) on earlier head `a4a11a2...`. The workflow-run lookup has not returned a run for the new stale-lock commits, and combined commit status is empty. Treat the new code as **not yet CI-verified**.
+- Before any deployment discussion, obtain a full CI run for the latest head and inspect the `contracts` job output for the lock recovery tests. Then test the real systemd runtime/ACL behavior in a disposable Linux VM.
+
+
+## 25. Arc integration and constrained signer current state — 2026-11-12
+
+This section supersedes earlier stale-lock, systemd and CI status statements in sections 20–24 below/above. Older entries remain as historical checkpoints, not current status.
+
+### Pull request and branch state
+
+- Repository: `rudimentall1/verigate`.
+- PR #56: Arc Registry deployment verification evidence, Draft/Open; separate read-only deployment verification work.
+- PR #57: `feat/arc-payment-settlement-confirmation-2026-11-12`, head `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`, Draft/Open, not merged. Adds payment settlement confirmation after an explicitly broadcast wallet payment.
+- PR #58: `feat/arc-agent-signer-service-2026-11-12`, Draft/Open, not merged; stacked on PR #57's branch. Do not change Draft state or merge either PR without explicit approval.
+- Latest signer code/test commit covered by the new full CI run: `dd5a44f7a31dfcc80b378aed8a3d6d8279fec5d0`. The checkpoint/docs-only follow-up commit is `9b4787030fe9ffdc4a45e8f3edbf22e5c0448769`.
+- The latest full CI run associated with the implementation commit is [#43227346896](https://github.com/rudimentall1/verigate/actions/runs/43227346896). At checkpoint creation, `contracts`, `test` and `container` are **success**; `anna-ui` is still running its Executa binary smoke test. Do not call the whole run 4/4 until that final job completes.
+
+### Newly verified implementation gates
+
+1. **Stale journal lock recovery**
+   - Lock metadata records PID, Linux boot ID and process start ticks, is fsynced and is checked against current process identity.
+   - Explicit inspect-first / `--apply` recovery only; live, malformed, unsafe or uncertain locks are refused. PID reuse is checked. Lock inode/owner/mode are revalidated immediately before removal.
+   - No automatic startup cleanup. The operation journal itself is never truncated or rewritten by lock recovery.
+   - Test coverage includes live owner, stale PID, PID reuse, unsafe file type/link count/permissions, explicit apply, concurrent lock acquisition and byte-for-byte journal preservation.
+
+2. **Actual systemd runtime**
+   - CI exercises a real systemd system manager with disposable Linux users, units and runtime directories; the unit starts and restarts.
+   - CI also starts the actual `scripts/run_arc_signer.mjs` daemon under systemd, with a temporary EVM key and local HTTPS mock Arc RPC. Startup checks the live RPC `eth_chainId`, Registry runtime code hash and enabled issuer mapping. This test performs no RPC transaction broadcast.
+   - Positive/negative Unix socket ACL checks are included: the intended supplementary group can connect; an unrelated unprivileged user cannot.
+
+3. **Full two-role signer execution path**
+   - New CI smoke test `tests/arc-signer-full-flow-systemd-smoke.sh` runs two actual signer daemon processes under separate systemd users (`issuer` and `agent`) against a stateful local mock RPC.
+   - It creates an ephemeral valid Ed25519 Verigate authorization, then executes: issuer `register` → agent `consume` → agent exact ERC-20 USDC `payment`.
+   - The mock validates Arc chain ID, zero native value, issuer/agent sender separation, Registry/USDC destinations, selectors, executor binding, same authorization ID and signed-intent hash, and exact payment recipient/amount calldata.
+   - Cross-role operations are rejected. Repeating all three completed requests returns journaled results with `replay: true`. The mock accepts exactly three local raw transactions.
+   - Log evidence from run #43227346896:
+     - register tx hash in mock: `0x9cb0dabcb4427cdf739faca2e2e19e95e17412ccdf355f255a2ed6e32935e423`
+     - consume tx hash in mock: `0x7ec96b465042710cffdea9d5f740cb0881d6b50f944029184eebf7efeaa07ecb`
+     - payment tx hash in mock: `0x84bec124d29cad32abe60e2cff2b7ef7a10c1228c32f86df33bfc363991de3e1`
+   - These are synthetic local mock-RPC transaction hashes, **not Arc Mainnet transactions**. No public RPC or mainnet transaction was used.
+
+4. **Actual RPC chain identity**
+   - Fixed an ethers `staticNetwork` blind spot: adapter startup now explicitly calls `provider.send("eth_chainId", [])` and checks the actual RPC response equals 5042, then checks the provider's configured network too.
+   - Added a regression test where `getNetwork()` says 5042 but the actual RPC `eth_chainId` says 1; adapter startup must reject.
+   - The `contracts` job in run #43227346896 passed `Constrained Arc signer policy tests`, the systemd daemon tests and the full-flow signer test.
+
+### Read-only Arc fee evidence
+
+- Fee accounting units are now explicit: Arc native USDC uses 18 decimals for gas cost; canonical USDC ERC-20 transfers use 6 decimals. `gasUsed × effectiveGasPrice`, `maxNativeCost` and `dailyNativeBudget` are native 18-decimal USDC base units. EVM fee-per-gas settings remain wei/gas. Divide native totals by `10^12` to express the six-decimal ERC-20 equivalent.
+- Read-only sampler: `scripts/verify_arc_fee_samples.mjs`; npm command `npm run verify:arc-fee-samples`. It verifies RPC chain ID, transaction destination and selector, receipt success/hash and fee fields. It has a chain-checked Arcscan fallback for pruned historical receipts.
+- CI run #43225423264 (before adding the full-flow test) recorded all four samples; the latest run #43227346896 also completed the read-only fee step successfully.
+- Verigate Registry historical receipts:
+  - Registration #1, tx `0xa6a2fb23af073085c64bb168f14ee02d90d64fbeb4629dc2724ba1d01624867f`, block 30024727, gas 94,914, effective price 25.75 Gwei, fee **0.0024440355 native USDC**.
+  - Registration #2, tx `0x5f45d89e0f12e42a0d00268d6125a2b05f6474f4ed786895bc7715cf39ad1696`, block 30025935, gas 94,914, 25 Gwei, fee **0.00237285 native USDC**.
+  - Consumption, tx `0xc0b2a5de7973da979808ebf5f69e4736ad1eea22fc1fdd5f698b2b44cbad5de8`, block 30026205, gas 34,267, 25.75 Gwei, fee **0.00088237525 native USDC**.
+- Separate-project fee reference only:
+  - Guardian v3 ERC-20 USDC transfer, tx `0xd781e8b04b5ca89c3a34fcec50a6636049f7647d2b0e1b2bb64d5b1ee54daadf`, block 21448559, gas 48,722, 21.014 Gwei, fee **0.001023844108 native USDC**. This belongs to Agentic Wallet Guardian v3; it is not a Verigate payment or settlement proof.
+- Historical sample max is 0.0024440355 native USDC for registration. It is insufficient to set production limits on its own. No production fee ceilings have been selected or approved. Issuer and agent budgets remain per-instance, not one shared global budget.
+
+### Arc integration evidence boundary
+
+- Arc Mainnet chain ID: 5042.
+- Registry: `0x4D09CdD490c1Ce48BCB6DA5c1A6Bf41E2f5e853D`.
+- Verified Registry runtime hash: `0x6b229c049b9ba0007c318a10759a9827b5a798a4e511611872dcd4cf3973b160`.
+- Deployer/owner: `0x1429906b663608Db6aDeAb8F975B47aFbbe8c68C`.
+- Registry deployment evidence and historical read-only checks are recorded in PR #56 and [run #43160472757](https://github.com/rudimentall1/verigate/actions/runs/43160472757).
+- PR #57 contains mocked API/RPC settlement verification coverage and a wallet hand-off path. No Verigate-authorized Arc Mainnet USDC payment is claimed. No live settlement transaction hash exists for this Verigate flow.
+- The full signer flow proven by #43227346896 uses ephemeral keys and a local synthetic mock RPC; it proves code-path orchestration, role boundaries, exact calldata and idempotency, not live Arc behavior.
+
+### Deployment and operational boundaries
+
+- No production key provisioning or copying occurred.
+- No signer daemon was installed or started on Gensyn2.
+- No live signer transaction was broadcast.
+- No Gensyn2 access was performed during this work. FLOP, AegisForge, OWNERA and unrelated services remain untouched.
+- Actual target-host UID/group mapping, runtime directories, RPC availability, fee configuration and rollback readiness still require a separately approved read-only inventory and operator review.
+- This remains OS-isolated signing, not an HSM and not protection against root/host compromise.
+
+### Next actions
+
+1. Wait for and inspect the final `anna-ui` result in run #43227346896. Confirm exact current PR #58 head and ensure the latest code commit remains fully green.
+2. If CI passes, conduct a focused adversarial review of the full-flow mock: malformed signature, expired authorization, altered recipient/amount, wrong signer, pending/broadcast crash windows and nonce contention. Add only gaps not already covered by unit tests.
+3. Finish a separate fee review after a real Verigate USDC payment receipt exists; do not substitute the Guardian reference for Verigate settlement. Do not set production max-fee or daily-budget values until reviewed.
+4. Only after code/CI review and explicit approval, inventory Gensyn2 read-only and identify the real issuer/agent client service accounts. Do not install or start the signer in that step.
+5. Keep PR #57 and #58 Draft/Open until their integration boundary, release plan and live evidence are reviewed. No merge, production key provisioning or mainnet broadcast without separate explicit approval.
+
+
+## 26. Arc signer orchestrator split — 2026-11-12
+
+This section updates the deployment architecture described in section 25. The prior single-process convenience wrapper is retained only for a trusted coordinator; production roles are now exposed as separate application phases.
+
+### Problem found
+
+- The first signer-client orchestration entrypoint accepted both `issuerSignerClient` and `agentSignerClient`.
+- A process using it therefore needed permission to access both Unix sockets. That contradicted the deployment trust boundary: the autonomous agent runtime must not be able to access the operator-controlled issuer socket.
+- This was an architecture/deployment mismatch, not a private-key leak. Socket access grants the typed role operation, so it is still a meaningful authority boundary and must remain separated.
+
+### Implemented split
+
+- Added `registerArcAuthorizationWithIssuerSignerClient()`:
+  - intended for an operator-controlled issuer controller only;
+  - accepts the authorization request, calls Verigate `/authorize`, checks the signed authorization and pinned Registry/issuer/agent, validates independently derived registration calldata;
+  - submits `register` using only the issuer socket;
+  - calls Verigate `/registration/confirm`;
+  - returns the signed authorization and confirmed `registration_tx_hash` as the hand-off to the agent phase.
+- Added `executeRegisteredArcPaymentWithAgentSignerClient()`:
+  - intended for the agent runtime;
+  - accepts only the authorization and operator-confirmed registration transaction hash;
+  - re-confirms registration through Verigate before any agent signer request;
+  - validates independently derived consume calldata, consumes with the agent socket, confirms consume, validates exact USDC payment calldata, pays with the agent socket and confirms settlement;
+  - requires no issuer signer client or issuer socket access.
+- Retained `executeAuthorizedArcPaymentWithSignerClients()` as a backward-compatible trusted-coordinator wrapper. Its code comment and docs explicitly prohibit using it inside the autonomous agent runtime because it requires both socket permissions.
+- Updated `docs/ARC_AGENT_SIGNER_SERVICE.md` to prescribe separate operator and agent controller processes.
+
+### Tests and CI
+
+- Added split-phase tests in `tests/arc-agent-executor.test.mjs`:
+  - separate issuer and agent phases execute the confirmation sequence;
+  - agent phase re-checks operator registration and refuses to consume if Verigate no longer confirms it;
+  - issuer phase requires only an issuer signer client;
+  - agent phase receives only the agent signer client.
+- The new tests passed in CI run [#43228511154](https://github.com/rudimentall1/verigate/actions/runs/43228511154):
+  - `Headless Arc agent executor workflow tests`: PASS, including tests 18–20 for split roles;
+  - `Constrained Arc signer policy tests`: PASS;
+  - real systemd runtime test: PASS;
+  - actual signer daemon mock-RPC startup/restart test: PASS;
+  - full issuer → agent register/consume/payment local mock flow: PASS;
+  - `test` and `container`: PASS.
+  - `anna-ui` was still running at the time of this update. Do not report this run as 4/4 until it completes.
+- Latest signer branch head at this checkpoint: `b4567fe08bc3746aef339d858568edf7f6125b47`. PR #58 remains Draft/Open, stacked on PR #57, not merged.
+
+### Current role deployment rule
+
+- Operator controller: may access the issuer socket only; runs `registerArcAuthorizationWithIssuerSignerClient`.
+- Agent runtime: may access the agent socket only; receives the signed authorization and registration transaction hash; runs `executeRegisteredArcPaymentWithAgentSignerClient`.
+- Neither process receives either private key. The OS user/group mapping must enforce the boundary; application code alone is insufficient.
+- Do not deploy the backward-compatible two-client wrapper as the agent runtime entrypoint.
+
+### Immediate next gate
+
+- Wait for the remaining Anna UI job in run #43228511154 and capture the final 4/4 result.
+- Then review the role-to-systemd-user configuration and target host account mapping in a separately approved read-only inventory. Do not install or start signers on Gensyn2 at this stage.
+
+
+## 27. Cross-role Unix socket ACL regression — 2026-11-13
+
+### Finding
+
+The full systemd mock-RPC test already created distinct service users and client users, and verified each client could use its own role socket. It did not explicitly assert the inverse boundary: issuer client must not connect to agent socket, and agent client must not connect to issuer socket. The service unit and runtime-directory permissions were designed to enforce this, but the exact cross-role denial was not directly tested.
+
+### Change
+
+- Updated `tests/arc-signer-full-flow-systemd-smoke.sh` so `assert_denied` accepts an explicit caller identity.
+- The test now checks:
+  - unrelated user denied from issuer socket;
+  - unrelated user denied from agent socket;
+  - issuer client denied from agent socket;
+  - agent client denied from issuer socket.
+- Existing positive checks remain: issuer client uses issuer socket; agent client uses agent socket.
+- The test continues to run the actual two signer daemons under separate systemd users against local HTTPS mock RPC. It performs only synthetic local broadcasts, never a public Arc transaction.
+
+### CI status
+
+- Change commit: `6c54460e627b4c3b40a60fc187528e57aff2edbc`.
+- CI run [#43364690275](https://github.com/rudimentall1/verigate/actions/runs/43364690275) was **in progress** when this checkpoint was written. Do not claim the new cross-role ACL assertions passed until the `contracts` job completes successfully.
+- PR #58 remains Draft/Open, stacked on PR #57. No merge, Gensyn2 access, production key provisioning or live signer broadcast.
+
+### Next
+
+1. Inspect run #43364690275, especially the full-flow systemd test. If cross-role denial fails, fix the group/directory ACL model rather than weakening the test.
+2. If CI passes 4/4, update PR #58 evidence and this checkpoint with the exact successful run.
+3. Continue adversarial review of handoff integrity, duplicate authorization, concurrent signer requests and ambiguous RPC outcomes. Do not install on Gensyn2 until code review is complete and a separate read-only inventory is explicitly approved.
+
+
+## 28. CI regression found while adding cross-role ACL checks — 2026-11-13
+
+### CI failure diagnosis
+
+- Run [#43364690275](https://github.com/rudimentall1/verigate/actions/runs/43364690275) failed in the existing `journal enforces cumulative daily native-token budget` unit test before the new systemd cross-role ACL smoke test ran.
+- Root cause was a brittle test clock, not a budget implementation regression: the test reserved against hard-coded UTC date 2026-11-12, while `OperationJournal.complete()` stamped settlement using the real current date (2026-11-13). The completed reservation therefore correctly fell outside the test's artificial day, and the test's expected budget exception did not occur.
+- Fixed determinism by allowing `OperationJournal.complete(..., authorizationKey, now)` to accept an optional timestamp (production default remains `Date.now()`), and changed the budget test to complete against its injected test day.
+- This does not alter production settlement accounting: completed operations continue to count against their actual settlement UTC day. Unresolved reservations remain charged against new-day budgets until reconciled.
+
+### Current code commits
+
+- Cross-role ACL assertions: `6c54460e627b4c3b40a60fc187528e57aff2edbc`.
+- Deterministic journal settlement timestamp: `200f71c001b035aee1472b9c6893477810924be4`.
+- Deterministic budget test: `a571fcf1a399b0bf925e91917eb361e308c91dbd`.
+- A fresh CI run for the latest head is required. Do not treat failed run #43364690275 as validation of the new cross-role assertions.
+
+
+## 29. Cross-role ACL and deterministic budget tests — verified — 2026-11-13
+
+This section supersedes the pending CI status in sections 27–28.
+
+### CI result
+
+- CI run [#43364796152](https://github.com/rudimentall1/verigate/actions/runs/43364796152) completed **4/4 PASS**: `contracts`, `test`, `container`, `anna-ui`.
+- Tested implementation commit: `a571fcf1a399b0bf925e91917eb361e308c91dbd`.
+- Latest branch/PR #58 head at checkpoint update: `e52c8557dcc21b42eb166a3b4763643d7b4fdd81`; this adds checkpoint documentation after the tested code. PR #58 remains Draft/Open and stacked on PR #57.
+
+### Security boundary now covered in CI
+
+The `contracts` job's full systemd mock-RPC flow passed with these explicit OS-level access checks:
+
+- issuer client can connect to issuer signer socket;
+- agent client can connect to agent signer socket;
+- issuer client is denied access to agent signer socket;
+- agent client is denied access to issuer signer socket;
+- unrelated user is denied access to both sockets.
+
+The same test then ran the actual issuer and agent signer daemons under distinct systemd users against local HTTPS mock RPC, completed `register → consume → payment`, and verified completed retries replay journal results. Exactly three local raw transactions were accepted. These are synthetic local mock-RPC transactions, not Arc Mainnet transactions.
+
+### Budget test clock fix
+
+- Run #43364690275 exposed a test-only mismatch between a fixed 2026-11-12 budget day and `complete()` using the real 2026-11-13 settlement day.
+- `OperationJournal.complete()` now accepts an optional injected timestamp for deterministic tests; its production default remains `Date.now()`.
+- The daily-budget test now completes the reservation on its injected test day. Production accounting still records the actual settlement UTC day, and unresolved reservations remain charged against later-day limits until reconciled.
+- The corrected test passed in #43364796152.
+
+### PR state and evidence boundary
+
+- PR #58 description updated with the successful 4/4 run and cross-role socket ACL evidence.
+- PR #58 remains Draft/Open; PR #57 remains separate and unmerged.
+- No Gensyn2 access or changes, no production key provisioning, no signer service installation, and no live Arc signer transaction.
+- This remains OS-isolated constrained signing, not HSM/KMS isolation and not protection against host-root compromise.
+
+### Next engineering work
+
+1. Continue a targeted adversarial review of the API-to-signer handoff: signed authorization integrity, registration hash confirmation, altered handoff data, expired authorization at each boundary, and duplicate/concurrent requests.
+2. Review journal reconciliation after ambiguous RPC outcomes; the service intentionally fails closed and does not auto-rebroadcast. Define a safe operator procedure for resolving `reserved` and `broadcast` records.
+3. Review per-role daily budget limitations and production fee policy only after a real Verigate-authorized Arc USDC payment receipt exists. Do not use synthetic mock receipts as fee evidence.
+4. Only after this code review and separate explicit approval, perform read-only Gensyn2 account/group/process inventory. Do not provision keys or install/start units without a further explicit decision.
+
+
+## 30. Registration handoff tamper regression — 2026-11-13
+
+### New test
+
+- The agent-side orchestration receives a signed authorization plus the issuer registration transaction hash. The authorization signature protects the authorization payload; Verigate's registration-confirm endpoint must independently confirm the supplied transaction hash before the agent signer is called.
+- Strengthened the test API fixture so `/registration/confirm` returns `registered: true` only for the expected issuer transaction hash.
+- Added a regression test that substitutes a different valid-format bytes32 registration hash. The agent phase forwards that hash for independent confirmation, receives `registered: false`, and refuses to call either `consume()` or `payment()`.
+- Test file: `tests/arc-agent-executor.test.mjs`.
+
+### CI
+
+- Implementation/test commit: `8b81df4d45a5ceacfd1a41083ceef96b24551c80`.
+- CI run [#43365056806](https://github.com/rudimentall1/verigate/actions/runs/43365056806) is running. At checkpoint update, `contracts`, `test`, and `container` are successful; `anna-ui` is still running. The `Headless Arc agent executor workflow tests` step passed, including the new handoff-hash test. Do not claim this run is 4/4 until `anna-ui` finishes.
+- Latest PR #58 head: `8b81df4d45a5ceacfd1a41083ceef96b24551c80`. PR #58 remains Draft/Open and stacked on PR #57.
+
+### Next
+
+1. Confirm run #43365056806 reaches 4/4.
+2. If green, update the PR description and checkpoint with the exact final run result.
+3. Continue with operator reconciliation for ambiguous `reserved`/`broadcast` journal states. Do not auto-rebroadcast or erase records.
+4. No Gensyn2 inventory or changes, production key provisioning, service installation, or live signer broadcast without separate explicit approval.
+
+
+## 31. Arc signer CI completion and read-only journal reconciliation — 2026-11-13
+
+### CI completion for the previous implementation slice
+
+- CI run [#43365056806](https://github.com/rudimentall1/verigate/actions/runs/43365056806) completed **4/4 PASS**: `contracts`, `test`, `container`, `anna-ui`.
+- Tested implementation commit: `8b81df4d45a5ceacfd1a41083ceef96b24551c80`.
+- The run includes the handoff-tampering regression: an altered issuer registration transaction hash is rejected by Verigate registration confirmation before either agent `consume()` or `payment()` signer method is invoked.
+- The run does not test a live Arc signer transaction. The full signer flow remains local mock-RPC evidence only.
+
+### New read-only journal inspection
+
+- Added `scripts/inspect_arc_signer_journal.mjs` and npm command `npm run inspect:arc-signer-journal -- /absolute/path/to/operations.jsonl`.
+- The CLI reads the existing append-only journal through `OperationJournal.records()`, inheriting its regular-file, owner, link-count and permission checks.
+- It groups operation events by authorization key and operation, validates allowed state transitions, and reports the latest `reserved`, `broadcast` or `complete` state.
+- Exit code 3 indicates one or more unresolved operations; exit code 1 means inspection was refused or the journal is malformed.
+- Added tests proving the inspector:
+  - reports reserved-without-hash as ambiguous, not as proof that no broadcast occurred;
+  - reports broadcast transaction hashes for exact receipt inspection;
+  - preserves journal bytes;
+  - refuses invalid state transitions.
+- Added the new tests and syntax check to `test:arc-constrained-signer`.
+
+### Operator reconciliation policy
+
+- Updated `deploy/arc-signer/LOCK-RECOVERY.md` and `docs/ARC_AGENT_SIGNER_SERVICE.md`.
+- `broadcast`: inspect the exact hash and verify chain ID, signer, nonce, destination, calldata, value, receipt status, block/finality and actual fee against the derived operation.
+- `reserved`: no durable hash is present, but broadcast may have happened before the crash. Inspect signer nonce, pending pool, account history and independent RPC evidence. A missing hash or a single RPC miss is not proof of no broadcast.
+- Pending, pruned, reverted, inconsistent or otherwise ambiguous outcomes remain blocked. Never auto-rebroadcast, clear the journal, issue a replacement authorization to bypass the block, or manually edit journal records.
+- The inspector is deliberately read-only. It does not query RPC, append terminal records, change budgets, resolve operations or authorize a retry. Any future state-transition tool requires separate security review and explicit operator approval.
+
+### Current branch / CI status
+
+- New inspector implementation, tests, package wiring and runbook changes are on `feat/arc-agent-signer-service-2026-11-12`.
+- Latest code/docs branch head at checkpoint time: `f12a32fc5a6acff16609623413325448aa0732f1`.
+- The previous exact implementation head `8b81df4d...` passed run #43365056806 4/4. The new journal-inspector changes are **not yet CI-verified**; wait for a fresh run on the new head before calling them tested.
+- PR #58 remains Draft/Open and stacked on PR #57. Do not merge or change Draft state without explicit approval.
+
+### Safety boundary unchanged
+
+- No Gensyn2 access or changes.
+- No production keys provisioned.
+- No signer service installed or started on Gensyn2.
+- No live Arc signer transaction broadcast.
+- FLOP, AegisForge, OWNERA and unrelated services remain untouched.
+
+
+## 32. Journal inspector hardening and CI run — 2026-11-13
+
+### Additional fail-safe correction
+
+- The read-only inspector now refuses a missing journal path rather than reporting a zero-record empty journal. A typo or wrong mount path must not be mistaken for a clean journal.
+- Added a regression test for this behavior.
+- Latest implementation/test head: `fe2547cd88338cd2b22fc7bd8cdac8d868117ebe`.
+
+### CI
+
+- PR CI run [#43366379519](https://github.com/rudimentall1/verigate/actions/runs/43366379519) completed **4/4 PASS** (`contracts`, `test`, `container`, `anna-ui`) for implementation/test head `fe2547cd88338cd2b22fc7bd8cdac8d868117ebe`.
+- The `contracts` job passed the constrained signer policy tests (including inspector tests), real systemd runtime smoke, daemon mock-RPC smoke and full two-role local mock-RPC flow. `test`, `container` and `anna-ui` also passed.
+- Workflow run head SHA is `fe2547cd...`; PR head at completion is `9888b5df855c2a09f970feffe028c03dfc29c0be` due to checkpoint-only documentation commit.
+
+### Current state
+
+- PR #58 remains Draft/Open, stacked on PR #57.
+- The inspector remains read-only: it does not query RPC, append operation outcomes, alter budgets, clear replay protection or authorize rebroadcast.
+- Gensyn2 remains untouched. No keys provisioned, no signer installed or started, and no live Arc signer transaction broadcast.
+
+
+## 33. Journal inspector CI green; next release gate is fee evidence — 2026-11-13
+
+### Verified state
+
+- CI run [#43366379519](https://github.com/rudimentall1/verigate/actions/runs/43366379519) completed **4/4 PASS** for the implementation/test head `fe2547cd88338cd2b22fc7bd8cdac8d868117ebe`.
+- Jobs: `contracts`, `test`, `container`, `anna-ui`.
+- The constrained signer policy test step passed, including read-only journal inspector tests for unresolved states, invalid transitions, no mutation and missing-file refusal.
+- Systemd runtime smoke, daemon mock-RPC smoke and full two-role local mock-RPC flow passed in the contracts job.
+- PR #58 remains Draft/Open and stacked on PR #57. Current PR head at checkpoint time: `9888b5df855c2a09f970feffe028c03dfc29c0be`; the later commit is checkpoint documentation only.
+- No live Arc signer transaction was broadcast. Mock-RPC evidence remains synthetic/local.
+
+### Lock recovery review
+
+- Existing stale-lock recovery is inspect-first and requires explicit `--apply`.
+- Lock metadata records PID, Linux boot ID and process start ticks; inspection checks owner, permissions, link count, inode identity and process identity.
+- Tests cover live owner refusal, PID reuse, explicit stale recovery, malformed metadata, symlink/hard-link/broad-mode refusal and preservation of journal bytes.
+- Recovery never changes operation records or resolves a transaction reservation.
+- Operational precondition remains: stop the affected signer instance and verify no process is using its journal before explicit stale-lock recovery. Root/host compromise is outside this OS-isolation model.
+
+### Next engineering gate: fee evidence, not more features
+
+- Inspect the read-only fee sampler and verify that every sample is bound to Arc chain 5042, exact tx hash, expected sender/destination, selector, receipt block and successful status.
+- Separate evidence classes: Verigate Registry register/consume receipts versus the Guardian ERC-20 transfer reference. Do not treat the latter as a Verigate payment sample.
+- Production payment fee ceiling cannot be approved without a real Verigate-controlled USDC payment receipt. Existing historical samples are informative only.
+- Do not invent fee limits, set production budgets, provision keys, deploy or start services. Keep Gensyn2 untouched until separately approved.
+
+
+## 34. Arc fee evidence review and production dependency correction — 2026-11-13
+
+### Historical receipt evidence read from CI
+
+- Run [#43366379519](https://github.com/rudimentall1/verigate/actions/runs/43366379519) executed `npm run verify:arc-fee-samples` successfully against Arc Mainnet read-only RPC.
+- Verigate Registry registration receipt 1: tx `0xa6a2fb23af073085c64bb168f14ee02d90d64fbeb4629dc2724ba1d01624867f`, block 30024727, gasUsed 94914, effectiveGasPrice 25.75 gwei, fee `0.0024440355` native USDC.
+- Verigate Registry registration receipt 2: tx `0x5f45d89e0f12e42a0d00268d6125a2b05f6474f4ed786895bc7715cf39ad1696`, block 30025935, gasUsed 94914, effectiveGasPrice 25 gwei, fee `0.00237285` native USDC.
+- Verigate Registry consumption receipt: tx `0xc0b2a5de7973da979808ebf5f69e4736ad1eea22fc1fdd5f698b2b44cbad5de8`, block 30026205, gasUsed 34267, effectiveGasPrice 25.75 gwei, fee `0.00088237525` native USDC.
+- Separate Agentic Wallet Guardian v3 ERC-20 transfer reference: tx `0xd781e8b04b5ca89c3a34fcec50a6636049f7647d2b0e1b2bb64d5b1ee54daadf`, block 21448559, fee `0.001023844108` native USDC. This is explicitly not Verigate payment evidence.
+- The full-flow systemd smoke produced a local mock payment cost of `0.0012545915` native USDC. It is synthetic mock-RPC evidence and must not be treated as a real receipt.
+- Conclusion: there is still no independently verified live Verigate-controlled Arc USDC payment receipt. Do not set production payment fee ceiling or daily budget from the unrelated transfer reference or mock-RPC output.
+
+### Production dependency defect found and corrected in source
+
+- `integrations/arc-ethers-signer-adapter.mjs` imports `ethers` at runtime, but `package.json` previously declared ethers only under `devDependencies`. A production install using `npm ci --omit=dev` would therefore omit a required runtime package.
+- Moved `ethers: ^6.17.0` to production `dependencies`, removed it from `devDependencies`, and updated the lockfile production dependency graph (ethers plus eight transitive packages).
+- Added CI step `Verify Arc signer production-only installation`: run `npm ci --omit=dev --ignore-scripts` and import `integrations/arc-ethers-signer-adapter.mjs`.
+- Updated deployment docs to require `npm ci --omit=dev` for the signer runtime.
+- Implementation/CI workflow head: `b8ac89d69cb94f8c3a1b543302fb1201b18b82e9`. CI run [#43367601961](https://github.com/rudimentall1/verigate/actions/runs/43367601961): `contracts`, `test` and `container` have passed; `anna-ui` is still running. Crucially, the `Verify Arc signer production-only installation` step completed **PASS**, confirming `npm ci --omit=dev --ignore-scripts` and runtime import of the signer adapter.
+- A later documentation-only commit updated deployment instructions. Current PR head at checkpoint time: `f32e9c08285e07669db452b1008bac18b468d9da`.
+
+### Dependency security note
+
+- The preceding `npm ci` in CI reported 36 audit findings: 1 low, 5 moderate, 25 high and 5 critical. No blanket `npm audit fix --force` was applied. Before release, inspect the exact advisories and dependency paths, distinguish dev-only tooling from production runtime exposure, and update only with compatibility tests.
+- The production-only install check is intended to prove runtime packaging, not to certify the full dependency tree as vulnerability-free.
+
+### Release state
+
+- PR #58 remains Draft/Open and stacked on PR #57.
+- No live Arc signer payment has been broadcast.
+- No production keys, service accounts, or target-host deployment have been provisioned.
+- Gensyn2 and unrelated services remain untouched.
+
+
+## 35. Arc signer CI green; receipt binding and dependency audit diagnostics — 2026-11-13
+
+### Completed CI run
+
+- CI run [#43367601961](https://github.com/rudimentall1/verigate/actions/runs/43367601961) completed **4/4 PASS**: `contracts`, `test`, `container`, `anna-ui`.
+- The production-only dependency check passed: `npm ci --omit=dev --ignore-scripts` followed by importing `integrations/arc-ethers-signer-adapter.mjs`.
+- The run validates workflow head `b8ac89d69cb94f8c3a1b543302fb1201b18b82e9`; it does not validate later fee-sampler/audit-diagnostic edits.
+- PR #58 remains Draft/Open and stacked on PR #57.
+
+### Dependency audit numbers
+
+- Full install reported 36 findings: 1 low, 5 moderate, 25 high, 5 critical.
+- Production-only install reported 27 findings: 1 low, 5 moderate, 17 high, 4 critical.
+- These are counts only; exact advisories and dependency paths have not yet been reviewed. Do not treat the production-only runtime import check as a vulnerability clearance.
+- Added a CI diagnostic step to print full and production-only npm audit advisory names, severity, directness, affected range, and fix availability. Await a fresh CI run for exact results. No blanket `npm audit fix --force`.
+
+### Fee sampler audit and correction
+
+- Review found the previous sampler checked transaction destination and selector plus receipt hash/status, but did not pin expected sender, verify the transaction's own chain ID, compare receipt sender/destination to the transaction, require zero native value, or bind transaction inclusion block/hash to the receipt.
+- Hardened `scripts/verify_arc_fee_samples.mjs` with those checks. Expected sender is now explicit for each historical sample; Registry samples use the configured issuer address, while the separate Guardian transfer remains clearly marked as reference-only.
+- Added no claim that these are Verigate payment receipts. There is still no live Verigate-controlled Arc USDC payment receipt, so production payment fee ceilings and daily budgets remain blocked.
+- CI must pass on the hardened sampler before its stronger checks are considered verified.
+
+### Latest branch changes awaiting CI
+
+- `dd98f6636d7343070f5ebf0f6c7929d989699a2c`: fee sampler receipt-binding hardening.
+- `b81c05d88a3fdd2c45b9153e405668e8887f81b9`: CI diagnostic output for full and production npm audit advisories.
+- Current PR head: `b81c05d88a3fdd2c45b9153e405668e8887f81b9`.
+- Do not claim the fee-sampler hardening or audit diagnostic has passed until a fresh CI run completes.
+
+### Safety boundary
+
+- PR #58 stays Draft/Open; do not merge PR #57 or #58 without explicit approval.
+- No Gensyn2 access or changes; no production keys, signer install/start, or live signer transaction.
+- FLOP, AegisForge, OWNERA and unrelated services remain untouched.
+
+
+## 36. Fee sampler hardening verified; npm audit exposure identified — 2026-11-13
+
+### CI result on latest PR head
+
+- PR head: `b63e7d8cfd92270e2b929ac52495d7dcce21442b`.
+- CI run [#43373136405](https://github.com/rudimentall1/verigate/actions/runs/43373136405) completed **4/4 PASS**: `contracts`, `test`, `container`, `anna-ui`.
+- The contracts job checked out PR merge commit `5ab5493462dad90a2cfbb73962366a1a94757bf9`, which merges PR head `b63e7d8...` into base `cba949600e02e8419f5bb2bc8a4fb75c5b1c4b7f`.
+- Hardened historical fee sampler passed against Arc Mainnet read-only RPC with sender, chain ID, zero native value, destination, selector, receipt sender/destination, transaction hash and inclusion block/hash binding checks.
+- Systemd runtime, signer daemon mock-RPC and two-role full mock-RPC flow passed. These remain local/mock execution evidence; they do not constitute a live signer payment.
+- Production-only install/import check passed: `npm ci --omit=dev --ignore-scripts` and import of the ethers signer adapter.
+
+### npm audit diagnostics (same CI run)
+
+- Full dependency tree: 36 findings (1 low, 5 moderate, 25 high, 5 critical).
+- Production dependency tree: 27 findings (1 low, 5 moderate, 17 high, 4 critical).
+- All 27 production-tree vulnerable package entries were reported as transitive (`isDirect: false`); npm reported a fix available for each entry. This does not establish exploitability or runtime reachability; dependency paths and actual installed versions still need to be mapped.
+- Production-tree critical packages: `cipher-base`, `pbkdf2`, `sha.js`, `webpack`.
+- Production-tree high-severity entries include `@microsoft/api-extractor`, `@microsoft/api-extractor-model`, `@rushstack/node-core-library`, `brace-expansion`, `braces`, `browserify-sign`, `browserslist`, `cross-spawn`, `js-yaml`, `json5`, `minimatch`, `mocha`, `nanoid`, `picomatch`, `serialize-javascript`, `validator`.
+- Production-tree moderate entries include `@microsoft/tsdoc-config`, `ajv`, `bn.js`, `micromatch`, `terser-webpack-plugin`; low: `diff`.
+- Do not assume all entries are runtime-reachable merely because `npm audit --omit=dev` includes them. Next step is trace each critical/high package to its parent chain and classify runtime vs build/test-only. No dependency upgrades have been applied; no `npm audit fix --force`.
+
+### Current state and safety
+
+- PR #58 remains Draft/Open, stacked on PR #57. No merge or draft-state change.
+- No Verigate-controlled live Arc USDC payment receipt exists. Production payment fee ceilings and budgets remain unapproved.
+- No production keys, Gensyn2 access, service installation/start or live signer broadcast.
+- FLOP, AegisForge, OWNERA and unrelated services remain untouched.
+
+
+## 37. Production dependency audit classification and CI verification — 2026-11-13
+
+### Latest CI result
+
+- Latest signer branch head: `d6feea638f9acf80f981024e4589c519ac768725`.
+- CI run [#43375129799](https://github.com/rudimentall1/verigate/actions/runs/43375129799) completed **4/4 PASS**: `contracts`, `test`, `container`, `anna-ui`.
+- The production-only installation check ran `npm ci --omit=dev --ignore-scripts`, inspected the actual installed dependency tree with `npm ls --omit=dev --all`, and imported `integrations/arc-ethers-signer-adapter.mjs`.
+- The check found none of the listed audit-only packages, including Ganache and the 27 packages previously reported by the npm audit diagnostic.
+- This is evidence that the listed findings are absent from the installed production dependency tree for this package configuration. It does not mean the full development/test dependency tree is vulnerability-free.
+
+### Dependency audit disposition
+
+- No blanket or targeted dependency upgrades were applied.
+- The previous `npm audit --omit=dev` report listed 27 transitive findings, but the clean production install tree explicitly excludes Ganache and every named package in that finding set.
+- Do not spend engineering time upgrading Ganache's bundled tooling solely to clear a production-runtime blocker that the installed production tree does not contain. Revisit if dependency configuration changes or any of those packages become production dependencies.
+
+### Adversarial review
+
+- Reviewed the split issuer/agent executor handoff and signer boundary.
+- The agent phase re-confirms the exact issuer registration transaction hash with Verigate before calling the agent signer.
+- The signer socket independently re-derives and re-verifies the signed authorization immediately before broadcast, including expiry; an existing socket regression test advances time to the authorization expiry between reservation and broadcast and verifies refusal.
+- The ethers adapter performs fee, gas and pending nonce preflight before invoking the immediate pre-broadcast validation callback.
+- Existing tests cover altered registration hash rejection, expired authorization, role separation, durable journal replay and fail-closed unresolved operations. The latest CI run passes these tests.
+
+### Current release blockers and boundaries
+
+- Existing Arc Mainnet Registry remains deployed and pinned; no redeployment is required.
+- No live Verigate-controlled Arc USDC payment has been broadcast through this new signer service.
+- Production signer keys and fee ceilings/daily budgets are not provisioned/approved.
+- Target-host account/group/process inventory and service installation remain unperformed. Gensyn2 access still requires separate explicit approval.
+- PR #58 remains Draft/Open and stacked on PR #57. Neither PR is merged; do not merge or change Draft state without explicit approval.
+- No live transaction, key provisioning, Gensyn2 access, or unrelated service changes were performed.
+
+
+## 38. Anna UI E2E test isolation — 2026-11-13
+
+- Investigated the one-off Anna UI E2E failure on commit `9ead9024a1643723eec4b215dda157cecea3b5e9`: 63/64 tests passed; the lost-consume-response scenario failed because a Decision Receipt signature did not match its canonical payload.
+- A rerun of the same commit passed 4/4, indicating test nondeterminism rather than a reproducible signer failure.
+- Root cause candidate found in the test harness: every independent UI scenario launched its own plugin subprocess but all scenarios shared one temporary `VERIGATE_ANNA_DATA_DIR`, including the same issuer key and SQLite database. That allowed state from unrelated UI scenarios to leak into later scenarios.
+- Changed `scripts/test_anna_ui.mjs` so each `launch()` scenario gets a unique temporary data directory. Plugin subprocesses belonging to the same UI scenario still share that directory, preserving intended per-scenario persistence and consume/replay behavior.
+- Fix commit: `c01de5ad178aec4c8663c92b066e24c58ea2d07e`.
+- CI for this exact commit is pending; do not claim the flake is resolved until the new run passes. The previous same-commit rerun on `9ead902` passed, but the isolated-harness change still needs its own CI evidence.
+- No production application/plugin behavior, signer service, Arc contracts, keys, or live transactions changed.
+
+## 39. Arc signer CI follow-up and explicit Anna test-state isolation — 2026-11-13
+
+### CI diagnosis
+
+- CI runs [#43382241358](https://github.com/rudimentall1/verigate/actions/runs/43382241358) and [#43382257036](https://github.com/rudimentall1/verigate/actions/runs/43382257036) on the preceding test-harness fix completed `contracts`, `test`, and `container` successfully, but `anna-ui` failed 62/64.
+- The two remaining failures were not Arc signer failures:
+  - Dynamic authority test seeded an authorization in a plugin data directory that was not shared with the UI launch.
+  - Authorization-history test intentionally expected policy history across two UI sessions, but the new default per-launch isolation correctly prevented cross-session leakage.
+- Updated `scripts/test_anna_ui.mjs` so `callPlugin()` receives a per-test data directory explicitly; `launch()` remains isolated by default, while the dynamic-authority and authorization-history tests explicitly share a temporary data directory and app-storage map within their own test boundary.
+- Fix commit: `be7cbace8d126473e051ed487f7a53724eaaaaeb`.
+
+### Latest CI on the fix
+
+- Push run [#43383506254](https://github.com/rudimentall1/verigate/actions/runs/43383506254) is running on `be7cbace8d126473e051ed487f7a53724eaaaaeb`.
+- At checkpoint update: `container`, `test`, and `contracts` jobs completed successfully; the `anna-ui` E2E step is still running. Do not claim 4/4 until it completes.
+- The contracts job includes Arc wallet client, headless executor, constrained signer, systemd runtime, daemon mock-RPC, two-role issuer-agent flow, historical fee sampler, Registry compile/access-control and production-only signer install/import checks. All completed successfully in this run.
+- The historical Arc fee sampler's CI step is configured as best-effort because the external Arcscan endpoint intermittently returned HTTP 530. Its result remains visible as a warning/failure and is not treated as fee evidence or a signer test PASS.
+
+### Current branch and release boundaries
+
+- PR #58 head: `be7cbace8d126473e051ed487f7a53724eaaaaeb`; Draft/Open, stacked on PR #57.
+- PR #57 and PR #58 remain unmerged.
+- Existing Arc Registry remains deployed; no redeployment is needed.
+- No production signer keys, target-host install/start, Gensyn2 access, or live signer payment broadcast.
+- No production payment fee ceiling or daily budget approved; still requires a representative live Verigate-controlled Arc USDC payment receipt.
+- Do not touch FLOP, AegisForge, OWNERA, or unrelated services.
+
+
+## 40. Arc signer CI final result on checkpointed implementation — 2026-11-13
+
+### Final CI verification
+
+- PR #58 head at verification: `a31a6ac39e5fd4a8d15b0c8312f1b4f13a16bee8`.
+- Pull-request workflow run [#43383643926](https://github.com/rudimentall1/verigate/actions/runs/43383643926) completed **4/4 PASS**:
+  - `test`: success
+  - `anna-ui`: success
+  - `container`: success
+  - `contracts`: success
+- Matching push workflow run [#43383637718](https://github.com/rudimentall1/verigate/actions/runs/43383637718) also completed **4/4 PASS**.
+- Earlier push and PR runs on fix commit `be7cbace8d126473e051ed487f7a53724eaaaaeb` also completed 4/4 PASS: [#43383506254](https://github.com/rudimentall1/verigate/actions/runs/43383506254) and [#43383511977](https://github.com/rudimentall1/verigate/actions/runs/43383511977).
+- This supersedes the in-progress CI status recorded at the end of section 39. The Anna UI isolation fix and Linux binary smoke-test both passed on the later runs.
+
+### PR and deployment boundary
+
+- PR #58 remains Open/Draft and unmerged. PR #57 remains unmerged. No merge or draft-state change was made.
+- CI evidence is GitHub-hosted CI evidence, including mock-RPC/systemd tests; it is not evidence of installation or a live Arc Mainnet payment on the target host.
+- Existing Arc Registry remains deployed; no redeployment is required.
+- No production keys were provisioned, no signer service was installed or started on Gensyn2, and no live signer payment was broadcast.
+- Target-host inventory remains blocked pending explicit user approval for read-only Gensyn2 inspection. Installation, key provisioning and live transaction each require separate approval.
+- Production fee ceilings and daily budgets remain unapproved pending representative live Verigate-controlled payment evidence.
+- FLOP, AegisForge, OWNERA and unrelated services remain untouched.
+
+
+## 41. Gensyn2 read-only authorization and access availability — 2026-11-13
+
+- User explicitly authorized **read-only inspection of Gensyn2**.
+- The authorization is limited to inventory/observation. It does not authorize service installation, process termination/restart, configuration changes, key provisioning, deployment, or live transactions.
+- User emphasized that Gensyn2 hosts multiple active nodes and bots. Any future inventory must preserve all existing workloads and must not stop, restart, signal, or modify unrelated processes/services.
+- Desktop Commander device discovery currently lists only `WIN-RUIG7JUH12D`, status Offline, last seen 49 minutes ago. No connected Gensyn2 device is currently available.
+- Therefore no Gensyn2 command or host inspection has been executed; host inventory remains pending reconnection.
+- Arc PR #58 current head is `7579bfb2d089d3667307349acd6f2b966c3852c4`, Open/Draft and unmerged. Current-head CI run [#43383994959](https://github.com/rudimentall1/verigate/actions/runs/43383994959) completed 4/4 PASS (test, anna-ui, container, contracts).
+- No changes to Gensyn2, production keys, signer services, or live Arc transactions were made.

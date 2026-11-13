@@ -57,7 +57,7 @@ function verifyAuthorization(authorization, pem) {
   assert(valid, "Verigate execution authorization signature is invalid");
   const p = authorization.payload;
   assert(p.authorization_version === 1, "unsupported execution authorization version");
-  assert(typeof p.authorization_id === "string" && /^[0-9a-f]{64}$/.test(p.authorization_id), "authorization_id must be a lowercase 32-byte hex value");
+  assert(typeof p.authorization_id === "string" && /^(?:0x)?[0-9a-fA-F]{64}$/.test(p.authorization_id), "authorization_id must be bytes32");
   assert(Number.isSafeInteger(p.issued_at) && p.issued_at > 0, "authorization issuance time is invalid");
   assert(Number.isSafeInteger(p.expires_at) && p.expires_at > 0, "authorization expiry is invalid");
   const now = Math.floor(Date.now() / 1000);
@@ -171,7 +171,7 @@ export async function executeAuthorizedArcPayment({
     `verigate.arc.authority.registry:v2:${ARC_CHAIN_ID}:${pinnedRegistryAddress}:${authorization.algorithm}:${authorization.signature}`,
     "ascii",
   ).digest("hex");
-  const authId = payload.authorization_id;
+  const authId = payload.authorization_id.replace(/^0x/i, "").toLowerCase();
   const expectedRegistration = {
     to: pinnedRegistryAddress,
     data: REGISTER_SELECTOR + authId + intentHash + addressWord(agentAddress, "agent executor") + word(payload.expires_at, "authorization expiry"),
@@ -226,3 +226,159 @@ export async function executeAuthorizedArcPayment({
 }
 
 export { ARC_CHAIN_ID };
+
+
+/**
+ * Operator-side phase: obtain a signed Verigate authorization, then register
+ * it using only the issuer socket. This function must run in the operator-
+ * controlled issuer controller, never in an autonomous agent runtime.
+ */
+export async function registerArcAuthorizationWithIssuerSignerClient({
+  issuerSignerClient, apiBaseUrl, authorizationRequest, verigatePublicKey,
+  registryAddress, issuerAddress, agentAddress, fetchImpl = globalThis.fetch, headers = {},
+}) {
+  assert(issuerSignerClient && typeof issuerSignerClient.register === "function", "issuer signer client must expose register()");
+  assert(typeof apiBaseUrl === "string" && apiBaseUrl.length > 0, "apiBaseUrl is required");
+  assert(typeof fetchImpl === "function", "fetch implementation is required");
+  assert(typeof verigatePublicKey === "string" && verigatePublicKey.includes("BEGIN PUBLIC KEY"), "a pinned Verigate Ed25519 public key is required");
+  const pinnedRegistry = normalizeAddress(registryAddress, "pinned Registry address");
+  const pinnedIssuer = normalizeAddress(issuerAddress, "pinned issuer address");
+  const pinnedAgent = normalizeAddress(agentAddress, "pinned agent address");
+  assert(pinnedIssuer !== pinnedAgent, "Registry issuer and agent executor must be different addresses");
+  assert(authorizationRequest && typeof authorizationRequest === "object", "signed agent authorization request is required");
+
+  const base = apiBaseUrl.replace(/\/$/, "");
+  const authorized = await postJson(fetchImpl, `${base}/v1/integrations/arc/authorize`, authorizationRequest, headers);
+  const authorization = authorized.execution_authorization;
+  const registrationTx = authorized.arc_authority?.registration_transaction;
+  const { payload, evm } = verifyAuthorization(authorization, verigatePublicKey);
+  assert(normalizeAddress(authorized.arc_authority?.contract_address, "configured Registry address") === pinnedRegistry, "Verigate Registry address does not match the pinned Registry");
+  assert(normalizeAddress(authorized.arc_authority?.issuer, "Registry issuer") === pinnedIssuer, "Verigate issuer does not match the pinned issuer");
+  assert(normalizeAddress(authorized.arc_authority?.executor, "Registry executor") === pinnedAgent, "Verigate executor does not match the pinned agent");
+  assert(normalizeAddress(evm.from, "signed payment sender") === pinnedAgent, "signed payment sender does not match the pinned agent");
+
+  const intentHash = createHash("sha256").update(
+    `verigate.arc.authority.registry:v2:${ARC_CHAIN_ID}:${pinnedRegistry}:${authorization.algorithm}:${authorization.signature}`,
+    "ascii",
+  ).digest("hex");
+  const authId = payload.authorization_id.replace(/^0x/i, "").toLowerCase();
+  const expectedRegistration = {
+    to: pinnedRegistry,
+    data: REGISTER_SELECTOR + authId + intentHash + addressWord(pinnedAgent, "agent executor") + word(payload.expires_at, "authorization expiry"),
+  };
+  normalizeSignerTransaction(registrationTx, pinnedIssuer, "Registry registration", expectedRegistration);
+
+  const registration = await issuerSignerClient.register(authorization);
+  const registrationHash = normalizeHash(registration?.result?.txHash, "Registry registration transaction hash");
+  const registered = await postJson(fetchImpl, `${base}/v1/integrations/arc/registration/confirm`, {
+    authorization, registration_tx_hash: registrationHash,
+  }, headers);
+  assert(registered.registered === true, "Verigate did not confirm Registry registration");
+
+  return {
+    authorization,
+    registration_tx_hash: registrationHash,
+    issuer: pinnedIssuer,
+    executor: pinnedAgent,
+    registered: true,
+  };
+}
+
+/**
+ * Agent-side phase: consumes an operator-confirmed registration, then sends
+ * only consume/payment requests through the agent socket. No issuer socket or
+ * issuer private key is required in this process.
+ */
+export async function executeRegisteredArcPaymentWithAgentSignerClient({
+  agentSignerClient, apiBaseUrl, authorization, registration_tx_hash,
+  verigatePublicKey, registryAddress, issuerAddress, agentAddress,
+  fetchImpl = globalThis.fetch, headers = {},
+}) {
+  assert(agentSignerClient && typeof agentSignerClient.consume === "function" && typeof agentSignerClient.payment === "function", "agent signer client must expose consume() and payment()");
+  assert(typeof apiBaseUrl === "string" && apiBaseUrl.length > 0, "apiBaseUrl is required");
+  assert(typeof fetchImpl === "function", "fetch implementation is required");
+  assert(typeof verigatePublicKey === "string" && verigatePublicKey.includes("BEGIN PUBLIC KEY"), "a pinned Verigate Ed25519 public key is required");
+  const pinnedRegistry = normalizeAddress(registryAddress, "pinned Registry address");
+  const pinnedIssuer = normalizeAddress(issuerAddress, "pinned issuer address");
+  const pinnedAgent = normalizeAddress(agentAddress, "pinned agent address");
+  assert(pinnedIssuer !== pinnedAgent, "Registry issuer and agent executor must be different addresses");
+  const registrationHash = normalizeHash(registration_tx_hash, "operator-confirmed registration transaction hash");
+  const { payload, evm } = verifyAuthorization(authorization, verigatePublicKey);
+  assert(normalizeAddress(evm.from, "signed payment sender") === pinnedAgent, "signed payment sender does not match the pinned agent");
+
+  const base = apiBaseUrl.replace(/\/$/, "");
+  // Re-confirm the operator's transaction against Registry state before the
+  // agent signer is asked to consume the authorization.
+  const registered = await postJson(fetchImpl, `${base}/v1/integrations/arc/registration/confirm`, {
+    authorization, registration_tx_hash: registrationHash,
+  }, headers);
+  assert(registered.registered === true, "operator registration is not confirmed by Verigate");
+
+  const intentHash = createHash("sha256").update(
+    `verigate.arc.authority.registry:v2:${ARC_CHAIN_ID}:${pinnedRegistry}:${authorization.algorithm}:${authorization.signature}`,
+    "ascii",
+  ).digest("hex");
+  const authId = payload.authorization_id.replace(/^0x/i, "").toLowerCase();
+  const expectedConsume = {
+    to: pinnedRegistry,
+    data: CONSUME_SELECTOR + authId + intentHash,
+  };
+  normalizeSignerTransaction(registered.consume_transaction, pinnedAgent, "Registry consumption", expectedConsume);
+
+  const consumption = await agentSignerClient.consume(authorization);
+  const consumeHash = normalizeHash(consumption?.result?.txHash, "Registry consumption transaction hash");
+  const consumed = await postJson(fetchImpl, `${base}/v1/integrations/arc/consume/confirm`, {
+    authorization, registration_tx_hash: registrationHash, consume_tx_hash: consumeHash,
+  }, headers);
+  assert(consumed.execute === true, consumed.reason || "Verigate denied execution");
+  assert(consumed.wallet_transaction, "Verigate did not return the exact authorized payment transaction");
+
+  const expectedPayment = {
+    to: ARC_USDC_ADDRESS,
+    data: verifyAuthorization(authorization, verigatePublicKey).expectedTransferData,
+  };
+  normalizeSignerTransaction(consumed.wallet_transaction, pinnedAgent, "USDC payment", expectedPayment);
+  const payment = await agentSignerClient.payment(authorization);
+  const paymentHash = normalizeHash(payment?.result?.txHash, "USDC payment transaction hash");
+  const settlement = await postJson(fetchImpl, `${base}/v1/integrations/arc/payment/confirm`, {
+    authorization, registration_tx_hash: registrationHash,
+    consume_tx_hash: consumeHash, payment_tx_hash: paymentHash,
+  }, headers);
+  assert(settlement.settled === true, settlement.reason || "Verigate did not confirm USDC settlement");
+  assert(settlement.payment_settlement?.verified === true, "Verigate returned no verified settlement evidence");
+
+  return {
+    authorization_id: payload.authorization_id,
+    issuer: pinnedIssuer,
+    executor: pinnedAgent,
+    registration_tx_hash: registrationHash,
+    consume_tx_hash: consumeHash,
+    payment_tx_hash: paymentHash,
+    arc_authority_evidence: consumed.arc_authority_evidence,
+    payment_settlement: settlement.payment_settlement,
+    settled: true,
+  };
+}
+
+/**
+ * Backward-compatible trusted-coordinator wrapper. This requires both socket
+ * permissions in one process; do not use it inside an agent runtime. Production
+ * deployments should run the operator-side and agent-side functions above in
+ * separate processes with distinct Unix-socket access.
+ */
+export async function executeAuthorizedArcPaymentWithSignerClients({
+  issuerSignerClient, agentSignerClient, apiBaseUrl, authorizationRequest,
+  verigatePublicKey, registryAddress, issuerAddress, agentAddress,
+  fetchImpl = globalThis.fetch, headers = {},
+}) {
+  const operatorResult = await registerArcAuthorizationWithIssuerSignerClient({
+    issuerSignerClient, apiBaseUrl, authorizationRequest, verigatePublicKey,
+    registryAddress, issuerAddress, agentAddress, fetchImpl, headers,
+  });
+  const agentResult = await executeRegisteredArcPaymentWithAgentSignerClient({
+    agentSignerClient, apiBaseUrl, authorization: operatorResult.authorization,
+    registration_tx_hash: operatorResult.registration_tx_hash,
+    verigatePublicKey, registryAddress, issuerAddress, agentAddress, fetchImpl, headers,
+  });
+  return agentResult;
+}

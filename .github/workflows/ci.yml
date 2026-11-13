@@ -46,11 +46,56 @@ jobs:
       - name: Install contract tooling
         run: npm ci
 
+      - name: Report full and production npm advisories
+        run: |
+          npm audit --json > "$RUNNER_TEMP/npm-audit-full.json" || true
+          npm audit --omit=dev --json > "$RUNNER_TEMP/npm-audit-production.json" || true
+          python3 - "$RUNNER_TEMP/npm-audit-full.json" "$RUNNER_TEMP/npm-audit-production.json" <<'PY'
+          import json
+          import sys
+
+          for label, path in zip(("all dependencies", "production dependencies"), sys.argv[1:]):
+              with open(path, encoding="utf-8") as handle:
+                  report = json.load(handle)
+              metadata = report.get("metadata", {}).get("vulnerabilities", {})
+              print(f"\\n{label}: {metadata}")
+              for name, item in sorted(report.get("vulnerabilities", {}).items()):
+                  via = item.get("via", [])
+                  advisory_names = [
+                      v.get("title", v.get("name", "unknown")) if isinstance(v, dict) else v
+                      for v in via
+                  ]
+                  print(json.dumps({
+                      "package": name,
+                      "severity": item.get("severity"),
+                      "isDirect": item.get("isDirect"),
+                      "range": item.get("range"),
+                      "via": advisory_names,
+                      "fixAvailable": item.get("fixAvailable"),
+                  }, sort_keys=True))
+          PY
+
       - name: Arc wallet client workflow tests
         run: npm run test:arc-client
 
       - name: Headless Arc agent executor workflow tests
         run: npm run test:arc-agent-executor
+
+      - name: Constrained Arc signer policy tests
+        run: npm run test:arc-constrained-signer
+
+      - name: Arc signer real systemd runtime smoke test
+        run: sudo -n bash tests/arc-signer-systemd-runtime-smoke.sh
+
+      - name: Arc signer daemon mock-RPC systemd smoke test
+        run: sudo -n bash tests/arc-signer-daemon-systemd-smoke.sh
+
+      - name: Arc signer full issuer-agent flow under systemd (local mock RPC)
+        run: sudo -n bash tests/arc-signer-full-flow-systemd-smoke.sh
+
+      - name: Best-effort historical Arc Registry gas sample (read-only; external archive RPC)
+        continue-on-error: true
+        run: npm run verify:arc-fee-samples
 
       - name: Atomic-state end-to-end test
         run: npm run test:atomic
@@ -60,6 +105,68 @@ jobs:
 
       - name: Guard access-control test
         run: npm run test:guard
+
+      - name: Verify Arc signer production-only installation
+        run: |
+          npm ci --omit=dev --ignore-scripts
+          npm ls --omit=dev --all --json > "$RUNNER_TEMP/npm-production-tree.json"
+          python3 - "$RUNNER_TEMP/npm-production-tree.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              tree = json.load(handle)
+
+          audit_only_packages = {
+              "ganache",
+              "@microsoft/api-extractor",
+              "@microsoft/api-extractor-model",
+              "@microsoft/tsdoc-config",
+              "@rushstack/node-core-library",
+              "ajv",
+              "bn.js",
+              "brace-expansion",
+              "braces",
+              "browserify-sign",
+              "browserslist",
+              "cipher-base",
+              "cross-spawn",
+              "diff",
+              "js-yaml",
+              "json5",
+              "micromatch",
+              "minimatch",
+              "mocha",
+              "nanoid",
+              "pbkdf2",
+              "picomatch",
+              "semver",
+              "serialize-javascript",
+              "sha.js",
+              "terser-webpack-plugin",
+              "validator",
+              "webpack",
+          }
+
+          found = []
+
+          def walk(node, parent=""):
+              for name, dependency in node.get("dependencies", {}).items():
+                  path = f"{parent} > {name}" if parent else name
+                  if name in audit_only_packages:
+                      found.append(path)
+                  walk(dependency, path)
+
+          walk(tree)
+          if found:
+              print("Unexpected audit-only packages in production install:")
+              print("\\n".join(found))
+              raise SystemExit(1)
+
+          print("Production dependency tree excludes Ganache and its 27 bundled audit-only packages: PASS")
+          PY
+          node --input-type=module -e "await import('./integrations/arc-ethers-signer-adapter.mjs'); console.log('Arc signer runtime imports: PASS')"
+
 
   anna-ui:
     runs-on: ubuntu-24.04

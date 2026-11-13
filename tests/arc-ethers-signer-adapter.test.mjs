@@ -1,0 +1,185 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { keccak256 } from "ethers";
+import { createArcEthersAdapter } from "../integrations/arc-ethers-signer-adapter.mjs";
+import { ARC_CHAIN_ID } from "../integrations/arc-constrained-signer.mjs";
+
+const SIGNER = "0x2222222222222222222222222222222222222222";
+const ISSUER = "0x1111111111111111111111111111111111111111";
+const REGISTRY = "0x4D09CdD490c1Ce48BCB6DA5c1A6Bf41E2f5e853D";
+const REGISTRY_CODE = "0x60006000556001600055";
+const HASH = "0x" + "ef".repeat(32);
+const policy = {
+  gasLimit: "100000", maxFeePerGas: "100", maxPriorityFeePerGas: "5",
+  maxNativeCost: "10000000", dailyNativeBudget: "50000000",
+};
+
+function mocks(overrides = {}) {
+  const sent = [];
+  const provider = {
+    getNetwork: async () => ({ chainId: BigInt(ARC_CHAIN_ID) }),
+    send: async method => { if (method === "eth_chainId") return "0x13b2"; throw new Error("unexpected provider.send method: " + method); },
+    getCode: async () => REGISTRY_CODE,
+    call: async () => "0x" + "0".repeat(63) + "1",
+    getFeeData: async () => ({ maxFeePerGas: 90n, maxPriorityFeePerGas: 2n }),
+    estimateGas: async () => 50000n,
+    getTransactionCount: async () => 7,
+    ...overrides.provider,
+  };
+  const wallet = {
+    getAddress: async () => SIGNER,
+    sendTransaction: async tx => {
+      sent.push(tx);
+      return {
+        hash: HASH,
+        wait: async () => ({
+          hash: HASH, status: 1, blockNumber: 123, from: SIGNER, to: tx.to,
+          gasUsed: 21000n, gasPrice: 3n,
+        }),
+      };
+    },
+    ...overrides.wallet,
+  };
+  return { provider, wallet, sent };
+}
+
+test("Arc ethers adapter pins chain and Registry code, then broadcasts only derived zero-value tx", async () => {
+  const m = mocks();
+  let authorizationRevalidated = false;
+  const originalSend = m.wallet.sendTransaction;
+  m.wallet.sendTransaction = async tx => {
+    assert.equal(authorizationRevalidated, true, "authorization must be revalidated before wallet broadcast");
+    return originalSend(tx);
+  };
+  const adapter = await createArcEthersAdapter({
+    provider: m.provider, wallet: m.wallet, registryAddress: REGISTRY, role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await assert.rejects(adapter.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n }, validateBeforeBroadcast: async () => {}, onBroadcast: async () => {} }), /startup verification/);
+  const info = await adapter.initialize();
+  assert.equal(info.chainId, ARC_CHAIN_ID);
+  const result = await adapter.executeOperation({
+    transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n },
+    validateBeforeBroadcast: async () => { authorizationRevalidated = true; },
+    onBroadcast: async () => {},
+  });
+  assert.equal(result.txHash, HASH);
+  assert.equal(result.actualNativeCost, "63000");
+  assert.equal(m.sent.length, 1);
+  assert.equal(m.sent[0].nonce, 7);
+  assert.equal(m.sent[0].maxFeePerGas, 100n);
+  assert.equal(m.sent[0].value, 0n);
+});
+
+test("Arc ethers adapter fails closed on chain, bytecode, fee and gas mismatches", async () => {
+  const wrongChain = mocks({ provider: { getNetwork: async () => ({ chainId: 1n }) } });
+  const a = await createArcEthersAdapter({
+    provider: wrongChain.provider, wallet: wrongChain.wallet, registryAddress: REGISTRY, role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await assert.rejects(a.initialize(), /not Arc Mainnet/);
+
+  // A provider statically configured for Arc must still reject an RPC that
+  // actually answers with a different chain ID.
+  const wrongRpcChain = mocks({ provider: { send: async method => method === "eth_chainId" ? "0x1" : "0x13b2" } });
+  const wrongRpcAdapter = await createArcEthersAdapter({
+    provider: wrongRpcChain.provider, wallet: wrongRpcChain.wallet, registryAddress: REGISTRY, role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await assert.rejects(wrongRpcAdapter.initialize(), /RPC endpoint is not Arc Mainnet/);
+
+  const wrongCode = mocks({ provider: { getCode: async () => "0x6001" } });
+  const b = await createArcEthersAdapter({
+    provider: wrongCode.provider, wallet: wrongCode.wallet, registryAddress: REGISTRY, role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await assert.rejects(b.initialize(), /bytecode hash mismatch/);
+
+  const highFee = mocks({ provider: { getFeeData: async () => ({ maxFeePerGas: 101n, maxPriorityFeePerGas: 2n }) } });
+  const c = await createArcEthersAdapter({
+    provider: highFee.provider, wallet: highFee.wallet, registryAddress: REGISTRY, role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await c.initialize();
+  await assert.rejects(c.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n }, validateBeforeBroadcast: async () => {}, onBroadcast: async () => {} }), /exceeds signer policy/);
+
+  const highGas = mocks({ provider: { estimateGas: async () => 100001n } });
+  const d = await createArcEthersAdapter({
+    provider: highGas.provider, wallet: highGas.wallet, registryAddress: REGISTRY, role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await d.initialize();
+  await assert.rejects(d.executeOperation({ transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n }, validateBeforeBroadcast: async () => {}, onBroadcast: async () => {} }), /estimated gas exceeds/);
+});
+
+test("Arc adapter rejects a disabled issuer and an issuer key/address mismatch", async () => {
+  const disabled = mocks({ provider: { call: async () => "0x" + "0".repeat(64) } });
+  const a = await createArcEthersAdapter({
+    provider: disabled.provider, wallet: disabled.wallet, registryAddress: REGISTRY,
+    role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await assert.rejects(a.initialize(), /issuer is not enabled/);
+
+  const mismatch = mocks();
+  const b = await createArcEthersAdapter({
+    provider: mismatch.provider, wallet: mismatch.wallet, registryAddress: REGISTRY,
+    role: "issuer", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await assert.rejects(b.initialize(), /issuer signer address differs/);
+});
+
+test("Arc agent signer cannot reuse the Registry issuer address", async () => {
+  const sameAddress = mocks({ wallet: { getAddress: async () => ISSUER } });
+  const adapter = await createArcEthersAdapter({
+    provider: sameAddress.provider, wallet: sameAddress.wallet, registryAddress: REGISTRY,
+    role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await assert.rejects(adapter.initialize(), /distinct address from the Registry issuer/);
+});
+
+test("Arc adapter rejects receipt sender or destination substitution", async () => {
+  const badSender = mocks({ wallet: {
+    sendTransaction: async tx => ({
+      hash: HASH,
+      wait: async () => ({
+        hash: HASH, status: 1, blockNumber: 123, from: ISSUER, to: tx.to,
+        gasUsed: 21000n, gasPrice: 3n,
+      }),
+    }),
+  } });
+  const a = await createArcEthersAdapter({
+    provider: badSender.provider, wallet: badSender.wallet, registryAddress: REGISTRY,
+    role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await a.initialize();
+  await assert.rejects(a.executeOperation({
+    transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n },
+    validateBeforeBroadcast: async () => {},
+    onBroadcast: async () => {},
+  }), /receipt sender does not match/);
+
+  const badDestination = mocks({ wallet: {
+    sendTransaction: async tx => ({
+      hash: HASH,
+      wait: async () => ({
+        hash: HASH, status: 1, blockNumber: 123, from: SIGNER, to: ISSUER,
+        gasUsed: 21000n, gasPrice: 3n,
+      }),
+    }),
+  } });
+  const b = await createArcEthersAdapter({
+    provider: badDestination.provider, wallet: badDestination.wallet, registryAddress: REGISTRY,
+    role: "agent", issuerAddress: ISSUER,
+    expectedRegistryCodeHash: keccak256(REGISTRY_CODE), feePolicy: policy,
+  });
+  await b.initialize();
+  await assert.rejects(b.executeOperation({
+    transaction: { chainId: ARC_CHAIN_ID, to: REGISTRY, data: "0x1234", value: 0n },
+    validateBeforeBroadcast: async () => {},
+    onBroadcast: async () => {},
+  }), /receipt destination does not match/);
+});
