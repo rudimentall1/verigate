@@ -10,8 +10,9 @@
     "compile:arc-authority": "node scripts/compile_arc_authority.mjs",
     "verify:arc-deployment": "node scripts/verify_arc_deployment.mjs",
     "test:arc-agent-executor": "node --test tests/arc-agent-executor.test.mjs",
-    "test:arc-constrained-signer": "bash -n deploy/arc-signer/install.sh deploy/arc-signer/rollback.sh tests/arc-signer-deploy-smoke.sh tests/arc-signer-systemd-runtime-smoke.sh tests/arc-signer-daemon-systemd-smoke.sh tests/arc-signer-full-flow-systemd-smoke.sh && test -f deploy/systemd/verigate-arc-signer@.service && grep -Fq 'ExecStart=/usr/bin/env node /opt/verigate/scripts/run_arc_signer.mjs' deploy/systemd/verigate-arc-signer@.service && node --check scripts/run_arc_signer.mjs && node --test tests/arc-constrained-signer.test.mjs tests/arc-signer-socket.test.mjs tests/arc-ethers-signer-adapter.test.mjs tests/arc-signer-client.test.mjs && if [ \"${CI:-}\" = \"true\" ]; then sudo -n bash tests/arc-signer-deploy-smoke.sh; fi",
+    "test:arc-constrained-signer": "bash -n deploy/arc-signer/install.sh deploy/arc-signer/rollback.sh tests/arc-signer-deploy-smoke.sh tests/arc-signer-systemd-runtime-smoke.sh tests/arc-signer-daemon-systemd-smoke.sh tests/arc-signer-full-flow-systemd-smoke.sh && test -f deploy/systemd/verigate-arc-signer@.service && grep -Fq 'ExecStart=/usr/bin/env node /opt/verigate/scripts/run_arc_signer.mjs' deploy/systemd/verigate-arc-signer@.service && node --check scripts/run_arc_signer.mjs scripts/inspect_arc_signer_journal.mjs && node --test tests/arc-constrained-signer.test.mjs tests/arc-signer-socket.test.mjs tests/arc-ethers-signer-adapter.test.mjs tests/arc-signer-client.test.mjs tests/arc-signer-journal-inspect.test.mjs && if [ \"${CI:-}\" = \"true\" ]; then sudo -n bash tests/arc-signer-deploy-smoke.sh; fi",
     "start:arc-signer": "node scripts/run_arc_signer.mjs",
+    "inspect:arc-signer-journal": "node scripts/inspect_arc_signer_journal.mjs",
     "recover:arc-signer-lock": "node scripts/recover_arc_signer_lock.mjs",
     "verify:arc-fee-samples": "node scripts/verify_arc_fee_samples.mjs"
   },
