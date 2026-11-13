@@ -17,6 +17,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse
 
 from core.models import ActionIntent
+from enforcement.protocol import ExecutionPermit
 
 VALTA_CHAT_COMPLETIONS_URL = "https://valta.co/v1/chat/completions"
 ACTION_TYPE = "valta.chat_completions"
@@ -199,9 +200,15 @@ class ValtaProxyExecutionAdapter:
             return False, "Valta request body differs from the signed action"
         return True, "Valta request matches the signed action"
 
-    def execute_after_consume(self, authorization: dict[str, Any], side_effect: Callable[[dict[str, Any]], Any]) -> Any:
-        # This method is called by ExecutionRouter only after signature,
-        # adapter, execution-path and one-time nonce checks have succeeded.
+    def execute_after_consume(
+        self,
+        authorization: dict[str, Any],
+        side_effect: Callable[[dict[str, Any]], Any],
+        *,
+        permit: ExecutionPermit,
+    ) -> Any:
+        # A direct call without a router-issued, one-shot permit is rejected.
+        permit.claim(authorization)
         return self.client.chat_completions(self.request_body, self.run_id)
 
     def consume(self, authorization: dict[str, Any]) -> tuple[bool, str]:
@@ -213,7 +220,7 @@ class ValtaProxyExecutionAdapter:
     def execute_bound(self, authorization: dict[str, Any], external_state: dict[str, Any], side_effect: Callable[[dict[str, Any]], Any]) -> Any:
         raise RuntimeError("Valta Chat Completions adapter does not support atomic external-state execution")
 
-    def execute_bound_after_consume(self, authorization: dict[str, Any], external_state: dict[str, Any], side_effect: Callable[[dict[str, Any]], Any]) -> Any:
+    def execute_bound_after_consume(self, authorization: dict[str, Any], external_state: dict[str, Any], side_effect: Callable[[dict[str, Any]], Any], *, permit: ExecutionPermit) -> Any:
         raise RuntimeError("Valta Chat Completions adapter does not support atomic external-state execution")
 
 
