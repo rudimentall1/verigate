@@ -953,12 +953,39 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 
 ### CI
 
-- Fresh PR CI run [#43366379519](https://github.com/rudimentall1/verigate/actions/runs/43366379519) was created for exact head `fe2547cd88338cd2b22fc7bd8cdac8d868117ebe`.
-- Latest inspected state: `contracts`, `test`, `container` **PASS**; `anna-ui` is still running the Anna app E2E step. Do not call this run 4/4 until `anna-ui` completes.
-- An earlier push-triggered run [#43366374151](https://github.com/rudimentall1/verigate/actions/runs/43366374151) also targets the same exact head. Use the PR-triggered run #43366379519 as the primary evidence record; wait for all four jobs before declaring the inspector validated.
+- PR CI run [#43366379519](https://github.com/rudimentall1/verigate/actions/runs/43366379519) completed **4/4 PASS** (`contracts`, `test`, `container`, `anna-ui`) for implementation/test head `fe2547cd88338cd2b22fc7bd8cdac8d868117ebe`.
+- The `contracts` job passed the constrained signer policy tests (including inspector tests), real systemd runtime smoke, daemon mock-RPC smoke and full two-role local mock-RPC flow. `test`, `container` and `anna-ui` also passed.
+- Workflow run head SHA is `fe2547cd...`; PR head at completion is `9888b5df855c2a09f970feffe028c03dfc29c0be` due to checkpoint-only documentation commit.
 
 ### Current state
 
 - PR #58 remains Draft/Open, stacked on PR #57.
 - The inspector remains read-only: it does not query RPC, append operation outcomes, alter budgets, clear replay protection or authorize rebroadcast.
 - Gensyn2 remains untouched. No keys provisioned, no signer installed or started, and no live Arc signer transaction broadcast.
+
+
+## 33. Journal inspector CI green; next release gate is fee evidence — 2026-11-13
+
+### Verified state
+
+- CI run [#43366379519](https://github.com/rudimentall1/verigate/actions/runs/43366379519) completed **4/4 PASS** for the implementation/test head `fe2547cd88338cd2b22fc7bd8cdac8d868117ebe`.
+- Jobs: `contracts`, `test`, `container`, `anna-ui`.
+- The constrained signer policy test step passed, including read-only journal inspector tests for unresolved states, invalid transitions, no mutation and missing-file refusal.
+- Systemd runtime smoke, daemon mock-RPC smoke and full two-role local mock-RPC flow passed in the contracts job.
+- PR #58 remains Draft/Open and stacked on PR #57. Current PR head at checkpoint time: `9888b5df855c2a09f970feffe028c03dfc29c0be`; the later commit is checkpoint documentation only.
+- No live Arc signer transaction was broadcast. Mock-RPC evidence remains synthetic/local.
+
+### Lock recovery review
+
+- Existing stale-lock recovery is inspect-first and requires explicit `--apply`.
+- Lock metadata records PID, Linux boot ID and process start ticks; inspection checks owner, permissions, link count, inode identity and process identity.
+- Tests cover live owner refusal, PID reuse, explicit stale recovery, malformed metadata, symlink/hard-link/broad-mode refusal and preservation of journal bytes.
+- Recovery never changes operation records or resolves a transaction reservation.
+- Operational precondition remains: stop the affected signer instance and verify no process is using its journal before explicit stale-lock recovery. Root/host compromise is outside this OS-isolation model.
+
+### Next engineering gate: fee evidence, not more features
+
+- Inspect the read-only fee sampler and verify that every sample is bound to Arc chain 5042, exact tx hash, expected sender/destination, selector, receipt block and successful status.
+- Separate evidence classes: Verigate Registry register/consume receipts versus the Guardian ERC-20 transfer reference. Do not treat the latter as a Verigate payment sample.
+- Production payment fee ceiling cannot be approved without a real Verigate-controlled USDC payment receipt. Existing historical samples are informative only.
+- Do not invent fee limits, set production budgets, provision keys, deploy or start services. Keep Gensyn2 untouched until separately approved.
