@@ -29,7 +29,7 @@ from core.outcome import (
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
-from enforcement.tool import ToolExecutionAdapter
+from enforcement.tool import ToolExecutionAdapter, build_tool_execution_graph
 
 
 class EvidenceGraphTest(unittest.TestCase):
@@ -87,11 +87,15 @@ class EvidenceGraphTest(unittest.TestCase):
             self.storage,
             policy_source_ref=str(policy_path),
         )
+        handler = lambda _action: "tool-ready"
         action = ActionIntent(
             agent_id=identity.agent_id,
             action_type="mcp.tool.call",
             target="github.create_issue",
-            metadata={"arguments": {"title": "evidence"}},
+            metadata={
+                "arguments": {"title": "evidence"},
+                "execution_graph": build_tool_execution_graph("github.create_issue", handler),
+            },
         )
         agent_signature = sign_action_intent(action, identity.key_id, agent_key)
         artifacts = engine.authorize_action(
@@ -105,7 +109,7 @@ class EvidenceGraphTest(unittest.TestCase):
         adapter = ToolExecutionAdapter(
             self.storage,
             self.public_key,
-            {"github.create_issue": lambda _action: "tool-ready"},
+            {"github.create_issue": handler},
         )
         router = ExecutionRouter(
             NetworkRegistry(),
