@@ -1,5 +1,29 @@
 # Changelog
 
+## Anna App 0.1.34 / Executa 0.1.20
+
+### Reservation lifecycle accounting
+
+- Treat non-BLOCK authorizations as rolling 24-hour reservations rather than completed spend.
+- Release a reservation only after a persisted, verified REJECTED or ABORTED execution receipt bound to the same authorization and intent.
+- Keep UNKNOWN and SUBMITTED reservations active; a wallet error without a definitive rejection and a transaction hash without chain confirmation do not prove funds were not moved or settled.
+- Preserve the legacy `spent_today` method and `rolling_24h_spend` field as compatibility aliases; expose `reserved_today` and `rolling_24h_reserved` for explicit semantics.
+- Add integration assertions for reserve, release, and fail-closed UNKNOWN/SUBMITTED behavior.
+- Document the accounting lifecycle and trust limitations in `anna/docs/RESERVATION-ACCOUNTING.md`.
+- Source candidate only: Executa 0.1.20 binaries must be rebuilt and verified on all four platforms before Anna Console upload.
+
+## Anna App 0.1.33 / Executa 0.1.19
+
+### Authority Desk interface refresh
+
+- Replace the long single-column form with a responsive two-column Authority Desk based on the Grok workspace visual direction.
+- Put the payment request first, with quick examples for an ordinary ALLOW, a human-review WARN, a hard-cap BLOCK and a missing-details clarification.
+- Keep extracted payment fields available in a collapsed review section; the existing Executa extraction, deterministic policy, signed Decision Receipt, App-scope confirmation, Execution Authorization and wallet hand-off remain unchanged.
+- Explain the three separate roles in the first screen: AI interpretation, Verigate policy decision and wallet execution.
+- Preserve the existing DOM contract and add an E2E check proving example buttons only populate the request field; they do not invoke AI or Verigate.
+- Do not import Grok's separate browser-local ledger, key storage or wallet execution implementation. The Anna App continues to use the existing Verigate Executa and App-scope approval flow.
+- Source candidate only: App 0.1.33 / Executa 0.1.19 has not been uploaded to Anna Console, cut as an immutable version, submitted for review or published.
+
 ## Anna App 0.1.30 / Executa 0.1.17
 
 ### Signed wallet outcome receipts and Anna invoke diagnostics

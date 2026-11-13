@@ -36,6 +36,8 @@ The editable Agent label is display metadata, not an identity credential. For An
 
 This is deliberately an installation-scoped mitigation, not a per-user/account-wide quota across separate Anna Cloud Agents or App installations. A different workspace or issuer key produces a different principal; separate installations are not aggregated. Multiple logical agents on one installation currently share this principal. A future per-agent model needs cryptographic agent enrollment, while a cross-Agent account quota needs a trusted platform principal and a concurrency-safe shared ledger. Anna APS App scope is per current user and App, but the APS KV contract does not currently provide an atomic create-if-absent primitive for race-free first-time principal bootstrap. The code does not claim that cross-Agent aggregation or Cloud lifecycle persistence has been verified.
 
+Agents that require distinct cryptographic identities must use Verigate's operator-controlled agent enrollment flow and direct `/v1/actions/authorize` API/SDK. That path checks the registered Ed25519 identity, the signature over the exact ActionIntent and the identity-bound capability. Changing the Anna Agent label does not create a separate identity or authority boundary. This Anna App version is installation-scoped; it is not a multi-agent gateway.
+
 Do not treat ALLOW as a guarantee that the recipient is safe, that the transaction will execute, or that it has executed.
 
 ## Fresh-install test matrix (Anna Cloud Agent)

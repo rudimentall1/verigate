@@ -11,6 +11,15 @@ const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], 
 const buttons = [$("check-btn"), $("execution-btn"), $("wallet-execute-btn")];
 const inputs = ["action-description", "agent-id", "target", "asset", "network", "amount", "resource", "confirm-details"].map($);
 const FIELD_IDS = ["target", "asset", "network", "amount"];
+document.addEventListener("click", (event) => {
+  const button = event.target?.closest?.("[data-example]");
+  if (!button) return;
+  const field = $("action-description");
+  if (field && !state.busy) {
+    field.value = button.dataset.example || "";
+    field.focus();
+  }
+});
 const FIELD_LABELS = { target: "recipient", asset: "asset", network: "network", amount: "amount" };
 const normalizeAgentLabel = (value) => Array.from(String(value ?? "").trim().replace(/\s+/g, " ")).slice(0, 128).join("");
 
@@ -734,7 +743,7 @@ function buildLimitRows(limits, values, ruleIds) {
   if (daily !== null) {
     const used = Number(limits.rolling_24h_spend || 0);
     add(
-      "Projected 24-hour authorization total",
+      "Projected 24-hour reserved capacity",
       String(used + values.amount) + " (including this request)",
       String(daily),
       ruleIds.has("daily_cap_exceeded") ? "review" : "ok"

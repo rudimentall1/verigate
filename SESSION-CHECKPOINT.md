@@ -607,3 +607,46 @@ Implement a constrained agent signer service before any production claim:
 - Fee ceilings remain unconfigured until representative Arc registration, consumption and USDC transfer gas costs are measured. No values have been guessed.
 - Gensyn2 remains the intended target. Server inventory and installation are pending reconnection. No server files, users, services or processes have been changed.
 
+
+## 23. Anna Executa 0.1.21 deployed to both developer accounts — 2026-11-13
+
+### User authorization and scope
+
+- The user explicitly authorized updating both Anna developer accounts: App `851` and App `382`.
+- This authorization covers private/draft version creation only. Marketplace publication was not authorized and was not performed.
+- Existing immutable versions were preserved; no prior version was overwritten or deleted.
+
+### Build provenance
+
+- Executa source version: `0.1.21`.
+- Source branch: `fix/anna-receipt-verification-agent-scope`.
+- Source commit: `22be8c123773881d25e5d8c2026fae33f1e1cb5e` (version bump); stale-reference fix: `f67854823c4a45b4781cb3460612e77bda545d0f`.
+- GitHub Actions build run: [43384617316](https://github.com/rudimentall1/verigate/actions/runs/43384617316), success across macOS Intel, macOS ARM64, Linux x86_64 and Windows x86_64. Each platform build passed smoke tests and reproducibility/hash checks.
+- The four CI artifacts were downloaded and SHA-256 sidecars independently matched the calculated hashes before Anna upload/publish operations.
+- This is package/build evidence, not live Cloud Agent acceptance evidence.
+
+### Account 1 — App 851
+
+- App slug: `verigate-authority`; App ID: `851`.
+- Executa ID: `1314`; tool ID: `tool-verigate-authority-verigate-authority-28x5jku8`.
+- Executa `0.1.21`, immutable version ID `1087`.
+- App `0.1.35`, immutable version ID `2186`.
+- App remains Draft/private; no review submission or Marketplace publication was performed.
+
+### Account 2 — App 382
+
+- App slug: `verigate-authority`; App ID: `382`.
+- Executa ID: `1164`; tool ID: `tool-rinat-verigate-authority-2um8gwhw`.
+- Executa `0.1.21`, immutable version ID `1089`, content hash `785f06c3d37fbcc2fe44e799592adb9c63880eb78ed5778f0ee2d1090b8ec0b2`.
+- App `0.1.35`, immutable version ID `2189`; frozen Executa reference resolves to Executa ID `1164`, version ID `1089`, version `0.1.21`.
+- App bundle status: `ready`; 3 files, 100,564 bytes; bundle manifest SHA-256 `573b8014241f8af6d0811e246badc4125273eb46827f0cda10b3cac454799452`.
+- Executa binary upload command resolved all four platform assets from Anna CDN and reported them as skipped (already present); it did not report a fresh upload for this account.
+- App status remains `pending_review`, but the existing review is still pinned to App `0.1.32` (version ID `2179`). New `0.1.35` is not the version currently under review. No review resubmission or Marketplace publication was performed.
+
+### Verification boundary and next work
+
+- CLI server readbacks confirmed App `382` latest `0.1.35` / ID `2189` and Executa `0.1.21` / ID `1089`.
+- The successful publish/cut response confirmed App `851` `0.1.35` / ID `2186` and Executa `0.1.21` / ID `1087`.
+- The two accounts have distinct Executa identities; do not cross-link or overwrite them.
+- Next: perform fresh Cloud Agent acceptance against each account/version: install/refresh the correct App version, verify the bundled Executa is the matching `0.1.21`, run describe and positive/negative invoke cases, and capture server/runtime evidence. Do not claim Cloud Agent acceptance until those calls are observed.
+- Do not submit App `382`'s new version for review or publish either App unless the user explicitly asks.

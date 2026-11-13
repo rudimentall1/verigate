@@ -34,7 +34,7 @@ _storage = StorageClient()
 _route_response = make_response_router(_sampling, _storage)
 _loop = None
 
-VERSION = "0.1.18"
+VERSION = "0.1.21"
 _POLICY_PATH = _BUNDLE_ROOT / "policies" / "anna.yaml"
 
 # Anna Executa protocol 2.0: negotiate APS support in `initialize`; keep
@@ -90,7 +90,7 @@ MANIFEST = {
         },
         {
             "name": "verigate_policy_summary",
-            "description": "Return active policy limits and this installation accounting principal. The optional agent_id is a display label only and never selects or resets accounting state. Read-only.",
+            "description": "Return active policy limits and this installation accounting principal. The rolling 24-hour value is active reserved capacity, released only by a verified REJECTED or ABORTED execution receipt. The optional agent_id is a display label only and never selects or resets accounting state. Read-only.",
             "timeout": 15,
             "parameters": [
                 {"name": "agent_id", "type": "string", "description": "Optional display label; it does not select the accounting principal.", "required": False, "default": ""},
@@ -483,7 +483,12 @@ def _verigate_policy_summary(args: dict) -> dict:
     asset = args.get("asset")
     payee = args.get("payee")
     if isinstance(asset, str) and asset.strip():
-        data["rolling_24h_spend"] = engine.storage.spent_today(principal_id, asset.strip().upper())
+        reserved = engine.storage.reserved_today(principal_id, asset.strip().upper())
+        data["rolling_24h_reserved"] = reserved
+        # Keep the legacy field for existing App clients; its value now means
+        # active policy reservations, not chain-confirmed spend.
+        data["rolling_24h_spend"] = reserved
+        data["accounting_basis"] = "active_authorizations_minus_verified_REJECTED_or_ABORTED_receipts"
     if isinstance(payee, str) and payee.strip():
         data["recipient_seen_before"] = engine.storage.payee_seen_before(
             principal_id, payee.strip(), "__anna_policy_summary__"
@@ -1357,29 +1362,8 @@ def _verigate_verify_decision_receipt(args: dict) -> dict:
     if not isinstance(receipt, dict):
         return {"success": False, "error": "receipt_json must contain a receipt object"}
 
-    # JSON transports such as JavaScript JSON.stringify normalize integral
-    # floats (25.0 -> 25). Restore the schema-defined float fields before
-    # checking the Python-signed canonical payload. Without this step a valid
-    # receipt would appear tampered after crossing the Anna host boundary.
-    payload = receipt.get("payload")
-    if isinstance(payload, dict):
-        intent = payload.get("intent")
-        if isinstance(intent, dict):
-            for field in ("amount", "timestamp"):
-                value = intent.get(field)
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
-                    intent[field] = float(value)
-        decision = payload.get("decision")
-        if isinstance(decision, dict):
-            value = decision.get("evaluated_at")
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                decision["evaluated_at"] = float(value)
-        signed_policy = payload.get("signed_policy_version")
-        if isinstance(signed_policy, dict) and isinstance(signed_policy.get("payload"), dict):
-            policy_created = signed_policy["payload"].get("created_at")
-            if isinstance(policy_created, (int, float)) and not isinstance(policy_created, bool):
-                signed_policy["payload"]["created_at"] = float(policy_created)
-
+    # Shared schema-aware normalization lives in attest.receipt so this
+    # App verifier and independent Python verifiers apply the same wire rules.
     try:
         # Verification is read-only: it loads only the public trust anchor and
         # never creates, unlocks or reads the issuer's private signing key.

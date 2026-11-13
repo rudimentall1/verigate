@@ -426,6 +426,8 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
         )
         self.assertEqual(summary["data"]["accounting_principal_id"], principal_id)
         self.assertEqual(summary["data"]["rolling_24h_spend"], 2000.0)
+        self.assertEqual(summary["data"]["rolling_24h_reserved"], 2000.0)
+        self.assertEqual(summary["data"]["accounting_basis"], "active_authorizations_minus_verified_REJECTED_or_ABORTED_receipts")
 
     def test_wallet_handoff_requires_separate_app_approval_and_consumes_once(self):
         result = self._authorize()
@@ -452,6 +454,8 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
         result = self._authorize()
         self.assertTrue(result["success"], result)
         authorization = result["data"]["execution_authorization"]
+        engine, _ = plugin._get_state()
+        self.assertEqual(engine.storage.reserved_today(authorization["payload"]["agent_id"], "USDC"), 25.0)
 
         consumed = asyncio.run(plugin._verigate_consume_execution_authorization(
             self._wallet_consume_args(authorization)
@@ -465,6 +469,7 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
         data = submitted["data"]
         receipt = data["execution_receipt"]
         self.assertEqual(data["execution_status"], "SUBMITTED")
+        self.assertEqual(engine.storage.reserved_today(authorization["payload"]["agent_id"], "USDC"), 25.0)
         self.assertTrue(data["transaction_submitted"])
         self.assertTrue(data["receipt_verified"])
         self.assertEqual(data["receipt_trust_scope"], "executor_self_report")
@@ -543,6 +548,9 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
         result = self._authorize()
         self.assertTrue(result["success"], result)
         authorization = result["data"]["execution_authorization"]
+        engine, _ = plugin._get_state()
+        principal_id = authorization["payload"]["agent_id"]
+        self.assertEqual(engine.storage.reserved_today(principal_id, "USDC"), 25.0)
         consumed = asyncio.run(plugin._verigate_consume_execution_authorization(
             self._wallet_consume_args(authorization)
         ))
@@ -560,6 +568,7 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
         self.assertIsNone(receipt["payload"]["transaction_ref"])
         self.assertEqual(receipt["payload"]["submission_data"]["error_code"], 4001)
         self.assertEqual(receipt["payload"]["submission_data"]["phase"], "wallet_request")
+        self.assertEqual(engine.storage.reserved_today(principal_id, "USDC"), 0.0)
 
         from attest.receipt import verify_execution_receipt
         public_key = load_public_key(Path(self.tmp.name) / "issuer.pub")
@@ -642,6 +651,8 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
         self.assertEqual(recorded["data"]["execution_status"], "ABORTED")
         self.assertFalse(recorded["data"]["transaction_submitted"])
         self.assertTrue(recorded["data"]["receipt_verified"])
+        engine, _ = plugin._get_state()
+        self.assertEqual(engine.storage.reserved_today(authorization["payload"]["agent_id"], "USDC"), 0.0)
 
     def test_unknown_wallet_error_is_not_misclassified_as_user_rejection(self):
         result = self._authorize()
@@ -663,6 +674,8 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
         self.assertTrue(recorded["success"], recorded)
         self.assertEqual(recorded["data"]["execution_status"], "UNKNOWN")
         self.assertFalse(recorded["data"]["transaction_submitted"])
+        engine, _ = plugin._get_state()
+        self.assertEqual(engine.storage.reserved_today(authorization["payload"]["agent_id"], "USDC"), 25.0)
 
     def test_wallet_outcome_approval_binds_error_and_is_idempotent(self):
         result = self._authorize()

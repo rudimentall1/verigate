@@ -1,4 +1,5 @@
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -49,6 +50,43 @@ class AuthorizationReceiptTest(unittest.TestCase):
         receipt = self._receipt().as_dict()
         ok, reason = verify_receipt(receipt, load_public_key(self.pub))
         self.assertTrue(ok, reason)
+
+    def test_receipt_verifies_after_javascript_json_number_roundtrip(self):
+        intent = ActionIntent(
+            agent_id="agent-1",
+            action_type="payment",
+            target="merchant",
+            amount=25.0,
+            asset="USDC",
+            network="base",
+            intent_id="js-json-number-roundtrip",
+            timestamp=1700000000.0,
+        )
+        decision = GuardrailDecision(
+            intent_id=intent.intent_id,
+            agent_id=intent.agent_id,
+            decision=Decision.ALLOW,
+            matched_rules=(),
+            context_digest=intent.context_digest,
+            evaluated_at=1700000001.0,
+        )
+        receipt = sign_receipt(
+            intent, decision, "a" * 64, load_private_key(self.priv)
+        ).as_dict()
+
+        # JavaScript JSON.stringify represents integral numbers without a
+        # trailing .0. Recreate the exact wire shape received by Python.
+        wire_receipt = json.loads(json.dumps(receipt))
+        wire_receipt["payload"]["intent"]["amount"] = 25
+        wire_receipt["payload"]["intent"]["timestamp"] = 1700000000
+        wire_receipt["payload"]["decision"]["evaluated_at"] = 1700000001
+
+        ok, reason = verify_receipt(wire_receipt, load_public_key(self.pub))
+        self.assertTrue(ok, reason)
+
+        wire_receipt["payload"]["intent"]["amount"] = 26
+        tampered, _ = verify_receipt(wire_receipt, load_public_key(self.pub))
+        self.assertFalse(tampered)
 
 
     def test_engine_authorize_produces_decision_receipt_without_execution_authority(self):

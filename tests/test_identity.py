@@ -66,6 +66,27 @@ class IdentityRegistryTest(unittest.TestCase):
             self.action, self.identity_id, signature, self.identity
         )
         self.assertTrue(valid, reason)
+
+    def test_registered_identity_rejects_agent_id_spoofing(self):
+        self.registry.register(self.identity)
+        signature = sign_action_intent(
+            self.action, self.identity_id, self.agent_private
+        )
+        spoofed_action = ActionIntent(
+            agent_id="attacker-controlled-agent",
+            action_type=self.action.action_type,
+            target=self.action.target,
+            resource=self.action.resource,
+            amount=self.action.amount,
+            asset=self.action.asset,
+            network=self.action.network,
+            intent_id=self.action.intent_id,
+            timestamp=self.action.timestamp,
+        )
+        with self.assertRaisesRegex(PermissionError, "identity agent mismatch"):
+            self.registry.authorize_action(
+                self.identity_id, spoofed_action, signature
+            )
     def test_tampered_action_and_revoked_identity_fail_closed(self):
         self.registry.register(self.identity)
         signature = sign_action_intent(

@@ -44,7 +44,7 @@ Anna is an interface, not the security boundary. Developers can integrate agents
 
 ## Evidence and current status
 
-- The latest `main` CI run completed successfully across all four jobs: **662 Python tests passed**, **64/64 Anna UI end-to-end tests passed**, contract tests, container/API-auth checks, strict Anna schema-4 validation and Linux Executa 0.1.18 build/smoke: [CI run](https://github.com/rudimentall1/verigate/actions/runs/43179226473), on commit `9f7b2e4c5d052fd37839ad14a0799243a56bc14d`.
+- The latest verified PR validation completed successfully across all four GitHub Actions jobs: **664 Python tests passed**, **64/64 Anna UI end-to-end tests passed**, contract tests, container/API-auth checks, strict Anna schema-4 validation and Linux Executa 0.1.18 build/smoke: [CI run 1772](https://github.com/rudimentall1/verigate/actions/runs/43219622179), on source commit `52694779d99e03871a05d0d7a27eb8129e388ec7`.
 - Four-platform Executa 0.1.18 reproducible builds, extracted-package smoke tests and SHA-256 verification passed for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel: [build run](https://github.com/rudimentall1/verigate/actions/runs/42989643581). The workflow artifacts were independently inspected; the GitHub Release step was intentionally skipped.
 - The current Anna Console cut is **App 0.1.31** with bundled **Executa 0.1.18**. It remains a Draft and has not been submitted for Marketplace review or publication.
 - A live Cloud Agent invocation was verified with the previous App 0.1.30 / Executa 0.1.17 combination. A fresh live invocation of 0.1.18 is not yet verified.

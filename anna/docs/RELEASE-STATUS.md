@@ -1,4 +1,78 @@
+## Fresh Executa 0.1.21 build verified — 13 November 2026
+
+The stale 0.1.20 Console cut is superseded as the *current source candidate* by a new four-platform Executa 0.1.21 build. This does not alter or replace immutable Console versions 0.1.20 / App 0.1.34.
+
+- Source / PR #59 HEAD: `f67854823c4a45b4781cb3460612e77bda545d0f`.
+- Four-platform build workflow: [run 43384617316](https://github.com/rudimentall1/verigate/actions/runs/43384617316), **success**; push CI [43384617386](https://github.com/rudimentall1/verigate/actions/runs/43384617386) and PR CI [43384623272](https://github.com/rudimentall1/verigate/actions/runs/43384623272), both **success**.
+- All four platform jobs ran the reproducibility check (two builds, matching binary hashes), packaged version 0.1.21, ran extracted-package smoke tests, and uploaded artifacts. Smoke output confirms describe, signed ALLOW decision, one-time App approval consumption, one-time wallet handoff consumption, and persisted/verified SUBMITTED receipt in the local package harness. This is not live Anna-host or chain evidence.
+- All four downloaded ZIP artifacts were independently inspected. Each contains exactly one platform archive and its SHA-256 sidecar; every recomputed archive checksum matches its sidecar. Each extracted manifest declares version 0.1.21 and the expected tool ID / entrypoint.
+
+| Platform | Artifact ID | Release archive SHA-256 |
+|---|---:|---|
+| macOS Intel x86_64 | 14017684573 | `e950d7a6d2ef25ef248455f6a2a0a566275d45feec7ba363740b55c139cd63f9` |
+| Linux x86_64 | 14018420735 | `309bbadfac7b8769980825af6d1510f15f4f5a327e183faee3f4139fb547df9a` |
+| Windows x86_64 | 14018385820 | `9f7c956392cbc44d47e3b46b651bdd36a9ca02ae30af05e61bbadccfaeef55d4` |
+| macOS ARM64 | 14018735045 | `d4855b5e6766bd9e61fa9d6c987dd904b30259007cbd0e509ecac798bd2b0ea2` |
+
+The release job was **skipped**, as intended; no GitHub Release was published. Artifacts are CI workflow artifacts, not Anna Console uploads.
+
+**Current decision: binary/source package gate PASS; Console cut and live acceptance remain OPEN.** Next: upload Executa 0.1.21 as a new immutable version in the second Anna profile, verify its server-side metadata, create a new App version frozen to 0.1.21, then run the compact live Cloud Agent acceptance plan. Do not overwrite Executa 0.1.20 or touch first-profile App ID 382. No Desktop Commander or Anna tokens were used for this build and inspection.
+
+---
+
+## Immutable Executa artifact freshness blocker — 13 November 2026
+
+The Console-uploaded Executa 0.1.20 binaries were built by workflow run [43376084717](https://github.com/rudimentall1/verigate/actions/runs/43376084717) from source commit `e1bcfe3e915a2058321d2c26ede115dd7f14f445` (06:03:30Z). The published manifest fixes were committed later: `25d6b06f680a6d0512610d9621f3e67a1bb56530` (06:29:49Z) and `3f0576d573ae35d3c261305302b67993900c7357` (06:47:44Z). Therefore the immutable Console package predates the final manifest parity corrections and must be treated as stale relative to the current source. CI success on later commits does not rebuild or replace those uploaded binaries.
+
+**New release blocker:** build a new Executa version from the final source (do not overwrite immutable 0.1.20), verify all four platform packages and checksums, then create a matching new App version frozen to that Executa version. Only after the new package is uploaded should live Cloud Agent acceptance be considered. Current 0.1.20/0.1.34 Console cut remains Draft and must not be submitted.
+
+## Latest source/CI checkpoint — 13 November 2026 (PR #59)
+
+- Current PR head at this checkpoint: `b51b7114a874a41fe62491ff451e35ffcbf42cb2`.
+- GitHub Actions run [43381228492](https://github.com/rudimentall1/verigate/actions/runs/43381228492) completed with **success** on that exact HEAD. All four jobs passed: `test`, `container`, `anna-ui`, and `contracts`.
+- The strict published-manifest/runtime-`describe` parity regression test passed; it was not weakened. The previous mismatch was the missing active-reservation explanation in `tools[2].description`.
+- Source review confirms the current Anna flow is single-turn; Agent Session remains out of scope. App approvals are read from App scope and consumed with ETag `if_match`; the current authorization test uses a fake APS implementation, so live Anna concurrency and isolation remain unverified.
+- Reservation tests cover ALLOW, REJECTED (EIP-1193 4001), ABORTED, UNKNOWN, SUBMITTED, forged/missing Router consumption, app approval binding, and idempotent/conflicting receipts. The signed negative outcomes are explicitly `wallet_outcome_self_report`, not wallet-signed or independently chain-confirmed evidence.
+- **Release decision remains NOT 100% READY.** CI/source gates are green, but a fresh Cloud Agent install/invocation and live APS ETag/concurrency/reconnect/user-isolation acceptance are still required. No Desktop Commander session or Anna tokens were used for this checkpoint.
+
+---
+
 # Anna App — current release status
+
+> **13 November 2026 checkpoint:** Second-profile Console cut is now App 0.1.34 (App ID 851, version ID 2182) with bundled Executa 0.1.20 (Executa ID 1314, version ID 1086). The UI bundle is ready and the frozen Executa reference points to the second-profile tool ID. The App remains Draft, unpublished, and not submitted for review. This does not prove a fresh Anna Cloud Agent installation or live invocation.
+
+**Updated:** 2026-11-13  
+**Second-profile App:** ID 851 | immutable version 0.1.34 | version ID 2182  
+**Second-profile Executa:** ID 1314 | immutable version 0.1.20 | version ID 1086  
+**Executa tool ID:** tool-verigate-authority-verigate-authority-28x5jku8
+
+## 13 November 2026 Console cut
+
+- App 0.1.34 was cut successfully in the second Anna profile. The server returned version ID 2182 and froze Executa ID 1314, version ID 1086 (0.1.20).
+- The UI bundle upload returned ready: 3 files, 100,577 bytes.
+- Executa 0.1.20 metadata reports four platform assets (darwin-arm64, darwin-x86_64, linux-x86_64, windows-x86_64) with SHA-256 references. The four platform build, reproducibility, extracted-package smoke and checksum evidence is in GitHub Actions run 43376084717.
+- Post-cut CLI reads confirmed App ID 851, latest version 0.1.34, Draft, is_published=false, review_candidate_version=null; Executa ID 1314, latest version 0.1.20, app_bundled, is_published=false.
+- No Marketplace release or review submission was performed. No wallet transaction was made.
+- Local identity and generated tool map were restored to the first profile after the second-profile upload. First-profile App ID 382 and its original tool ID were not intentionally modified.
+
+## 13 November 2026 manifest parity follow-up
+
+- CI run 43381054466 on diagnostic commit 49702682bc95ca07718e6e10cbe65c8db06f2617 exposed the exact remaining mismatch: `tools[2].description` in the published JSON manifest omitted the rolling 24-hour active-reservation explanation present in runtime `MANIFEST`.
+- Updated `anna/executas/verigate-authority/manifest.json` to match the runtime description in commit 3f0576d573ae35d3c261305302b67993900c7357.
+- The equality regression test remains strict and now reports precise JSON paths for future drift.
+- CI run 43381188517 is running on commit 3f0576d573ae35d3c261305302b67993900c7357. Do not mark the release gate green until every job completes successfully.
+
+## Current blockers
+
+- CI run 43376065204 on source commit e1bcfe3 failed 1 of 664 tests: the checked-in Executa manifest icon was corrupted by UTF-8 mojibake and did not match the runtime describe manifest. The manifest was corrected in commit 25d6b06f680a6d0512610d9621f3e67a1bb56530. Do not report CI green until a successful run on the corrected head is observed.
+- Fresh install and live tool invocation on an Anna Cloud Agent using App 0.1.34 / Executa 0.1.20 remain unverified.
+- Live APS ETag conflict handling, concurrent writes, recovery after refresh/reconnect, and user isolation remain unverified.
+- Reservation lifecycle tests exist in source, but acceptance requires the full CI pass and a controlled Cloud Agent verification of the deployed build.
+- The prior live Cloud Agent evidence for App 0.1.30 / Executa 0.1.17 must not be attributed to this cut.
+
+See [PRE-RELEASE-INSPECTION-2026-11-13.md](PRE-RELEASE-INSPECTION-2026-11-13.md) for the acceptance checklist and evidence boundaries.
+
+---
 
 > **Latest verified Anna deployment — 11 November 2026:** App 0.1.31 (version ID 2110) and bundled Executa 0.1.18 (version ID 1064) have been uploaded to Anna Console from source baseline `3731ae66c3ed9e8bd5ef36f0c00e48457db746c3`. All four 0.1.18 binaries were uploaded; post-cut reads through the official Anna CLI confirm the App remains Draft (`is_published=false`, no review candidate) and the Executa remains app-bundled / unpublished. The 0.1.18 build and four-platform SHA-256 evidence is in [the build verification report](EXECUTA-0.1.18-BUILD-VERIFICATION.md). This is a successful immutable Console cut, not a Marketplace release or proof of a fresh Cloud Agent runtime on Executa 0.1.18.
 
@@ -222,3 +296,18 @@ Two test-only changes were merged after the App 0.1.30 / Executa 0.1.17 immutabl
 - [Historical release-gate record](history/RELEASE-GATE-2026-11-09.md)
 - [Repository threat model](../../docs/threat-model.md)
 - [Anna release CI](https://github.com/rudimentall1/verigate/actions)
+
+## 13 November 2026 — Executa 0.1.21 cut in both Anna accounts
+
+The user authorized updating App IDs `851` and `382`, without Marketplace publication. Both accounts now have immutable App `0.1.35` and bundled Executa `0.1.21` versions. Existing immutable history was preserved.
+
+| Account | App version | App version ID | Executa ID | Executa version | Executa version ID | Current state |
+|---|---:|---:|---:|---:|---:|---|
+| App 851 | 0.1.35 | 2186 | 1314 | 0.1.21 | 1087 | Draft/private |
+| App 382 | 0.1.35 | 2189 | 1164 | 0.1.21 | 1089 | Pending review; review remains pinned to 0.1.32 (ID 2179) |
+
+App 382 bundle is ready (3 files, 100,564 bytes). The four Executa platform assets resolved to Anna CDN URLs; the CLI reported them as already present/skipped rather than newly uploaded. App 382's new immutable cut explicitly freezes Executa ID 1164, version ID 1089, version 0.1.21.
+
+The source package was built by GitHub Actions run [43384617316](https://github.com/rudimentall1/verigate/actions/runs/43384617316), with all four platform jobs and smoke tests passing. This is build and Anna Console version evidence only. Fresh Cloud Agent acceptance for both accounts remains outstanding. Do not state that the new versions have passed live Cloud Agent invoke tests. No review resubmission or Marketplace publication was performed.
+
+Next release gate: verify each immutable App version in a fresh/appropriate Cloud Agent session, confirm the account-specific bundled Executa identity and version, then test positive and negative invocation paths and record the observed runtime evidence.

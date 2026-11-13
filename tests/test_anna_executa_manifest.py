@@ -29,7 +29,27 @@ class ExecutaManifestTest(unittest.TestCase):
 
     def test_published_protocol_manifest_matches_runtime_describe(self):
         protocol_manifest = json.loads((PLUGIN.parent / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(protocol_manifest, self.plugin.MANIFEST)
+        def differences(left, right, path="$"):
+            if isinstance(left, dict) and isinstance(right, dict):
+                result = []
+                for key in sorted(set(left) | set(right)):
+                    if key not in left:
+                        result.append(f"{path}.{key}: missing from published manifest")
+                    elif key not in right:
+                        result.append(f"{path}.{key}: missing from runtime manifest")
+                    else:
+                        result.extend(differences(left[key], right[key], f"{path}.{key}"))
+                return result
+            if isinstance(left, list) and isinstance(right, list):
+                result = []
+                if len(left) != len(right):
+                    result.append(f"{path}: list length {len(left)} != {len(right)}")
+                for index, (a, b) in enumerate(zip(left, right)):
+                    result.extend(differences(a, b, f"{path}[{index}]"))
+                return result
+            return [] if left == right else [f"{path}: published={left!r}; runtime={right!r}"]
+
+        self.assertEqual(differences(protocol_manifest, self.plugin.MANIFEST), [])
 
     def test_manifest_passes_protocol_check(self):
         self.smoke.check_manifest(self.plugin.MANIFEST)

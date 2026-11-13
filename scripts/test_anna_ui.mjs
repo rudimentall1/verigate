@@ -339,6 +339,16 @@ async function test(name, fn) {
 const eq = (a, b, m) => { if (a !== b) throw new Error((m || "") + " expected " + JSON.stringify(b) + " got " + JSON.stringify(a)); };
 const ok = (c, m) => { if (!c) throw new Error(m); };
 
+await test("quick examples populate the payment request without bypassing the normal check", async () => {
+  const ui = await launch({});
+  const example = ui.window.document.querySelector("[data-example]");
+  ok(example, "quick example button exists");
+  example.click();
+  eq(ui.$("action-description").value, example.dataset.example, "example fills the ordinary request field");
+  eq(ui.calls.tools.length, 0, "example selection does not invoke Verigate tools");
+  eq(ui.calls.llm, 0, "example selection does not call Anna AI");
+});
+
 await test("valid request: AI reads it, Verigate allows, limits table is shown", async () => {
   const ui = await launch({});
   await ui.click();
@@ -466,13 +476,15 @@ await test("authorization history is clearly distinguished from completed on-cha
   const limits = repeat.$("limits-table").textContent;
   ok(limits.includes("Prior Verigate authorization record"), "recipient history is labelled as authorization history");
   ok(limits.includes("found"), "prior policy authorization is shown as found");
-  ok(limits.includes("Projected 24-hour authorization total"), "rolling counter is labelled as a projected authorization total");
+  ok(limits.includes("Projected 24-hour reserved capacity"), "rolling counter is labelled as reserved capacity");
   const projected = limits.match(/yours: (\d+(?:\.\d+)?) \(including this request\)/);
   ok(projected && Number(projected[1]) >= 50, "projected total includes at least the seeded prior authorization plus this request; table=" + limits);
   ok(!limits.includes("Rolling 24-hour spend"), "UI does not call authorization budget settled spend");
   ok(!limits.includes("Recipient history"), "UI does not call a prior authorization a completed payment");
   const note = repeat.$("limits").textContent;
-  ok(note.includes("policy-history counters, not proof that an on-chain transfer was signed, submitted, or settled"), "UI explains the limit of the evidence");
+  ok(note.includes("active policy reservations, not chain-confirmed spend"), "UI distinguishes reserved capacity from settled spend");
+  ok(note.includes("verified signed REJECTED or ABORTED"), "UI explains the evidence required to release a reservation");
+  ok(note.includes("UNKNOWN and SUBMITTED remain reserved"), "UI explains fail-closed ambiguous outcomes");
 });
 
 await test("one-time execution permission is issued only after a separate user click", async () => {
