@@ -44,13 +44,15 @@ Anna is an interface, not the security boundary. Developers can integrate agents
 
 ## Evidence and current status
 
-- The latest `main` CI run completed successfully across all four jobs: **662 Python tests passed**, **64/64 Anna UI end-to-end tests passed**, contract tests, container/API-auth checks, strict Anna schema-4 validation and Linux Executa 0.1.18 build/smoke: [CI run](https://github.com/rudimentall1/verigate/actions/runs/43179226473), on commit `9f7b2e4c5d052fd37839ad14a0799243a56bc14d`.
+- The current `main` commit `eb078f1e528fbd4b2ef297de8574e6de3700ea21` passed all four CI jobs in run #2235: `contracts`, `anna-ui`, `test` and `container`: https://github.com/rudimentall1/verigate/actions/runs/43570581260.
+- Anna native USDC wallet hand-off hardening was merged through PR #62: https://github.com/rudimentall1/verigate/pull/62. The changes validate the exact ERC-20 transfer target, recipient and amount, require explicit review for contract recipients, and fail closed when recipient code cannot be checked. CI #2235 validates the resulting merge commit.
+- The earlier main-branch CI failure #1478 on `fde332ee0ad2997ecd63bf3b4177083121b5dbca` (Anna UI 63/64) is historical and was superseded by the successful merge-commit run #2235.
+- An earlier `main` CI run completed successfully across all four jobs: **662 Python tests passed**, **64/64 Anna UI end-to-end tests passed**, contract tests, container/API-auth checks, strict Anna schema-4 validation and Linux Executa 0.1.18 build/smoke: [CI run](https://github.com/rudimentall1/verigate/actions/runs/43179226473), on commit `9f7b2e4c5d052fd37839ad14a0799243a56bc14d`. This remains historical evidence, not the current-main result.
 - Four-platform Executa 0.1.18 reproducible builds, extracted-package smoke tests and SHA-256 verification passed for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel: [build run](https://github.com/rudimentall1/verigate/actions/runs/42989643581). The workflow artifacts were independently inspected; the GitHub Release step was intentionally skipped.
-- The current Anna Console cut is **App 0.1.31** with bundled **Executa 0.1.18**. It remains a Draft and has not been submitted for Marketplace review or publication.
+- The current Anna Console cut is **App 0.1.31** with bundled **Executa 0.1.18**. It remains a Draft and has not been submitted for Marketplace review or publication. PR #62 is source and CI work; it does not mean a new Console artifact was cut or published.
 - A live Cloud Agent invocation was verified with the previous App 0.1.30 / Executa 0.1.17 combination. A fresh live invocation of 0.1.18 is not yet verified.
 - One **0.000001 USDC** transfer on Base was submitted through the Anna App and independently checked through Base RPC. This is a single successful micro-transfer, not evidence of broad production readiness.
 - Verigate is an open-source protocol implementation and integration project, not a hosted multi-tenant production service. No independent third-party security audit or production KMS/HSM key custody is claimed.
-
 ## Links
 
 - Repository: https://github.com/rudimentall1/verigate
