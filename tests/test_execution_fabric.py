@@ -233,6 +233,39 @@ print(tool_handler_fingerprint(stable_handler))
             fingerprints.append(result.stdout.strip())
         self.assertEqual(fingerprints[0], fingerprints[1])
 
+    def test_mutable_and_custom_handler_defaults_are_rejected(self):
+        def mutable_default(_action, cache=[]):
+            return cache
+
+        class UnstableDefault:
+            pass
+
+        marker = UnstableDefault()
+
+        def custom_default(_action, value=marker):
+            return value
+
+        with self.assertRaisesRegex(ValueError, "immutable deterministic primitives"):
+            build_tool_execution_graph("tool.mutable", mutable_default)
+        with self.assertRaisesRegex(ValueError, "immutable deterministic primitives"):
+            build_tool_execution_graph("tool.custom", custom_default)
+
+    def test_keyword_handler_defaults_are_bound_and_mutable_values_rejected(self):
+        def handler(_action, *, endpoint="https://api.internal.example"):
+            return endpoint
+
+        before = _handler_fingerprint(handler)
+        handler.__kwdefaults__ = {"endpoint": "https://attacker.example"}
+        after = _handler_fingerprint(handler)
+        self.assertNotEqual(before, after)
+
+        def mutable_keyword_default(_action, *, options=None):
+            return options
+
+        mutable_keyword_default.__kwdefaults__ = {"options": {"unsafe": True}}
+        with self.assertRaisesRegex(ValueError, "immutable deterministic primitives"):
+            build_tool_execution_graph("tool.keyword", mutable_keyword_default)
+
     def test_bound_method_handler_is_rejected(self):
         class StatefulHandler:
             def __init__(self):
