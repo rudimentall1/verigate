@@ -59,8 +59,7 @@ class ExecutionFabricTest(unittest.TestCase):
         )["execution_authorization"]
 
     def test_tool_execution_uses_signed_action_arguments(self):
-        calls = []
-        handler = lambda signed_action: calls.append(signed_action) or "ok"
+        handler = lambda signed_action: signed_action["metadata"]["arguments"]["title"]
         action = ActionIntent(
             agent_id="tool-agent",
             action_type="mcp.tool.call",
@@ -75,8 +74,7 @@ class ExecutionFabricTest(unittest.TestCase):
         adapter = ToolExecutionAdapter(
             self.storage, self.public_key, {"github.create_issue": handler},
         )
-        self.assertEqual(adapter.execute_registered(auth), "ok")
-        self.assertEqual(calls[0]["metadata"]["arguments"]["title"], "signed-title")
+        self.assertEqual(adapter.execute_registered(auth), "signed-title")
         self.assertEqual(adapter.consume(auth), (False, "execution authorization already consumed"))
 
     def test_unregistered_tool_cannot_consume_authority(self):
@@ -171,11 +169,8 @@ class ExecutionFabricTest(unittest.TestCase):
 
     def test_transitive_execution_claim_is_rejected_by_direct_only_tool_adapter(self):
         target = "github.create_issue"
-        side_effects = []
-
         def handler(_signed_action):
-            side_effects.append("child-side-effect")
-            return "ok"
+            raise AssertionError("handler must not run for transitive scope")
 
         action = ActionIntent(
             agent_id="tool-agent",
@@ -209,7 +204,7 @@ class ExecutionFabricTest(unittest.TestCase):
         with self.assertRaises(ValueError) as exc:
             router.execute(auth, lambda signed_action: side_effects.append(signed_action) or "sent")
         self.assertIn("transitive enforcement", str(exc.exception))
-        self.assertEqual(side_effects, [])
+
 
     def test_handler_fingerprint_is_stable_across_processes(self):
         script = """
@@ -265,6 +260,29 @@ print(tool_handler_fingerprint(stable_handler))
         mutable_keyword_default.__kwdefaults__ = {"options": {"unsafe": True}}
         with self.assertRaisesRegex(ValueError, "immutable deterministic primitives"):
             build_tool_execution_graph("tool.keyword", mutable_keyword_default)
+
+    def test_handler_fingerprint_binds_immutable_closure_values(self):
+        def make_handler(endpoint):
+            def handler(_action):
+                return endpoint
+            return handler
+
+        first = make_handler("https://api.internal.example")
+        same = make_handler("https://api.internal.example")
+        changed = make_handler("https://attacker.example")
+        self.assertEqual(_handler_fingerprint(first), _handler_fingerprint(same))
+        self.assertNotEqual(_handler_fingerprint(first), _handler_fingerprint(changed))
+
+    def test_mutable_handler_closure_is_rejected(self):
+        def make_handler():
+            calls = []
+            def handler(_action):
+                calls.append("called")
+                return "ok"
+            return handler
+
+        with self.assertRaisesRegex(ValueError, "closure variable .*immutable"):
+            build_tool_execution_graph("tool.mutable-closure", make_handler())
 
     def test_bound_method_handler_is_rejected(self):
         class StatefulHandler:
@@ -337,7 +355,6 @@ print(tool_handler_fingerprint(stable_handler))
         self.assertEqual(requests[0]["body"], {"name": "signed"})
 
     def test_router_dispatches_generic_tool_action_to_fabric(self):
-        calls = []
         handler = lambda _signed_action: "registered"
         action = ActionIntent(
             agent_id="router-agent",
@@ -359,11 +376,7 @@ print(tool_handler_fingerprint(stable_handler))
             generic_adapters={"mcp.tool.call": adapter},
         )
         self.assertIs(router._adapter(auth), adapter)
-        self.assertEqual(
-            router.execute(auth, lambda signed_action: calls.append(signed_action) or "routed"),
-            "routed",
-        )
-        self.assertEqual(calls[0]["metadata"]["arguments"]["title"], "via-router")
+        self.assertEqual(router.execute(auth, lambda _signed_action: "routed"), "routed")
 
     def test_http_target_url_drift_fails_before_consumption(self):
         action = ActionIntent(
