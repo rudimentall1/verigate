@@ -23,6 +23,59 @@ function nativeUsdcPrecisionSupported(values) {
   const fractionalDigits = (mantissa.split(".")[1] || "").length - Number(exponentText);
   return Number.isFinite(fractionalDigits) && fractionalDigits <= 6;
 }
+const NATIVE_USDC_CONTRACTS = Object.freeze({
+  base: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+  ethereum: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+});
+
+function usdcAmountToBaseUnits(value) {
+  const raw = String(value ?? "").trim();
+  if (!/^\d+(?:\.\d{1,6})?$/.test(raw)) return null;
+  const [whole, fraction = ""] = raw.split(".");
+  return BigInt(whole) * 1000000n + BigInt((fraction + "000000").slice(0, 6));
+}
+
+// Validate the signed EVM envelope independently of the wallet UI.
+// USDC transfers must call the canonical token contract with transfer(address,uint256),
+// zero native value, and the exact recipient and six-decimal amount from the approved intent.
+function nativeUsdcTransferError(transaction, values, networkConfig) {
+  if (!transaction || typeof transaction !== "object") return "The transaction envelope is missing.";
+  const network = String(values?.network || "").toLowerCase();
+  const tokenContract = NATIVE_USDC_CONTRACTS[network];
+  if (!tokenContract || String(transaction.to || "").toLowerCase() !== tokenContract) {
+    return "The transaction destination is not the canonical native USDC contract for this network.";
+  }
+  if (transaction.chain_id !== Number.parseInt(networkConfig.chainId, 16)) {
+    return "The transaction chain does not match the selected network.";
+  }
+  try {
+    if (BigInt(transaction.value_wei) !== 0n) {
+      return "A native-value transfer is not permitted in the USDC-only wallet flow.";
+    }
+  } catch {
+    return "The transaction native value is malformed.";
+  }
+  const data = String(transaction.data || "").toLowerCase();
+  if (!/^0xa9059cbb[0-9a-f]{128}$/.test(data)) {
+    return "Only a standard ERC-20 transfer(address,uint256) call is permitted.";
+  }
+  const recipient = String(values?.payee || "").toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(recipient)) {
+    return "The approved recipient is not a valid EVM address.";
+  }
+  if (data.slice(10, 74) !== "0".repeat(24) + recipient.slice(2)) {
+    return "The ERC-20 transfer recipient differs from the approved recipient.";
+  }
+  const expectedAmount = usdcAmountToBaseUnits(values?.amount);
+  if (expectedAmount === null) {
+    return "The approved amount cannot be represented exactly in USDC base units.";
+  }
+  if (data.slice(74, 138) !== expectedAmount.toString(16).padStart(64, "0")) {
+    return "The ERC-20 transfer amount differs from the approved amount.";
+  }
+  return null;
+}
+
 const DEFAULT_QUESTIONS = {
   target: "Which recipient address should receive the payment?",
   asset: "Which asset should be paid (for example USDC)?",
@@ -1353,6 +1406,11 @@ async function executeWithConnectedWallet() {
     showError("The signed permission is missing a matching EVM transaction. No wallet call was made.");
     return;
   }
+  const signedTransactionError = nativeUsdcTransferError(expectedTx, values, networkConfig);
+  if (signedTransactionError) {
+    showError("The signed permission does not describe the exact native USDC transfer requested: " + signedTransactionError + " No wallet call was made and the permission was not consumed.");
+    return;
+  }
 
   let consumed = false;
   let consumeAttempted = false;
@@ -1383,6 +1441,8 @@ async function executeWithConnectedWallet() {
       message:
         values.amount + " USDC on " + network + "\nRecipient: " + values.payee +
         "\nWallet: " + from +
+        "\nUSDC contract: " + expectedTx.to +
+        "\n\nThis is an ERC-20 transfer: the transaction calls the canonical USDC token contract, while the recipient and amount are encoded in the transfer data. Verigate checks both against the signed permission. If your wallet displays a Malicious or critical security alert, do not sign; this app cannot override wallet security." +
         "\n\nVerigate will consume the one-time permission first. Your wallet will then show this exact transaction for signing. Network fees may apply.",
       confirmLabel: "Continue to wallet"
     });
@@ -1434,11 +1494,14 @@ async function executeWithConnectedWallet() {
     $("wallet-execute-btn").disabled = true;
     $("wallet-execute-btn").textContent = "Permission consumed";
     const tx = data.transaction;
-    if (!tx || tx.chain_id !== expectedTx.chain_id ||
+    const routerTransactionError = nativeUsdcTransferError(tx, values, networkConfig);
+    if (routerTransactionError || !tx || tx.chain_id !== expectedTx.chain_id ||
         String(tx.to).toLowerCase() !== String(expectedTx.to).toLowerCase() ||
-        tx.value_wei !== expectedTx.value_wei ||
+        String(tx.value_wei) !== String(expectedTx.value_wei) ||
         String(tx.data).toLowerCase() !== String(expectedTx.data).toLowerCase()) {
-      throw new Error("ExecutionRouter returned a transaction that differs from the signed artifact. Wallet submission stopped.");
+      throw new Error("ExecutionRouter transaction failed the signed native-USDC transfer checks: " +
+        (routerTransactionError || "the returned envelope differs from the signed artifact") +
+        ". Wallet submission stopped.");
     }
 
     setBusy(true, "ExecutionRouter accepted the permission. Waiting for your wallet signature…");
