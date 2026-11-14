@@ -656,3 +656,16 @@ Implement a constrained agent signer service before any production claim:
 - This run covers the additional contract-warning cancellation regression: rejecting the smart-contract-recipient confirmation must leave the one-time permission unused, create no wallet-submission approval and make no wallet send.
 - PR #62 remains **Draft, open and unmerged**. No Anna Console cut, Marketplace submission, Anna CU consumption, live wallet signature or transaction broadcast occurred.
 - CI PASS validates the tested source/build behavior. It does not establish that the updated app is installed in Anna Console, that MetaMask's external security classification has changed, or that a live payment was completed.
+
+
+## 27. PR #62 latest source verification and release boundary — 2026-11-14
+
+- PR #62 head at verification: `ba5ff8f86667a3795ab697a1f02c0185db4a1d2d`.
+- CI #2228: **SUCCESS** on exact head `ba5ff8f86667a3795ab697a1f02c0185db4a1d2d`: https://github.com/rudimentall1/verigate/actions/runs/43568782693.
+- CI #2227: **SUCCESS** on the same exact head: https://github.com/rudimentall1/verigate/actions/runs/43568779505.
+- Both runs passed all four jobs: `test`, `contracts`, `container`, and `anna-ui`. The latter includes strict schema-4 validation, Anna app E2E, Linux Executa build and smoke test.
+- The contract-recipient cancellation regression is covered: rejecting the separate warning leaves the one-time permission unused, creates no wallet-submission approval and makes no wallet send.
+- The router response mutation tests run after permission consumption. They prove no wallet send occurs on changed recipient/amount, but do not prove that permission remains unused in those post-consumption cases.
+- Anna Console remains on immutable Draft App 0.1.31 / Executa 0.1.18 from source baseline `3731ae66c3ed9e8bd5ef36f0c00e48457db746c3`. PR #62 source changes are not part of that cut. The current Console cut has not been refreshed with this branch.
+- No Anna CU, live wallet signature, transaction broadcast, new live payment, Marketplace review or publication occurred as part of PR #62.
+- PR #62 remains Draft, open and unmerged. CI PASS is source/build evidence, not live Anna acceptance or wallet security-classification evidence.
