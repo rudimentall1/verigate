@@ -321,6 +321,26 @@ print(tool_handler_fingerprint(stable_handler))
             adapter.handlers = {"github.create_issue": lambda _action: "substituted"}
         self.assertIs(adapter.handlers["github.create_issue"], handler)
 
+    def test_tool_handler_cannot_run_before_nonce_consumption(self):
+        target = "github.create_issue"
+        action = ActionIntent(
+            agent_id="tool-agent",
+            action_type="mcp.tool.call",
+            target=target,
+            metadata={"arguments": {"title": "signed"}},
+        )
+        auth = self._auth(action)
+        calls = []
+
+        def handler(signed_action):
+            calls.append(signed_action)
+            return "executed"
+
+        adapter = ToolExecutionAdapter(self.storage, self.public_key, {target: handler})
+        with self.assertRaisesRegex(PermissionError, "consumed authorization"):
+            adapter.execute_after_consume(auth, lambda _action: None)
+        self.assertEqual(calls, [])
+
     def test_direct_execution_scope_remains_compatible(self):
         target = "github.create_issue"
         handler = lambda _signed_action: "registered"
