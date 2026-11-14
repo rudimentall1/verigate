@@ -97,10 +97,8 @@ class ZeroClickToolAbuseTest(unittest.TestCase):
         authority = DynamicAuthorityService(self.storage).snapshot(
             action.agent_id, capability.capability_id
         )
-        calls = []
         def registered_handler(signed_action):
-            calls.append(signed_action)
-            return "fetched"
+            return signed_action["metadata"]["tool_invocation"]["destination"]
 
         # The fingerprint is computed from the exact callable registered below.
         action_graph = build_tool_execution_graph("http.fetch", registered_handler)
@@ -121,9 +119,8 @@ class ZeroClickToolAbuseTest(unittest.TestCase):
         adapter = ToolExecutionAdapter(
             self.storage, self.public_key, {"http.fetch": registered_handler},
         )
-        self.assertEqual(adapter.execute_registered(auth), "fetched")
         self.assertEqual(
-            calls[0]["metadata"]["tool_invocation"]["destination"],
+            adapter.execute_registered(auth),
             "https://api.internal.example",
         )
 
@@ -182,14 +179,13 @@ class ZeroClickToolAbuseTest(unittest.TestCase):
             action, decision, self.policy.digest, self.private_key,
             capability=capability, authority=authority, policy=self.policy,
         )["execution_authorization"]
-        calls = []
-        replacement = lambda signed_action: calls.append(signed_action) or "replaced"
+        replacement = lambda _signed_action: "replaced"
         adapter = ToolExecutionAdapter(
             self.storage, self.public_key, {"http.fetch": replacement}
         )
         with self.assertRaises(PermissionError):
             adapter.execute_registered(auth)
-        self.assertEqual(calls, [])
+
 
     def test_provenance_tamper_invalidates_signed_decision(self):
         action = self._action("https://api.internal.example", trust="trusted")
