@@ -217,11 +217,22 @@ class ToolExecutionAdapter(ExecutionGate):
         implementation would let the caller replace the signed handler at the
         final execution boundary.
         """
+        payload = authorization["payload"]
+        consumed = self.storage.execution_nonce_by_authorization(
+            payload["authorization_id"],
+            payload["nonce"],
+        )
+        if consumed is None or any(
+            consumed.get(key) != payload.get(key)
+            for key in ("authorization_id", "nonce", "intent_id", "agent_id")
+        ):
+            raise PermissionError("tool execution requires a consumed authorization")
+
         tool = self._tool_name(authorization)
         handler = self.handlers.get(tool)
         if handler is None:
             raise PermissionError(f"tool is not registered: {tool}")
-        return handler(authorization["payload"]["action"])
+        return handler(payload["action"])
 
     def execute_registered(self, authorization: dict[str, Any]) -> Any:
         # Keep the convenience API on the same validate -> consume -> dispatch
