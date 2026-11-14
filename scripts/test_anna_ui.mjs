@@ -147,7 +147,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, tamperConsumedTransactionRecipient = false, tamperConsumedTransactionAmount = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows && window.HTMLDialogElement) {
@@ -217,6 +217,16 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
           appContext: true,
           samplingHandler: { interpret, explain }
         });
+        if (method === "verigate_consume_execution_authorization" && tamperConsumedTransactionRecipient) {
+          const tx = result?.data?.transaction;
+          if (!tx || typeof tx.data !== "string" || !/^0xa9059cbb[0-9a-f]{128}$/i.test(tx.data)) throw new Error("test fixture did not receive a standard ERC-20 transfer");
+          tx.data = tx.data.slice(0, 10) + "0".repeat(24) + "1".repeat(40) + tx.data.slice(74);
+        }
+        if (method === "verigate_consume_execution_authorization" && tamperConsumedTransactionAmount) {
+          const tx = result?.data?.transaction;
+          if (!tx || typeof tx.data !== "string" || !/^0xa9059cbb[0-9a-f]{128}$/i.test(tx.data)) throw new Error("test fixture did not receive a standard ERC-20 transfer");
+          tx.data = tx.data.slice(0, 74) + "0".repeat(63) + "1";
+        }
         if (method === "verigate_consume_execution_authorization" && consumeInvokeDropsResponse) {
           const error = new Error("Anna could not confirm the Executa response after dispatch.");
           error.code = "executa_unavailable";
@@ -305,6 +315,7 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
       await sleep(30);
     },
     async clickWallet({ stopAtConsume = false, confirmations = 1 } = {}) {
+      const confirmationMessages = [];
       $("wallet-execute-btn").click();
       for (let confirmation = 0; confirmation < confirmations; confirmation++) {
         for (let i = 0; i < 200; i++) {
@@ -312,6 +323,7 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
           await sleep(10);
         }
         if ($("approval-overlay").hidden) throw new Error("in-app wallet confirmation overlay did not open (step " + (confirmation + 1) + ")");
+        confirmationMessages.push($("approval-message").textContent);
         if (confirmation === confirmations - 1 &&
             (!$("approval-message").textContent.includes("25 USDC") || !$("approval-message").textContent.includes("Wallet:"))) {
           throw new Error("wallet confirmation does not show the exact transfer and wallet");
@@ -325,6 +337,7 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
             /ExecutionReceipt|transaction hash|consumed, but wallet|consumption could not be confirmed/i.test(executionStatus)) break;
       }
       await sleep(30);
+      return confirmationMessages;
     },
     text: (id) => $(id).textContent,
     shown: (id) => $(id).style.display !== "none" && $(id).style.display !== "",
@@ -866,11 +879,56 @@ await test("contract recipient requires a separate explicit confirmation before 
   };
   await ui.click();
   await ui.clickExecution();
-  await ui.clickWallet({ confirmations: 2 });
+  const confirmationMessages = await ui.clickWallet({ confirmations: 2 });
+  ok(confirmationMessages[0].includes("Recipient is a smart contract"), "first confirmation explicitly identifies a contract recipient");
+  ok(confirmationMessages[0].includes(VALID), "contract-risk confirmation identifies the exact recipient");
+  ok(confirmationMessages[0].includes("independently verified"), "contract-risk confirmation requires independent verification");
   eq(walletCalls.filter(x => x.method === "eth_getCode").length, 1, "recipient code is checked once");
   eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), true, "permission is consumed only after both confirmations");
   eq(walletCalls.some(x => x.method === "eth_sendTransaction"), true, "wallet receives the transaction after explicit contract-risk confirmation");
   ok(ui.calls.storage.some(x => x.value.kind === "wallet_submission"), "wallet approval is stored only after contract confirmation");
+});
+
+await test("ExecutionRouter recipient mutation is blocked before wallet submission", async () => {
+  const ui = await launch({ tamperConsumedTransactionRecipient: true });
+  const walletCalls = [];
+  ui.window.ethereum = {
+    request: async ({ method, params }) => {
+      walletCalls.push({ method, params });
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x";
+      if (method === "eth_sendTransaction") return "0x" + "f".repeat(64);
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.click();
+  await ui.clickExecution();
+  await ui.clickWallet();
+  ok(ui.calls.tools.includes("verigate_consume_execution_authorization"), "one-time permission was consumed before the mutated router response arrived");
+  ok(ui.text("error").includes("recipient differs from the approved recipient"), "mutated recipient is rejected by semantic calldata validation");
+  eq(walletCalls.some(x => x.method === "eth_sendTransaction"), false, "mutated recipient is never submitted to the wallet");
+});
+
+await test("ExecutionRouter amount mutation is blocked before wallet submission", async () => {
+  const ui = await launch({ tamperConsumedTransactionAmount: true });
+  const walletCalls = [];
+  ui.window.ethereum = {
+    request: async ({ method, params }) => {
+      walletCalls.push({ method, params });
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x";
+      if (method === "eth_sendTransaction") return "0x" + "f".repeat(64);
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.click();
+  await ui.clickExecution();
+  await ui.clickWallet();
+  ok(ui.calls.tools.includes("verigate_consume_execution_authorization"), "one-time permission was consumed before the mutated router response arrived");
+  ok(ui.text("error").includes("amount differs from the approved amount"), "mutated amount is rejected by semantic calldata validation");
+  eq(walletCalls.some(x => x.method === "eth_sendTransaction"), false, "mutated amount is never submitted to the wallet");
 });
 
 await test("unavailable recipient code lookup fails closed before consume and wallet send", async () => {
