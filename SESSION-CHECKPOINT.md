@@ -624,3 +624,14 @@ Implement a constrained agent signer service before any production claim:
 - Added focused UI cases for contract-recipient confirmation and unavailable `eth_getCode` fail-closed behavior. These additions have not yet been confirmed by a subsequent CI run.
 - No Anna CU was consumed, no wallet signature was requested, and no transaction was broadcast.
 - PR is Draft and unmerged. No Anna Console version was cut and no Marketplace action was taken.
+
+
+## 24. Anna UI security regression coverage — 2026-11-14
+
+- Added explicit assertions that the first contract-recipient confirmation identifies the recipient as a smart contract, shows the exact recipient address, and requires independent verification.
+- Added two negative-path UI tests that mutate the ExecutionRouter response after one-time authorization consumption: recipient calldata changed, and USDC amount calldata changed. Both must be rejected by the independent semantic transfer validator before `eth_sendTransaction`.
+- These router-response mutation tests prove wallet submission is blocked; they do not prove the permission remains unconsumed because the mutation is injected only after the consume response has been returned. The original signed transaction is validated before consumption.
+- Commit: `070f7e0b3741177105b05dca3ff34fec137bf01a`.
+- CI run #2214 completed successfully across `test`, `contracts`, `container`, and `anna-ui` for the preceding PR head `35df3ae904fdbdbebe7bed5c8efd8d788eb9b2a3`. It predates this new regression coverage.
+- No workflow run or status check is currently visible for commit `070f7e0b3741177105b05dca3ff34fec137bf01a`; the new tests are therefore not yet CI-verified.
+- No wallet signature, transaction broadcast, Anna CU consumption, release, or merge occurred.
