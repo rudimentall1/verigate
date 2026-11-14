@@ -41,6 +41,9 @@ function usdcAmountToBaseUnits(value) {
 function nativeUsdcTransferError(transaction, values, networkConfig) {
   if (!transaction || typeof transaction !== "object") return "The transaction envelope is missing.";
   const network = String(values?.network || "").toLowerCase();
+  if (String(values?.asset || "").toUpperCase() !== "USDC") {
+    return "This wallet path only permits native USDC.";
+  }
   const tokenContract = NATIVE_USDC_CONTRACTS[network];
   if (!tokenContract || String(transaction.to || "").toLowerCase() !== tokenContract) {
     return "The transaction destination is not the canonical native USDC contract for this network.";
@@ -1436,11 +1439,39 @@ async function executeWithConnectedWallet() {
       throw new Error("The wallet did not return a valid account.");
     }
     walletSender = from.toLowerCase();
+    let recipientIsContract = null;
+    try {
+      const recipientCode = await provider.request({
+        method: "eth_getCode",
+        params: [values.payee, "latest"]
+      });
+      if (typeof recipientCode === "string" && /^0x(?:[0-9a-f]{2})*$/i.test(recipientCode)) {
+        recipientIsContract = !/^0x0*$/i.test(recipientCode);
+      }
+    } catch {
+      // An unavailable code lookup is not evidence that the recipient is an EOA.
+      recipientIsContract = null;
+    }
+    if (recipientIsContract) {
+      const contractRecipientConfirmed = await requestUserConfirmation({
+        title: "Recipient is a smart contract",
+        message:
+          "The recipient " + values.payee + " contains contract code on " + network + ". " +
+          "A USDC transfer to a contract can be permanently unrecoverable if that contract does not support ERC-20 deposits. " +
+          "Continue only if you independently verified that this exact contract is intended to receive USDC.",
+        confirmLabel: "I verified this contract can receive USDC"
+      });
+      if (!contractRecipientConfirmed) {
+        setBusy(false, "Contract recipient was not approved. The one-time permission remains unused.");
+        return;
+      }
+    }
     const confirmWallet = await requestUserConfirmation({
       title: "Confirm wallet submission",
       message:
         values.amount + " USDC on " + network + "\nRecipient: " + values.payee +
         "\nWallet: " + from +
+        "\nRecipient type: " + (recipientIsContract === true ? "deployed smart contract" : recipientIsContract === false ? "no contract code detected" : "could not be verified") +
         "\nUSDC contract: " + expectedTx.to +
         "\n\nThis is an ERC-20 transfer: the transaction calls the canonical USDC token contract, while the recipient and amount are encoded in the transfer data. Verigate checks both against the signed permission. If your wallet displays a Malicious or critical security alert, do not sign; this app cannot override wallet security." +
         "\n\nVerigate will consume the one-time permission first. Your wallet will then show this exact transaction for signing. Network fees may apply.",
