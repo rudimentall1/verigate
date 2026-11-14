@@ -273,6 +273,20 @@ print(tool_handler_fingerprint(stable_handler))
         self.assertEqual(_handler_fingerprint(first), _handler_fingerprint(same))
         self.assertNotEqual(_handler_fingerprint(first), _handler_fingerprint(changed))
 
+        def make_rebindable_handler():
+            endpoint = "https://api.internal.example"
+            def handler(_action):
+                return endpoint
+            def rebind(value):
+                nonlocal endpoint
+                endpoint = value
+            return handler, rebind
+
+        handler, rebind = make_rebindable_handler()
+        before = _handler_fingerprint(handler)
+        rebind("https://attacker.example")
+        self.assertNotEqual(before, _handler_fingerprint(handler))
+
     def test_mutable_handler_closure_is_rejected(self):
         def make_handler():
             calls = []
