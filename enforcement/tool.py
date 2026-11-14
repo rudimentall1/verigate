@@ -54,6 +54,30 @@ def _stable_handler_defaults(handler: Callable[..., Any]) -> tuple[str, str]:
     return positional, keyword
 
 
+def _stable_handler_closure(handler: Callable[..., Any]) -> str:
+    """Bind closure cells only when every captured value is immutable and deterministic."""
+    code = getattr(handler, "__code__", None)
+    closure = getattr(handler, "__closure__", None)
+    if code is None or closure is None:
+        return "none"
+    if len(code.co_freevars) != len(closure):
+        raise ValueError("handler closure metadata is inconsistent")
+    captured = []
+    for name, cell in zip(code.co_freevars, closure):
+        try:
+            value = cell.cell_contents
+        except ValueError as exc:
+            raise ValueError("handler closure contains an empty cell") from exc
+        try:
+            encoded = _stable_default_value(value)
+        except ValueError as exc:
+            raise ValueError(
+                f"handler closure variable {name!r} must be immutable and deterministic"
+            ) from exc
+        captured.append((name, encoded))
+    return repr(captured)
+
+
 def tool_handler_fingerprint(handler: Callable[..., Any]) -> str:
     """Stable identity for the registered executable handler.
 
@@ -73,6 +97,7 @@ def tool_handler_fingerprint(handler: Callable[..., Any]) -> str:
             "tool handler must be a Python function or bound method with inspectable code"
         )
     defaults, kwdefaults = _stable_handler_defaults(handler)
+    closure = _stable_handler_closure(handler)
     payload = {
         "module": getattr(handler, "__module__", ""),
         "qualname": getattr(handler, "__qualname__", ""),
@@ -82,6 +107,7 @@ def tool_handler_fingerprint(handler: Callable[..., Any]) -> str:
         "code_marshaled": marshal.dumps(code).hex(),
         "defaults": defaults,
         "kwdefaults": kwdefaults,
+        "closure": closure,
     }
     raw = repr(sorted(payload.items())).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
