@@ -3,6 +3,16 @@
 > **Latest verified Anna deployment — 11 November 2026:** App 0.1.31 (version ID 2110) and bundled Executa 0.1.18 (version ID 1064) have been uploaded to Anna Console from source baseline `3731ae66c3ed9e8bd5ef36f0c00e48457db746c3`. All four 0.1.18 binaries were uploaded; post-cut reads through the official Anna CLI confirm the App remains Draft (`is_published=false`, no review candidate) and the Executa remains app-bundled / unpublished. The 0.1.18 build and four-platform SHA-256 evidence is in [the build verification report](EXECUTA-0.1.18-BUILD-VERIFICATION.md). This is a successful immutable Console cut, not a Marketplace release or proof of a fresh Cloud Agent runtime on Executa 0.1.18.
 
 
+## Release candidate — Anna App 0.1.32 (2026-11-14)
+
+- Candidate source branch: `release/anna-app-0.1.32-wallet-hardening`.
+- Candidate App version: **0.1.32**; bundled Executa remains **0.1.18**. No Executa source change was made for this release candidate.
+- Source includes the wallet-transfer hardening merged in PR [#62](https://github.com/rudimentall1/verigate/pull/62): canonical USDC contract validation, chain/native-value/calldata/recipient/amount checks, fail-closed recipient-code lookup, explicit contract-recipient confirmation, and independent validation of the ExecutionRouter response.
+- Candidate base: `eb078f1e528fbd4b2ef297de8574e6de3700ea21`. The immutable Anna Console cut **0.1.31** still points to the earlier baseline `3731ae66c3ed9e8bd5ef36f0c00e48457db746c3`.
+- **Not yet released to Anna Console.** Do not upload or submit this candidate until its PR is merged, the exact merged commit passes all four CI jobs, and the App bundle is validated with Anna CLI 0.1.64.
+- After that gate, the local release operator must stage the exact checkout in Anna Console and create a new immutable Draft version. Marketplace submission/publication is a separate decision and is not authorized by this source change.
+
+
 **Updated:** 2026-11-11  
 **Anna App source baseline at cut:** commit `3731ae66c3ed9e8bd5ef36f0c00e48457db746c3`
 **Source candidate:** Anna App **0.1.31** | bundled Executa **0.1.18**
