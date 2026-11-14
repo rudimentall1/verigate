@@ -81,11 +81,10 @@ def _stable_handler_closure(handler: Callable[..., Any]) -> str:
 def tool_handler_fingerprint(handler: Callable[..., Any]) -> str:
     """Stable identity for the registered executable handler.
 
-    Bind a plain Python function's code and default arguments. Bound methods
-    are rejected because their instance state is not represented by this
-    fingerprint. Closure cells and mutable globals are not sandboxed; handlers
-    remain trusted in-process capabilities and must not use mutable closure
-    state as an authorization boundary.
+    Bind code, deterministic defaults, and immutable closure values. Bound
+    methods and mutable/custom closure cells are rejected. Mutable globals and
+    imported dependencies remain trusted in-process capabilities; this is not
+    a Python sandbox.
     """
     if not callable(handler):
         raise ValueError("tool handler must be callable")
