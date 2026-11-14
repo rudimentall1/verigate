@@ -620,8 +620,7 @@ Implement a constrained agent signer service before any production claim:
 - Before permission consumption, the UI calls `eth_getCode` for the recipient. It fails closed if the result is unavailable and requires a separate explicit confirmation for a deployed contract recipient.
 - The confirmation explains that an ERC-20 transaction calls the USDC token contract while the actual recipient and amount are encoded in calldata. It explicitly tells the user not to sign if the wallet displays a Malicious/critical security alert.
 - MetaMask security alerts are not suppressed, bypassed or relabelled. This source change cannot clear a third-party threat-intelligence classification.
-- Existing CI run #2206 passed all four jobs before the additional focused UI tests were added.
-- Added focused UI cases for contract-recipient confirmation and unavailable `eth_getCode` fail-closed behavior. These additions have not yet been confirmed by a subsequent CI run.
+- CI run #2222 passed all four jobs on commit `e51ffe04e728688129af3113626bfa85c759120f`, including the focused contract-recipient, unavailable `eth_getCode`, and router-calldata mutation tests present at that commit.
 - No Anna CU was consumed, no wallet signature was requested, and no transaction was broadcast.
 - PR is Draft and unmerged. No Anna Console version was cut and no Marketplace action was taken.
 
@@ -632,6 +631,14 @@ Implement a constrained agent signer service before any production claim:
 - Added two negative-path UI tests that mutate the ExecutionRouter response after one-time authorization consumption: recipient calldata changed, and USDC amount calldata changed. Both must be rejected by the independent semantic transfer validator before `eth_sendTransaction`.
 - These router-response mutation tests prove wallet submission is blocked; they do not prove the permission remains unconsumed because the mutation is injected only after the consume response has been returned. The original signed transaction is validated before consumption.
 - Commits: `070f7e0b3741177105b05dca3ff34fec137bf01a` (mutation cases) and `15cd7461206ef80537e91db7f985a2a22ab5feac` (assert the separate confirmation title and message independently).
-- CI run #2214 completed successfully across `test`, `contracts`, `container`, and `anna-ui` for the preceding PR head `35df3ae904fdbdbebe7bed5c8efd8d788eb9b2a3`. It predates this new regression coverage.
-- No workflow run or status check is currently visible for commit `070f7e0b3741177105b05dca3ff34fec137bf01a`; the new tests are therefore not yet CI-verified.
+- CI run #2222 completed successfully across `test`, `contracts`, `container`, and `anna-ui` for commit `e51ffe04e728688129af3113626bfa85c759120f`. All tests present at that commit, including recipient/amount mutation and contract-confirmation assertions, were covered by that run.
 - No wallet signature, transaction broadcast, Anna CU consumption, release, or merge occurred.
+
+
+## 25. Latest PR #62 verification and contract-warning cancellation — 2026-11-14
+
+- CI run #2222: **SUCCESS** on exact commit `e51ffe04e728688129af3113626bfa85c759120f`. All four jobs passed: `test`, `contracts`, `container`, and `anna-ui`. The Anna UI job included the focused tests for contract-recipient confirmation, unavailable `eth_getCode`, and ExecutionRouter recipient/amount mutation. The Linux Executa build and smoke test also passed within `anna-ui`.
+- After that successful run, added one more focused regression: rejecting the separate smart-contract-recipient warning must leave the one-time permission unused, create no wallet-submission approval, and make no wallet send. Commit: `7f84edb746754891336a25c2a24b87d110487004`.
+- The new contract-warning cancellation test is **not yet CI-verified**; a new workflow run on the current head is required.
+- PR #62 remains Draft and unmerged. No Anna Console cut, Marketplace submission, wallet signature, or live transaction was performed as part of this PR work.
+- Scope boundary: the code lookup and contract warning are user-protection signals, not proof that a contract is safe to receive USDC. MetaMask Malicious/critical alerts remain authoritative user-facing warnings and must not be bypassed.
