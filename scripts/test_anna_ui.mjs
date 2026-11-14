@@ -323,7 +323,7 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
           await sleep(10);
         }
         if ($("approval-overlay").hidden) throw new Error("in-app wallet confirmation overlay did not open (step " + (confirmation + 1) + ")");
-        confirmationMessages.push($("approval-message").textContent);
+        confirmationMessages.push({ title: $("approval-title").textContent, message: $("approval-message").textContent });
         if (confirmation === confirmations - 1 &&
             (!$("approval-message").textContent.includes("25 USDC") || !$("approval-message").textContent.includes("Wallet:"))) {
           throw new Error("wallet confirmation does not show the exact transfer and wallet");
@@ -880,9 +880,9 @@ await test("contract recipient requires a separate explicit confirmation before 
   await ui.click();
   await ui.clickExecution();
   const confirmationMessages = await ui.clickWallet({ confirmations: 2 });
-  ok(confirmationMessages[0].includes("Recipient is a smart contract"), "first confirmation explicitly identifies a contract recipient");
-  ok(confirmationMessages[0].includes(VALID), "contract-risk confirmation identifies the exact recipient");
-  ok(confirmationMessages[0].includes("independently verified"), "contract-risk confirmation requires independent verification");
+  ok(confirmationMessages[0].title.includes("Recipient is a smart contract"), "first confirmation explicitly identifies a contract recipient");
+  ok(confirmationMessages[0].message.includes(VALID), "contract-risk confirmation identifies the exact recipient");
+  ok(confirmationMessages[0].message.includes("independently verified"), "contract-risk confirmation requires independent verification");
   eq(walletCalls.filter(x => x.method === "eth_getCode").length, 1, "recipient code is checked once");
   eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), true, "permission is consumed only after both confirmations");
   eq(walletCalls.some(x => x.method === "eth_sendTransaction"), true, "wallet receives the transaction after explicit contract-risk confirmation");
