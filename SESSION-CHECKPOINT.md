@@ -613,12 +613,14 @@ Implement a constrained agent signer service before any production claim:
 
 - Dedicated branch: `fix/anna-wallet-transfer-validation-2026-11-14`.
 - Draft PR #62: https://github.com/rudimentall1/verigate/pull/62.
-- Scope: `anna/bundle/app.js` only.
+- Changed files: `anna/bundle/app.js`, `scripts/test_anna_ui.mjs`, and this checkpoint.
 - The 9 November recording already proves the real MetaMask hand-off and one-time ExecutionRouter consumption. It was not repeated.
 - The recorded Base recipient `0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed` is labelled as a contract by Etherscan. This is a plausible explanation for a contract-recipient warning, but the exact MetaMask alert text and this address's deployed-code status on Base were not independently established in this work.
 - The wallet path now checks the signed transaction before permission consumption: canonical native USDC contract for Base/Ethereum, correct chain ID, zero native value, exact `transfer(address,uint256)` selector, exact recipient and exact six-decimal amount. It repeats the same semantic checks on the ExecutionRouter response before `eth_sendTransaction`.
 - Before permission consumption, the UI calls `eth_getCode` for the recipient. It fails closed if the result is unavailable and requires a separate explicit confirmation for a deployed contract recipient.
 - The confirmation explains that an ERC-20 transaction calls the USDC token contract while the actual recipient and amount are encoded in calldata. It explicitly tells the user not to sign if the wallet displays a Malicious/critical security alert.
 - MetaMask security alerts are not suppressed, bypassed or relabelled. This source change cannot clear a third-party threat-intelligence classification.
-- No test suite was run, no Anna CU was consumed, no wallet signature was requested, and no transaction was broadcast.
+- Existing CI run #2206 passed all four jobs before the additional focused UI tests were added.
+- Added focused UI cases for contract-recipient confirmation and unavailable `eth_getCode` fail-closed behavior. These additions have not yet been confirmed by a subsequent CI run.
+- No Anna CU was consumed, no wallet signature was requested, and no transaction was broadcast.
 - PR is Draft and unmerged. No Anna Console version was cut and no Marketplace action was taken.
