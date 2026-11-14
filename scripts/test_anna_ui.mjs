@@ -861,7 +861,6 @@ await test("wallet hand-off consumes through ExecutionRouter before exact USDC s
 await test("contract recipient requires a separate explicit confirmation before consume", async () => {
   const ui = await launch({});
   const walletCalls = [];
-  let contractPromptSeen = false;
   ui.window.ethereum = {
     request: async ({ method, params }) => {
       walletCalls.push({ method, params });
@@ -874,14 +873,11 @@ await test("contract recipient requires a separate explicit confirmation before 
   };
   await ui.click();
   await ui.clickExecution();
-  const originalAccept = ui.$("approval-accept").onclick;
   await ui.clickWallet({ confirmations: 2 });
   eq(walletCalls.filter(x => x.method === "eth_getCode").length, 1, "recipient code is checked once");
   eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), true, "permission is consumed only after both confirmations");
   eq(walletCalls.some(x => x.method === "eth_sendTransaction"), true, "wallet receives the transaction after explicit contract-risk confirmation");
   ok(ui.calls.storage.some(x => x.value.kind === "wallet_submission"), "wallet approval is stored only after contract confirmation");
-  void contractPromptSeen;
-  void originalAccept;
 });
 
 await test("unavailable recipient code lookup fails closed before consume and wallet send", async () => {
@@ -898,7 +894,7 @@ await test("unavailable recipient code lookup fails closed before consume and wa
   };
   await ui.click();
   await ui.clickExecution();
-  $("wallet-execute-btn").click();
+  ui.$("wallet-execute-btn").click();
   for (let i = 0; i < 200 && !ui.shown("error"); i++) await sleep(10);
   ok(ui.shown("error") && ui.text("error").includes("could not verify whether the recipient is a contract"), "lookup failure is explicit");
   eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), false, "permission is not consumed");
