@@ -206,9 +206,24 @@ class ToolExecutionAdapter(ExecutionGate):
             return False, reason
         return super().consume(authorization)
 
-    def execute_registered(self, authorization: dict[str, Any]) -> Any:
+    def execute_after_consume(
+        self,
+        authorization: dict[str, Any],
+        _side_effect: Callable[[dict[str, Any]], Any],
+    ) -> Any:
+        """Invoke only the registered handler after the router consumes authority.
+
+        The router callback is deliberately ignored: accepting it as the tool
+        implementation would let the caller replace the signed handler at the
+        final execution boundary.
+        """
         tool = self._tool_name(authorization)
         handler = self.handlers.get(tool)
         if handler is None:
             raise PermissionError(f"tool is not registered: {tool}")
-        return self.execute(authorization, handler)
+        return handler(authorization["payload"]["action"])
+
+    def execute_registered(self, authorization: dict[str, Any]) -> Any:
+        # Keep the convenience API on the same validate -> consume -> dispatch
+        # path as ExecutionRouter; never pass a caller-selected implementation.
+        return self.execute(authorization, lambda _action: None)
