@@ -304,17 +304,27 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
       }
       await sleep(30);
     },
-    async clickWallet({ stopAtConsume = false } = {}) {
+    async clickWallet({ stopAtConsume = false, confirmations = 1 } = {}) {
       $("wallet-execute-btn").click();
-      for (let i = 0; i < 200; i++) {
-        if (!$("approval-overlay").hidden) break;
-        await sleep(10);
+      for (let confirmation = 0; confirmation < confirmations; confirmation++) {
+        for (let i = 0; i < 200; i++) {
+          if (!$("approval-overlay").hidden) break;
+          await sleep(10);
+        }
+        if ($("approval-overlay").hidden) throw new Error("in-app wallet confirmation overlay did not open (step " + (confirmation + 1) + ")");
+        if (confirmation === confirmations - 1 &&
+            (!$("approval-message").textContent.includes("25 USDC") || !$("approval-message").textContent.includes("Wallet:"))) {
+          throw new Error("wallet confirmation does not show the exact transfer and wallet");
+        }
+        $("approval-accept").click();
+        if (confirmation < confirmations - 1) {
+          for (let i = 0; i < 200; i++) {
+            if (!$("approval-overlay").hidden) { await sleep(10); continue; }
+            await sleep(10);
+            if (!$("approval-overlay").hidden) break;
+          }
+        }
       }
-      if ($("approval-overlay").hidden) throw new Error("in-app wallet confirmation overlay did not open");
-      if (!$("approval-message").textContent.includes("25 USDC") || !$("approval-message").textContent.includes("Wallet:")) {
-        throw new Error("wallet confirmation does not show the exact transfer and wallet");
-      }
-      $("approval-accept").click();
       for (let i = 0; i < 400; i++) {
         await sleep(25);
         const executionStatus = $("execution-status").textContent;
@@ -846,6 +856,54 @@ await test("wallet hand-off consumes through ExecutionRouter before exact USDC s
   ok(ui.text("execution-status").includes("0x" + "a".repeat(64)), "wallet-returned hash is displayed in the receipt status");
   ok(ui.text("execution-status").includes("SUBMITTED"), "submission is not misrepresented as confirmation");
   ok(ui.text("execution-status").includes("self-report"), "executor self-report is distinguished from independent chain confirmation");
+});
+
+await test("contract recipient requires a separate explicit confirmation before consume", async () => {
+  const ui = await launch({});
+  const walletCalls = [];
+  let contractPromptSeen = false;
+  ui.window.ethereum = {
+    request: async ({ method, params }) => {
+      walletCalls.push({ method, params });
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x60006000";
+      if (method === "eth_sendTransaction") return "0x" + "e".repeat(64);
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.click();
+  await ui.clickExecution();
+  const originalAccept = ui.$("approval-accept").onclick;
+  await ui.clickWallet({ confirmations: 2 });
+  eq(walletCalls.filter(x => x.method === "eth_getCode").length, 1, "recipient code is checked once");
+  eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), true, "permission is consumed only after both confirmations");
+  eq(walletCalls.some(x => x.method === "eth_sendTransaction"), true, "wallet receives the transaction after explicit contract-risk confirmation");
+  ok(ui.calls.storage.some(x => x.value.kind === "wallet_submission"), "wallet approval is stored only after contract confirmation");
+  void contractPromptSeen;
+  void originalAccept;
+});
+
+await test("unavailable recipient code lookup fails closed before consume and wallet send", async () => {
+  const ui = await launch({});
+  const walletCalls = [];
+  ui.window.ethereum = {
+    request: async ({ method, params }) => {
+      walletCalls.push({ method, params });
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") throw new Error("RPC method unavailable");
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.click();
+  await ui.clickExecution();
+  $("wallet-execute-btn").click();
+  for (let i = 0; i < 200 && !ui.shown("error"); i++) await sleep(10);
+  ok(ui.shown("error") && ui.text("error").includes("could not verify whether the recipient is a contract"), "lookup failure is explicit");
+  eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), false, "permission is not consumed");
+  eq(ui.calls.storage.some(x => x.value.kind === "wallet_submission"), false, "wallet approval is not stored");
+  eq(walletCalls.some(x => x.method === "eth_sendTransaction"), false, "no wallet transaction is sent");
 });
 
 await test("canceling wallet confirmation leaves the permission unused", async () => {
