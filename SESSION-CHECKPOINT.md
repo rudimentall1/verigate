@@ -642,3 +642,17 @@ Implement a constrained agent signer service before any production claim:
 - The new contract-warning cancellation test is **not yet CI-verified**; a new workflow run on the current head is required.
 - PR #62 remains Draft and unmerged. No Anna Console cut, Marketplace submission, wallet signature, or live transaction was performed as part of this PR work.
 - Scope boundary: the code lookup and contract warning are user-protection signals, not proof that a contract is safe to receive USDC. MetaMask Malicious/critical alerts remain authoritative user-facing warnings and must not be bypassed.
+
+
+## 26. Latest PR #62 CI verification — 2026-11-14
+
+- Latest PR head: `387dcc5c8064c3e4674c35134bd98985f32613af`.
+- CI run #2226: https://github.com/rudimentall1/verigate/actions/runs/43567730105 — **SUCCESS** on the exact latest PR head.
+- All four jobs passed:
+  - `test`: full test suite, cross-language Agent SDK/Arc wallet client, end-to-end demo and API smoke.
+  - `contracts`: Arc wallet client workflow, atomic-state E2E, Registry compilation and Guard access-control tests.
+  - `container`: Compose configuration, production image build and API authentication smoke.
+  - `anna-ui`: strict schema-4 manifest validation, Anna app E2E, Linux Anna Executa build and smoke test.
+- This run covers the additional contract-warning cancellation regression: rejecting the smart-contract-recipient confirmation must leave the one-time permission unused, create no wallet-submission approval and make no wallet send.
+- PR #62 remains **Draft, open and unmerged**. No Anna Console cut, Marketplace submission, Anna CU consumption, live wallet signature or transaction broadcast occurred.
+- CI PASS validates the tested source/build behavior. It does not establish that the updated app is installed in Anna Console, that MetaMask's external security classification has changed, or that a live payment was completed.
