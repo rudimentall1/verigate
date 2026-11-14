@@ -1452,6 +1452,9 @@ async function executeWithConnectedWallet() {
       // An unavailable code lookup is not evidence that the recipient is an EOA.
       recipientIsContract = null;
     }
+    if (recipientIsContract === null) {
+      throw new Error("The wallet could not verify whether the recipient is a contract. No permission was consumed and no transaction was sent.");
+    }
     if (recipientIsContract) {
       const contractRecipientConfirmed = await requestUserConfirmation({
         title: "Recipient is a smart contract",
