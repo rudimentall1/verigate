@@ -1,6 +1,7 @@
 """Universal execution router for Verigate."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 
@@ -26,7 +27,7 @@ from core.external_state import (
 from enforcement.evm import EVMExecutionAdapter
 from enforcement.local import ExecutionGate
 from enforcement.networks import NetworkRegistry, UnsupportedNetworkError
-from enforcement.protocol import ExecutionAdapter
+from enforcement.protocol import ExecutionAdapter, _issue_execution_permit
 
 
 class ExecutionRouter:
@@ -71,10 +72,20 @@ class ExecutionRouter:
         metadata = action.get("metadata")
         if not isinstance(metadata, dict):
             return None, None
-        if isinstance(metadata.get("evm_transaction"), dict):
-            return "evm", metadata["evm_transaction"]
-        if isinstance(metadata.get("solana_transaction"), str):
-            return "solana", {"serialized_transaction": metadata["solana_transaction"]}
+        has_evm = "evm_transaction" in metadata
+        has_solana = "solana_transaction" in metadata
+        if has_evm and has_solana:
+            raise ValueError("authorization contains ambiguous execution transaction artifacts")
+        if has_evm:
+            evm_transaction = metadata["evm_transaction"]
+            if not isinstance(evm_transaction, dict):
+                raise ValueError("authorized EVM transaction artifact must be an object")
+            return "evm", evm_transaction
+        if has_solana:
+            solana_transaction = metadata["solana_transaction"]
+            if not isinstance(solana_transaction, str) or not solana_transaction:
+                raise ValueError("authorized Solana transaction artifact must be a non-empty string")
+            return "solana", {"serialized_transaction": solana_transaction}
         return None, None
 
     @staticmethod
@@ -94,14 +105,20 @@ class ExecutionRouter:
     def _adapter(self, authorization: dict[str, Any]) -> ExecutionAdapter:
         action = self._action(authorization)
         action_type = action.get("action_type")
-        generic = self.generic_adapters.get(action_type)
-        if generic is not None:
-            return generic
+        family, _ = self._execution_artifact(action)
+
+        # A concrete signed wire transaction must always select its chain
+        # family adapter. Generic action-type adapters are only for abstract
+        # actions without a transaction artifact; otherwise they could bypass
+        # chain-specific signature, destination, amount and network checks.
+        if family is None:
+            generic = self.generic_adapters.get(action_type)
+            if generic is not None:
+                return generic
+
         network = action.get("network")
         if not isinstance(network, str) or not network.strip():
             raise UnsupportedNetworkError("authorized action has no network")
-
-        family, _ = self._execution_artifact(action)
 
         try:
             descriptor = self.registry.resolve(network)
@@ -221,6 +238,9 @@ class ExecutionRouter:
         return True, "execution authorization consumed"
 
     def consume(self, authorization: dict[str, Any], *, verification_time: int | None = None) -> tuple[bool, str]:
+        # Snapshot caller-owned data before verification so nonce consumption
+        # cannot be redirected by a concurrent mutation after signature check.
+        authorization = copy.deepcopy(authorization)
         try:
             # The router owns the one-time execution capability. Adapters may
             # validate their own execution prerequisites but cannot forge nonce
@@ -235,6 +255,10 @@ class ExecutionRouter:
             return False, str(exc)
 
     def execute(self, authorization: dict[str, Any], broadcaster: Callable[[dict[str, Any]], Any]) -> Any:
+        # Freeze caller-owned input before verification. All validation,
+        # nonce consumption, permit issuance and adapter execution must use
+        # the same snapshot, not a mutable object the caller can race.
+        authorization = copy.deepcopy(authorization)
         self._verify_authorization(authorization)
         adapter = self._adapter(authorization)
         self._validate_adapter(adapter, authorization)
@@ -244,13 +268,12 @@ class ExecutionRouter:
         if state_required and external_state:
             if getattr(adapter, "execution_external_state_scope", None) != "atomic":
                 raise ValueError("atomic external state enforcement is required: adapter does not provide atomic enforcement")
-            bound = getattr(adapter, "execute_bound_after_consume", None)
-            if not callable(bound):
+            execute_after_consume = getattr(adapter, "execute_bound_after_consume", None)
+            if not callable(execute_after_consume):
                 raise ValueError(
                     "atomic external state enforcement is required for this authorization"
                 )
         else:
-            bound = None
             execute_after_consume = getattr(adapter, "execute_after_consume", None)
             if not callable(execute_after_consume):
                 raise ValueError(
@@ -260,9 +283,12 @@ class ExecutionRouter:
         ok, reason = self._consume_authorization_once(authorization)
         if not ok:
             raise PermissionError(reason)
-        if bound is not None:
-            return bound(authorization, external_state, broadcaster)
-        return execute_after_consume(authorization, broadcaster)
+        permit = _issue_execution_permit(authorization)
+        if state_required and external_state:
+            return execute_after_consume(
+                authorization, external_state, broadcaster, permit=permit
+            )
+        return execute_after_consume(authorization, broadcaster, permit=permit)
 
 
     @staticmethod
@@ -291,6 +317,9 @@ class ExecutionRouter:
         if self.private_key is None:
             raise ValueError("execution receipt signing key is required")
 
+        # Keep receipt identity, authorization verification and execution
+        # bound to one immutable-by-ownership snapshot.
+        authorization = copy.deepcopy(authorization)
         existing = self.storage.execution_receipt_by_authorization(authorization["payload"]["authorization_id"])
         if existing is not None:
             return ExecutionReceipt(

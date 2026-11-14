@@ -21,7 +21,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.authorization import AuthorizationService
-from core.models import ActionIntent, Decision, GuardrailDecision
+from core.authority_state import DynamicAuthorityService
+from core.engine import GuardrailEngine
+from core.models import ActionIntent, Capability, Decision
+from core.policy import Policy
 from core.storage import Storage
 from enforcement.monitor import ExecutionMonitor
 from enforcement.networks import NetworkRegistry
@@ -32,6 +35,20 @@ from enforcement.solana_rpc import SolanaRpcClient
 RPC_URL = os.environ.get("VERIGATE_SOLANA_DEVNET_RPC_URL", "https://api.devnet.solana.com")
 LAMPORTS_PER_SOL = 1_000_000_000
 TRANSFER_LAMPORTS = 1_000_000
+
+EXPECTED_DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+
+
+def require_devnet_cluster(rpc: SolanaRpcClient) -> str:
+    """Fail closed unless the configured RPC endpoint is Solana Devnet."""
+    actual = rpc.get_genesis_hash()
+    if actual != EXPECTED_DEVNET_GENESIS_HASH:
+        raise RuntimeError(
+            "Refusing to run Solana Devnet demo: RPC cluster genesis hash mismatch "
+            f"(expected {EXPECTED_DEVNET_GENESIS_HASH}, got {actual!r})."
+        )
+    return actual
+
 
 
 def shortvec(value: int) -> bytes:
@@ -57,8 +74,8 @@ def b58encode(raw: bytes) -> str:
     while number:
         number, remainder = divmod(number, 58)
         chars.append(_ALPHABET[remainder])
-    leading_zeroes = len(raw) - len(raw.lstrip(b"\\x00"))
-    return "1" * leading_zeroes + "".join(reversed(chars or ["1"]))
+    leading_zeroes = len(raw) - len(raw.lstrip(b"\x00"))
+    return "1" * leading_zeroes + "".join(reversed(chars))
 
 
 def b58decode(value: str) -> bytes:
@@ -67,7 +84,7 @@ def b58decode(value: str) -> bytes:
         number = number * 58 + _ALPHABET.index(char)
     raw = number.to_bytes((number.bit_length() + 7) // 8, "big")
     leading_ones = len(value) - len(value.lstrip("1"))
-    return b"\\x00" * leading_ones + raw
+    return b"\x00" * leading_ones + raw
 
 
 def raw_public_key(private_key: Ed25519PrivateKey) -> bytes:
@@ -168,6 +185,7 @@ def main() -> None:
     if use_funded_sender and not sender_keypair.exists():
         raise FileNotFoundError(f"Solana keypair not found: {sender_keypair}")
     rpc = SolanaRpcClient(RPC_URL)
+    genesis_hash = require_devnet_cluster(rpc)
 
     with tempfile.TemporaryDirectory(prefix="verigate-live-solana-") as td:
         root = Path(td)
@@ -189,6 +207,7 @@ def main() -> None:
         print("VERIGATE | LIVE SOLANA DEVNET EXECUTION")
         print("=" * 62)
         print("RPC:", RPC_URL)
+        print("Cluster genesis hash:", genesis_hash)
         print("Sender:", sender_address)
         print("Recipient:", recipient_address)
 
@@ -226,6 +245,22 @@ def main() -> None:
             TRANSFER_LAMPORTS,
         )
 
+        issuer_key = load_private_key(issuer_private)
+        policy = Policy(
+            allowed_action_types=["native.transfer"],
+            allowed_networks=["solana"],
+            allowed_assets=["SOL"],
+            per_tx_cap={"SOL": 0.01},
+            raw={
+                "allowed_action_types": ["native.transfer"],
+                "allowed_networks": ["solana"],
+                "allowed_assets": ["SOL"],
+                "per_tx_cap": {"SOL": 0.01},
+            },
+        )
+        storage = Storage(audit_db)
+        engine = GuardrailEngine(policy, storage, policy_source_ref="verigate:solana-devnet-demo")
+
         intent = ActionIntent(
             agent_id="verigate-live-solana",
             action_type="native.transfer",
@@ -236,36 +271,94 @@ def main() -> None:
             metadata={
                 "solana_transaction": raw_tx,
                 "network_environment": "devnet",
+                "solana_genesis_hash": genesis_hash,
+                "solana_sender": sender_address,
                 "destination": recipient_address,
             },
         )
-        decision = GuardrailDecision(
-            intent_id=intent.intent_id,
-            agent_id=intent.agent_id,
-            decision=Decision.ALLOW,
-            matched_rules=(),
-        )
+        decision = engine.evaluate_action(intent)
+        if decision.decision != Decision.ALLOW:
+            raise RuntimeError(f"Expected policy ALLOW for the small transfer: {decision}")
 
-        auth = AuthorizationService().issue(
+        capability = Capability(
+            capability_id="solana-devnet-demo-capability",
+            agent_id=intent.agent_id,
+            allowed_actions=("native.transfer",),
+            allowed_targets=(recipient_address,),
+            allowed_networks=("solana",),
+            allowed_assets=("SOL",),
+        )
+        storage.register_capability(capability)
+        authority = DynamicAuthorityService(storage).snapshot(
+            intent.agent_id, capability.capability_id
+        )
+        artifacts = AuthorizationService().issue(
             intent,
             decision,
-            "live-solana-devnet-policy",
-            load_private_key(issuer_private),
+            policy.digest,
+            issuer_key,
             nonce=intent.intent_id,
-        )["execution_authorization"]
+            capability=capability,
+            authority=authority,
+            policy=policy,
+            signed_policy=engine.signed_policy_version(issuer_key),
+        )
+        engine._persist_authorization(artifacts, intent.intent_id)
+        auth = artifacts["execution_authorization"]
 
-        storage = Storage(audit_db)
+        # A second, validly signed but over-limit transaction is evaluated
+        # independently. BLOCK must produce no execution authorization and
+        # therefore cannot reach the broadcaster.
+        blocked_lamports = 20_000_000
+        blocked_tx = sign_system_transfer(
+            sender,
+            raw_public_key(recipient),
+            latest["blockhash"],
+            blocked_lamports,
+        )
+        blocked_intent = ActionIntent(
+            agent_id="verigate-live-solana",
+            action_type="native.transfer",
+            target=recipient_address,
+            amount=blocked_lamports / LAMPORTS_PER_SOL,
+            asset="SOL",
+            network="solana",
+            metadata={
+                "solana_transaction": blocked_tx,
+                "network_environment": "devnet",
+                "solana_sender": sender_address,
+                "destination": recipient_address,
+            },
+        )
+        blocked_decision = engine.evaluate_action(blocked_intent)
+        if blocked_decision.decision != Decision.BLOCK:
+            raise RuntimeError(f"Expected policy BLOCK for the oversized transfer: {blocked_decision}")
+        blocked_artifacts = AuthorizationService().issue(
+            blocked_intent,
+            blocked_decision,
+            policy.digest,
+            issuer_key,
+            nonce=blocked_intent.intent_id,
+            policy=policy,
+            signed_policy=engine.signed_policy_version(issuer_key),
+        )
+        engine._persist_authorization(blocked_artifacts, blocked_intent.intent_id)
+        if blocked_artifacts["execution_authorization"] is not None:
+            raise RuntimeError("BLOCK unexpectedly minted executable authorization")
+        print()
+        print("2) Verigate Policy Engine")
+        print("Small transfer:", decision.decision.value)
+        print("Oversized transfer:", blocked_decision.decision.value)
+        print("Oversized rule:", ", ".join(match.rule_id for match in blocked_decision.matched_rules))
+        print("Oversized transfer execution authorization: NONE")
+        print("Oversized transfer broadcasts: 0 (no execution authorization)")
+
         router = ExecutionRouter(
-            NetworkRegistry(),
+            NetworkRegistry(solana_genesis_hash_provider=rpc.get_genesis_hash),
             storage,
             load_public_key(issuer_public),
-            load_private_key(issuer_private),
+            issuer_key,
         )
-
-        print()
-        print("2) Verigate authorization")
-        print("Decision: ALLOW")
-        print("Execution authorization:", "ISSUED")
 
         try:
             print()
@@ -280,11 +373,13 @@ def main() -> None:
             print()
             print("4) ExecutionMonitor -> getSignatureStatuses")
             monitor = ExecutionMonitor({"solana": rpc})
-            confirmation = wait_for_confirmed(
-                rpc,
-                submitted.payload["transaction_ref"],
-                timeout_seconds=30,
-            )
+            deadline = time.time() + 30
+            confirmation = {"state": "PENDING", "transaction_ref": submitted.payload["transaction_ref"]}
+            while time.time() < deadline:
+                confirmation = monitor.check(submitted.as_dict())
+                if confirmation["state"] != "PENDING":
+                    break
+                time.sleep(1)
             print("RPC state:", confirmation["state"])
 
             confirmed = router.confirm_execution_receipt(

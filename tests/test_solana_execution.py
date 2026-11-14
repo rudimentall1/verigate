@@ -1,4 +1,3 @@
-import base64
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +10,9 @@ from core.authority_state import DynamicAuthorityService
 from core.policy import Policy
 from enforcement.solana import SolanaExecutionAdapter
 from core.storage import Storage
+from solana_fixtures import make_signed_transfer
+
+DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
 
 
 class SolanaExecutionAdapterTest(unittest.TestCase):
@@ -21,14 +23,15 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
             generate_keypair(private, public)
             storage = Storage(Path(td) / "audit.db")
             try:
-                raw = base64.b64encode(b"solana-wire-transaction").decode("ascii")
+                raw, sender_address, recipient_address = make_signed_transfer()
                 intent = ActionIntent(
                     agent_id="solana-agent",
-                    action_type="token.transfer",
-                    target="recipient",
-                    asset="USDC",
+                    action_type="native.transfer",
+                    target=recipient_address,
+                    amount=0.001,
+                    asset="SOL",
                     network="solana",
-                    metadata={"solana_transaction": raw},
+                    metadata={"solana_transaction": raw, "solana_sender": sender_address, "destination": recipient_address, "solana_genesis_hash": DEVNET_GENESIS_HASH},
                 )
                 decision = GuardrailDecision(
                     intent_id=intent.intent_id,
@@ -39,10 +42,10 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
                 capability = Capability(
                     capability_id="cap-solana-exec",
                     agent_id=intent.agent_id,
-                    allowed_actions=("token.transfer",),
-                    allowed_targets=("recipient",),
+                    allowed_actions=("native.transfer",),
+                    allowed_targets=(recipient_address,),
                     allowed_networks=("solana",),
-                    allowed_assets=("USDC",),
+                    allowed_assets=("SOL",),
                 )
                 storage.register_capability(capability)
                 authority = DynamicAuthorityService(storage).snapshot(
@@ -58,8 +61,10 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
                     authority=authority,
                     policy=Policy(),
                 )
-                adapter = SolanaExecutionAdapter(storage, load_public_key(public))
+                adapter = SolanaExecutionAdapter(storage, load_public_key(public), lambda: DEVNET_GENESIS_HASH)
                 sent = []
+                with self.assertRaises(TypeError):
+                    adapter.execute_after_consume(artifacts["execution_authorization"], lambda tx: sent.append(tx))
                 result = adapter.execute(artifacts["execution_authorization"], lambda tx: sent.append(tx) or "sig")
                 self.assertEqual(result, "sig")
                 self.assertEqual(sent, [{"encoding": "base64", "serialized_transaction": raw}])
@@ -76,13 +81,15 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
             generate_keypair(private, public)
             storage = Storage(Path(td) / "audit.db")
             try:
+                raw, sender_address, recipient_address = make_signed_transfer()
                 intent = ActionIntent(
                     agent_id="solana-agent",
-                    action_type="token.transfer",
-                    target="recipient",
-                    asset="USDC",
+                    action_type="native.transfer",
+                    target=recipient_address,
+                    amount=0.001,
+                    asset="SOL",
                     network="solana",
-                    metadata={"solana_transaction": "not-base64"},
+                    metadata={"solana_transaction": "not-base64", "solana_sender": sender_address, "solana_genesis_hash": DEVNET_GENESIS_HASH},
                 )
                 decision = GuardrailDecision(
                     intent_id=intent.intent_id,
@@ -93,10 +100,10 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
                 capability = Capability(
                     capability_id="cap-solana-invalid",
                     agent_id=intent.agent_id,
-                    allowed_actions=("token.transfer",),
-                    allowed_targets=("recipient",),
+                    allowed_actions=("native.transfer",),
+                    allowed_targets=(recipient_address,),
                     allowed_networks=("solana",),
-                    allowed_assets=("USDC",),
+                    allowed_assets=("SOL",),
                 )
                 storage.register_capability(capability)
                 authority = DynamicAuthorityService(storage).snapshot(
@@ -112,7 +119,7 @@ class SolanaExecutionAdapterTest(unittest.TestCase):
                     authority=authority,
                     policy=Policy(),
                 )
-                adapter = SolanaExecutionAdapter(storage, load_public_key(public))
+                adapter = SolanaExecutionAdapter(storage, load_public_key(public), lambda: DEVNET_GENESIS_HASH)
                 ok, reason = adapter.consume(artifacts["execution_authorization"])
                 self.assertFalse(ok)
                 self.assertEqual(reason, "invalid Solana transaction encoding")

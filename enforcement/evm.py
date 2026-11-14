@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import copy
 from typing import Any, Callable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from core.storage import Storage
 from enforcement.local import ExecutionGate
-from enforcement.protocol import ExecutionAdapter
+from enforcement.protocol import ExecutionAdapter, ExecutionPermit, _issue_execution_permit
 
 
 class EVMExecutionAdapter(ExecutionAdapter):
@@ -61,6 +62,7 @@ class EVMExecutionAdapter(ExecutionAdapter):
         return result
 
     def validate(self, authorization: dict[str, Any], *, verification_time: int | None = None) -> tuple[bool, str]:
+        authorization = copy.deepcopy(authorization)
         action = authorization["payload"]["action"]
         try:
             self._transaction(action)
@@ -69,6 +71,7 @@ class EVMExecutionAdapter(ExecutionAdapter):
         return self.gate.validate(authorization, verification_time=verification_time)
 
     def consume(self, authorization: dict[str, Any], *, verification_time: int | None = None) -> tuple[bool, str]:
+        authorization = copy.deepcopy(authorization)
         ok, reason = self.validate(authorization, verification_time=verification_time)
         if not ok:
             return False, reason
@@ -105,7 +108,7 @@ class EVMExecutionAdapter(ExecutionAdapter):
             raise ValueError("EVM transaction calldata does not match atomic guard commitment")
         return binding
 
-    def execute_bound_after_consume(
+    def _execute_bound_after_consume(
         self,
         authorization: dict[str, Any],
         external_state: dict[str, Any],
@@ -118,18 +121,35 @@ class EVMExecutionAdapter(ExecutionAdapter):
         tx = self._transaction(authorization["payload"]["action"])
         return broadcaster(tx)
 
+    def execute_bound_after_consume(
+        self,
+        authorization: dict[str, Any],
+        external_state: dict[str, Any],
+        broadcaster: Callable[[dict[str, Any]], Any],
+        *,
+        permit: ExecutionPermit,
+    ) -> Any:
+        authorization = copy.deepcopy(authorization)
+        external_state = copy.deepcopy(external_state)
+        permit.claim(authorization)
+        return self._execute_bound_after_consume(authorization, external_state, broadcaster)
+
     def execute_bound(
         self,
         authorization: dict[str, Any],
         external_state: dict[str, Any],
         broadcaster: Callable[[dict[str, Any]], Any],
     ) -> Any:
+        authorization = copy.deepcopy(authorization)
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return self.execute_bound_after_consume(authorization, external_state, broadcaster)
+        return self.execute_bound_after_consume(
+            authorization, external_state, broadcaster,
+            permit=_issue_execution_permit(authorization),
+        )
 
-    def execute_after_consume(
+    def _execute_after_consume(
         self,
         authorization: dict[str, Any],
         broadcaster: Callable[[dict[str, Any]], Any],
@@ -137,12 +157,26 @@ class EVMExecutionAdapter(ExecutionAdapter):
         tx = self._transaction(authorization["payload"]["action"])
         return broadcaster(tx)
 
+    def execute_after_consume(
+        self,
+        authorization: dict[str, Any],
+        broadcaster: Callable[[dict[str, Any]], Any],
+        *,
+        permit: ExecutionPermit,
+    ) -> Any:
+        authorization = copy.deepcopy(authorization)
+        permit.claim(authorization)
+        return self._execute_after_consume(authorization, broadcaster)
+
     def execute(
         self,
         authorization: dict[str, Any],
         broadcaster: Callable[[dict[str, Any]], Any],
     ) -> Any:
+        authorization = copy.deepcopy(authorization)
         ok, reason = self.gate.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return self.execute_after_consume(authorization, broadcaster)
+        return self.execute_after_consume(
+            authorization, broadcaster, permit=_issue_execution_permit(authorization)
+        )
