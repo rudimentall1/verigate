@@ -821,6 +821,7 @@ await test("wallet hand-off consumes through ExecutionRouter before exact USDC s
       walletCalls.push({ method, params });
       if (method === "eth_chainId") return "0x2105";
       if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x";
       if (method === "eth_sendTransaction") return "0x" + "a".repeat(64);
       throw new Error("unexpected wallet method " + method);
     }
@@ -838,7 +839,7 @@ await test("wallet hand-off consumes through ExecutionRouter before exact USDC s
   eq(ui.calls.storage[2].value.transaction_hash, "0x" + "a".repeat(64), "receipt approval binds the actual wallet hash");
   eq(ui.calls.storage[2].value.sender, VALID.toLowerCase(), "receipt approval binds the connected sender");
   eq(ui.appStorage.size, 0, "both wallet approvals are consumed exactly once");
-  eq(walletCalls.map(x => x.method).join(","), "eth_chainId,eth_requestAccounts,eth_chainId,eth_accounts,eth_sendTransaction");
+  eq(walletCalls.map(x => x.method).join(","), "eth_chainId,eth_requestAccounts,eth_getCode,eth_chainId,eth_accounts,eth_sendTransaction");
   const send = walletCalls.find(x => x.method === "eth_sendTransaction");
   eq(send.params[0].to.toLowerCase(), "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913");
   ok(send.params[0].data.includes(VALID.slice(2).toLowerCase()), "wallet receives the signed recipient");
@@ -853,6 +854,7 @@ await test("canceling wallet confirmation leaves the permission unused", async (
     request: async ({ method }) => {
       if (method === "eth_chainId") return "0x2105";
       if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x";
       throw new Error("unexpected wallet method " + method);
     }
   };
@@ -880,6 +882,7 @@ await test("wallet network drift after consumption prevents submission", async (
       walletCalls.push({ method, params });
       if (method === "eth_chainId") return ++chainReads === 1 ? "0x2105" : "0x1";
       if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x";
       if (method === "eth_sendTransaction") return "0x" + "b".repeat(64);
       throw new Error("unexpected wallet method " + method);
     }
@@ -900,6 +903,7 @@ await test("wallet rejection consumes the old permission and a fresh authorizati
     request: async ({ method }) => {
       if (method === "eth_chainId") return "0x2105";
       if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x";
       if (method === "eth_sendTransaction") return new Promise((resolve, reject) => { rejectWalletSend = reject; });
       throw new Error("unexpected wallet method " + method);
     }
@@ -942,6 +946,7 @@ await test("ambiguous wallet RPC failure records UNKNOWN, not REJECTED", async (
     request: async ({ method }) => {
       if (method === "eth_chainId") return "0x2105";
       if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x";
       if (method === "eth_sendTransaction") {
         const error = new Error("Provider disconnected while awaiting transaction submission");
         error.code = 4900;
@@ -968,6 +973,7 @@ await test("lost consume response is treated as unknown and never leaves a retry
       walletCalls.push({ method, params });
       if (method === "eth_chainId") return "0x2105";
       if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x";
       if (method === "eth_sendTransaction") return "0x" + "d".repeat(64);
       throw new Error("unexpected wallet method " + method);
     }
@@ -1002,6 +1008,7 @@ await test("flattened Anna invoke payloads pass the full AI, policy and signed-p
       walletCalls.push({ method, params });
       if (method === "eth_chainId") return "0x2105";
       if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x";
       if (method === "eth_sendTransaction") return "0x" + "c".repeat(64);
       throw new Error("unexpected wallet method " + method);
     }
