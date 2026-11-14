@@ -931,6 +931,35 @@ await test("ExecutionRouter amount mutation is blocked before wallet submission"
   eq(walletCalls.some(x => x.method === "eth_sendTransaction"), false, "mutated amount is never submitted to the wallet");
 });
 
+await test("rejecting contract-recipient warning leaves the permission unused", async () => {
+  const ui = await launch({});
+  const walletCalls = [];
+  ui.window.ethereum = {
+    request: async ({ method, params }) => {
+      walletCalls.push({ method, params });
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x60006000";
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.click();
+  await ui.clickExecution();
+  ui.$("wallet-execute-btn").click();
+  for (let i = 0; i < 200; i++) {
+    if (!ui.$("approval-overlay").hidden) break;
+    await sleep(10);
+  }
+  ok(!ui.$("approval-overlay").hidden, "contract-recipient warning is presented");
+  ok(ui.text("approval-title").includes("Recipient is a smart contract"), "the user is asked to approve the contract risk first");
+  ui.$("approval-cancel").click();
+  await sleep(40);
+  eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), false, "rejecting contract risk does not consume permission");
+  eq(ui.calls.storage.some(x => x.value.kind === "wallet_submission"), false, "rejecting contract risk writes no wallet approval");
+  eq(walletCalls.some(x => x.method === "eth_sendTransaction"), false, "rejecting contract risk sends no transaction");
+  ok(ui.text("execution-json").includes("authorization_id"), "unused authorization remains available");
+});
+
 await test("unavailable recipient code lookup fails closed before consume and wallet send", async () => {
   const ui = await launch({});
   const walletCalls = [];
