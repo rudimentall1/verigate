@@ -6,6 +6,54 @@ import hashlib
 import marshal
 from types import MappingProxyType
 
+def _stable_default_value(value: Any) -> str:
+    """Serialize only immutable, deterministic default values."""
+    value_type = type(value)
+    if value is None:
+        return "none"
+    if value_type is bool:
+        return "bool:true" if value else "bool:false"
+    if value_type is int:
+        return f"int:{value}"
+    if value_type is str:
+        return f"str:{value!r}"
+    if value_type is bytes:
+        return f"bytes:{value.hex()}"
+    if value_type is float:
+        import math
+        if not math.isfinite(value):
+            raise ValueError("handler defaults must not contain non-finite floats")
+        return f"float:{value.hex()}"
+    if value_type is tuple:
+        return "tuple:[" + ",".join(_stable_default_value(item) for item in value) + "]"
+    if value_type is frozenset:
+        items = sorted(_stable_default_value(item) for item in value)
+        return "frozenset:[" + ",".join(items) + "]"
+    raise ValueError(
+        "handler defaults must use immutable deterministic primitives; "
+        f"unsupported default type: {value_type.__name__}"
+    )
+
+
+def _stable_handler_defaults(handler: Callable[..., Any]) -> tuple[str, str]:
+    defaults = getattr(handler, "__defaults__", None)
+    kwdefaults = getattr(handler, "__kwdefaults__", None)
+    positional = (
+        "none" if defaults is None
+        else _stable_default_value(defaults)
+    )
+    if kwdefaults is None:
+        keyword = "none"
+    elif type(kwdefaults) is dict and all(type(key) is str for key in kwdefaults):
+        keyword = "dict:{" + ",".join(
+            f"{key!r}:{_stable_default_value(kwdefaults[key])}"
+            for key in sorted(kwdefaults)
+        ) + "}"
+    else:
+        raise ValueError("handler keyword defaults must be a plain string-keyed dict")
+    return positional, keyword
+
+
 def tool_handler_fingerprint(handler: Callable[..., Any]) -> str:
     """Stable identity for the registered executable handler.
 
@@ -24,8 +72,7 @@ def tool_handler_fingerprint(handler: Callable[..., Any]) -> str:
         raise ValueError(
             "tool handler must be a Python function or bound method with inspectable code"
         )
-    defaults = getattr(handler, "__defaults__", None)
-    kwdefaults = getattr(handler, "__kwdefaults__", None)
+    defaults, kwdefaults = _stable_handler_defaults(handler)
     payload = {
         "module": getattr(handler, "__module__", ""),
         "qualname": getattr(handler, "__qualname__", ""),
@@ -33,8 +80,8 @@ def tool_handler_fingerprint(handler: Callable[..., Any]) -> str:
         # memory addresses, so equivalent code has a stable process-independent
         # fingerprint within the supported Python runtime.
         "code_marshaled": marshal.dumps(code).hex(),
-        "defaults": repr(defaults),
-        "kwdefaults": repr(kwdefaults),
+        "defaults": defaults,
+        "kwdefaults": kwdefaults,
     }
     raw = repr(sorted(payload.items())).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
