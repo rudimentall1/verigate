@@ -317,13 +317,6 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
           throw new Error("wallet confirmation does not show the exact transfer and wallet");
         }
         $("approval-accept").click();
-        if (confirmation < confirmations - 1) {
-          for (let i = 0; i < 200; i++) {
-            if (!$("approval-overlay").hidden) { await sleep(10); continue; }
-            await sleep(10);
-            if (!$("approval-overlay").hidden) break;
-          }
-        }
       }
       for (let i = 0; i < 400; i++) {
         await sleep(25);
