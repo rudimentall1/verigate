@@ -345,7 +345,16 @@ print(tool_handler_fingerprint(stable_handler))
             self.public_key,
             generic_adapters={"mcp.tool.call": adapter},
         )
-        self.assertEqual(router.execute(auth, lambda _signed_action: "sent"), "sent")
+        caller_effects = []
+        self.assertEqual(
+            router.execute(auth, lambda signed_action: caller_effects.append(signed_action)),
+            "registered",
+        )
+        self.assertEqual(caller_effects, [])
+        self.assertEqual(
+            adapter.consume(auth),
+            (False, "execution authorization already consumed"),
+        )
 
     def test_http_execution_uses_exact_signed_url_and_method(self):
         action = ActionIntent(
@@ -369,7 +378,7 @@ print(tool_handler_fingerprint(stable_handler))
         self.assertEqual(requests[0]["body"], {"name": "signed"})
 
     def test_router_dispatches_generic_tool_action_to_fabric(self):
-        handler = lambda _signed_action: "registered"
+        handler = lambda signed_action: signed_action["metadata"]["arguments"]["title"]
         action = ActionIntent(
             agent_id="router-agent",
             action_type="mcp.tool.call",
@@ -390,7 +399,16 @@ print(tool_handler_fingerprint(stable_handler))
             generic_adapters={"mcp.tool.call": adapter},
         )
         self.assertIs(router._adapter(auth), adapter)
-        self.assertEqual(router.execute(auth, lambda _signed_action: "routed"), "routed")
+        caller_effects = []
+        self.assertEqual(
+            router.execute(auth, lambda signed_action: caller_effects.append(signed_action)),
+            "via-router",
+        )
+        self.assertEqual(caller_effects, [])
+        self.assertEqual(
+            adapter.consume(auth),
+            (False, "execution authorization already consumed"),
+        )
 
     def test_http_target_url_drift_fails_before_consumption(self):
         action = ActionIntent(
