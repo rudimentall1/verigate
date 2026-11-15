@@ -43,7 +43,8 @@
 | New Solidity contracts | COMPILED and unit-tested in GitHub Actions; not deployed |
 | Solidity compilation | PASS in GitHub Actions using pinned Reactive library commit `3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8`; compiler warnings remain |
 | Foundry unit tests | PASS: 11 passed, 0 failed across 3 suites in GitHub Actions |
-| Python bridge adapter tests | PASS: 4 passed in GitHub Actions |\n| Testnet deployment | NOT DEPLOYED |
+| Python bridge adapter tests | PASS: 4 passed in GitHub Actions |
+| Testnet deployment | NOT DEPLOYED |
 | End-to-end callback | NOT TESTED |
 | Independent verification | NOT VERIFIED |
 
