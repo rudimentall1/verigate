@@ -20,6 +20,7 @@
 - `src/VerigateReactiveGuard.sol`: Reactive Omni subscriptions, authorization cache, exact action comparison, expiry/revocation/replay checks, explicit BLOCK evidence, typed callback request.
 - `src/VerigatePaymentReceiver.sol`: callback proxy + Reactive sender authentication, commitment recomputation, one-time payment and destination-side execution evidence.
 - `prepare_registration.py`: validates the signed ALLOW receipt and execution authorization, checks that both describe the same action, verifies receipt-to-authorization digest binding, checks the Base Sepolia hub and enabled issuer, and prepares a wallet-signable registration transaction without accepting an EVM private key.
+- `tests/test_prepare_registration.py`: covers exact wei conversion, rejects float/over-precision amounts, and checks all nine ABI arguments in the registration transaction.
 - `foundry.toml`, integration README and `.github/workflows/reactive-omni.yml` document the pinned Reactive library dependency, network parameters, deployment order, threat boundary and compile gate.
 
 ## Important trust and product boundaries
@@ -39,7 +40,7 @@
 | Reactive Omni API/library interface review | SOURCE REVIEWED |
 | New Solidity contracts | SOURCE ONLY |
 | Solidity compilation | NOT RUN locally; GitHub Actions compile gate added, result not yet confirmed |
-| Unit tests | Three Foundry test files added; execution not yet confirmed |
+| Unit tests | Three Foundry test files and four Python adapter tests added; execution not yet confirmed |
 | Testnet deployment | NOT DEPLOYED |
 | End-to-end callback | NOT TESTED |
 | Independent verification | NOT VERIFIED |
