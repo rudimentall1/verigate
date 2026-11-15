@@ -1,0 +1,47 @@
+name: Reactive Omni integration
+
+on:
+  push:
+    branches:
+      - hackathon/reactive-omni-buildathon
+    paths:
+      - "integrations/reactive-omni/**"
+      - ".github/workflows/reactive-omni.yml"
+  pull_request:
+    paths:
+      - "integrations/reactive-omni/**"
+      - ".github/workflows/reactive-omni.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-bridge-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install project dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python modules
+        run: |
+          python -m py_compile integrations/reactive-omni/prepare_registration.py
+          python -m compileall -q attest core enforcement
+
+  solidity-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Fetch pinned Reactive Omni library
+        run: |
+          git clone https://github.com/Reactive-Network/reactive-lib-omni.git integrations/reactive-omni/lib/reactive-lib-omni
+          git -C integrations/reactive-omni/lib/reactive-lib-omni checkout 3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8
+      - name: Compile Reactive contracts
+        run: forge build --root integrations/reactive-omni
