@@ -39,6 +39,7 @@ contract VerigateReactiveGuardTest {
     uint256 private constant DESTINATION_CHAIN_ID = 1301;
     address private constant ORIGIN_HUB = address(0xBEEF);
     address private constant DESTINATION_RECEIVER = address(0xCAFE);
+    address private constant AUTHORIZATION_ISSUER = address(0x1A55);
 
     VerigateReactiveGuard private guard;
 
@@ -69,6 +70,7 @@ contract VerigateReactiveGuardTest {
             abi.encode(
                 ORIGIN_CHAIN_ID,
                 ORIGIN_HUB,
+                AUTHORIZATION_ISSUER,
                 id,
                 actionDigest,
                 policyHash,
@@ -84,7 +86,7 @@ contract VerigateReactiveGuardTest {
         log_ = IReactive.LogRecord({
             chainId: ORIGIN_CHAIN_ID,
             contractAddress: ORIGIN_HUB,
-            topic0: uint256(keccak256("AuthorizationRegistered(bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,uint64,uint256,address)")),
+            topic0: uint256(keccak256("AuthorizationRegistered(bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,uint64,uint256,address,address)")),
             topic1: uint256(id),
             topic2: uint256(actionHash),
             topic3: uint256(uint160(recipient)),
@@ -95,7 +97,8 @@ contract VerigateReactiveGuardTest {
                 amountWei,
                 expiry,
                 DESTINATION_CHAIN_ID,
-                DESTINATION_RECEIVER
+                DESTINATION_RECEIVER,
+                AUTHORIZATION_ISSUER
             ),
             blockNumber: 1,
             opCode: 4,
@@ -108,18 +111,19 @@ contract VerigateReactiveGuardTest {
     function _requestLog(
         bytes32 id,
         address recipient,
-        uint256 amountWei
+        uint256 amountWei,
+        address requestedBy
     ) internal pure returns (IReactive.LogRecord memory log_) {
         log_ = IReactive.LogRecord({
             chainId: ORIGIN_CHAIN_ID,
             contractAddress: ORIGIN_HUB,
-            topic0: uint256(keccak256("ExecutionRequested(bytes32,address,uint256,uint256,address)")),
+            topic0: uint256(keccak256("ExecutionRequested(bytes32,address,address,uint256,uint256,address)")),
             topic1: uint256(id),
             topic2: uint256(uint160(recipient)),
-            topic3: 0,
+            topic3: uint256(uint160(requestedBy)),
             data: abi.encode(amountWei, DESTINATION_CHAIN_ID, DESTINATION_RECEIVER),
             blockNumber: 2,
-            opCode: 3,
+            opCode: 4,
             blockHash: 2,
             txHash: 2,
             logIndex: 0
@@ -136,7 +140,7 @@ contract VerigateReactiveGuardTest {
         address recipient = address(0xBEEF);
         _react(_authorizationLog(id, recipient, 1 ether, uint64(block.timestamp + 120)));
         vm.recordLogs();
-        _react(_requestLog(id, recipient, 2 ether));
+        _react(_requestLog(id, recipient, 2 ether, AUTHORIZATION_ISSUER));
 
         VerigateReactiveGuard.CachedAuthorization memory cached = guard.getAuthorization(id);
         require(cached.exists, "authorization not cached");
@@ -167,7 +171,7 @@ contract VerigateReactiveGuardTest {
         address recipient = address(0xBEEF);
         uint256 amountWei = 1 ether;
         _react(_authorizationLog(id, recipient, amountWei, uint64(block.timestamp + 120)));
-        _react(_requestLog(id, recipient, amountWei));
+        _react(_requestLog(id, recipient, amountWei, AUTHORIZATION_ISSUER));
 
         VerigateReactiveGuard.CachedAuthorization memory cached = guard.getAuthorization(id);
         require(cached.consumed, "valid request did not consume authorization");
@@ -188,13 +192,28 @@ contract VerigateReactiveGuardTest {
         );
     }
 
+
+    function testUnauthorizedRequesterIsBlockedBeforeCallback() external {
+        bytes32 id = keccak256("auth-wrong-requester");
+        address recipient = address(0xBEEF);
+        _react(_authorizationLog(id, recipient, 1 ether, uint64(block.timestamp + 120)));
+        _react(_requestLog(id, recipient, 1 ether, address(0xBAD)));
+
+        VerigateReactiveGuard.CachedAuthorization memory cached = guard.getAuthorization(id);
+        require(!cached.consumed, "unauthorized requester consumed authorization");
+        require(
+            uint256(vm.load(address(uint160(SYSTEM)), bytes32(0))) == 0,
+            "unauthorized requester triggered a callback"
+        );
+    }
+
     function testExpiredAuthorizationIsNotConsumed() external {
         bytes32 id = keccak256("auth-expired");
         address recipient = address(0xBEEF);
         uint64 expiry = uint64(block.timestamp + 30);
         _react(_authorizationLog(id, recipient, 1 ether, expiry));
         vm.warp(uint256(expiry) + 1);
-        _react(_requestLog(id, recipient, 1 ether));
+        _react(_requestLog(id, recipient, 1 ether, AUTHORIZATION_ISSUER));
 
         VerigateReactiveGuard.CachedAuthorization memory cached = guard.getAuthorization(id);
         require(!cached.consumed, "expired request consumed authorization");
