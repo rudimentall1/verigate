@@ -1,68 +1,60 @@
-# Verigate Reactive Omni Integration
+# Verigate Reactive Omni
 
-**Track:** Set It and Forget It  
-**Target flow:** Base Sepolia → Reactive Omni / Lasna → Unichain Sepolia
+This integration puts an execution boundary between an AI agent's payment request and the transaction that actually moves funds.
 
-This directory contains the buildathon-specific Solidity integration. The main Verigate authorization engine remains a dependency; this is not a fork or rewrite of Verigate.
+The problem is concrete: an agent may be allowed to pay a supplier, but that permission must not let it swap the recipient, increase the amount, redirect the chain, or reuse an old approval. Verigate binds the decision to one exact action. Reactive carries that commitment across chains and checks the execution request where the destination callback is triggered.
 
-## Problem
+**Verigate decides whether the action is authorized. Reactive enforces that commitment across chains. The destination receiver performs the bounded transfer.**
 
-An AI agent can propose a payment, but wallet access must not grant it unrestricted authority. The execution boundary needs to check the exact recipient, amount, destination, expiry and one-time-use status before any destination-side transfer occurs.
+## Demo route
 
-## Execution flow
+`Base Sepolia (84532) → Reactive / Lasna (5318007) → Unichain Sepolia (1301)`
 
-1. Verigate evaluates an `ActionIntent` and issues an Ed25519-signed `ExecutionAuthorization` only for an ALLOW decision.
-2. A bridge issuer verifies that artifact off-chain with Verigate's public key, maps its exact action to destination-chain parameters, and calls `VerigateOriginAuthorizationHub.registerAuthorization()` on Base Sepolia.
-3. The hub emits `AuthorizationRegistered`. The Reactive contract subscribes to this event and caches the exact commitment on Lasna.
-4. The same enabled issuer that registered the authorization calls `requestExecution()` on the origin hub. The hub rejects any other caller before an event is emitted. The event is still only an execution request, not an authorization.
-5. Reactive compares the requester identity, recipient, amount, destination chain and destination contract with the cached authorization. It also checks revocation, expiry, replay and the committed hash. The registering issuer address is part of the action commitment.
-6. A matching request triggers `requestCallbackV_1_0()` to the Unichain Sepolia receiver. A mismatched request emits `ActionBlocked` on Lasna and makes no destination callback request.
-7. The receiver authenticates both the callback proxy and the expected Reactive contract, recomputes the complete issuer-bound action commitment, checks replay and expiry, and transfers its pre-funded native balance to the exact authorized recipient.
+1. Verigate returns a signed ALLOW receipt and short-lived Ed25519 `ExecutionAuthorization`.
+2. The bridge preparer verifies the receipt and authorization, confirms they describe the same exact action, and prepares a wallet-signable registration transaction.
+3. The enabled EVM issuer registers the commitment on the Base Sepolia Origin Hub.
+4. Reactive observes the origin event and caches the commitment on Lasna.
+5. The same issuer requests execution. Reactive compares the request against the cached recipient, amount, issuer, destination, expiry, revocation and replay state.
+6. A matching request triggers a callback to the Unichain Sepolia receiver. A mismatch is blocked on Reactive and must not trigger a destination transfer.
+7. The receiver authenticates the callback proxy and configured Reactive sender, recomputes the commitment and transfers only the approved amount.
 
-The receiver emits `PaymentExecuted` only after the destination-side transfer succeeds. `ActionAllowed` on Lasna means Reactive accepted the request and submitted a callback request; it is not, by itself, proof that the destination payment completed.
+The destination receiver is a **pre-funded testnet vault**. It is an execution proof, not a production non-custodial wallet.
 
-## Cryptographic boundary (must remain explicit)
+## Why Reactive is necessary here
 
-Verigate's current authorization artifact is signed with Ed25519. The EVM contracts in this integration do **not** verify Ed25519 on-chain.
+A normal application-side policy check does not protect the eventual on-chain side effect. Between approval and execution, a request can be changed, replayed or routed elsewhere. This integration uses Reactive as the event-driven enforcement layer between the origin-chain authorization and destination-chain callback. Without it, a separate operator-run watcher/relayer would have to implement that monitoring and decision path. Reactive is part of the enforcement design, not an alert feed.
 
-The allowlisted issuer on the origin hub is a bridge attester. Its private key must only be used by an adapter that has first:
-- verified the Verigate `ExecutionAuthorization` signature against the configured Verigate issuer public key;
-- required `algorithm == "Ed25519"` and a valid, unexpired ALLOW authorization;
-- checked `authorization_id`, `action_sha256`, `policy_sha256`, `decision_receipt_sha256`, and the exact action fields;
-- checked that the action's network, asset, recipient and exact amount map to the configured destination chain and receiver;
-- rejected missing, ambiguous, expired or unsupported fields.
+## Cryptographic trust boundary
 
-The hub records the Verigate digests in the origin event. The contracts then enforce that exact on-chain commitment across the Reactive callback. This is a deliberate and visible trust boundary, not a claim that Solidity verifies Verigate's Ed25519 signature.
+Verigate signs its authorization with Ed25519. The Solidity contracts do **not** verify Ed25519 on-chain.
 
-## Demo funding model
+The allowlisted EVM issuer is a bridge attester. Before it publishes an authorization, the bridge adapter verifies:
+- the Ed25519 execution-authorization signature;
+- the ALLOW decision receipt and its digest binding;
+- the exact action and authorization fields;
+- the supported destination network, asset, recipient and amount;
+- expiry and required capability/authority/policy bindings.
 
-`VerigatePaymentReceiver` is a pre-funded testnet execution vault. It transfers native currency held by the receiver contract. This proves the authorization-to-callback-to-side-effect path, but it is not a production non-custodial wallet or an account-abstraction implementation.
+The on-chain commitment binds the origin chain and hub, issuer, authorization ID, Verigate action/policy/receipt digests, destination chain and receiver, recipient, exact wei amount and expiry. This boundary is deliberate and must not be described as native on-chain Ed25519 verification.
 
-Two separate balances are required:
-- REACT/lREACT balance for the Reactive contract's event processing and callback requests;
-- destination native-token balance on the receiver for callback charges and the test payment.
+## Current deployment and evidence
 
-A callback can fail even after Reactive accepts the request. Confirm the destination `PaymentExecuted` event and transaction, not only `ActionAllowed`.
+See [STATUS.md](STATUS.md) for the complete checkpoint, transaction hashes, test results and remaining gates.
 
-## Testnet configuration
+Confirmed origin transactions:
+- Base Sepolia authorization registration: `0xded94bd71d829c91bc914acef6e62f0dfbc99dcf2e08084115e9026ce8bc3a97`
+- Base Sepolia execution request: `0x1b4b855d1229c27ca725371c9be3b54e98b95ada13ac0eaa36f7caf2760685b9`
 
-| Role | Network | Chain ID |
-|---|---|---:|
-| Origin authorization hub | Base Sepolia | 84532 |
-| Reactive contract | Lasna | 5318007 |
-| Destination receiver | Unichain Sepolia | 1301 |
+Deployed addresses currently recorded:
+- Origin Hub on Base Sepolia: `0x05d23191f063D704A3D2e367D5C268f1B5834637`
+- Destination Receiver on Unichain Sepolia: `0xF1C8af8dA8c0cFe23ad04ca73533EF0AdE1B85B4`
+- Unichain callback proxy: `0x775c9B990ADe401060B78D0e98684eEf8d2466C1`
 
-Destination callback proxy on Unichain Sepolia:
-`0x775c9B990ADe401060B78D0e98684eEf8d2466C1`
+The Reactive Guard deployment transaction is recorded in STATUS.md, but its address still needs to be extracted from the receipt. The destination `PaymentExecuted` event has not yet been confirmed. Therefore this repository does not claim a completed cross-chain payment.
 
-Reactive system contract:
-`0x8888888888888888888888888888888888888888`
+## Build and test
 
-Use testnet-only keys and balances. Never reuse mainnet private keys.
-
-## Build
-
-From this directory, fetch the reviewed Reactive Omni library revision and compile:
+From this directory:
 
 ```bash
 git clone https://github.com/Reactive-Network/reactive-lib-omni.git lib/reactive-lib-omni
@@ -71,103 +63,27 @@ forge build
 forge test -vv
 ```
 
-The import remapping is configured in `foundry.toml`. The dependency is intentionally not committed; CI uses the same pinned revision.
+The Reactive library revision is pinned. CI also runs Python bridge tests, deployment-script syntax validation, Solidity compilation and Foundry tests.
 
-## Preparing the origin registration
+## Prepare a Verigate authorization
 
-The bridge preparer accepts the complete JSON response from `POST /v1/actions/authorize` (both `decision_receipt` and `execution_authorization`). It verifies the Ed25519 signatures, checks that the ALLOW receipt and execution authorization describe the same exact action, verifies the receipt digest, checks the target hub's chain/code and the issuer allowlist, then prints a transaction for a wallet to sign. It does not accept or store an EVM private key and does not broadcast.
-
-From the repository root:
+The preparer accepts the full JSON response from `POST /v1/actions/authorize`, including both `decision_receipt` and `execution_authorization`. It verifies signatures and action/digest binding, checks the target hub and enabled issuer, then prepares a transaction for an EVM wallet to sign. It does not accept, store or broadcast an EVM private key.
 
 ```bash
 python integrations/reactive-omni/prepare_registration.py authorization-response.json \
-  --public-key keys/issuer.pub \
+  --public-key /path/to/verigate-issuer-public.pem \
   --origin-hub "$VERIGATE_REACTIVE_ORIGIN_HUB" \
   --issuer "$VERIGATE_REACTIVE_EVM_ISSUER" \
   --destination-receiver "$VERIGATE_REACTIVE_DESTINATION_RECEIVER" \
   --rpc-url "$VERIGATE_REACTIVE_ORIGIN_RPC_URL"
 ```
 
-The output contains a wallet-signable Base Sepolia transaction. The configured issuer address must already be enabled in the origin hub. The adapter currently supports only `action_type=payment`, `asset=ETH`, network `unichain-sepolia`, an EVM recipient in `action.target`, and exact `amount_exact` decimal values convertible to wei. Change the explicit expected network/asset flags only when the product flow is intentionally configured for another supported mapping.
+The currently supported mapping is a payment in ETH on `unichain-sepolia`, with an EVM recipient and an exact decimal amount convertible to wei.
 
-After the authorization is registered and `AuthorizationCached` is visible on Lasna, the **same issuer wallet** sends the execution request:
+## Contract responsibilities
 
-```bash
-cast send --rpc-url "$BASE_SEPOLIA_RPC_URL" \
-  --private-key "$ISSUER_PRIVATE_KEY" \
-  "$VERIGATE_REACTIVE_ORIGIN_HUB" \
-  "requestExecution(bytes32,address,uint256,uint256,address)" \
-  "$AUTHORIZATION_ID" "$RECIPIENT" "$AMOUNT_WEI" 1301 \
-  "$VERIGATE_REACTIVE_DESTINATION_RECEIVER"
-```
+- `src/VerigateOriginAuthorizationHub.sol`: issuer-gated authorization registration, one-time IDs, revocation, destination-bound commitment and issuer-bound execution requests.
+- `src/VerigateReactiveGuard.sol`: Reactive subscriptions, authorization cache, exact action/issuer checks, expiry, revocation, replay protection, BLOCK evidence and callback request.
+- `src/VerigatePaymentReceiver.sol`: callback authentication, commitment recomputation, one-time execution and destination payment event.
 
-The hub rejects any other caller. The request may still contain a modified recipient or amount so the Reactive contract can emit an explicit `ActionBlocked` record for the negative test.
-
-## Testnet funds
-
-The contracts are not deployed yet. Obtain test tokens for the three deployment networks first:
-
-- **Base Sepolia ETH:** claim from the [Alchemy faucet](https://www.alchemy.com/faucets) or another Base Sepolia faucet. Alchemy currently lists 0.1 Base Sepolia ETH per 24-hour claim. The Base balance pays for the Origin Hub deployment, issuer transactions and the Reactive lREACT faucet request. See the [faucet documentation](https://www.alchemy.com/docs/faucets).
-- **Lasna lREACT:** the [official Reactive faucet instructions](https://dev.reactive.network/legacy/reactive-mainnet) say to call `request(address)` on the Base Sepolia faucet contract `0x2afaFD298b23b62760711756088F75B7409f5967`. It quotes 1 Base Sepolia ETH for 100 lREACT and shows a 0.1 ETH request example; the maximum per transaction is 5 ETH. Set the request target to the deployer EVM address that will deploy the Reactive Guard. Wait until that address has a non-zero lREACT balance on Lasna before deployment.
-- **Unichain Sepolia ETH:** use the [official Uniswap faucet guide](https://developers.uniswap.org/docs/unichain/tools/faucets). The Superchain faucet currently provides 0.05 test ETH per network every 24 hours; QuickNode and thirdweb are alternative faucets.
-
-Example lREACT request from the same Base Sepolia wallet (after funding it with Base Sepolia test ETH):
-
-```bash
-DEPLOYER_ADDRESS="$(cast wallet address --private-key "$DEPLOYER_PRIVATE_KEY")"
-cast send 0x2afaFD298b23b62760711756088F75B7409f5967 \
-  --rpc-url "$BASE_SEPOLIA_RPC_URL" \
-  --private-key "$DEPLOYER_PRIVATE_KEY" \
-  "request(address)" "$DEPLOYER_ADDRESS" \
-  --value 0.1ether
-```
-
-This is a testnet faucet call, not a mainnet transaction. Never send real ETH to a testnet faucet.
-
-## Deployment order
-
-A reproducible deployment script is provided. Run it from this directory on a machine with Foundry and funded **testnet-only** wallets:
-
-```bash
-export BASE_SEPOLIA_RPC_URL="https://sepolia.base.org"
-export LASNA_RPC_URL="https://lasna-rpc.rnk.dev/"
-export UNICHAIN_SEPOLIA_RPC_URL="https://sepolia.unichain.org"
-export DEPLOYER_PRIVATE_KEY="..."  # testnet deployer/admin only
-export ISSUER_PRIVATE_KEY="..."    # Verigate bridge issuer; may be the same wallet
-
-# Optional top-ups, in wei. Set only after checking testnet balances and fee requirements.
-export REACTIVE_TOPUP_WEI="..."
-export RECEIVER_TOPUP_WEI="..."
-
-bash deploy-testnets.sh
-```
-
-The script checks all three chain IDs, pins the official Reactive library revision, deploys the hub → Reactive guard → destination receiver, enables the issuer and configures the callback receiver. It prints contract addresses. Private keys are read from environment variables and are never printed or written to files. Do not paste private keys into chat or commit them.
-
-The Origin Hub must be deployed first because its address is pinned into the Reactive subscription:
-
-1. Deploy `VerigateOriginAuthorizationHub` on Base Sepolia and enable the bridge issuer.
-2. Deploy `VerigateReactiveGuard` on Lasna with the Base Sepolia hub address, origin chain ID, destination chain ID and callback gas limit (at least 100,000).
-3. Deploy `VerigatePaymentReceiver` on Unichain Sepolia, passing the official Unichain Sepolia callback proxy, the Reactive contract address, Base Sepolia chain ID and origin hub address.
-4. Call `setDestinationReceiver()` on the Reactive contract. This is a one-time setter.
-5. Fund the Reactive contract with lREACT and the receiver with Unichain Sepolia native currency.
-6. Publish a valid Verigate ALLOW authorization. Wait until `AuthorizationCached` is visible on Lasna before requesting execution.
-7. Submit one exact request and one modified-recipient or modified-amount request. Verify `PaymentExecuted` for ALLOW and `ActionBlocked` with no destination transfer for BLOCK.
-
-## Status
-
-**LOCAL SOLIDITY VERIFICATION PASSED — testnet deployment and end-to-end execution remain pending.**
-
-- Solidity build: PASS locally with Solc 0.8.29.
-- Foundry tests: 15 passed, 0 failed, 0 skipped across 3 suites.
-- Reactive Omni dependency: pinned to commit `3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8`.
-- Issuer-bound revocation: regression test PASS.
-- Malformed indexed address topics: 3 regression tests PASS; non-canonical recipient/requester topics are rejected before callback.
-- GitHub Actions at published HEAD `63748e7`: Reactive Omni Solidity build/tests and Python bridge checks PASS. The latest general CI run has 3 passing jobs (`contracts`, `container`, `test`) and 1 unrelated Anna UI failure (68/69 tests). The current 15-test Foundry suite, including 4 new regression tests, has passed locally but has not yet been run in CI.
-- Compiler and lint warnings remain and require review.
-- Local Python CI reproduction: NOT VERIFIED.
-- Testnet deployment: NOT DEPLOYED.
-- Cross-chain callback and payment execution: NOT TESTED.
-- Independent verification: NOT VERIFIED.
-
-No contract address, transaction hash, callback or live status is claimed. The next gate is reviewing the remaining warnings, then preparing a funded testnet deployment and verifying both the allowed payment and blocked modified request end to end.
+`ActionAllowed` means Reactive accepted the request and submitted a callback request. It is not payment proof. Only a successful destination transaction with `PaymentExecuted` proves the transfer.
