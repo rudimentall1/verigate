@@ -40,6 +40,7 @@ contract VerigateOriginAuthorizationHub {
     error AlreadyRevoked(bytes32 authorizationId);
 
     event IssuerUpdated(address indexed issuer, bool enabled);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event AuthorizationRegistered(
         bytes32 indexed authorizationId,
         bytes32 indexed actionHash,
@@ -187,6 +188,8 @@ contract VerigateOriginAuthorizationHub {
 
     function transferOwnership(address newOwner) external onlyOwner {
         if (newOwner == address(0)) revert ZeroAddress();
+        address previousOwner = owner;
         owner = newOwner;
+        emit OwnershipTransferred(previousOwner, newOwner);
     }
 }
