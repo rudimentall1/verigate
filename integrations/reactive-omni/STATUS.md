@@ -15,13 +15,13 @@ The final destination-side payment is **not confirmed**. No submission text shou
 | Component | Network | Address / transaction | Evidence |
 |---|---|---|---|
 | Origin Authorization Hub | Base Sepolia (84532) | `0x05d23191f063D704A3D2e367D5C268f1B5834637` | Deployment tx `0xd955ae00dabb4b9bf2b5809c136c643c37847f0bb41fb225e503fa733c60bf58`, block `0x3859904` |
-| Reactive Guard | Lasna (5318007) | Address still needs to be extracted from the deployment receipt | Deployment tx `0x81d496664ae8c12a91393b380eaa13683fde815214942e9021a34fa56848f2c4`, deployment block `0x8034d7` |
+| Reactive Guard | Lasna (5318007) | `0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D` | Deployment tx `0x81d496664ae8c12a91393b380eaa13683fde815214942e9021a34fa56848f2c4`, block `8402135` (hex `0x8034d7`), receipt status 1 |
 | Payment Receiver | Unichain Sepolia (1301) | `0xF1C8af8dA8c0cFe23ad04ca73533EF0AdE1B85B4` | Deployment tx `0x3eb8d65c96ed88535386177102c6619aead08b79ab5394eb6073e93b2bcea9cd`, block `0x40bdf16` |
 | Unichain callback proxy | Unichain Sepolia | `0x775c9B990ADe401060B78D0e98684eEf8d2466C1` | Configured callback endpoint |
 
 The hub issuer is enabled. The Guard was configured with the origin hub and destination receiver. The Receiver was deployed with the origin hub and expected Reactive sender. The callback proxy and service-provider configuration were read from the deployed receiver.
 
-**Important:** the Guard deployment transaction is known, but its contract address has not yet been copied from the receipt into this checkpoint. Do not guess or reuse the earlier malformed candidate address.
+**Verified Guard deployment:** receipt retrieved from Lasna RPC `https://lasna-rpc.rnk.dev/` (chain ID `5318007`). The receipt reports `contractAddress` `0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D`, block `8402135` (`0x8034d7`), status `1 (success)`. The earlier malformed/truncated candidate has been replaced with this receipt-confirmed address.
 
 ## Successful origin-chain execution
 
@@ -83,13 +83,12 @@ The proof required to close the loop is a successful Unichain Sepolia transactio
 
 ## Remaining gates before submission
 
-1. Extract and verify the Lasna Guard address from the known deployment receipt. Do not infer it from a truncated address.
-2. Verify the Reactive-side authorization cache and request handling for this authorization.
-3. Resolve callback funding requirements. Ask before sending any funds to the receiver or callback proxy.
-4. Obtain the destination `PaymentExecuted` transaction and verify the recipient balance change.
-5. Run a negative test with a changed recipient or amount from the registered issuer; capture `ActionBlocked` on Lasna and prove no destination payment occurred.
-6. Run CI against the exact final branch head and review compiler warnings.
-7. Record exact explorer links, demo steps, and measured end-to-end latency only after the evidence exists.
+1. Verify the Reactive-side authorization cache and request handling for this authorization.
+2. Resolve callback funding requirements. Ask before sending any funds to the receiver or callback proxy.
+3. Obtain the destination `PaymentExecuted` transaction and verify the recipient balance change.
+4. Run a negative test with a changed recipient or amount from the registered issuer; capture `ActionBlocked` on Lasna and prove no destination payment occurred.
+5. Run CI against the exact final branch head and review compiler warnings.
+6. Record exact explorer links, demo steps, and measured end-to-end latency only after the evidence exists.
 
 ## Submission rule
 
