@@ -9,6 +9,7 @@ interface IVerigatePaymentCallback {
     function executeAuthorizedPayment(
         address reactive_,
         bytes32 authorizationId,
+        address issuer,
         address payable recipient,
         uint256 amountWei,
         uint64 expiresAt,
