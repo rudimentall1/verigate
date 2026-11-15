@@ -15,6 +15,7 @@ contract VerigatePaymentReceiverTest {
 
     address private constant CALLBACK_PROXY = address(0xCA11);
     address private constant REACTIVE_SENDER = address(0xA11CE);
+    address private constant AUTHORIZATION_ISSUER = address(0x1A55);
     uint256 private constant ORIGIN_CHAIN_ID = 84532;
     address private constant ORIGIN_HUB = address(0xBEEF);
 
@@ -30,6 +31,7 @@ contract VerigatePaymentReceiverTest {
     function _actionHash(
         VerigatePaymentReceiver receiver,
         bytes32 authorizationId,
+        address issuer,
         address payable recipient,
         uint256 amountWei,
         uint64 expiresAt,
@@ -41,6 +43,7 @@ contract VerigatePaymentReceiverTest {
             abi.encode(
                 ORIGIN_CHAIN_ID,
                 ORIGIN_HUB,
+                issuer,
                 authorizationId,
                 actionDigest,
                 policyHash,
@@ -64,7 +67,7 @@ contract VerigatePaymentReceiverTest {
         uint256 amountWei = 0.1 ether;
         uint64 expiry = uint64(block.timestamp + 120);
         bytes32 commitment = _actionHash(
-            receiver, id, recipient, amountWei, expiry, actionDigest, policyHash, receiptHash
+            receiver, id, AUTHORIZATION_ISSUER, recipient, amountWei, expiry, actionDigest, policyHash, receiptHash
         );
 
         vm.deal(address(receiver), amountWei);
@@ -74,6 +77,7 @@ contract VerigatePaymentReceiverTest {
         receiver.executeAuthorizedPayment(
             REACTIVE_SENDER,
             id,
+            AUTHORIZATION_ISSUER,
             recipient,
             amountWei,
             expiry,
@@ -94,6 +98,7 @@ contract VerigatePaymentReceiverTest {
         receiver.executeAuthorizedPayment(
             REACTIVE_SENDER,
             keccak256("forged"),
+            AUTHORIZATION_ISSUER,
             payable(address(0xB0B)),
             1,
             uint64(block.timestamp + 60),
@@ -111,6 +116,7 @@ contract VerigatePaymentReceiverTest {
         receiver.executeAuthorizedPayment(
             address(0xBAD),
             keccak256("wrong-reactive-sender"),
+            AUTHORIZATION_ISSUER,
             payable(address(0xB0B)),
             1,
             uint64(block.timestamp + 60),
