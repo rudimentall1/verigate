@@ -2,16 +2,33 @@
 pragma solidity ^0.8.29;
 
 import { IReactive } from "@reactive/src/interfaces/IReactive.sol";
+import { ISystemContract } from "@reactive/src/interfaces/ISystemContract.sol";
 import { VerigateReactiveGuard } from "../src/VerigateReactiveGuard.sol";
 
 interface VmReactive {
+    struct Log {
+        bytes32[] topics;
+        bytes data;
+        address emitter;
+    }
+
     function prank(address sender) external;
     function warp(uint256 timestamp) external;
     function etch(address target, bytes calldata code) external;
+    function store(address target, bytes32 slot, bytes32 value) external;
+    function load(address target, bytes32 slot) external view returns (bytes32);
+    function recordLogs() external;
+    function getRecordedLogs() external returns (Log[] memory);
 }
 
 contract ReactiveSystemStub {
-    fallback() external payable {}
+    uint256 public callbackRequests;
+
+    fallback() external payable {
+        if (msg.sig == ISystemContract.requestCallbackV_1_0.selector) {
+            callbackRequests += 1;
+        }
+    }
 }
 
 contract VerigateReactiveGuardTest {
@@ -27,7 +44,9 @@ contract VerigateReactiveGuardTest {
 
     function setUp() public {
         ReactiveSystemStub stub = new ReactiveSystemStub();
-        vm.etch(address(uint160(SYSTEM)), address(stub).code);
+        address systemAddress = address(uint160(SYSTEM));
+        vm.etch(systemAddress, address(stub).code);
+        vm.store(systemAddress, bytes32(0), bytes32(0));
         guard = new VerigateReactiveGuard(
             ORIGIN_CHAIN_ID,
             ORIGIN_HUB,
@@ -116,11 +135,31 @@ contract VerigateReactiveGuardTest {
         bytes32 id = keccak256("auth-changed-amount");
         address recipient = address(0xBEEF);
         _react(_authorizationLog(id, recipient, 1 ether, uint64(block.timestamp + 120)));
+        vm.recordLogs();
         _react(_requestLog(id, recipient, 2 ether));
 
         VerigateReactiveGuard.CachedAuthorization memory cached = guard.getAuthorization(id);
         require(cached.exists, "authorization not cached");
         require(!cached.consumed, "mismatched request consumed authorization");
+        require(
+            uint256(vm.load(address(uint160(SYSTEM)), bytes32(0))) == 0,
+            "blocked action requested destination callback"
+        );
+
+        VmReactive.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 blockedTopic = keccak256("ActionBlocked(bytes32,address,uint256,uint8)");
+        bool blockedEvidenceFound;
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (
+                logs[i].emitter == address(guard) &&
+                logs[i].topics.length > 0 &&
+                logs[i].topics[0] == blockedTopic
+            ) {
+                blockedEvidenceFound = true;
+                break;
+            }
+        }
+        require(blockedEvidenceFound, "ActionBlocked evidence missing");
     }
 
     function testExactRequestIsAllowedAndOneTimeOnly() external {
@@ -132,12 +171,21 @@ contract VerigateReactiveGuardTest {
 
         VerigateReactiveGuard.CachedAuthorization memory cached = guard.getAuthorization(id);
         require(cached.consumed, "valid request did not consume authorization");
+        require(
+            uint256(vm.load(address(uint160(SYSTEM)), bytes32(0))) == 1,
+            "valid action did not request exactly one callback"
+        );
 
         // A second matching request is treated as a replay; it cannot reopen
         // the authorization or produce a second callback request.
+        vm.recordLogs();
         _react(_requestLog(id, recipient, amountWei));
         cached = guard.getAuthorization(id);
         require(cached.consumed, "replay changed consumed state");
+        require(
+            uint256(vm.load(address(uint160(SYSTEM)), bytes32(0))) == 1,
+            "replay requested another callback"
+        );
     }
 
     function testExpiredAuthorizationIsNotConsumed() external {
@@ -150,5 +198,9 @@ contract VerigateReactiveGuardTest {
 
         VerigateReactiveGuard.CachedAuthorization memory cached = guard.getAuthorization(id);
         require(!cached.consumed, "expired request consumed authorization");
+        require(
+            uint256(vm.load(address(uint160(SYSTEM)), bytes32(0))) == 0,
+            "expired request requested destination callback"
+        );
     }
 }
