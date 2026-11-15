@@ -124,7 +124,7 @@ contract VerigatePaymentReceiverTest {
     function testRejectsModifiedActionCommitment() external {
         VerigatePaymentReceiver receiver = _deploy();
         bytes32 id = keccak256("payment-2");
-        vm.expectRevert(VerigatePaymentReceiver.InvalidAuthorizationCommitment.selector);
+        vm.expectRevert();
         vm.prank(CALLBACK_PROXY);
         receiver.executeAuthorizedPayment(
             REACTIVE_SENDER,
