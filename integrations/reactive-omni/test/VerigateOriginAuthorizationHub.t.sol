@@ -5,6 +5,7 @@ import { VerigateOriginAuthorizationHub } from "../src/VerigateOriginAuthorizati
 
 interface VmOrigin {
     function prank(address sender) external;
+    function expectRevert() external;
     function expectRevert(bytes4 revertData) external;
 }
 
@@ -50,6 +51,7 @@ contract VerigateOriginAuthorizationHubTest {
             abi.encode(
                 block.chainid,
                 address(hub),
+                address(this),
                 id,
                 actionDigest,
                 policyHash,
@@ -75,12 +77,51 @@ contract VerigateOriginAuthorizationHubTest {
         );
         require(returnedHash == expected, "origin commitment mismatch");
 
-        (bytes32 storedHash, , , , , , , , , bool revoked) = hub.authorizations(id);
+        (bytes32 storedHash, , , , , , , , , , bool revoked) = hub.authorizations(id);
         require(storedHash == expected, "stored commitment mismatch");
         require(!revoked, "unexpected revoked state");
 
         hub.revokeAuthorization(id);
-        (, , , , , , , , , revoked) = hub.authorizations(id);
+        (, , , , , , , , , , revoked) = hub.authorizations(id);
         require(revoked, "revocation was not stored");
     }
+
+    function testOnlyRegisteringIssuerCanRequestExecution() external {
+        VerigateOriginAuthorizationHub hub = new VerigateOriginAuthorizationHub(address(this));
+        hub.setIssuer(address(this), true);
+        bytes32 id = keccak256("auth-requester-bound");
+
+        hub.registerAuthorization(
+            id,
+            keccak256("action"),
+            keccak256("policy"),
+            keccak256("receipt"),
+            1301,
+            address(0xCAFE),
+            address(0xBEEF),
+            1 ether,
+            uint64(block.timestamp + 120)
+        );
+
+        vm.expectRevert();
+        vm.prank(address(0xBAD));
+        hub.requestExecution(
+            id,
+            address(0xBEEF),
+            1 ether,
+            1301,
+            address(0xCAFE)
+        );
+
+        // The same issuer that registered the authorization may submit an
+        // execution attempt; Reactive still enforces the committed parameters.
+        hub.requestExecution(
+            id,
+            address(0xBEEF),
+            1 ether,
+            1301,
+            address(0xCAFE)
+        );
+    }
+
 }
