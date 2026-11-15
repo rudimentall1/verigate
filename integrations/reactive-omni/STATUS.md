@@ -14,7 +14,7 @@ The final destination-side payment is **not confirmed**. No submission text shou
 
 | Component | Network | Address / transaction | Evidence |
 |---|---|---|---|
-| Origin Authorization Hub | Base Sepolia (84532) | `0x05d23191f063D704A3D2e367D5C268f1B5834637` | Deployment tx `0xd955ae00dabb4b9bf2b5809c136c643c37847f0bb41fb225e503fa733c60bf58`, block 591? (deployment receipt block recorded as `0x3859904`) |
+| Origin Authorization Hub | Base Sepolia (84532) | `0x05d23191f063D704A3D2e367D5C268f1B5834637` | Deployment tx `0xd955ae00dabb4b9bf2b5809c136c643c37847f0bb41fb225e503fa733c60bf58`, block `0x3859904` |
 | Reactive Guard | Lasna (5318007) | Address still needs to be extracted from the deployment receipt | Deployment tx `0x81d496664ae8c12a91393b380eaa13683fde815214942e9021a34fa56848f2c4`, deployment block `0x8034d7` |
 | Payment Receiver | Unichain Sepolia (1301) | `0xF1C8af8dA8c0cFe23ad04ca73533EF0AdE1B85B4` | Deployment tx `0x3eb8d65c96ed88535386177102c6619aead08b79ab5394eb6073e93b2bcea9cd`, block `0x40bdf16` |
 | Unichain callback proxy | Unichain Sepolia | `0x775c9B990ADe401060B78D0e98684eEf8d2466C1` | Configured callback endpoint |
