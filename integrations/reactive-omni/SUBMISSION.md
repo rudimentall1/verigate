@@ -43,6 +43,7 @@ The destination receiver is a pre-funded testnet executor, not a production non-
 ## Evidence available at this checkpoint
 
 - Base Sepolia Origin Hub deployed at `0x05d23191f063D704A3D2e367D5C268f1B5834637`.
+- Reactive Guard deployed on Lasna at `0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D` (deployment tx `0x81d496664ae8c12a91393b380eaa13683fde815214942e9021a34fa56848f2c4`, receipt status 1, block `8402135`).
 - Unichain Sepolia Receiver deployed at `0xF1C8af8dA8c0cFe23ad04ca73533EF0AdE1B85B4`.
 - A Verigate ALLOW authorization for a 0.0001 ETH payment to `0x4c07B4f328FA738290Db96BCE2F9CBc4d020D2CB` was registered on Base Sepolia.
 - The issuer successfully submitted the matching `requestExecution` transaction on Base Sepolia.
@@ -50,7 +51,7 @@ The destination receiver is a pre-funded testnet executor, not a production non-
 
 ## Honest status
 
-The final Unichain callback and `PaymentExecuted` event have not yet been confirmed. The submission must not claim a completed cross-chain payment or measured full-loop latency until that evidence is captured. The Reactive Guard address also needs to be extracted from its deployment receipt.
+The final Unichain callback and `PaymentExecuted` event have not yet been confirmed. The submission must not claim a completed cross-chain payment or measured full-loop latency until that evidence is captured. The Reactive Guard deployment address is confirmed from the successful Lasna deployment receipt: `0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D`.
 
 ## What the finished demo must show
 
