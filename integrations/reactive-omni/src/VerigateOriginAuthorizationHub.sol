@@ -18,6 +18,7 @@ contract VerigateOriginAuthorizationHub {
 
     struct Authorization {
         bytes32 actionHash;
+        address issuer;
         bytes32 verigateActionHash;
         bytes32 policySha256;
         bytes32 decisionReceiptSha256;
@@ -38,6 +39,7 @@ contract VerigateOriginAuthorizationHub {
     error AuthorizationAlreadyRegistered(bytes32 authorizationId);
     error AuthorizationNotFound(bytes32 authorizationId);
     error AlreadyRevoked(bytes32 authorizationId);
+    error ExecutionCallerNotIssuer(address caller, address expectedIssuer);
 
     event IssuerUpdated(address indexed issuer, bool enabled);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
@@ -51,12 +53,14 @@ contract VerigateOriginAuthorizationHub {
         uint256 amountWei,
         uint64 expiresAt,
         uint256 destinationChainId,
-        address destinationContract
+        address destinationContract,
+        address issuer
     );
     event AuthorizationRevoked(bytes32 indexed authorizationId);
     event ExecutionRequested(
         bytes32 indexed authorizationId,
         address indexed recipient,
+        address indexed requestedBy,
         uint256 amountWei,
         uint256 destinationChainId,
         address destinationContract
@@ -118,6 +122,7 @@ contract VerigateOriginAuthorizationHub {
             abi.encode(
                 block.chainid,
                 address(this),
+                msg.sender,
                 authorizationId,
                 verigateActionHash,
                 policySha256,
@@ -132,6 +137,7 @@ contract VerigateOriginAuthorizationHub {
 
         authorizations[authorizationId] = Authorization({
             actionHash: actionHash,
+            issuer: msg.sender,
             verigateActionHash: verigateActionHash,
             policySha256: policySha256,
             decisionReceiptSha256: decisionReceiptSha256,
@@ -153,14 +159,16 @@ contract VerigateOriginAuthorizationHub {
             amountWei,
             expiresAt,
             destinationChainId,
-            destinationContract
+            destinationContract,
+            msg.sender
         );
     }
 
-    /// @notice Publicly request an execution attempt. Reactive checks every
-    ///         supplied field against the cached authorization before callback.
-    /// @dev Deliberately permits mismatched fields so rejected attempts produce
-    ///      an on-chain ActionBlocked record on the Reactive chain.
+    /// @notice Request execution using the same allowlisted issuer that
+    ///         registered the authorization. Any payment fields may be
+    ///         proposed; Reactive still compares them against the commitment.
+    /// @dev Binding the caller prevents a third party from consuming or
+    ///      front-running another issuer's one-time authorization.
     function requestExecution(
         bytes32 authorizationId,
         address recipient,
@@ -168,9 +176,17 @@ contract VerigateOriginAuthorizationHub {
         uint256 destinationChainId,
         address destinationContract
     ) external {
+        Authorization storage auth = authorizations[authorizationId];
+        if (auth.actionHash == bytes32(0)) revert AuthorizationNotFound(authorizationId);
+        if (msg.sender != auth.issuer) {
+            revert ExecutionCallerNotIssuer(msg.sender, auth.issuer);
+        }
+        if (!issuers[msg.sender]) revert NotIssuer();
+
         emit ExecutionRequested(
             authorizationId,
             recipient,
+            msg.sender,
             amountWei,
             destinationChainId,
             destinationContract
