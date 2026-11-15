@@ -11,8 +11,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
+import time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -114,15 +116,32 @@ def verify_artifact(
 
     receipt_payload = receipt.get("payload")
     auth_payload = authorization.get("payload")
-    if not isinstance(receipt_payload, dict) or not isinstance(auth_payload, dict):
+    receipt_signature = receipt.get("signature")
+    if (
+        not isinstance(receipt_payload, dict)
+        or not isinstance(auth_payload, dict)
+        or not isinstance(receipt_signature, str)
+    ):
         raise PreparationError("signed artifact payloads are malformed")
-    if receipt_payload.get("decision", {}).get("decision") != "ALLOW":
+    decision = receipt_payload.get("decision")
+    receipt_intent = receipt_payload.get("intent")
+    auth_action = auth_payload.get("action")
+    if not isinstance(decision, dict) or decision.get("decision") != "ALLOW":
         raise PreparationError("only an ALLOW decision can be registered")
-    if receipt_payload.get("intent", {}).get("intent_id") != auth_payload.get("intent_id"):
-        raise PreparationError("execution authorization does not reference this decision receipt intent")
+    if not isinstance(receipt_intent, dict) or not isinstance(auth_action, dict):
+        raise PreparationError("receipt intent or authorized action is missing")
+    if (
+        receipt_intent != auth_action
+        or receipt_payload.get("policy_sha256") != auth_payload.get("policy_sha256")
+        or receipt_intent.get("intent_id") != auth_payload.get("intent_id")
+        or receipt_intent.get("agent_id") != auth_payload.get("agent_id")
+    ):
+        raise PreparationError(
+            "execution authorization does not match the complete signed decision receipt"
+        )
 
     expected_receipt_hash = hashlib.sha256(
-        _canonical(receipt_payload) + receipt["signature"].encode("ascii")
+        _canonical(receipt_payload) + receipt_signature.encode("ascii")
     ).hexdigest()
     if auth_payload.get("decision_receipt_sha256") != expected_receipt_hash:
         raise PreparationError("execution authorization is not bound to the supplied decision receipt")
@@ -161,7 +180,7 @@ def verify_artifact(
     expires_at = auth_payload.get("expires_at")
     if isinstance(expires_at, bool) or not isinstance(expires_at, int):
         raise PreparationError("expires_at must be an integer Unix timestamp")
-    if expires_at <= __import__("time").time():
+    if expires_at <= int(time.time()):
         raise PreparationError("execution authorization is already expired")
     if expires_at >= 2**64:
         raise PreparationError("expires_at is outside uint64 range")
@@ -250,7 +269,7 @@ def main() -> int:
         hub = _address(args.origin_hub, "origin hub")
         issuer = _address(args.issuer, "issuer")
         receiver = _address(args.destination_receiver, "destination receiver")
-        rpc_url = args.rpc_url or __import__("os").environ.get("VERIGATE_REACTIVE_ORIGIN_RPC_URL")
+        rpc_url = args.rpc_url or os.environ.get("VERIGATE_REACTIVE_ORIGIN_RPC_URL")
         if not rpc_url:
             raise PreparationError("provide --rpc-url or VERIGATE_REACTIVE_ORIGIN_RPC_URL")
 
