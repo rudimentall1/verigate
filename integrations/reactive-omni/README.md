@@ -62,14 +62,32 @@ Use testnet-only keys and balances. Never reuse mainnet private keys.
 
 ## Build
 
-From this directory:
+From this directory, fetch the reviewed Reactive Omni library revision and compile:
 
 ```bash
-forge install Reactive-Network/reactive-lib-omni --no-commit
+git clone https://github.com/Reactive-Network/reactive-lib-omni.git lib/reactive-lib-omni
+git -C lib/reactive-lib-omni checkout 3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8
 forge build
 ```
 
-The import remapping is configured in `foundry.toml`. The dependency is not vendored into this repository.
+The import remapping is configured in `foundry.toml`. The dependency is intentionally not committed; CI uses the same pinned revision.
+
+## Preparing the origin registration
+
+The bridge preparer accepts the complete JSON response from `POST /v1/actions/authorize` (both `decision_receipt` and `execution_authorization`). It verifies the Ed25519 signatures, checks that the ALLOW receipt and execution authorization describe the same exact action, verifies the receipt digest, checks the target hub's chain/code and the issuer allowlist, then prints a transaction for a wallet to sign. It does not accept or store an EVM private key and does not broadcast.
+
+From the repository root:
+
+```bash
+python integrations/reactive-omni/prepare_registration.py authorization-response.json \
+  --public-key keys/issuer.pub \
+  --origin-hub "$VERIGATE_REACTIVE_ORIGIN_HUB" \
+  --issuer "$VERIGATE_REACTIVE_EVM_ISSUER" \
+  --destination-receiver "$VERIGATE_REACTIVE_DESTINATION_RECEIVER" \
+  --rpc-url "$VERIGATE_REACTIVE_ORIGIN_RPC_URL"
+```
+
+The output contains a wallet-signable Base Sepolia transaction. The configured issuer address must already be enabled in the origin hub. The adapter currently supports only `action_type=payment`, `asset=ETH`, network `unichain-sepolia`, an EVM recipient in `action.target`, and exact `amount_exact` decimal values convertible to wei. Change the explicit expected network/asset flags only when the product flow is intentionally configured for another supported mapping.
 
 ## Deployment order
 
