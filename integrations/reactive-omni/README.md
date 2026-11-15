@@ -87,3 +87,19 @@ The currently supported mapping is a payment in ETH on `unichain-sepolia`, with 
 - `src/VerigatePaymentReceiver.sol`: callback authentication, commitment recomputation, one-time execution and destination payment event.
 
 `ActionAllowed` means Reactive accepted the request and submitted a callback request. It is not payment proof. Only a successful destination transaction with `PaymentExecuted` proves the transfer.
+
+## Reactive buildathon dashboard
+
+The dedicated browser dashboard is served by the existing Verigate API at:
+
+`/demo/reactive/`
+
+It signs the agent's exact payment intent locally with the registered Ed25519 identity key, submits the signed request to `POST /v1/actions/authorize`, and displays the real DecisionReceipt and ExecutionAuthorization response. The private agent key is not transmitted or persisted by the page. The API key is held in page memory and sent only as a Bearer credential to the same origin.
+
+The dashboard does **not** broadcast the origin registration transaction, invoke the Reactive callback, or claim that the destination payment completed. When Verigate returns ALLOW plus an ExecutionAuthorization, download the JSON and pass it to `prepare_registration.py` as described above. The EVM issuer remains a separate bridge-attestation boundary.
+
+Open it after deploying the updated API:
+
+`http://127.0.0.1:8002/demo/reactive/`
+
+Use HTTPS or localhost so browser Ed25519 WebCrypto is available. Supply the registered agent identity's PKCS#8 Ed25519 private key, the matching identity/capability IDs, and a Verigate API key. Never paste the issuer or deployer key into the dashboard.
