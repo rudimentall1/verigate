@@ -89,11 +89,28 @@ contract VerigatePaymentReceiverTest {
 
     function testRejectsForgedCallbackProxy() external {
         VerigatePaymentReceiver receiver = _deploy();
-        vm.expectRevert(bytes4(keccak256("NotAuthorized(address,address)")));
+        vm.expectRevert(VerigatePaymentReceiver.NotAuthorized.selector);
         vm.prank(address(0xBAD));
         receiver.executeAuthorizedPayment(
             REACTIVE_SENDER,
             keccak256("forged"),
+            payable(address(0xB0B)),
+            1,
+            uint64(block.timestamp + 60),
+            bytes32(0),
+            bytes32(uint256(1)),
+            bytes32(uint256(2)),
+            bytes32(uint256(3))
+        );
+    }
+
+    function testRejectsWrongReactiveSenderBehindValidProxy() external {
+        VerigatePaymentReceiver receiver = _deploy();
+        vm.expectRevert(VerigatePaymentReceiver.CallbackNotAuthorized.selector);
+        vm.prank(CALLBACK_PROXY);
+        receiver.executeAuthorizedPayment(
+            address(0xBAD),
+            keccak256("wrong-reactive-sender"),
             payable(address(0xB0B)),
             1,
             uint64(block.timestamp + 60),
