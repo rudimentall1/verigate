@@ -28,6 +28,7 @@ contract VerigatePaymentReceiver is AbstractCallback {
     event PaymentExecuted(
         bytes32 indexed authorizationId,
         address indexed recipient,
+        address indexed issuer,
         uint256 amountWei,
         bytes32 actionHash,
         bytes32 verigateActionHash,
@@ -58,6 +59,7 @@ contract VerigatePaymentReceiver is AbstractCallback {
     function executeAuthorizedPayment(
         address reactive_,
         bytes32 authorizationId,
+        address issuer,
         address payable recipient,
         uint256 amountWei,
         uint64 expiresAt,
@@ -78,6 +80,7 @@ contract VerigatePaymentReceiver is AbstractCallback {
             abi.encode(
                 originChainId,
                 originHub,
+                issuer,
                 authorizationId,
                 verigateActionHash,
                 policySha256,
@@ -97,6 +100,7 @@ contract VerigatePaymentReceiver is AbstractCallback {
         emit PaymentExecuted(
             authorizationId,
             recipient,
+            issuer,
             amountWei,
             actionHash,
             verigateActionHash,
