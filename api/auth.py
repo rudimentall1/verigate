@@ -28,6 +28,9 @@ PUBLIC_ROUTES = frozenset(
         ("GET", "/v1/governance/public-key"),
         ("POST", "/v1/verify"),
         ("POST", "/v1/evidence/manifest/verify"),
+        # Public static shell only; all API operations remain protected.
+        ("GET", "/demo/reactive"),
+        ("GET", "/demo/reactive/"),
     }
 )
 
