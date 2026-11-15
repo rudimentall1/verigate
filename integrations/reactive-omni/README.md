@@ -90,7 +90,38 @@ python integrations/reactive-omni/prepare_registration.py authorization-response
 
 The output contains a wallet-signable Base Sepolia transaction. The configured issuer address must already be enabled in the origin hub. The adapter currently supports only `action_type=payment`, `asset=ETH`, network `unichain-sepolia`, an EVM recipient in `action.target`, and exact `amount_exact` decimal values convertible to wei. Change the explicit expected network/asset flags only when the product flow is intentionally configured for another supported mapping.
 
+After the authorization is registered and `AuthorizationCached` is visible on Lasna, the **same issuer wallet** sends the execution request:
+
+```bash
+cast send --rpc-url "$BASE_SEPOLIA_RPC_URL" \
+  --private-key "$ISSUER_PRIVATE_KEY" \
+  "$VERIGATE_REACTIVE_ORIGIN_HUB" \
+  "requestExecution(bytes32,address,uint256,uint256,address)" \
+  "$AUTHORIZATION_ID" "$RECIPIENT" "$AMOUNT_WEI" 1301 \
+  "$VERIGATE_REACTIVE_DESTINATION_RECEIVER"
+```
+
+The hub rejects any other caller. The request may still contain a modified recipient or amount so the Reactive contract can emit an explicit `ActionBlocked` record for the negative test.
+
 ## Deployment order
+
+A reproducible deployment script is provided. Run it from this directory on a machine with Foundry and funded **testnet-only** wallets:
+
+```bash
+export BASE_SEPOLIA_RPC_URL="https://sepolia.base.org"
+export LASNA_RPC_URL="https://lasna-rpc.rnk.dev/"
+export UNICHAIN_SEPOLIA_RPC_URL="https://sepolia.unichain.org"
+export DEPLOYER_PRIVATE_KEY="..."  # testnet deployer/admin only
+export ISSUER_PRIVATE_KEY="..."    # Verigate bridge issuer; may be the same wallet
+
+# Optional top-ups, in wei. Set only after checking testnet balances and fee requirements.
+export REACTIVE_TOPUP_WEI="..."
+export RECEIVER_TOPUP_WEI="..."
+
+bash deploy-testnets.sh
+```
+
+The script checks all three chain IDs, pins the official Reactive library revision, deploys the hub → Reactive guard → destination receiver, enables the issuer and configures the callback receiver. It prints contract addresses. Private keys are read from environment variables and are never printed or written to files. Do not paste private keys into chat or commit them.
 
 The Origin Hub must be deployed first because its address is pinned into the Reactive subscription:
 
