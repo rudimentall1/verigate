@@ -66,7 +66,7 @@ contract VerigatePaymentReceiver is AbstractCallback {
         bytes32 policySha256,
         bytes32 decisionReceiptSha256
     ) external onlyServiceProvider onlyCallbackSender(reactive_) {
-        if (block.timestamp > expiresAt) revert AuthorizationExpired();
+        if (block.timestamp >= expiresAt) revert AuthorizationExpired();
         if (authorizationId == bytes32(0) || recipient == address(0) || amountWei == 0) {
             revert InvalidPayment();
         }
@@ -93,9 +93,7 @@ contract VerigatePaymentReceiver is AbstractCallback {
 
         // Mark first; any failed transfer reverts this state change as well.
         consumed[authorizationId] = true;
-        (bool ok, ) = recipient.call{value: amountWei}("");
-        if (!ok) revert PaymentTransferFailed(recipient, amountWei);
-
+        // The event and transfer are atomic: a failed transfer reverts this log too.
         emit PaymentExecuted(
             authorizationId,
             recipient,
@@ -105,5 +103,8 @@ contract VerigatePaymentReceiver is AbstractCallback {
             policySha256,
             decisionReceiptSha256
         );
+
+        (bool ok, ) = recipient.call{value: amountWei}("");
+        if (!ok) revert PaymentTransferFailed(recipient, amountWei);
     }
 }
