@@ -183,7 +183,7 @@ contract VerigateReactiveGuardTest {
         // A second matching request is treated as a replay; it cannot reopen
         // the authorization or produce a second callback request.
         vm.recordLogs();
-        _react(_requestLog(id, recipient, amountWei));
+        _react(_requestLog(id, recipient, amountWei, AUTHORIZATION_ISSUER));
         cached = guard.getAuthorization(id);
         require(cached.consumed, "replay changed consumed state");
         require(
