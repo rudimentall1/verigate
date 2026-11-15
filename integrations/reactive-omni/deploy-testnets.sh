@@ -51,6 +51,21 @@ assert_chain "Base Sepolia" "$BASE_SEPOLIA_RPC_URL" "$BASE_SEPOLIA_CHAIN_ID"
 assert_chain "Lasna" "$LASNA_RPC_URL" "$LASNA_CHAIN_ID"
 assert_chain "Unichain Sepolia" "$UNICHAIN_SEPOLIA_RPC_URL" "$UNICHAIN_SEPOLIA_CHAIN_ID"
 
+assert_funded() {
+  local label="$1" rpc="$2" address="$3" balance
+  balance="$(cast balance --rpc-url "$rpc" "$address")"
+  if [[ ! "$balance" =~ ^[0-9]+$ ]] || (( balance == 0 )); then
+    echo "$label has no native testnet balance. Fund $address before deployment." >&2
+    exit 1
+  fi
+  printf '%s funded: %s wei\n' "$label" "$balance"
+}
+
+assert_funded "Base Sepolia deployer" "$BASE_SEPOLIA_RPC_URL" "$ADMIN_ADDRESS"
+assert_funded "Lasna deployer (lREACT)" "$LASNA_RPC_URL" "$ADMIN_ADDRESS"
+assert_funded "Unichain Sepolia deployer" "$UNICHAIN_SEPOLIA_RPC_URL" "$ADMIN_ADDRESS"
+assert_funded "Base Sepolia issuer" "$BASE_SEPOLIA_RPC_URL" "$ISSUER_ADDRESS"
+
 if [[ ! -d "lib/reactive-lib-omni/.git" ]]; then
   git clone https://github.com/Reactive-Network/reactive-lib-omni.git lib/reactive-lib-omni
 fi
