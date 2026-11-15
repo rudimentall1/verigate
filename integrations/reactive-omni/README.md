@@ -103,6 +103,27 @@ cast send --rpc-url "$BASE_SEPOLIA_RPC_URL" \
 
 The hub rejects any other caller. The request may still contain a modified recipient or amount so the Reactive contract can emit an explicit `ActionBlocked` record for the negative test.
 
+## Testnet funds
+
+The contracts are not deployed yet. Obtain test tokens for the three deployment networks first:
+
+- **Base Sepolia ETH:** claim from the [Alchemy faucet](https://www.alchemy.com/faucets) or another Base Sepolia faucet. Alchemy currently lists 0.1 Base Sepolia ETH per 24-hour claim. The Base balance pays for the Origin Hub deployment, issuer transactions and the Reactive lREACT faucet request. See the [faucet documentation](https://www.alchemy.com/docs/faucets).
+- **Lasna lREACT:** the [official Reactive faucet instructions](https://dev.reactive.network/legacy/reactive-mainnet) say to call `request(address)` on the Base Sepolia faucet contract `0x2afaFD298b23b62760711756088F75B7409f5967`. It quotes 1 Base Sepolia ETH for 100 lREACT and shows a 0.1 ETH request example; the maximum per transaction is 5 ETH. Set the request target to the deployer EVM address that will deploy the Reactive Guard. Wait until that address has a non-zero lREACT balance on Lasna before deployment.
+- **Unichain Sepolia ETH:** use the [official Uniswap faucet guide](https://developers.uniswap.org/docs/unichain/tools/faucets). The Superchain faucet currently provides 0.05 test ETH per network every 24 hours; QuickNode and thirdweb are alternative faucets.
+
+Example lREACT request from the same Base Sepolia wallet (after funding it with Base Sepolia test ETH):
+
+```bash
+DEPLOYER_ADDRESS="$(cast wallet address --private-key "$DEPLOYER_PRIVATE_KEY")"
+cast send 0x2afaFD298b23b62760711756088F75B7409f5967 \
+  --rpc-url "$BASE_SEPOLIA_RPC_URL" \
+  --private-key "$DEPLOYER_PRIVATE_KEY" \
+  "request(address)" "$DEPLOYER_ADDRESS" \
+  --value 0.1ether
+```
+
+This is a testnet faucet call, not a mainnet transaction. Never send real ETH to a testnet faucet.
+
 ## Deployment order
 
 A reproducible deployment script is provided. Run it from this directory on a machine with Foundry and funded **testnet-only** wallets:
