@@ -43,5 +43,7 @@ jobs:
         run: |
           git clone https://github.com/Reactive-Network/reactive-lib-omni.git integrations/reactive-omni/lib/reactive-lib-omni
           git -C integrations/reactive-omni/lib/reactive-lib-omni checkout 3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8
-      - name: Compile Reactive contracts
+      - name: Build Reactive contracts and tests
         run: forge build --root integrations/reactive-omni
+      - name: Run Reactive unit tests
+        run: forge test --root integrations/reactive-omni -vv
