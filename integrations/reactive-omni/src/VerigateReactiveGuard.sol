@@ -177,7 +177,7 @@ contract VerigateReactiveGuard is AbstractReactive {
         }
 
         if (log_.topic0 == EXECUTION_REQUESTED_TOPIC0) {
-            if (log_.opCode != 3) return;
+            if (log_.opCode != 4) return;
             _handleExecutionRequested(log_);
         }
     }
