@@ -44,13 +44,16 @@
 | Solidity compilation | PASS in GitHub Actions using pinned Reactive library commit `3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8`; compiler warnings remain |
 | Foundry unit tests | PASS: 11 passed, 0 failed across 3 suites in GitHub Actions |
 | Python bridge adapter tests | PASS: 4 passed in GitHub Actions |
+| Deployment script syntax | PASS: `bash -n` in GitHub Actions |
 | Testnet deployment | NOT DEPLOYED |
 | End-to-end callback | NOT TESTED |
 | Independent verification | NOT VERIFIED |
 
 ## Next steps
 
-1. Preserve the green GitHub Actions build and test result against pinned Reactive library commit `3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8`; review and address compiler warnings before deployment.
-2. Add tests for exact hash parity across origin/reactive/destination, unauthorized issuer, duplicate ID, expired/revoked/consumed authorization, recipient mismatch and amount mismatch.
-3. Exercise the bridge preparer against a real Verigate authorization artifact and a deployed hub; have the configured EVM issuer sign and submit the prepared transaction.
-4. Deploy Base Sepolia → Lasna → Unichain Sepolia, then collect real transaction hashes and callback evidence.
+1. Prepare a real Verigate ALLOW artifact for a `payment` action with network `unichain-sepolia`, asset `ETH`, an EVM recipient and an exact amount.
+2. Fund the deployer on Base Sepolia, Lasna and Unichain Sepolia, and fund the issuer on Base Sepolia. See the official faucet instructions in the integration README.
+3. Run `bash deploy-testnets.sh` locally with testnet-only keys. Never send private keys in chat or commit them.
+4. Use `prepare_registration.py` to verify the signed artifacts and prepare the Base Sepolia registration transaction; submit it with the same issuer wallet.
+5. Wait for `AuthorizationCached` on Lasna, send the issuer-bound `requestExecution`, and independently verify the Reactive callback and destination `PaymentExecuted` transaction.
+6. Submit a modified-recipient or modified-amount request from the registered issuer and verify `ActionBlocked` on Lasna with no destination payment.
