@@ -21,6 +21,7 @@
 - `src/VerigatePaymentReceiver.sol`: callback proxy + Reactive sender authentication, issuer-bound commitment recomputation, one-time payment and destination-side execution evidence.
 - `prepare_registration.py`: validates the signed ALLOW receipt and execution authorization, checks that both describe the same action, verifies receipt-to-authorization digest binding, checks the Base Sepolia hub and enabled issuer, and prepares a wallet-signable registration transaction without accepting an EVM private key.
 - `tests/test_prepare_registration.py`: covers exact wei conversion, rejects float/over-precision amounts, and checks all nine ABI arguments in the registration transaction.
+- `deploy-testnets.sh`: checks Base Sepolia, Lasna and Unichain Sepolia chain IDs, deploys the three contracts in dependency order, enables the bridge issuer and configures the callback receiver. It does not claim deployment until actually run.
 - `foundry.toml`, integration README and `.github/workflows/reactive-omni.yml` document the pinned Reactive library dependency, network parameters, deployment order, threat boundary and compile gate.
 
 ## Important trust and product boundaries
