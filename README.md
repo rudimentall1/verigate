@@ -1,67 +1,51 @@
 # Verigate Reactive Execution Guard
 
-**Stop unauthorized AI-agent payments before they execute.**
+**An AI agent should not be able to turn a payment instruction into an unrestricted transfer.**
 
-An AI agent may have permission to make a payment, but that does not mean it should be able to change the recipient, exceed the approved amount, or reuse an old authorization.
+Verigate makes the authorization decision before execution. It binds an approval to the exact action: who is acting, who gets paid, how much, where the payment goes, and how long the permission remains valid. Reactive carries that boundary from the origin chain to the destination chain, where a receiver checks the same commitment before moving funds.
 
-Verigate defines exactly what an agent is allowed to do. Reactive Omni turns that decision into an on-chain execution boundary across chains: it watches authorization events, checks the requested action against the approved commitment, and requests a destination callback only when the request matches.
+This is the point of the project: **the agent can request a payment, but it cannot quietly change the payment after approval.**
 
-**Verigate defines authority. Reactive Omni enforces it across chains. The destination contract controls the final transfer.**
+## Why this belongs in the Reactive buildathon
 
-## Why Reactive Omni is essential
+A policy check in an application is not enough. It can be bypassed, become stale, or be separated from the transaction that eventually moves the funds. The check has to survive the trip to the chain where the side effect happens.
 
-A signed authorization in an application is not enough. The permission has to be enforced where the blockchain side effect happens.
+Reactive is the enforcement link in this demo. It observes the origin-chain authorization and execution request, compares the requested action with the committed recipient, amount, destination, issuer and expiry, then requests a destination callback only when the values match. A changed request is blocked before the receiver is called.
 
-Reactive Omni supplies the event-driven link between the origin-chain authorization and the destination-chain callback. Without it, this cross-chain enforcement would require a separate service to watch the origin chain and initiate destination execution. Here, the Reactive Contract is an actual enforcement component, not a notification layer.
+Without Reactive, this design would need a separately operated service to watch the origin chain and relay execution decisions. Here, the Reactive contract is part of the enforcement path, not just an alerting service.
 
-## Target demonstration
+## The demo
 
-`Base Sepolia → Reactive Omni / Lasna → Unichain Sepolia`
+`Base Sepolia → Reactive Network (Lasna) → Unichain Sepolia`
 
-- **ALLOW:** Verigate issues an authorization for a specific recipient and amount. Reactive verifies the on-chain commitment and requests a callback. The destination receiver authenticates the callback, checks the same commitment, and executes the payment once.
-- **BLOCK:** A request with a changed recipient or amount is rejected by the Reactive Contract. It emits `ActionBlocked` evidence and does not request a destination callback.
+1. Verigate returns a signed ALLOW receipt and a short-lived Ed25519 execution authorization.
+2. A bridge adapter verifies both artifacts and prepares an issuer-signed origin-chain registration. The EVM issuer is an explicit trust boundary; the Solidity contracts do not verify Ed25519.
+3. The origin hub publishes the exact authorization commitment.
+4. Reactive observes and caches it, then checks the later execution request against that commitment.
+5. Only a matching request can trigger the destination callback.
+6. The destination receiver authenticates the callback, checks replay and expiry, recomputes the commitment, and transfers the exact amount to the approved recipient.
 
-The destination receiver is currently designed as a pre-funded testnet vault. It is an execution proof, not a production non-custodial wallet.
+The receiver is a pre-funded testnet execution vault. It demonstrates a bounded on-chain side effect; it is not presented as a production non-custodial wallet.
 
-## Implementation
+## What is verified now
 
-The buildathon integration lives in [`integrations/reactive-omni/`](integrations/reactive-omni/README.md):
+The origin authorization and execution-request transactions have succeeded on Base Sepolia. The destination receiver is deployed on Unichain Sepolia. A fresh Verigate ALLOW authorization for a 0.0001 ETH test payment was registered, and the issuer submitted the corresponding execution request.
+
+**The final destination payment is not yet verified.** We do not claim a completed cross-chain payment until a destination transaction and `PaymentExecuted` event are independently confirmed. `ActionAllowed` on Reactive would prove that Reactive accepted the request and asked for a callback; it would not, by itself, prove that funds moved.
+
+See [the technical checkpoint](integrations/reactive-omni/STATUS.md) for addresses, transaction hashes, tests, and the remaining evidence gap. See [the submission brief](integrations/reactive-omni/SUBMISSION.md) for the judge-facing explanation.
+
+## Code and verification
+
+The buildathon implementation is in [`integrations/reactive-omni/`](integrations/reactive-omni/README.md):
 
 - [Origin authorization hub](integrations/reactive-omni/src/VerigateOriginAuthorizationHub.sol)
-- [Reactive Omni guard](integrations/reactive-omni/src/VerigateReactiveGuard.sol)
-- [Destination callback receiver](integrations/reactive-omni/src/VerigatePaymentReceiver.sol)
-- [Verigate authorization bridge preparer](integrations/reactive-omni/prepare_registration.py)
-- [Technical status and evidence boundary](integrations/reactive-omni/STATUS.md)
+- [Reactive guard](integrations/reactive-omni/src/VerigateReactiveGuard.sol)
+- [Destination payment receiver](integrations/reactive-omni/src/VerigatePaymentReceiver.sol)
+- [Signed authorization bridge preparer](integrations/reactive-omni/prepare_registration.py)
+- [Technical checkpoint and evidence](integrations/reactive-omni/STATUS.md)
+- [Submission brief](integrations/reactive-omni/SUBMISSION.md)
 
-## Cryptographic trust boundary
+The integration uses Foundry and pins the Reactive Omni Solidity library to `3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8`. Build and test instructions are in the integration README. CI runs the Python bridge checks, deployment-script syntax check, Solidity build, and Foundry tests.
 
-Verigate currently signs execution authorizations with Ed25519. The EVM contracts in this integration do not verify Ed25519 on-chain.
-
-An allowlisted EVM issuer is therefore a bridge attester. Before publishing an origin-chain authorization event, the bridge adapter verifies the complete Verigate ALLOW receipt and execution authorization against the Verigate public key, checks the exact action and expiration, and prepares a wallet-signable EVM transaction. The adapter does not receive or store the EVM private key.
-
-This boundary is explicit in the code and documentation. It is not presented as native on-chain Ed25519 verification.
-
-## Build and tests
-
-The integration uses Foundry and a pinned revision of the official [Reactive Omni Solidity library](https://github.com/Reactive-Network/reactive-lib-omni).
-
-From `integrations/reactive-omni/`:
-
-```bash
-git clone https://github.com/Reactive-Network/reactive-lib-omni.git lib/reactive-lib-omni
-git -C lib/reactive-lib-omni checkout 3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8
-forge build
-forge test -vv
-```
-
-The current source includes unit tests for issuer restrictions, exact authorization commitments, callback authentication, expiry, replay, modified payment parameters, and bridge transaction encoding. Check the [status file](integrations/reactive-omni/STATUS.md) and [GitHub Actions](https://github.com/rudimentall1/verigate/actions) for the latest verified result.
-
-## Current status
-
-**Implementation in progress. Not deployed.**
-
-No live contract addresses, transaction hashes, Reactive callbacks, or testnet payment results are claimed yet. The immediate next milestone is a clean CI run, followed by deployment and an independently verifiable Base Sepolia → Lasna → Unichain Sepolia execution.
-
-## Existing Verigate project
-
-The broader Verigate authorization infrastructure is the dependency behind this buildathon integration. Its main project documentation is available on the [`main` branch](https://github.com/rudimentall1/verigate/tree/main).
+**Verigate decides. Reactive enforces. The destination contract executes only the committed action.**
