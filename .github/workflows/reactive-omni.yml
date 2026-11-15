@@ -3,7 +3,7 @@ name: Reactive Omni integration
 on:
   push:
     branches:
-      - hackathon/reactive-omni-buildathon
+      - reactive-omni-buildathon
     paths:
       - "integrations/reactive-omni/**"
       - ".github/workflows/reactive-omni.yml"
