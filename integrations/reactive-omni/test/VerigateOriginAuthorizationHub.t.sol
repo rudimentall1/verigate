@@ -124,4 +124,38 @@ contract VerigateOriginAuthorizationHubTest {
         );
     }
 
+
+    function testOnlyOwnerOrRegisteringIssuerCanRevoke() external {
+        VerigateOriginAuthorizationHub hub = new VerigateOriginAuthorizationHub(address(this));
+        address issuerA = address(0xA11CE);
+        address issuerB = address(0xB0B);
+
+        hub.setIssuer(issuerA, true);
+        hub.setIssuer(issuerB, true);
+
+        bytes32 id = keccak256("issuer-bound-revocation");
+
+        vm.prank(issuerA);
+        hub.registerAuthorization(
+            id,
+            keccak256("action"),
+            keccak256("policy"),
+            keccak256("receipt"),
+            1301,
+            address(0xCAFE),
+            address(0xBEEF),
+            1 ether,
+            uint64(block.timestamp + 120)
+        );
+
+        vm.expectRevert(VerigateOriginAuthorizationHub.NotIssuer.selector);
+        vm.prank(issuerB);
+        hub.revokeAuthorization(id);
+
+        vm.prank(issuerA);
+        hub.revokeAuthorization(id);
+
+        (, , , , , , , , , , bool revoked) = hub.authorizations(id);
+        require(revoked, "registering issuer could not revoke");
+    }
 }

@@ -156,6 +156,18 @@ The Origin Hub must be deployed first because its address is pinned into the Rea
 
 ## Status
 
-**SOURCE ONLY — not yet compiled, locally tested, integration-tested or deployed.**
+**LOCAL SOLIDITY VERIFICATION PASSED — testnet deployment and end-to-end execution remain pending.**
 
-No contract address, transaction hash, callback or live status is claimed by this checkpoint. The next gate is compiling against the official Reactive Omni library, then adding unit tests for action hashing and the ALLOW/BLOCK state transitions before any testnet deployment.
+- Solidity build: PASS locally with Solc 0.8.29.
+- Foundry tests: 15 passed, 0 failed, 0 skipped across 3 suites.
+- Reactive Omni dependency: pinned to commit `3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8`.
+- Issuer-bound revocation: regression test PASS.
+- Malformed indexed address topics: 3 regression tests PASS; non-canonical recipient/requester topics are rejected before callback.
+- GitHub Actions at published HEAD `63748e7`: Reactive Omni Solidity build/tests and Python bridge checks PASS. The latest general CI run has 3 passing jobs (`contracts`, `container`, `test`) and 1 unrelated Anna UI failure (68/69 tests). The current 15-test Foundry suite, including 4 new regression tests, has passed locally but has not yet been run in CI.
+- Compiler and lint warnings remain and require review.
+- Local Python CI reproduction: NOT VERIFIED.
+- Testnet deployment: NOT DEPLOYED.
+- Cross-chain callback and payment execution: NOT TESTED.
+- Independent verification: NOT VERIFIED.
+
+No contract address, transaction hash, callback or live status is claimed. The next gate is reviewing the remaining warnings, then preparing a funded testnet deployment and verifying both the allowed payment and blocked modified request end to end.

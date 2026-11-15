@@ -135,6 +135,25 @@ contract VerigateReactiveGuardTest {
         guard.react(log_);
     }
 
+    function _assertActionBlocked(uint8 expectedReason) internal {
+        VmReactive.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 blockedTopic = keccak256("ActionBlocked(bytes32,address,uint256,uint8)");
+
+        for (uint256 i = 0; i < logs.length; i++) {
+            if (
+                logs[i].emitter == address(guard) &&
+                logs[i].topics.length > 0 &&
+                logs[i].topics[0] == blockedTopic
+            ) {
+                (, uint8 reason) = abi.decode(logs[i].data, (uint256, uint8));
+                require(reason == expectedReason, "unexpected block reason");
+                return;
+            }
+        }
+
+        revert("ActionBlocked evidence missing");
+    }
+
     function testChangedAmountIsBlockedBeforeCallback() external {
         bytes32 id = keccak256("auth-changed-amount");
         address recipient = address(0xBEEF);
@@ -205,6 +224,68 @@ contract VerigateReactiveGuardTest {
             uint256(vm.load(address(uint160(SYSTEM)), bytes32(0))) == 0,
             "unauthorized requester triggered a callback"
         );
+    }
+
+    function testMalformedRecipientTopicRejectsRegistration() external {
+        bytes32 id = keccak256("auth-malformed-registration");
+        address recipient = address(0xBEEF);
+
+        IReactive.LogRecord memory log_ =
+            _authorizationLog(id, recipient, 1 ether, uint64(block.timestamp + 120));
+
+        log_.topic3 = (uint256(1) << 160) | uint256(uint160(recipient));
+
+        _react(log_);
+
+        VerigateReactiveGuard.CachedAuthorization memory cached = guard.getAuthorization(id);
+        require(!cached.exists, "malformed recipient topic was accepted");
+    }
+
+    function testMalformedRecipientTopicBlocksExecution() external {
+        bytes32 id = keccak256("auth-malformed-recipient");
+        address recipient = address(0xBEEF);
+
+        _react(_authorizationLog(id, recipient, 1 ether, uint64(block.timestamp + 120)));
+
+        IReactive.LogRecord memory log_ =
+            _requestLog(id, recipient, 1 ether, AUTHORIZATION_ISSUER);
+        log_.topic2 = (uint256(1) << 160) | uint256(uint160(recipient));
+
+        vm.recordLogs();
+        _react(log_);
+
+        VerigateReactiveGuard.CachedAuthorization memory cached = guard.getAuthorization(id);
+        require(!cached.consumed, "malformed recipient topic consumed authorization");
+        require(
+            uint256(vm.load(address(uint160(SYSTEM)), bytes32(0))) == 0,
+            "malformed recipient topic triggered callback"
+        );
+        _assertActionBlocked(guard.BLOCK_MALFORMED_ADDRESS_TOPIC());
+    }
+
+    function testMalformedRequesterTopicCannotImpersonateIssuer() external {
+        bytes32 id = keccak256("auth-malformed-requester");
+        address recipient = address(0xBEEF);
+
+        _react(_authorizationLog(id, recipient, 1 ether, uint64(block.timestamp + 120)));
+
+        IReactive.LogRecord memory log_ =
+            _requestLog(id, recipient, 1 ether, AUTHORIZATION_ISSUER);
+
+        // uint160 truncation would otherwise turn this into AUTHORIZATION_ISSUER.
+        log_.topic3 =
+            (uint256(1) << 160) | uint256(uint160(AUTHORIZATION_ISSUER));
+
+        vm.recordLogs();
+        _react(log_);
+
+        VerigateReactiveGuard.CachedAuthorization memory cached = guard.getAuthorization(id);
+        require(!cached.consumed, "malformed requester topic consumed authorization");
+        require(
+            uint256(vm.load(address(uint160(SYSTEM)), bytes32(0))) == 0,
+            "malformed requester topic triggered callback"
+        );
+        _assertActionBlocked(guard.BLOCK_MALFORMED_ADDRESS_TOPIC());
     }
 
     function testExpiredAuthorizationIsNotConsumed() external {

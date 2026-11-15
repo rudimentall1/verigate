@@ -47,12 +47,14 @@ contract VerigateReactiveGuard is AbstractReactive {
     uint8 public constant BLOCK_DESTINATION_NOT_CONFIGURED = 6;
     uint8 public constant BLOCK_COMMITMENT_MISMATCH = 7;
     uint8 public constant BLOCK_UNAUTHORIZED_REQUESTER = 8;
+    uint8 public constant BLOCK_MALFORMED_ADDRESS_TOPIC = 9;
 
     uint8 private constant REGISTER_REJECT_DUPLICATE = 1;
     uint8 private constant REGISTER_REJECT_DESTINATION_UNSET = 2;
     uint8 private constant REGISTER_REJECT_DESTINATION_MISMATCH = 3;
     uint8 private constant REGISTER_REJECT_INVALID_FIELDS = 4;
     uint8 private constant REGISTER_REJECT_COMMITMENT = 5;
+    uint8 private constant REGISTER_REJECT_MALFORMED_ADDRESS_TOPIC = 6;
 
     address public owner;
     uint256 public immutable originChainId;
@@ -194,6 +196,13 @@ contract VerigateReactiveGuard is AbstractReactive {
     function _handleAuthorizationRegistered(IReactive.LogRecord calldata log_) internal {
         bytes32 authorizationId = bytes32(log_.topic1);
         bytes32 actionHash = bytes32(log_.topic2);
+        if (log_.topic3 > type(uint160).max) {
+            emit AuthorizationRegistrationRejected(
+                authorizationId,
+                REGISTER_REJECT_MALFORMED_ADDRESS_TOPIC
+            );
+            return;
+        }
         address recipient = address(uint160(log_.topic3));
 
         (
@@ -288,13 +297,27 @@ contract VerigateReactiveGuard is AbstractReactive {
 
     function _handleExecutionRequested(IReactive.LogRecord calldata log_) internal {
         bytes32 authorizationId = bytes32(log_.topic1);
-        address requestedRecipient = address(uint160(log_.topic2));
-        address requestedBy = address(uint160(log_.topic3));
         (
             uint256 requestedAmountWei,
             uint256 requestedDestinationChainId,
             address requestedDestinationContract
         ) = abi.decode(log_.data, (uint256, uint256, address));
+
+        if (
+            log_.topic2 > type(uint160).max ||
+            log_.topic3 > type(uint160).max
+        ) {
+            _block(
+                authorizationId,
+                address(0),
+                requestedAmountWei,
+                BLOCK_MALFORMED_ADDRESS_TOPIC
+            );
+            return;
+        }
+
+        address requestedRecipient = address(uint160(log_.topic2));
+        address requestedBy = address(uint160(log_.topic3));
 
         CachedAuthorization storage auth = _authorizations[authorizationId];
 

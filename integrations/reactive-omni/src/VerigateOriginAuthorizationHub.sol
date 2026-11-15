@@ -194,9 +194,9 @@ contract VerigateOriginAuthorizationHub {
     }
 
     function revokeAuthorization(bytes32 authorizationId) external {
-        if (msg.sender != owner && !issuers[msg.sender]) revert NotIssuer();
         Authorization storage auth = authorizations[authorizationId];
         if (auth.actionHash == bytes32(0)) revert AuthorizationNotFound(authorizationId);
+        if (msg.sender != owner && msg.sender != auth.issuer) revert NotIssuer();
         if (auth.revoked) revert AlreadyRevoked(authorizationId);
         auth.revoked = true;
         emit AuthorizationRevoked(authorizationId);
