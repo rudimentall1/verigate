@@ -194,6 +194,9 @@ app = FastAPI(
 app.add_middleware(ApiKeyMiddleware)
 app.add_middleware(TenantMiddleware)
 
+REACTIVE_DEMO_DIR = Path(__file__).resolve().parent.parent / "hackathons" / "reactive-buildathon" / "demo"
+app.mount("/demo/reactive", StaticFiles(directory=REACTIVE_DEMO_DIR, html=True), name="reactive-demo")
+
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 app.mount("/demo", StaticFiles(directory=UI_DIR, html=True), name="demo-ui")
 
