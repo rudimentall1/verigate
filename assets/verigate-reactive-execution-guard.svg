@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="320" viewBox="0 0 1040 320" role="img" aria-labelledby="title desc">
+  <title id="title">Verigate Reactive Execution Guard</title>
+  <desc id="desc">A split navy and cyan shield connected by a central authorization hub, with the Verigate wordmark.</desc>
+  <g transform="translate(12 10)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M160 28 L65 70 V145 C65 211 105 259 160 286" stroke="#102A56" stroke-width="18"/>
+    <path d="M160 28 L255 70 V145 C255 211 215 259 160 286" stroke="#00C7E8" stroke-width="18"/>
+    <path d="M103 157 H131" stroke="#102A56" stroke-width="14"/>
+    <path d="M189 157 H217" stroke="#00C7E8" stroke-width="14"/>
+    <circle cx="91" cy="157" r="20" stroke="#102A56" stroke-width="13"/>
+    <circle cx="229" cy="157" r="20" stroke="#00C7E8" stroke-width="13"/>
+    <path d="M160 111 L201 134 V180 L160 203 L119 180 V134 Z" stroke="#102A56" stroke-width="14"/>
+    <path d="M160 128 L185 142 V172 L160 186 L135 172 V142 Z" fill="#00C7E8" stroke="none"/>
+  </g>
+  <g font-family="Inter, Arial, Helvetica, sans-serif">
+    <text x="330" y="150" fill="#102A56" font-size="76" font-weight="750" letter-spacing="2">VERIGATE</text>
+    <text x="334" y="204" fill="#50627D" font-size="25" font-weight="650" letter-spacing="5">REACTIVE EXECUTION GUARD</text>
+  </g>
+</svg>
