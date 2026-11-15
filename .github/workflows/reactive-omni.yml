@@ -31,6 +31,7 @@ jobs:
         run: |
           python -m py_compile integrations/reactive-omni/prepare_registration.py
           python -m compileall -q attest core enforcement
+          python -m unittest discover -s integrations/reactive-omni/tests -v
 
   solidity-build:
     runs-on: ubuntu-latest
