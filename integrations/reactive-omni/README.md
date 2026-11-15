@@ -68,6 +68,7 @@ From this directory, fetch the reviewed Reactive Omni library revision and compi
 git clone https://github.com/Reactive-Network/reactive-lib-omni.git lib/reactive-lib-omni
 git -C lib/reactive-lib-omni checkout 3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8
 forge build
+forge test -vv
 ```
 
 The import remapping is configured in `foundry.toml`. The dependency is intentionally not committed; CI uses the same pinned revision.
