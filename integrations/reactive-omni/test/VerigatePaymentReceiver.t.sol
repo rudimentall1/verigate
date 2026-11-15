@@ -98,9 +98,9 @@ contract VerigatePaymentReceiverTest {
             1,
             uint64(block.timestamp + 60),
             bytes32(0),
-            bytes32(1),
-            bytes32(2),
-            bytes32(3)
+            bytes32(uint256(1)),
+            bytes32(uint256(2)),
+            bytes32(uint256(3))
         );
     }
 
