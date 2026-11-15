@@ -135,6 +135,7 @@ contract VerigatePaymentReceiverTest {
         receiver.executeAuthorizedPayment(
             REACTIVE_SENDER,
             id,
+            AUTHORIZATION_ISSUER,
             payable(address(0xB0B)),
             1,
             uint64(block.timestamp + 60),
