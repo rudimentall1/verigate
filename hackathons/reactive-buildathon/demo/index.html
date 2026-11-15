@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#080b12">
+<title>Verigate | Reactive Execution Guard</title>
+<style>
+:root{color-scheme:dark;--bg:#080b12;--panel:#101722;--panel2:#0c121b;--line:#202d3b;--text:#edf3fa;--muted:#91a0b2;--cyan:#69d7ee;--green:#52dda0;--amber:#f0bd61;--red:#ff6b78}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 75% -10%,#15303a 0,transparent 38%),var(--bg);color:var(--text);font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+.shell{max-width:1440px;margin:auto;padding:26px 30px 54px}.bar{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:20px}.brand{font-weight:900;letter-spacing:.2em;font-size:13px}.brand span{color:var(--cyan)}.tag{font-size:11px;letter-spacing:.12em;color:var(--green);border:1px solid #24533f;padding:6px 10px;border-radius:30px}
+.hero{padding:38px 0 24px;display:flex;justify-content:space-between;gap:24px;align-items:end}.eyebrow{color:var(--cyan);font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase}.hero h1{font-size:clamp(32px,4.4vw,58px);line-height:1.02;letter-spacing:-.055em;margin:9px 0 12px}.hero p{max-width:690px;color:var(--muted);font-size:15px;margin:0}.hero-note{min-width:230px;border:1px solid var(--line);border-radius:12px;background:#0d151e;padding:14px 16px;color:var(--muted);font-size:12px}.hero-note strong{display:block;color:var(--text);font-size:13px;margin-bottom:4px}
+.route{display:grid;grid-template-columns:1fr 32px 1fr 32px 1fr;align-items:center;margin:16px 0 22px}.chain{background:linear-gradient(135deg,#111b27,#0c121b);border:1px solid var(--line);border-radius:12px;padding:14px 16px}.chain small{display:block;color:var(--muted);font-size:10px;letter-spacing:.15em;text-transform:uppercase}.chain strong{display:block;margin-top:3px;font-size:15px}.chain em{display:block;margin-top:3px;color:var(--muted);font-style:normal;font-size:11px}.route-arrow{text-align:center;color:var(--cyan);font-size:20px}
+.layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(360px,.9fr);gap:18px}.panel{border:1px solid var(--line);border-radius:15px;background:linear-gradient(160deg,rgba(17,25,36,.98),rgba(11,16,24,.98));padding:21px;box-shadow:0 18px 50px #0003}.panel-head{display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:18px}.panel h2{font-size:14px;letter-spacing:.1em;text-transform:uppercase;margin:0}.panel-head p{color:var(--muted);font-size:12px;margin:5px 0 0}.step{color:var(--cyan);font-size:11px;font-weight:800;letter-spacing:.12em}
+.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:#a9b7c7;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.field input,.field textarea{width:100%;border:1px solid #2a3949;border-radius:8px;background:#080e16;color:var(--text);padding:11px 12px;font:13px ui-monospace,SFMono-Regular,Menlo,monospace;outline:none}.field input:focus,.field textarea:focus{border-color:#4aa9bd;box-shadow:0 0 0 3px #3aa8bd20}.field input::placeholder{color:#536273}.hint{font-size:10px;color:#77889b}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px}button{border:0;border-radius:8px;padding:12px 16px;background:var(--cyan);color:#061016;font-weight:900;cursor:pointer}button.secondary{background:#182432;border:1px solid #2a3b4d;color:#d9e5ef}button:disabled{opacity:.45;cursor:wait}
+.security{margin-top:15px;padding:12px 13px;border:1px solid #4a3d28;background:#211a10;border-radius:9px;color:#d9bd88;font-size:11px}.security strong{color:#f2d49a}
+.result{min-height:170px;border:1px solid var(--line);border-radius:11px;background:#080e15;padding:16px;margin-bottom:15px}.result-top{display:flex;justify-content:space-between;align-items:center}.result-label{color:var(--muted);font-size:10px;letter-spacing:.14em;text-transform:uppercase}.verdict{font-size:27px;font-weight:950;letter-spacing:-.04em;margin:7px 0}.verdict.idle{color:#8292a4}.verdict.allow{color:var(--green)}.verdict.warn{color:var(--amber)}.verdict.block{color:var(--red)}.result p{color:var(--muted);font-size:12px;margin:0}.kv{display:grid;grid-template-columns:120px 1fr;gap:8px;margin-top:15px;font-size:11px}.kv span{color:#8091a4}.kv strong{font-weight:600;word-break:break-all;text-align:right}
+.proof{border:1px solid var(--line);border-radius:10px;background:#070c12;padding:12px;max-height:270px;overflow:auto;color:#aab9c9;font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word}.proof.empty{color:#627286}.proof-actions{display:flex;gap:8px;margin:10px 0 0}.proof-actions button{font-size:11px;padding:9px 11px}
+.contracts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}.contract{border:1px solid var(--line);background:#0d141e;border-radius:11px;padding:14px}.contract small{color:var(--muted);font-size:10px;letter-spacing:.12em;text-transform:uppercase}.contract strong{display:block;font-size:12px;margin:6px 0}.address{font:10px/1.5 ui-monospace,monospace;color:#a8b8c9;overflow-wrap:anywhere}.contract .status{display:inline-block;margin-top:10px;border:1px solid #31513f;color:var(--green);border-radius:20px;padding:3px 7px;font-size:9px;letter-spacing:.08em}.contract.pending .status{border-color:#59472b;color:var(--amber)}
+.footnote{margin-top:15px;color:#718195;font-size:10px}.links{display:flex;gap:14px;flex-wrap:wrap;margin-top:9px}.links a{color:var(--cyan);text-decoration:none;font-size:11px}.links a:hover{text-decoration:underline}
+@media(max-width:900px){.layout{grid-template-columns:1fr}.hero{align-items:start;flex-direction:column}.hero-note{width:100%}}@media(max-width:620px){.shell{padding:18px 14px 38px}.route{grid-template-columns:1fr;gap:7px}.route-arrow{transform:rotate(90deg)}.formgrid,.contracts{grid-template-columns:1fr}.field.full{grid-column:auto}.panel{padding:16px}}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="bar"><div class="brand">VERI<span>GATE</span> / REACTIVE</div><div class="tag">TESTNET DEMO</div></header>
+<section class="hero">
+ <div><div class="eyebrow">Cross-chain execution authorization</div><h1>Approve the exact action.<br>Enforce it across chains.</h1><p>An agent signs a payment intent. Verigate evaluates identity, capability and policy, then returns a signed decision receipt and (only for ALLOW) a short-lived execution authorization.</p></div>
+ <div class="hero-note"><strong>What this screen actually does</strong>Signs the agent intent locally in your browser and submits it to the real Verigate API. It does not fake a callback or broadcast an on-chain payment.</div>
+</section>
+<div class="route">
+ <div class="chain"><small>Origin chain</small><strong>Base Sepolia</strong><em>Authorization Hub · 84532</em></div><div class="route-arrow">→</div>
+ <div class="chain"><small>Reactive network</small><strong>Lasna</strong><em>Reactive Guard · 5318007</em></div><div class="route-arrow">→</div>
+ <div class="chain"><small>Destination chain</small><strong>Unichain Sepolia</strong><em>Payment Receiver · 1301</em></div>
+</div>
+<div class="layout">
+ <section class="panel">
+  <div class="panel-head"><div><h2>Payment authorization request</h2><p>One exact action. One signed intent. No issuer key in the browser.</p></div><div class="step">01 / AUTHORIZE</div></div>
+  <form id="authForm">
+   <div class="formgrid">
+    <div class="field"><label for="agent">Agent ID</label><input id="agent" value="reactive-omni-payment-agent" required></div>
+    <div class="field"><label for="identity">Identity ID</label><input id="identity" value="bea1705fe3db7b27dfe4f09be1caeed784d89ce4ff4745949cd7fc4892d357f6" required></div>
+    <div class="field full"><label for="capability">Capability ID</label><input id="capability" value="reactive-omni-unichain-eth-payment-v2" required></div>
+    <div class="field full"><label for="recipient">Approved recipient</label><input id="recipient" value="0x4c07B4f328FA738290Db96BCE2F9CBc4d020D2CB" required></div>
+    <div class="field"><label for="amount">Amount (ETH)</label><input id="amount" value="0.0001" inputmode="decimal" required></div>
+    <div class="field"><label for="network">Destination network</label><input id="network" value="unichain-sepolia" required></div>
+    <div class="field full"><label for="purpose">Purpose</label><input id="purpose" value="Reactive Omni authorized testnet payment" required></div>
+    <div class="field full"><label for="agentKey">Agent Ed25519 private key (PKCS#8 PEM)</label><textarea id="agentKey" rows="3" placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----" required></textarea><div class="hint">Used only in this browser tab to sign the intent. It is never sent to Verigate and is not saved.</div></div>
+    <div class="field full"><label for="apiKey">Verigate API key</label><input id="apiKey" type="password" autocomplete="off" placeholder="VERIGATE_API_KEYS value" required><div class="hint">Kept in memory only. Requests go to this page's own Verigate API origin.</div></div>
+   </div>
+   <div class="security"><strong>Security boundary:</strong> enter the agent identity key that matches the registered Identity ID. Do not enter the Verigate issuer key, deployer key, or any wallet key.</div>
+   <div class="actions"><button id="submitBtn" type="submit">SIGN INTENT &amp; REQUEST AUTHORIZATION</button><button class="secondary" type="button" id="resetBtn">RESET RESULT</button></div>
+  </form>
+ </section>
+ <section class="panel">
+  <div class="panel-head"><div><h2>Verigate decision</h2><p>Live response from POST /v1/actions/authorize</p></div><div class="step">02 / RECEIPT</div></div>
+  <div class="result">
+   <div class="result-top"><span class="result-label">Authorization status</span><span class="result-label" id="httpStatus">NOT SENT</span></div>
+   <div class="verdict idle" id="verdict">WAITING</div>
+   <p id="message">Submit a signed payment intent to see the real policy and authority decision.</p>
+   <div class="kv"><span>Intent ID</span><strong id="intentId">—</strong><span>Authorization ID</span><strong id="authorizationId">—</strong><span>Expires</span><strong id="expires">—</strong></div>
+  </div>
+  <div class="result-label" style="margin:0 0 8px">Signed API response</div>
+  <pre class="proof empty" id="proof">No authorization response yet.</pre>
+  <div class="proof-actions"><button class="secondary" id="downloadBtn" type="button" disabled>DOWNLOAD AUTHORIZATION JSON</button><button class="secondary" id="copyBtn" type="button" disabled>COPY JSON</button></div>
+  <div class="footnote">The downloaded JSON is the input for the Reactive bridge preparer. It is not an on-chain transaction.</div>
+ </section>
+</div>
+<section class="panel" style="margin-top:18px">
+ <div class="panel-head"><div><h2>Deployed contracts</h2><p>Deployment addresses are recorded in the repository checkpoint. Callback and payment remain separate proof gates.</p></div><div class="step">03 / NETWORK</div></div>
+ <div class="contracts">
+  <div class="contract"><small>Base Sepolia · 84532</small><strong>Authorization Hub</strong><div class="address">0x05d23191f063D704A3D2e367D5C268f1B5834637</div><span class="status">DEPLOYED</span><div class="links"><a target="_blank" rel="noreferrer" href="https://sepolia.basescan.org/address/0x05d23191f063D704A3D2e367D5C268f1B5834637">View contract</a><a target="_blank" rel="noreferrer" href="https://sepolia.basescan.org/tx/0x1b4b855d1229c27ca725371c9be3b54e98b95ada13ac0eaa36f7caf2760685b9">Execution request</a></div></div>
+  <div class="contract"><small>Reactive · Lasna · 5318007</small><strong>Reactive Guard</strong><div class="address">0x4D09CdD490c1Ce48BCB6dA5c1A6Bf41E2f5e853D</div><span class="status">DEPLOYED</span><div class="links"><a target="_blank" rel="noreferrer" href="https://lasna-rpc.rnk.dev/">Lasna RPC</a><a target="_blank" rel="noreferrer" href="https://github.com/rudimentall1/verigate/tree/reactive-omni-buildathon/integrations/reactive-omni">Contract source</a></div></div>
+  <div class="contract pending"><small>Unichain Sepolia · 1301</small><strong>Payment Receiver</strong><div class="address">0xF1C8af8dA8c0cFe23ad04ca73533EF0AdE1B85B4</div><span class="status">DEPLOYED · PAYMENT UNVERIFIED</span><div class="links"><a target="_blank" rel="noreferrer" href="https://sepolia.uniscan.xyz/address/0xF1C8af8dA8c0cFe23ad04ca73533EF0AdE1B85B4">View contract</a></div></div>
+ </div>
+ <div class="footnote">Known origin transaction: <a style="color:var(--cyan)" target="_blank" rel="noreferrer" href="https://sepolia.basescan.org/tx/0xded94bd71d829c91bc914acef6e62f0dfbc99dcf2e08084115e9026ce8bc3a97">registerAuthorization</a>. The prior execution request is recorded, but no confirmed Reactive callback or PaymentExecuted transaction is represented as complete here.</div>
+</section>
+<div class="footnote">Verigate decides. Reactive enforces. The destination receiver executes only the committed action. Agent signing happens client-side; API authentication is separate.</div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+let lastResponse = null;
+let lastIntentId = null;
+function sorted(value) {
+  if (Array.isArray(value)) return value.map(sorted);
+  if (value && typeof value === "object") {
+    return Object.keys(value).sort().reduce((out, key) => { out[key] = sorted(value[key]); return out; }, {});
+  }
+  return value;
+}
+function pemBytes(pem) {
+  const body = pem.replace(/-----BEGIN PRIVATE KEY-----/g, "").replace(/-----END PRIVATE KEY-----/g, "").replace(/\s+/g, "");
+  const raw = atob(body);
+  return Uint8Array.from(raw, ch => ch.charCodeAt(0));
+}
+function base64(bytes) {
+  let binary = "";
+  new Uint8Array(bytes).forEach(byte => binary += String.fromCharCode(byte));
+  return btoa(binary);
+}
+function amountString(value) {
+  if (!/^(0|[1-9]\d*)(\.\d{1,18})?$/.test(value) || Number(value) <= 0) throw new Error("Amount must be a positive decimal with at most 18 places.");
+  return value;
+}
+function setVerdict(kind, label, message) {
+  $("verdict").className = "verdict " + kind;
+  $("verdict").textContent = label;
+  $("message").textContent = message;
+}
+function resetResult() {
+  lastResponse = null; lastIntentId = null;
+  $("httpStatus").textContent = "NOT SENT";
+  $("intentId").textContent = "—"; $("authorizationId").textContent = "—"; $("expires").textContent = "—";
+  $("proof").textContent = "No authorization response yet."; $("proof").className = "proof empty";
+  $("downloadBtn").disabled = true; $("copyBtn").disabled = true;
+  setVerdict("idle", "WAITING", "Submit a signed payment intent to see the real policy and authority decision.");
+}
+async function submitAuthorization(event) {
+  event.preventDefault();
+  const button = $("submitBtn");
+  button.disabled = true; button.textContent = "SIGNING & SUBMITTING…";
+  setVerdict("idle", "PROCESSING", "Signing the exact action locally, then sending only the signed intent to Verigate.");
+  $("httpStatus").textContent = "REQUEST IN FLIGHT";
+  try {
+    if (!window.isSecureContext || !crypto.subtle) throw new Error("WebCrypto requires HTTPS or localhost. Open this page through the Verigate API on localhost or HTTPS.");
+    const agentId = $("agent").value.trim();
+    const identityId = $("identity").value.trim();
+    const capabilityId = $("capability").value.trim();
+    const recipient = $("recipient").value.trim();
+    const amount = amountString($("amount").value.trim());
+    const network = $("network").value.trim();
+    const purpose = $("purpose").value.trim();
+    const intentId = crypto.randomUUID();
+    const timestamp = Date.now() / 1000;
+    const action = {
+      intent_id: intentId,
+      agent_id: agentId,
+      action_type: "payment",
+      target: recipient,
+      resource: "",
+      amount: amount,
+      amount_exact: amount,
+      asset: "ETH",
+      network: network,
+      purpose: purpose,
+      declared_context: {},
+      input_provenance: {},
+      parent_intent_id: null,
+      requested_capability: capabilityId,
+      constraints: {},
+      metadata: {},
+      timestamp: timestamp
+    };
+    const signedPayload = new TextEncoder().encode(JSON.stringify(sorted({identity_id: identityId, action: action})));
+    const privateKey = await crypto.subtle.importKey("pkcs8", pemBytes($("agentKey").value), {name:"Ed25519"}, false, ["sign"]);
+    const signature = await crypto.subtle.sign({name:"Ed25519"}, privateKey, signedPayload);
+    const body = {
+      identity_id: identityId,
+      capability_id: capabilityId,
+      agent_id: agentId,
+      agent_signature: base64(signature),
+      intent_id: intentId,
+      timestamp: timestamp,
+      action_type: action.action_type,
+      target: action.target,
+      resource: action.resource,
+      amount: Number(amount),
+      amount_exact: amount,
+      asset: action.asset,
+      network: action.network,
+      purpose: action.purpose,
+      declared_context: action.declared_context,
+      requested_capability: capabilityId,
+      constraints: action.constraints,
+      metadata: action.metadata
+    };
+    const apiKey = $("apiKey").value.trim();
+    const response = await fetch("/v1/actions/authorize", {
+      method: "POST",
+      headers: {"Content-Type":"application/json", "Authorization":"Bearer " + apiKey},
+      body: JSON.stringify(body)
+    });
+    const data = await response.json().catch(() => ({detail:"API returned a non-JSON response"}));
+    $("httpStatus").textContent = "HTTP " + response.status;
+    if (!response.ok) throw new Error(data.detail || data.error || ("Authorization failed with HTTP " + response.status));
+    lastResponse = data; lastIntentId = intentId;
+    const receiptPayload = data.decision_receipt && data.decision_receipt.payload ? data.decision_receipt.payload : {};
+    const decision = String(receiptPayload.decision || "UNKNOWN").toUpperCase();
+    const execution = data.execution_authorization;
+    const authPayload = execution && execution.payload ? execution.payload : {};
+    const authId = authPayload.authorization_id || authPayload.id || authPayload.nonce || "—";
+    $("intentId").textContent = intentId;
+    $("authorizationId").textContent = authId;
+    $("expires").textContent = authPayload.expires_at ? new Date(Number(authPayload.expires_at) * 1000).toLocaleString() : "—";
+    $("proof").className = "proof";
+    $("proof").textContent = JSON.stringify(data, null, 2);
+    $("downloadBtn").disabled = false; $("copyBtn").disabled = false;
+    if (decision === "ALLOW" && execution) setVerdict("allow", "ALLOW", "Verigate issued an execution authorization. Download the JSON and pass it to the Reactive bridge preparer.");
+    else if (decision === "WARN") setVerdict("warn", "WARN", "Human review is required. No executable authorization should be used.");
+    else setVerdict("block", decision, "No executable authorization was issued for this request.");
+  } catch (error) {
+    $("httpStatus").textContent = "FAILED";
+    setVerdict("block", "REQUEST FAILED", error.message);
+    $("proof").className = "proof";
+    $("proof").textContent = error.stack || error.message;
+  } finally {
+    button.disabled = false; button.textContent = "SIGN INTENT & REQUEST AUTHORIZATION";
+  }
+}
+function downloadJson() {
+  if (!lastResponse) return;
+  const blob = new Blob([JSON.stringify(lastResponse, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = "reactive-omni-authorization-" + lastIntentId + ".json";
+  link.click(); URL.revokeObjectURL(url);
+}
+$("authForm").addEventListener("submit", submitAuthorization);
+$("resetBtn").addEventListener("click", resetResult);
+$("downloadBtn").addEventListener("click", downloadJson);
+$("copyBtn").addEventListener("click", async () => {
+  if (lastResponse) await navigator.clipboard.writeText(JSON.stringify(lastResponse, null, 2));
+});
+</script>
+</body>
+</html>
