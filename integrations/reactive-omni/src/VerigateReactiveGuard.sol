@@ -364,15 +364,8 @@ contract VerigateReactiveGuard is AbstractReactive {
             auth.decisionReceiptSha256
         );
 
-        SYSTEM.requestCallbackV_1_0(
-            ISystemContract.CallbackConfiguration_V_1_0({
-                chainId: destinationChainId,
-                recipient: destinationReceiver,
-                gasLimit: callbackGasLimit,
-                payload: payload
-            })
-        );
-
+        // If the system contract rejects the callback request, this log and the
+        // consumed state revert atomically with the Reactive transaction.
         emit ActionAllowed(
             authorizationId,
             auth.recipient,
@@ -380,6 +373,15 @@ contract VerigateReactiveGuard is AbstractReactive {
             auth.actionHash,
             destinationChainId,
             destinationReceiver
+        );
+
+        SYSTEM.requestCallbackV_1_0(
+            ISystemContract.CallbackConfiguration_V_1_0({
+                chainId: destinationChainId,
+                recipient: destinationReceiver,
+                gasLimit: callbackGasLimit,
+                payload: payload
+            })
         );
     }
 
