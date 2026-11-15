@@ -26,14 +26,14 @@ interface IVerigatePaymentCallback {
 contract VerigateReactiveGuard is AbstractReactive {
     uint256 private constant AUTHORIZATION_REGISTERED_TOPIC0 = uint256(
         keccak256(
-            "AuthorizationRegistered(bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,uint64,uint256,address)"
+            "AuthorizationRegistered(bytes32,bytes32,address,bytes32,bytes32,bytes32,uint256,uint64,uint256,address,address)"
         )
     );
     uint256 private constant AUTHORIZATION_REVOKED_TOPIC0 = uint256(
         keccak256("AuthorizationRevoked(bytes32)")
     );
     uint256 private constant EXECUTION_REQUESTED_TOPIC0 = uint256(
-        keccak256("ExecutionRequested(bytes32,address,uint256,uint256,address)")
+        keccak256("ExecutionRequested(bytes32,address,address,uint256,uint256,address)")
     );
 
     uint64 public constant MIN_CALLBACK_GAS = 100_000;
@@ -45,6 +45,7 @@ contract VerigateReactiveGuard is AbstractReactive {
     uint8 public constant BLOCK_ACTION_MISMATCH = 5;
     uint8 public constant BLOCK_DESTINATION_NOT_CONFIGURED = 6;
     uint8 public constant BLOCK_COMMITMENT_MISMATCH = 7;
+    uint8 public constant BLOCK_UNAUTHORIZED_REQUESTER = 8;
 
     uint8 private constant REGISTER_REJECT_DUPLICATE = 1;
     uint8 private constant REGISTER_REJECT_DESTINATION_UNSET = 2;
@@ -61,6 +62,7 @@ contract VerigateReactiveGuard is AbstractReactive {
 
     struct CachedAuthorization {
         bytes32 actionHash;
+        address issuer;
         bytes32 verigateActionHash;
         bytes32 policySha256;
         bytes32 decisionReceiptSha256;
@@ -200,10 +202,11 @@ contract VerigateReactiveGuard is AbstractReactive {
             uint256 amountWei,
             uint64 expiresAt,
             uint256 destinationChainId_,
-            address destinationContract
+            address destinationContract,
+            address issuer
         ) = abi.decode(
             log_.data,
-            (bytes32, bytes32, bytes32, uint256, uint64, uint256, address)
+            (bytes32, bytes32, bytes32, uint256, uint64, uint256, address, address)
         );
 
         if (_authorizations[authorizationId].exists) {
@@ -237,6 +240,7 @@ contract VerigateReactiveGuard is AbstractReactive {
 
         bytes32 expectedActionHash = _computeActionHash(
             authorizationId,
+            issuer,
             verigateActionHash,
             policySha256,
             decisionReceiptSha256,
@@ -256,6 +260,7 @@ contract VerigateReactiveGuard is AbstractReactive {
 
         _authorizations[authorizationId] = CachedAuthorization({
             actionHash: actionHash,
+            issuer: issuer,
             verigateActionHash: verigateActionHash,
             policySha256: policySha256,
             decisionReceiptSha256: decisionReceiptSha256,
@@ -283,6 +288,7 @@ contract VerigateReactiveGuard is AbstractReactive {
     function _handleExecutionRequested(IReactive.LogRecord calldata log_) internal {
         bytes32 authorizationId = bytes32(log_.topic1);
         address requestedRecipient = address(uint160(log_.topic2));
+        address requestedBy = address(uint160(log_.topic3));
         (
             uint256 requestedAmountWei,
             uint256 requestedDestinationChainId,
@@ -297,6 +303,15 @@ contract VerigateReactiveGuard is AbstractReactive {
         }
         if (auth.revoked) {
             _block(authorizationId, requestedRecipient, requestedAmountWei, BLOCK_REVOKED);
+            return;
+        }
+        if (requestedBy != auth.issuer) {
+            _block(
+                authorizationId,
+                requestedRecipient,
+                requestedAmountWei,
+                BLOCK_UNAUTHORIZED_REQUESTER
+            );
             return;
         }
         if (auth.consumed) {
@@ -328,6 +343,7 @@ contract VerigateReactiveGuard is AbstractReactive {
 
         bytes32 expectedActionHash = _computeActionHash(
             authorizationId,
+            auth.issuer,
             auth.verigateActionHash,
             auth.policySha256,
             auth.decisionReceiptSha256,
@@ -355,6 +371,7 @@ contract VerigateReactiveGuard is AbstractReactive {
             IVerigatePaymentCallback.executeAuthorizedPayment.selector,
             address(0), // Reactive injects its own address into the first 160 bits.
             authorizationId,
+            auth.issuer,
             auth.recipient,
             auth.amountWei,
             auth.expiresAt,
@@ -401,6 +418,7 @@ contract VerigateReactiveGuard is AbstractReactive {
 
     function _computeActionHash(
         bytes32 authorizationId,
+        address issuer,
         bytes32 verigateActionHash,
         bytes32 policySha256,
         bytes32 decisionReceiptSha256,
@@ -414,6 +432,7 @@ contract VerigateReactiveGuard is AbstractReactive {
             abi.encode(
                 originChainId,
                 originHub,
+                issuer,
                 authorizationId,
                 verigateActionHash,
                 policySha256,
