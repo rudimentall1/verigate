@@ -92,10 +92,12 @@ The output contains a wallet-signable Base Sepolia transaction. The configured i
 
 ## Deployment order
 
-1. Deploy `VerigateReactiveGuard` on Lasna with origin chain ID, origin hub address, destination chain ID and callback gas limit (at least 100,000).
-2. Deploy `VerigatePaymentReceiver` on Unichain Sepolia, passing the official Unichain Sepolia callback proxy, the Reactive contract address, Base Sepolia chain ID and origin hub address.
-3. Call `setDestinationReceiver()` on the Reactive contract.
-4. Deploy `VerigateOriginAuthorizationHub` on Base Sepolia and configure the bridge issuer.
+The Origin Hub must be deployed first because its address is pinned into the Reactive subscription:
+
+1. Deploy `VerigateOriginAuthorizationHub` on Base Sepolia and enable the bridge issuer.
+2. Deploy `VerigateReactiveGuard` on Lasna with the Base Sepolia hub address, origin chain ID, destination chain ID and callback gas limit (at least 100,000).
+3. Deploy `VerigatePaymentReceiver` on Unichain Sepolia, passing the official Unichain Sepolia callback proxy, the Reactive contract address, Base Sepolia chain ID and origin hub address.
+4. Call `setDestinationReceiver()` on the Reactive contract. This is a one-time setter.
 5. Fund the Reactive contract with lREACT and the receiver with Unichain Sepolia native currency.
 6. Publish a valid Verigate ALLOW authorization. Wait until `AuthorizationCached` is visible on Lasna before requesting execution.
 7. Submit one exact request and one modified-recipient or modified-amount request. Verify `PaymentExecuted` for ALLOW and `ActionBlocked` with no destination transfer for BLOCK.
