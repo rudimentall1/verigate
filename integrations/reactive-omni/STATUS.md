@@ -39,14 +39,14 @@
 | Reactive Omni API/library interface review | SOURCE REVIEWED |
 | New Solidity contracts | SOURCE ONLY |
 | Solidity compilation | NOT RUN locally; GitHub Actions compile gate added, result not yet confirmed |
-| Unit tests | NOT RUN; dedicated tests still to be added |
+| Unit tests | Three Foundry test files added; execution not yet confirmed |
 | Testnet deployment | NOT DEPLOYED |
 | End-to-end callback | NOT TESTED |
 | Independent verification | NOT VERIFIED |
 
 ## Next steps
 
-1. Confirm the GitHub Actions run compiles all three contracts against pinned Reactive library commit `3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8`; repair compile issues before claiming any test status.
+1. Confirm the GitHub Actions run compiles all three contracts and executes the Foundry tests against pinned Reactive library commit `3ade0dcf1d27e67e5783ef807e73a1b9e0c0cce8`; repair compile issues before claiming any test status.
 2. Add tests for exact hash parity across origin/reactive/destination, unauthorized issuer, duplicate ID, expired/revoked/consumed authorization, recipient mismatch and amount mismatch.
 3. Exercise the bridge preparer against a real Verigate authorization artifact and a deployed hub; have the configured EVM issuer sign and submit the prepared transaction.
 4. Deploy Base Sepolia → Lasna → Unichain Sepolia, then collect real transaction hashes and callback evidence.
