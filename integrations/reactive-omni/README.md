@@ -14,10 +14,10 @@ An AI agent can propose a payment, but wallet access must not grant it unrestric
 1. Verigate evaluates an `ActionIntent` and issues an Ed25519-signed `ExecutionAuthorization` only for an ALLOW decision.
 2. A bridge issuer verifies that artifact off-chain with Verigate's public key, maps its exact action to destination-chain parameters, and calls `VerigateOriginAuthorizationHub.registerAuthorization()` on Base Sepolia.
 3. The hub emits `AuthorizationRegistered`. The Reactive contract subscribes to this event and caches the exact commitment on Lasna.
-4. An executor calls `requestExecution()` on the origin hub. The event is an untrusted execution request, not an authorization.
-5. Reactive compares the requested recipient, amount, destination chain and destination contract with the cached authorization. It also checks revocation, expiry, replay and the committed hash.
+4. The same enabled issuer that registered the authorization calls `requestExecution()` on the origin hub. The hub rejects any other caller before an event is emitted. The event is still only an execution request, not an authorization.
+5. Reactive compares the requester identity, recipient, amount, destination chain and destination contract with the cached authorization. It also checks revocation, expiry, replay and the committed hash. The registering issuer address is part of the action commitment.
 6. A matching request triggers `requestCallbackV_1_0()` to the Unichain Sepolia receiver. A mismatched request emits `ActionBlocked` on Lasna and makes no destination callback request.
-7. The receiver authenticates both the callback proxy and the expected Reactive contract, recomputes the complete action commitment, checks replay and expiry, and transfers its pre-funded native balance to the exact authorized recipient.
+7. The receiver authenticates both the callback proxy and the expected Reactive contract, recomputes the complete issuer-bound action commitment, checks replay and expiry, and transfers its pre-funded native balance to the exact authorized recipient.
 
 The receiver emits `PaymentExecuted` only after the destination-side transfer succeeds. `ActionAllowed` on Lasna means Reactive accepted the request and submitted a callback request; it is not, by itself, proof that the destination payment completed.
 
