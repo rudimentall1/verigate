@@ -46,6 +46,12 @@ contract VerigateReactiveGuard is AbstractReactive {
     uint8 public constant BLOCK_DESTINATION_NOT_CONFIGURED = 6;
     uint8 public constant BLOCK_COMMITMENT_MISMATCH = 7;
 
+    uint8 private constant REGISTER_REJECT_DUPLICATE = 1;
+    uint8 private constant REGISTER_REJECT_DESTINATION_UNSET = 2;
+    uint8 private constant REGISTER_REJECT_DESTINATION_MISMATCH = 3;
+    uint8 private constant REGISTER_REJECT_INVALID_FIELDS = 4;
+    uint8 private constant REGISTER_REJECT_COMMITMENT = 5;
+
     address public owner;
     uint256 public immutable originChainId;
     address public immutable originHub;
@@ -201,20 +207,30 @@ contract VerigateReactiveGuard is AbstractReactive {
         );
 
         if (_authorizations[authorizationId].exists) {
-            emit AuthorizationRegistrationRejected(authorizationId, BLOCK_ALREADY_CONSUMED);
+            emit AuthorizationRegistrationRejected(authorizationId, REGISTER_REJECT_DUPLICATE);
+            return;
+        }
+        if (destinationReceiver == address(0)) {
+            emit AuthorizationRegistrationRejected(
+                authorizationId,
+                REGISTER_REJECT_DESTINATION_UNSET
+            );
             return;
         }
         if (
-            destinationReceiver == address(0) ||
             destinationChainId_ != destinationChainId ||
-            destinationContract != destinationReceiver ||
-            recipient == address(0) ||
-            amountWei == 0 ||
-            expiresAt <= block.timestamp
+            destinationContract != destinationReceiver
         ) {
             emit AuthorizationRegistrationRejected(
                 authorizationId,
-                BLOCK_DESTINATION_NOT_CONFIGURED
+                REGISTER_REJECT_DESTINATION_MISMATCH
+            );
+            return;
+        }
+        if (recipient == address(0) || amountWei == 0 || expiresAt <= block.timestamp) {
+            emit AuthorizationRegistrationRejected(
+                authorizationId,
+                REGISTER_REJECT_INVALID_FIELDS
             );
             return;
         }
@@ -233,7 +249,7 @@ contract VerigateReactiveGuard is AbstractReactive {
         if (actionHash != expectedActionHash) {
             emit AuthorizationRegistrationRejected(
                 authorizationId,
-                BLOCK_COMMITMENT_MISMATCH
+                REGISTER_REJECT_COMMITMENT
             );
             return;
         }
