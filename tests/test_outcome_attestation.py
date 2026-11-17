@@ -27,7 +27,7 @@ from enforcement.router import ExecutionRouter
 from enforcement.networks import NetworkRegistry
 from enforcement.chain_verification import EVMChainVerifier
 from enforcement.evm_rpc import EvmRpcClient
-from enforcement.tool import ToolExecutionAdapter
+from enforcement.tool import ToolExecutionAdapter, handler_fingerprint
 
 
 class OutcomeAttestationTest(unittest.TestCase):
@@ -79,11 +79,24 @@ class OutcomeAttestationTest(unittest.TestCase):
             self.storage,
             policy_source_ref=str(policy_path),
         )
+        def tool_handler(_action):
+            return {"transaction_hash": "outcome-effect"}
+
         action = ActionIntent(
             agent_id=identity.agent_id,
             action_type="mcp.tool.call",
             target="github.create_issue",
-            metadata={"arguments": {"title": "outcome"}},
+            metadata={
+                "arguments": {"title": "outcome"},
+                "execution_graph": {
+                    "module": "enforcement.tool",
+                    "hook": "ToolExecutionAdapter",
+                    "router": "ExecutionRouter",
+                    "target": "github.create_issue",
+                    "enforcement_scope": "direct",
+                    "handler_sha256": handler_fingerprint(tool_handler),
+                },
+            },
         )
         signature = sign_action_intent(action, identity_id, agent_key)
         artifacts = engine.authorize_action(
@@ -98,7 +111,7 @@ class OutcomeAttestationTest(unittest.TestCase):
         adapter = ToolExecutionAdapter(
             self.storage,
             self.public_key,
-            {"github.create_issue": lambda _action: "ready"},
+            {"github.create_issue": tool_handler},
         )
         router = ExecutionRouter(
             NetworkRegistry(),
@@ -109,7 +122,7 @@ class OutcomeAttestationTest(unittest.TestCase):
         )
         submitted = router.execute_with_receipt(
             authorization,
-            lambda _action: {"transaction_hash": "outcome-effect"},
+            lambda _action: self.fail("unbound router callback must not execute"),
             executor="executor-1",
         )
         confirmed = router.confirm_execution_receipt(

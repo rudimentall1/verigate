@@ -25,7 +25,7 @@ from core.policy import Policy
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
-from enforcement.tool import ToolExecutionAdapter
+from enforcement.tool import ToolExecutionAdapter, handler_fingerprint
 
 
 def _governance_approval(action, private_key):
@@ -108,11 +108,24 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         engine = GuardrailEngine(
             Policy.load(policy_path), self.storage, policy_source_ref=policy_source_ref or str(policy_path)
         )
+        def tool_handler(_action):
+            return {"order_id": "order-1", "status": "created", "transaction_hash": "mcp-effect-1"}
+
         action = ActionIntent(
             agent_id=identity.agent_id,
             action_type="mcp.tool.call",
             target="orders.create",
-            metadata={"arguments": {"sku": "VERIGATE", "quantity": 1}},
+            metadata={
+                "arguments": {"sku": "VERIGATE", "quantity": 1},
+                "execution_graph": {
+                    "module": "enforcement.tool",
+                    "hook": "ToolExecutionAdapter",
+                    "router": "ExecutionRouter",
+                    "target": "orders.create",
+                    "enforcement_scope": "direct",
+                    "handler_sha256": handler_fingerprint(tool_handler),
+                },
+            },
         )
         artifacts = engine.authorize_action(
             action,
@@ -128,7 +141,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertTrue(genesis_binding["authority_assessment_digest"])
         adapter = ToolExecutionAdapter(
             self.storage, self.public_key,
-            {"orders.create": lambda _action: {"order_id": "order-1", "status": "created"}},
+            {"orders.create": tool_handler},
         )
         router = ExecutionRouter(
             NetworkRegistry(), self.storage, self.public_key, self.private_key,
@@ -136,7 +149,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         )
         submitted = router.execute_with_receipt(
             authorization,
-            lambda _action: {"transaction_hash": "mcp-effect-1"},
+            lambda _action: self.fail("unbound router callback must not execute"),
             executor="executor-reference",
         )
         receipt = router.confirm_execution_receipt(

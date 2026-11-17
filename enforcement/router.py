@@ -1,10 +1,12 @@
 """Universal execution router for Verigate."""
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 
 from typing import Any, Callable
+from types import MappingProxyType
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
@@ -24,9 +26,11 @@ from core.external_state import (
     verify_external_state_binding,
 )
 from enforcement.evm import EVMExecutionAdapter
+from enforcement.http import HTTPExecutionAdapter
 from enforcement.local import ExecutionGate
 from enforcement.networks import NetworkRegistry, UnsupportedNetworkError
 from enforcement.protocol import ExecutionAdapter
+from enforcement.tool import ToolExecutionAdapter
 
 
 class ExecutionRouter:
@@ -52,7 +56,8 @@ class ExecutionRouter:
         self.storage = storage
         self.public_key = public_key
         self.private_key = private_key
-        self.generic_adapters = dict(generic_adapters or {})
+        # Adapter selection is security configuration; freeze it after construction.
+        self.generic_adapters = MappingProxyType(dict(generic_adapters or {}))
         self.external_state_verifier = external_state_verifier
         self.external_state_registry = external_state_registry
 
@@ -187,6 +192,12 @@ class ExecutionRouter:
             "target": action.get("target"),
             "enforcement_scope": getattr(adapter, "execution_enforcement_scope", "direct"),
         }
+        identity_provider = getattr(adapter, "execution_graph_identity", None)
+        if callable(identity_provider):
+            identity = identity_provider(action)
+            if not isinstance(identity, dict):
+                raise ValueError("adapter execution graph identity must be an object")
+            actual.update(identity)
         ok, reason = verify_execution_graph(expected, actual)
         if not ok:
             raise ValueError(reason)
@@ -221,6 +232,7 @@ class ExecutionRouter:
         return True, "execution authorization consumed"
 
     def consume(self, authorization: dict[str, Any], *, verification_time: int | None = None) -> tuple[bool, str]:
+        authorization = copy.deepcopy(authorization)
         try:
             # The router owns the one-time execution capability. Adapters may
             # validate their own execution prerequisites but cannot forge nonce
@@ -235,6 +247,7 @@ class ExecutionRouter:
             return False, str(exc)
 
     def execute(self, authorization: dict[str, Any], broadcaster: Callable[[dict[str, Any]], Any]) -> Any:
+        authorization = copy.deepcopy(authorization)
         self._verify_authorization(authorization)
         adapter = self._adapter(authorization)
         self._validate_adapter(adapter, authorization)
@@ -256,6 +269,13 @@ class ExecutionRouter:
                 raise ValueError(
                     "execution adapter lacks the router-side consumption contract"
                 )
+
+        # ToolExecutionAdapter owns a fixed handler registry. Execute that
+        # exact signed handler; never let an arbitrary router callback replace it.
+        if isinstance(adapter, ToolExecutionAdapter):
+            return adapter.execute_registered(authorization)
+        if isinstance(adapter, HTTPExecutionAdapter):
+            return adapter.execute_request(authorization, broadcaster)
 
         ok, reason = self._consume_authorization_once(authorization)
         if not ok:
@@ -288,6 +308,7 @@ class ExecutionRouter:
         A failed broadcast still consumes the one-time authorization. Retrying
         requires a fresh authorization.
         """
+        authorization = copy.deepcopy(authorization)
         if self.private_key is None:
             raise ValueError("execution receipt signing key is required")
 
