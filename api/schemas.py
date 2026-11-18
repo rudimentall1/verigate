@@ -10,7 +10,7 @@ class PaymentIntentRequest(BaseModel):
     payee: str = Field(..., examples=["0xMerchant123"])
     asset: str = Field(..., examples=["USDC"])
     network: str = Field(..., examples=["base"])
-    amount: float = Field(..., gt=0, examples=[10.5])
+    amount: float = Field(..., gt=0, allow_inf_nan=False, examples=[10.5])
     resource: str = Field("", examples=["https://api.example.com/data"])
     sign: bool = Field(True, description="Return an Ed25519-signed attestation")
 
@@ -33,11 +33,11 @@ class ActionAuthorizationRequest(BaseModel):
     agent_id: str = Field(..., min_length=1)
     agent_signature: str = Field(..., min_length=1)
     intent_id: str = Field(..., min_length=1)
-    timestamp: float
+    timestamp: float = Field(..., allow_inf_nan=False)
     action_type: str = Field(..., min_length=1, examples=["mcp.tool.call"])
     target: str = Field(..., min_length=1, examples=["github.create_issue"])
     resource: str = ""
-    amount: float | None = Field(None, gt=0)
+    amount: float | None = Field(None, gt=0, allow_inf_nan=False)
     amount_exact: str | None = None
     asset: str | None = None
     network: str | None = None
@@ -68,11 +68,11 @@ class IdentityAuthorizationRequest(BaseModel):
     agent_id: str = Field(..., min_length=1)
     agent_signature: str = Field(..., min_length=1)
     intent_id: str = Field(..., min_length=1)
-    timestamp: float
+    timestamp: float = Field(..., allow_inf_nan=False)
     payee: str = Field(..., min_length=1)
     asset: str = Field(..., min_length=1)
     network: str = Field(..., min_length=1)
-    amount: float = Field(..., gt=0)
+    amount: float = Field(..., gt=0, allow_inf_nan=False)
     resource: str = ""
     metadata: dict = Field(default_factory=dict)
 
@@ -85,7 +85,7 @@ class ValtaChatCompletionProxyRequest(BaseModel):
     capability_id: str = Field(..., min_length=1)
     agent_signature: str = Field(..., min_length=1)
     intent_id: str = Field(..., min_length=1)
-    timestamp: float = Field(..., gt=0)
+    timestamp: float = Field(..., gt=0, allow_inf_nan=False)
     run_id: str = Field(..., min_length=1, max_length=200)
     request: dict = Field(..., description="OpenAI-compatible Chat Completions JSON body")
 

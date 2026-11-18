@@ -11,6 +11,33 @@ const executor = "0x3333333333333333333333333333333333333333";
 const payer = "0x1111111111111111111111111111111111111111";
 const recipient = "0x2222222222222222222222222222222222222222";
 
+// Windows installs expose `python`, POSIX images usually expose `python3`.
+// Honour an explicit override first, then fall back to whatever exists.
+const PYTHON_CANDIDATES = [
+  process.env.VERIGATE_PYTHON || process.env.PYTHON,
+  process.platform === "win32" ? "python" : "python3",
+  process.platform === "win32" ? null : "python",
+  "py",
+].filter(Boolean);
+
+function runPython(source) {
+  const attempted = [];
+  for (const candidate of PYTHON_CANDIDATES) {
+    const result = spawnSync(candidate, ["-c", source], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+    if (result.error && result.error.code === "ENOENT") {
+      attempted.push(candidate);
+      continue;
+    }
+    return result;
+  }
+  assert.fail(
+    "no Python interpreter found; set VERIGATE_PYTHON. Tried: " + attempted.join(", "),
+  );
+}
+
 function buildRequestWithPythonAgentSdk() {
   const source = [
     "import json, tempfile, time",
@@ -22,10 +49,7 @@ function buildRequestWithPythonAgentSdk() {
     " request = build_arc_payment_authorization_request(key, agent_id=identity['agent_id'], identity_id=identity['identity_id'], capability_id='cross-language-arc-cap', sender=" + JSON.stringify(payer) + ", recipient=" + JSON.stringify(recipient) + ", amount_usdc='1.250000', resource='cross-language-test', intent_id='cross-language-arc-intent', timestamp=time.time())",
     " print(json.dumps(request))",
   ].join("\n");
-  const result = spawnSync("python3", ["-c", source], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-  });
+  const result = runPython(source);
   assert.equal(result.status, 0, result.stderr || "Python Agent SDK process failed");
   return JSON.parse(result.stdout.trim());
 }

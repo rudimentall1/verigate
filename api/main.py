@@ -40,6 +40,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -193,6 +194,33 @@ app = FastAPI(
 
 app.add_middleware(ApiKeyMiddleware)
 app.add_middleware(TenantMiddleware)
+
+
+def _json_safe_detail(value):
+    """Keep validation errors serialisable when the rejected input cannot be.
+
+    FastAPI echoes the rejected input value in its 422 body. JSON clients can
+    send ``Infinity``/``NaN`` (or a value that overflows to ``inf``), which is
+    not JSON compliant on the way out and would turn a clean 422 into a 500.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return repr(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe_detail(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_detail(item) for item in value]
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    return str(value)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error_handler(request, exc):
+    return JSONResponse(
+        status_code=422,
+        content={"detail": _json_safe_detail(list(exc.errors()))},
+    )
+
 
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 app.mount("/demo", StaticFiles(directory=UI_DIR, html=True), name="demo-ui")

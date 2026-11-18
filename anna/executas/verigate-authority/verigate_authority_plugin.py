@@ -660,6 +660,20 @@ async def _verigate_authorize_payment(args: dict) -> dict:
         if not math.isfinite(amount) or amount <= 0:
             raise ValueError("amount must be finite and greater than zero")
 
+        # The App UI writes the exact strings it displayed into the approval
+        # record, so the approval gate must compare those exact values. Compare
+        # before normalization: _clean() collapses whitespace and truncates,
+        # which would otherwise reject a genuine confirmation for a purpose
+        # string that is longer than 200 characters or contains repeated
+        # spaces. Normalization still decides the action that gets authorized.
+        approval_binding = {
+            "agent_id": args["agent_id"],
+            "payee": args["payee"],
+            "asset": args["asset"],
+            "network": args["network"],
+            "amount": amount,
+            "resource": args.get("resource", ""),
+        }
         normalized = {
             "agent_id": _clean(args["agent_id"], 128),
             "payee": _clean(args["payee"], 256),
@@ -676,7 +690,7 @@ async def _verigate_authorize_payment(args: dict) -> dict:
             raise ValueError("approval_kind must be a string")
         approval = await _consume_app_confirmation(
             args,
-            normalized,
+            approval_binding,
             approval_kind=approval_kind,
         )
         advisory = _parse_ai_flags(args.get("ai_flags_json"))

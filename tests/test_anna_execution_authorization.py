@@ -238,6 +238,57 @@ class AnnaExecutionAuthorizationTest(unittest.TestCase):
         self.assertIn("no app-scoped UI approval", result["error"])
         self.assertIsNone(plugin._state)
 
+    def test_app_approval_accepts_exact_ui_purpose_that_normalization_would_rewrite(self):
+        # The App UI stores the trimmed value the user saw. A long invoice
+        # reference or repeated spaces must not be rewritten by the approval
+        # gate, otherwise a genuine confirmation is rejected as "not matching".
+        long_reference = "https://billing.example.com/invoices/" + "x" * 200
+        ui_resource = ("  invoice   1042 " + long_reference + "  ").strip()
+        args = self._args(resource=ui_resource)
+        self.assertEqual(args["resource"], ui_resource)
+        args["confirmation_nonce"] = self._approval(
+            "payment_authorization",
+            agent_id="anna-test-agent",
+            payee=VALID_PAYEE,
+            asset="USDC",
+            network="base",
+            amount=25.0,
+            resource=ui_resource,
+        )
+
+        result = asyncio.run(plugin._verigate_authorize_payment(args))
+
+        self.assertTrue(result["success"], result)
+        authorization = result["data"]["execution_authorization"]
+        action = authorization["payload"]["action"]
+        # The signed action is still the canonical normalized action.
+        self.assertEqual(action["resource"], " ".join(ui_resource.split())[:200])
+        self.assertEqual(action["amount"], 25.0)
+        self.assertEqual(action["target"], VALID_PAYEE)
+        self.assertEqual(len(self.storage.values), 0)
+        verified = plugin._verigate_verify_execution_authorization(
+            {"authorization_json": json.dumps(authorization)}
+        )
+        self.assertTrue(verified["data"]["verified"], verified)
+
+    def test_app_approval_rejects_a_purpose_different_from_the_confirmed_text(self):
+        args = self._args(resource="invoice  1042")
+        args["confirmation_nonce"] = self._approval(
+            "payment_authorization",
+            agent_id="anna-test-agent",
+            payee=VALID_PAYEE,
+            asset="USDC",
+            network="base",
+            amount=25.0,
+            resource="invoice 1042",
+        )
+
+        result = asyncio.run(plugin._verigate_authorize_payment(args))
+
+        self.assertFalse(result["success"])
+        self.assertIn("UI approval does not match resource", result["error"])
+        self.assertIsNone(plugin._state)
+
     def test_allow_issues_verifiable_capability_bound_permission(self):
         result = self._authorize()
         self.assertTrue(result["success"], result)
