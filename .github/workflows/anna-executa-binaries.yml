@@ -35,7 +35,7 @@ jobs:
           - target: windows-x86_64
             runner: windows-latest
           - target: darwin-arm64
-            runner: macos-26
+            runner: macos-15
           - target: darwin-x86_64
             runner: macos-26-intel
     runs-on: ${{ matrix.runner }}
