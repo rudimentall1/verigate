@@ -810,3 +810,18 @@ Relevant implementation history: PRs #7, #22, #27, #44, #54 and #62. Re-check th
 6. Cut and verify a new App/Executa pair separately for each Anna Developer account, checking account-specific App IDs and tool IDs before every CLI operation. Do not touch App 851 while operating on App 382, or vice versa.
 7. Do not publish, submit a new review candidate, or modify either current pending review round without an explicit release decision from the user.
 
+## 30. Anna source candidate version alignment — App 0.1.37 / Executa 0.1.23 — 2026-11-19
+
+- The Authority Desk + Payment history source is now versioned as **App 0.1.37 / bundled Executa 0.1.23**.
+- Synchronized source versions:
+  - `anna/app.json`: `0.1.37`.
+  - `anna/manifest.json`: bundled Executa minimum `0.1.23`.
+  - `anna/executas/verigate-authority/executa.json`, `pyproject.toml`, runtime `VERSION`, published protocol `manifest.json`, and `uv.lock`: `0.1.23`.
+  - `.github/workflows/ci.yml` Linux package/smoke literals and `.github/workflows/anna-executa-binaries.yml` four-platform defaults/fallbacks: `0.1.23`.
+- Updated `CHANGELOG.md`, `anna/docs/RELEASE-STATUS.md` and `anna/README.md` with the Authority Desk, Payment history, evidence labels and release boundaries.
+- Four-platform Executa workflow has **not** yet been run for 0.1.23. The full CI run #2367 that passed 673 Python tests, 71/71 Anna UI E2E, strict schema validation, Linux Executa build/smoke, contracts and container was before these version-only changes and before the latest E2E extension for SUBMITTED history evidence.
+- A fresh full CI on the latest PR head is still required to confirm all synchronized 0.1.23 version literals and the extended SUBMITTED-history E2E. Four-platform reproducible builds/package/smoke for 0.1.23 remain a separate release gate.
+- Actual Anna WebView screenshot/visual acceptance remains outstanding. Do not claim the source candidate has been verified visually in live Anna.
+- PR #65 remains **Draft / open / unmerged**. No Anna Console upload, immutable cut, release, review resubmission or Marketplace publication has been performed for 0.1.37 / 0.1.23.
+- Existing App 851 and App 382 immutable versions and pending review rounds must remain untouched until the user explicitly authorizes a release sequence for each account.
+
