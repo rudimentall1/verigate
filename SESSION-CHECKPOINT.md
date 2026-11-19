@@ -854,3 +854,34 @@ All results below are for PR #65 head **`28ff7577df0d8d31def3f8295503f4f43c9f5fc
 - Actual Anna WebView visual acceptance is still outstanding: capture and inspect real desktop and narrow-width screenshots, including the 640 px default viewport. Automated jsdom flows do not replace the real embedded WebView check. No Desktop Commander device was connected during this session.
 - The history implementation still needs explicit coverage/review for every user-requested outcome state (especially REJECTED, ABORTED, UNKNOWN), invalid-evidence filtering, detail-request race/cancel behavior, and retention across actual Anna runtime restart. Do not claim these are all verified solely from the 71 UI flow tests or CI smoke.
 - No release/cut/review step is authorized by this checkpoint. Preserve the account-specific identity guard for both Anna Developer accounts.
+
+
+## 32. Authority Desk provenance and payment-history request-race correction — 2026-11-19
+
+### Reconcile the user-confirmed interface with source history
+
+- The user-confirmed known-good Anna Console pair remains **App 0.1.36 / Executa 0.1.21**. Preserve that as the product acceptance reference; do not reinterpret it from a version number alone.
+- GitHub source history contains the compact responsive **Authority Desk** on branch `fix/anna-receipt-verification-agent-scope`. At the inspected branch head its source metadata is App **0.1.34** / Executa **0.1.21**; the accompanying `anna/bundle/index.html` has the Authority Desk layout, Check / How-it-works navigation, compact two-panel view and quick examples. Its `CHANGELOG.md` documents the original App 0.1.33 / Executa 0.1.19 Authority Desk refresh.
+- By contrast, commit `fb61399d6a1d7f603c5fc5298f7a712d44dce1ae` on `fix/anna-release-readiness` declares App **0.1.36** / Executa **0.1.22**, but its bundle contains the older blue, narrow, one-panel form without the Authority Desk navigation. This is source-history evidence of the mismatch; it does **not** disprove the user's report about the actual Console App 0.1.36 / Executa 0.1.21 pair. Do not claim that the `.34/.21` source commit is byte-for-byte the immutable `.36/.21` Console artifact.
+- PR #65 is the controlled reconciliation: restore the recovered Authority Desk visual direction while retaining the newer payment authorization, exact wallet-transfer validation, WebView confirmation and outcome-receipt code from the release branch, then add persistent Payment history. The actual visual match still requires a fresh screenshot from the real Anna WebView.
+
+### Race condition in evidence details — TDD
+
+- Added two E2E regressions in commit `73f1799f3bd4681efac266976aa67b9b14021209`: (1) a late response for the first selected record must not overwrite a newer selected record; (2) a response arriving after the user closes evidence details must not reopen the panel.
+- Both new tests failed on that test-first commit (71/73 UI flows passed), reproducing the stale-response and closed-panel bugs.
+- Fixed in commit **`eafe5e7f9ed4347a7699fbd90186e06e9392a0a0`**: introduced a monotonically increasing `historyDetailsRequestId`; every new details request supersedes the previous one, and list refresh, switching back to Check, or closing details invalidates outstanding requests. Stale success and error responses are ignored.
+
+### Latest exact-head validation — PASS
+
+All results below are for PR #65 head **`eafe5e7f9ed4347a7699fbd90186e06e9392a0a0`**:
+
+- Full CI [#2416](https://github.com/rudimentall1/verigate/actions/runs/44530447077): **SUCCESS**, all four jobs (`test`, `contracts`, `container`, `anna-ui`) passed.
+- Python suite: **674 tests passed**.
+- Anna UI E2E: **73/73 UI flows passed**, including both new race/cancellation cases. Strict schema-4 validation and the Linux Executa build/package/smoke test also passed.
+- Four-platform Executa build [#68](https://github.com/rudimentall1/verigate/actions/runs/44530455216): **SUCCESS** for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel. The release job was skipped; no GitHub binary release was published.
+
+### Remaining boundary
+
+- PR #65 remains **Draft / open / unmerged**. App 0.1.37 / Executa 0.1.23 is still a source candidate.
+- No Anna Console push/cut, Executa publish, review submission/resubmission or Marketplace publication was performed. App 851 and App 382 immutable versions and review rounds remain untouched.
+- Real Anna WebView screenshots and live runtime acceptance remain outstanding. CI/jsdom is not a visual test of the embedded host.
