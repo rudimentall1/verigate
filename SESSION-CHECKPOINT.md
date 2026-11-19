@@ -798,7 +798,7 @@ Relevant implementation history: PRs #7, #22, #27, #44, #54 and #62. Re-check th
   - Added an Evidence Invalid status filter path.
   - Updated the hard-coded Executa tool list test.
   - Added bundle contract tests for Authority Desk/history elements and the read-only manifest/tool contract.
-- **Do not report CI green yet.** These latest fixes have not yet been verified by a completed CI run on the latest PR head. Re-run/observe all four jobs on the latest head; inspect any further failures and repair them before calling the source release-ready.
+- Historical checkpoint at the time of section 29. This status was superseded by section 30 and the later full validation recorded in section 31.
 
 ### Remaining work before any new immutable Anna version
 
@@ -820,10 +820,37 @@ Relevant implementation history: PRs #7, #22, #27, #44, #54 and #62. Re-check th
   - `.github/workflows/ci.yml` Linux package/smoke literals and `.github/workflows/anna-executa-binaries.yml` four-platform defaults/fallbacks: `0.1.23`.
 - Updated `CHANGELOG.md`, `anna/docs/RELEASE-STATUS.md` and `anna/README.md` with the Authority Desk, Payment history, evidence labels and release boundaries.
 - Four-platform Executa workflow has **not** yet been run for 0.1.23. The full CI run #2367 that passed 673 Python tests, 71/71 Anna UI E2E, strict schema validation, Linux Executa build/smoke, contracts and container was before these version-only changes and before the latest E2E extension for SUBMITTED history evidence.
-- Latest PR-head CI run [#2400](https://github.com/rudimentall1/verigate/actions/runs/44513180068) **PASSED**: Python suite, Anna UI E2E, strict schema validation, Linux Executa smoke, contracts and container. Latest source head: `11c47d6194582e35b1888af86dd3080c51a84882`.
-- Four-platform Executa workflow [run #60](https://github.com/rudimentall1/verigate/actions/runs/44513180095) **PASSED** for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel. Its release job was **skipped** (`publish_release=false`); no GitHub binary release was published.
-- Actual Anna WebView screenshot/visual acceptance remains outstanding. Do not claim the source candidate has been verified visually in live Anna.
+- Earlier PR-head CI run [#2400](https://github.com/rudimentall1/verigate/actions/runs/44513180068) passed on head `11c47d6194582e35b1888af86dd3080c51a84882`; it is superseded by the newer complete run recorded in section 31.
+- Earlier four-platform Executa workflow [run #60](https://github.com/rudimentall1/verigate/actions/runs/44513180095) passed for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel; it is superseded by the newer four-platform run recorded in section 31.
 - Actual Anna WebView screenshot/visual acceptance remains outstanding. Do not claim the source candidate has been verified visually in live Anna.
 - PR #65 remains **Draft / open / unmerged**. No Anna Console upload, immutable cut, release, review resubmission or Marketplace publication has been performed for 0.1.37 / 0.1.23.
 - Existing App 851 and App 382 immutable versions and pending review rounds must remain untouched until the user explicitly authorizes a release sequence for each account.
 
+
+
+## 31. Payment history filesystem read-only correction and latest release gates — 2026-11-19
+
+### Defect reproduced and fixed (TDD)
+
+- Audit of PR #65 found that `_verigate_payment_history()` called the general `_resolve_data_dir()`. Although SQLite itself was opened with `mode=ro` and `PRAGMA query_only=ON`, the general resolver could create directories and write/delete a temporary `.write-test` file. That contradicted the read-only contract for the entire history operation.
+- Added regression test `test_payment_history_does_not_create_or_write_to_data_directory` first. It failed on commit `8b97d8e815c52e42eb6bacdd8ef80f322da8867e` exactly at `Path.mkdir()` inside the history call (RED reproduction).
+- Fixed in commit **`28ff7577df0d8d31def3f8295503f4f43c9f5fc4`** on `fix/anna-user-ux-payment-history`: introduced `_resolve_data_dir_read_only()`, which only inspects configured/existing paths and does not create directories, write probe files, or initialize storage. The history reader now uses that resolver. Normal state initialization retains the original writable resolver; SQLite history access remains `Storage.open_read_only()`.
+- If neither the history database nor public issuer key exists, history returns an empty list without creating state. If only one exists, the operation fails closed as unavailable.
+
+### Latest exact-head validation — PASS
+
+All results below are for PR #65 head **`28ff7577df0d8d31def3f8295503f4f43c9f5fc4`**:
+
+- Full CI run [#2409](https://github.com/rudimentall1/verigate/actions/runs/44528218625): **SUCCESS**. All four jobs passed: `test`, `contracts`, `container`, `anna-ui`.
+- Python suite: **674 tests passed**.
+- Anna UI E2E: **71/71 flows passed**; strict Anna schema validation passed; Linux Executa build/package/smoke passed.
+- Four-platform Executa build run [#65](https://github.com/rudimentall1/verigate/actions/runs/44528218514): **SUCCESS** for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel. Reproducibility/package/smoke jobs all passed. The workflow release job was **skipped**; no GitHub binary release was published.
+- The failing test-first run and the successful corrected run are intentionally both retained in Actions history as regression evidence.
+
+### Remaining acceptance boundary
+
+- PR #65 remains **Draft / open / unmerged**. Candidate remains App **0.1.37** / Executa **0.1.23** at source head above.
+- No Anna Console push/cut, Executa publication, review submission/resubmission or Marketplace publication was performed from this branch. Existing immutable App 851 / App 382 versions and their review rounds were not changed.
+- Actual Anna WebView visual acceptance is still outstanding: capture and inspect real desktop and narrow-width screenshots, including the 640 px default viewport. Automated jsdom flows do not replace the real embedded WebView check. No Desktop Commander device was connected during this session.
+- The history implementation still needs explicit coverage/review for every user-requested outcome state (especially REJECTED, ABORTED, UNKNOWN), invalid-evidence filtering, detail-request race/cancel behavior, and retention across actual Anna runtime restart. Do not claim these are all verified solely from the 71 UI flow tests or CI smoke.
+- No release/cut/review step is authorized by this checkpoint. Preserve the account-specific identity guard for both Anna Developer accounts.
