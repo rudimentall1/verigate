@@ -489,6 +489,28 @@ class Storage:
             )
         self._conn.commit()
 
+    @classmethod
+    def open_read_only(cls, db_path: str | Path) -> "Storage":
+        """Open an existing database without schema initialization or write access."""
+        database = Path(db_path).resolve()
+        connection = sqlite3.connect(
+            database.as_uri() + "?mode=ro",
+            uri=True,
+            check_same_thread=False,
+            timeout=30.0,
+        )
+        try:
+            connection.execute("PRAGMA busy_timeout=30000")
+            connection.execute("PRAGMA query_only=ON")
+        except Exception:
+            connection.close()
+            raise
+        instance = cls.__new__(cls)
+        instance.db_path = str(database)
+        instance._lock = threading.RLock()
+        instance._conn = connection
+        return instance
+
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
         """Run a group of storage operations atomically."""
