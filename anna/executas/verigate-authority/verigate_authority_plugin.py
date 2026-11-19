@@ -318,6 +318,40 @@ def _resolve_data_dir() -> Path:
     raise RuntimeError(f"no writable Verigate data directory available: {detail}")
 
 
+def _resolve_data_dir_read_only() -> Path:
+    """Locate existing durable state without creating directories or probe files.
+
+    The history reader must remain a filesystem read-only operation as well as
+    opening SQLite with mode=ro. Explicit Anna paths are authoritative; local
+    fallbacks are inspected only when no platform path has been configured.
+    """
+    override = os.environ.get("VERIGATE_ANNA_DATA_DIR")
+    workspace = os.environ.get("ANNA_WORKSPACE_DIR")
+
+    if override:
+        return Path(override)
+    if workspace:
+        return Path(workspace) / "verigate-authority"
+
+    candidates = [_DEFAULT_DATA_DIR]
+    try:
+        candidates.append(Path.home() / ".verigate-authority")
+    except RuntimeError:
+        pass
+    candidates.append(Path(tempfile.gettempdir()) / "verigate-authority")
+
+    for candidate in candidates:
+        try:
+            if (candidate / "verigate.db").is_file() or (candidate / "issuer.pub").is_file():
+                return candidate
+        except OSError:
+            continue
+
+    # No state has been initialized yet. Returning the default path lets the
+    # caller produce an empty history without creating anything.
+    return candidates[0]
+
+
 _state = None
 _state_lock = threading.Lock()
 
@@ -1462,7 +1496,7 @@ def _verigate_payment_history(args: dict) -> dict:
         if include_details and not intent_id:
             raise ValueError("intent_id is required when include_details is true")
 
-        data_dir = _resolve_data_dir()
+        data_dir = _resolve_data_dir_read_only()
         public_path = data_dir / "issuer.pub"
         database_path = data_dir / "verigate.db"
         if not database_path.exists() and not public_path.exists():
