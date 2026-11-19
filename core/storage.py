@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS execution_nonces (
     consumed_at REAL NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_execution_nonces_authorization
+    ON execution_nonces(authorization_id, nonce);
+
 CREATE TABLE IF NOT EXISTS execution_receipts (
     receipt_id TEXT PRIMARY KEY,
     authorization_id TEXT NOT NULL UNIQUE,
@@ -665,6 +668,179 @@ class Storage:
 
         return [dict(zip(columns, row)) for row in rows]
 
+
+    def payment_history(
+        self,
+        agent_id: str,
+        *,
+        limit: int = 50,
+        search: str = "",
+        network: str = "",
+        status: str = "",
+        intent_id: str = "",
+        since: float | None = None,
+        until: float | None = None,
+    ) -> list[dict]:
+        """Return durable payment authorization records and their execution evidence.
+
+        Non-persistent policy previews never enter audit_log and therefore never
+        appear here. The returned receipt objects remain internal to the storage
+        boundary; the Anna Executa adapter verifies them before exposing details.
+        """
+        if not isinstance(agent_id, str) or not agent_id.strip():
+            raise ValueError("agent_id must be a non-empty string")
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            raise ValueError("limit must be an integer") from None
+        if limit < 1:
+            return []
+        limit = min(limit, 200)
+
+        clauses = ["a.agent_id = ?"]
+        values: list[object] = [agent_id]
+        if network:
+            clauses.append("LOWER(a.network) = LOWER(?)")
+            values.append(str(network).strip())
+        if intent_id:
+            clauses.append("a.intent_id = ?")
+            values.append(str(intent_id).strip())
+        if since is not None:
+            clauses.append("a.created_at >= ?")
+            values.append(float(since))
+        if until is not None:
+            clauses.append("a.created_at < ?")
+            values.append(float(until))
+        if search:
+            pattern = "%" + str(search).strip().lower() + "%"
+            clauses.append(
+                "(LOWER(a.payee) LIKE ? "
+                "OR LOWER(COALESCE(aa.decision_json, '')) LIKE ?)"
+            )
+            values.extend((pattern, pattern))
+
+        execution_status_sql = """CASE
+            WHEN er.status IS NOT NULL THEN UPPER(er.status)
+            WHEN aa.execution_authorization_json IS NOT NULL
+                 AND EXISTS (
+                     SELECT 1 FROM execution_nonces n
+                     WHERE n.authorization_id = aa.authorization_id
+                       AND n.intent_id = a.intent_id
+                       AND n.agent_id = a.agent_id
+                 ) THEN 'CONSUMED'
+            WHEN aa.execution_authorization_json IS NOT NULL THEN 'PERMISSION_ISSUED'
+            WHEN UPPER(a.decision) = 'BLOCK' THEN 'BLOCKED'
+            WHEN UPPER(a.decision) = 'WARN' THEN 'REVIEW_REQUIRED'
+            ELSE 'POLICY_ALLOWED'
+        END"""
+        status_value = str(status or "").strip().upper()
+        status_aliases = {
+            "ALLOW": "POLICY_ALLOWED",
+            "WARN": "REVIEW_REQUIRED",
+            "BLOCK": "BLOCKED",
+        }
+        status_value = status_aliases.get(status_value, status_value)
+        if status_value:
+            clauses.append(f"({execution_status_sql}) = ?")
+            values.append(status_value)
+
+        query = f"""
+            SELECT
+                a.intent_id,
+                a.agent_id,
+                a.payee,
+                a.asset,
+                a.network,
+                a.amount,
+                UPPER(a.decision) AS decision,
+                a.created_at,
+                aa.authorization_id,
+                aa.decision_json,
+                aa.execution_authorization_json,
+                er.receipt_json,
+                er.transaction_ref,
+                ({execution_status_sql}) AS execution_status,
+                CASE WHEN aa.authorization_id IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM execution_nonces n
+                    WHERE n.authorization_id = aa.authorization_id
+                      AND n.intent_id = a.intent_id
+                      AND n.agent_id = a.agent_id
+                ) THEN 1 ELSE 0 END AS authorization_consumed
+            FROM audit_log a
+            LEFT JOIN authorization_artifacts aa
+              ON aa.intent_id = a.intent_id AND aa.agent_id = a.agent_id
+            LEFT JOIN execution_receipts er
+              ON er.intent_id = a.intent_id AND er.agent_id = a.agent_id
+            WHERE {" AND ".join(clauses)}
+            ORDER BY a.created_at DESC, a.id DESC
+            LIMIT ?
+        """
+        values.append(limit)
+        with self._lock:
+            rows = self._conn.execute(query, values).fetchall()
+
+        items: list[dict] = []
+        for row in rows:
+            try:
+                decision_receipt = json.loads(row[9]) if row[9] else None
+            except (TypeError, json.JSONDecodeError):
+                decision_receipt = None
+            try:
+                execution_authorization = json.loads(row[10]) if row[10] else None
+            except (TypeError, json.JSONDecodeError):
+                execution_authorization = None
+            try:
+                execution_receipt = json.loads(row[11]) if row[11] else None
+            except (TypeError, json.JSONDecodeError):
+                execution_receipt = None
+
+            decision_payload = (
+                decision_receipt.get("payload", {})
+                if isinstance(decision_receipt, dict) else {}
+            )
+            signed_intent = (
+                decision_payload.get("intent", {})
+                if isinstance(decision_payload, dict) else {}
+            )
+            purpose = ""
+            if isinstance(signed_intent, dict):
+                purpose = str(signed_intent.get("resource") or signed_intent.get("purpose") or "")
+
+            receipt_payload = (
+                execution_receipt.get("payload", {})
+                if isinstance(execution_receipt, dict) else {}
+            )
+            receipt_status = (
+                str(receipt_payload.get("status") or "").upper()
+                if isinstance(receipt_payload, dict) else ""
+            )
+            receipt_trust_scope = None
+            if receipt_status == "SUBMITTED":
+                receipt_trust_scope = "executor_self_report"
+            elif receipt_status in {"REJECTED", "ABORTED", "UNKNOWN"}:
+                receipt_trust_scope = "wallet_outcome_self_report"
+
+            items.append({
+                "intent_id": row[0],
+                "agent_id": row[1],
+                "recipient": row[2],
+                "asset": row[3],
+                "network": row[4],
+                "amount": float(row[5]),
+                "decision": row[6],
+                "created_at": float(row[7]),
+                "authorization_id": row[8],
+                "purpose": purpose,
+                "execution_status": row[13],
+                "authorization_consumed": bool(row[14]),
+                "transaction_hash": row[12],
+                "receipt_status": receipt_status or None,
+                "receipt_trust_scope": receipt_trust_scope,
+                "decision_receipt": decision_receipt,
+                "execution_authorization": execution_authorization,
+                "execution_receipt": execution_receipt,
+            })
+        return items
 
     def count_intent(self, intent_id: str) -> int:
         """Return the number of audit rows for one intent ID."""
