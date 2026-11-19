@@ -1,5 +1,19 @@
 # Changelog
 
+## Anna App 0.1.37 / Executa 0.1.23
+
+### Authority Desk restoration and persistent Payment history
+
+- Restore the compact responsive two-column Authority Desk: plain-language payment request first, quick ALLOW / WARN / BLOCK / missing-details examples, and extracted fields in a collapsed editable review section.
+- Preserve the existing Anna AI interpretation, deterministic Verigate policy decision, signed Decision Receipt, App-scoped approval, one-time Execution Authorization, ExecutionRouter consumption and native-USDC wallet transfer validation.
+- Add a dedicated Payment history view with recipient/invoice search, network/status/date filters and explicit evidence details.
+- Build history from the existing persistent SQLite audit, authorization, consumed-nonce and execution-receipt records. Non-persistent previews are not shown as payments.
+- Add a read-only `verigate_payment_history` Executa tool. The query uses SQLite `mode=ro` and `query_only=ON`, loads only the installation public key, and verifies stored Decision Receipts, Execution Authorizations and ExecutionReceipts before exposing details.
+- Keep policy decisions and execution outcomes distinct: ALLOW is not a transfer; PERMISSION_ISSUED is not submission; SUBMITTED is not independent chain confirmation; REJECTED, ABORTED and UNKNOWN remain explicit Anna installation outcome reports.
+- Keep quick examples as field-fill helpers only. They do not invoke Anna AI, Verigate policy or authorization.
+- Add storage, read-only access, bundle-contract and Anna UI E2E regression coverage.
+- Source candidate only. No Anna Console cut, Executa publication, review submission or Marketplace publication is included.
+
 ## Anna App 0.1.30 / Executa 0.1.17
 
 ### Signed wallet outcome receipts and Anna invoke diagnostics
