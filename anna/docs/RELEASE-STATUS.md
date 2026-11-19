@@ -1,5 +1,18 @@
 # Anna App — current release status
 
+## Source candidate — Anna App 0.1.37 / Executa 0.1.23 — 19 November 2026
+
+- Source branch: `fix/anna-user-ux-payment-history`.
+- Draft PR: [#65](https://github.com/rudimentall1/verigate/pull/65).
+- Candidate App: **0.1.37**.
+- Candidate bundled Executa: **0.1.23**. The new history tool makes this a real Executa source change; the immutable 0.1.21 and 0.1.22 versions must not be overwritten.
+- Anna schema-4 `required_executas.min_version` is aligned to 0.1.23.
+- The candidate restores the compact two-column Authority Desk and adds a first-class Payment history view backed by the existing durable audit / authorization / execution receipt storage.
+- The history reader is explicitly read-only, uses the installation public key only, verifies signed evidence before showing it, and never treats policy preview or SUBMITTED as completed settlement.
+- Full CI run [#2367](https://github.com/rudimentall1/verigate/actions/runs/44510509315) passed on the PR's pre-version-bump source head: 673 Python tests, 71/71 Anna UI E2E, strict schema-4 validation, Linux Executa package/smoke, contracts and container. The synchronized version bump to App 0.1.37 / Executa 0.1.23 happened after that run; a fresh full CI and four-platform 0.1.23 package build are still required.
+- **No Anna Console cut has been made for 0.1.37 / 0.1.23.** No App was released, submitted for review or published from this source branch. Both accounts' existing immutable versions and review rounds remain untouched.
+- Before any next Console cut, validate the exact account-specific App/Executa identity, pass current version-alignment CI, run all four platform build/reproducibility/package/smoke checks, and inspect a fresh rendered screenshot from an actual Anna WebView.
+
 > **Latest verified Anna deployment — 11 November 2026:** App 0.1.31 (version ID 2110) and bundled Executa 0.1.18 (version ID 1064) have been uploaded to Anna Console from source baseline `3731ae66c3ed9e8bd5ef36f0c00e48457db746c3`. All four 0.1.18 binaries were uploaded; post-cut reads through the official Anna CLI confirm the App remains Draft (`is_published=false`, no review candidate) and the Executa remains app-bundled / unpublished. The 0.1.18 build and four-platform SHA-256 evidence is in [the build verification report](EXECUTA-0.1.18-BUILD-VERIFICATION.md). This is a successful immutable Console cut, not a Marketplace release or proof of a fresh Cloud Agent runtime on Executa 0.1.18.
 
 
