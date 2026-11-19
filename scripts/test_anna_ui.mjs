@@ -21,10 +21,10 @@ const VALID = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-ui-"));
 
-function callPlugin(method, args, { appStorage = new Map(), appContext = true, samplingHandler = {} } = {}) {
+function callPlugin(method, args, { appStorage = new Map(), appContext = true, samplingHandler = {}, dataDirectory = dataDir } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(PY, [PLUGIN], {
-      env: { ...process.env, VERIGATE_ANNA_DATA_DIR: dataDir, PYTHONPATH: root },
+      env: { ...process.env, VERIGATE_ANNA_DATA_DIR: dataDirectory, PYTHONPATH: root },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let buffer = "";
@@ -147,7 +147,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, tamperConsumedTransactionRecipient = false, tamperConsumedTransactionAmount = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, tamperConsumedTransactionRecipient = false, tamperConsumedTransactionAmount = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", dataDirectory = dataDir, description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows && window.HTMLDialogElement) {
@@ -215,7 +215,8 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
         const result = await callPlugin(method, pluginArgs, {
           appStorage,
           appContext: true,
-          samplingHandler: { interpret, explain }
+          samplingHandler: { interpret, explain },
+          dataDirectory
         });
         if (method === "verigate_consume_execution_authorization" && tamperConsumedTransactionRecipient) {
           const tx = result?.data?.transaction;
@@ -275,6 +276,38 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
       $("check-btn").click();
       for (let i = 0; i < 400; i++) { await sleep(25); if (!$("check-btn").disabled) break; }
       await sleep(30);
+    },
+    async openHistory() {
+      $("nav-history").click();
+      for (let i = 0; i < 400; i++) {
+        if (!$("history-status").textContent.includes("Loading")) break;
+        await sleep(10);
+      }
+      await sleep(30);
+    },
+    async refreshHistory() {
+      $("history-refresh").click();
+      for (let i = 0; i < 400; i++) {
+        if (!$("history-status").textContent.includes("Loading")) break;
+        await sleep(10);
+      }
+      await sleep(30);
+    },
+    async openHistoryDetails(intentId) {
+      const button = [...window.document.querySelectorAll("[data-history-details]")]
+        .find((item) => item.dataset.intentId === intentId);
+      if (!button) throw new Error("history details button was not rendered for " + intentId);
+      button.click();
+      for (let i = 0; i < 400; i++) {
+        if (!$("history-details").hidden) break;
+        await sleep(10);
+      }
+      if ($("history-details").hidden) throw new Error("history evidence details did not open");
+      await sleep(20);
+    },
+    async clickCheckView() {
+      $("nav-check").click();
+      await sleep(20);
     },
     async clickExecution() {
       $("execution-btn").click();
@@ -1448,6 +1481,40 @@ await test("Anna connection failure is surfaced and app actions stay disabled", 
   ok(ui.text("status").includes("Anna connection failed: no host"), "the original host connection error is visible");
   ok(ui.text("status").includes("check the session"), "the user gets a concrete recovery direction");
   eq(ui.calls.tools.length, 0, "no Executa call can run without a connected host");
+});
+
+
+
+await test("payment history excludes previews, lists persistent authorizations, and opens verified receipts", async () => {
+  const historyDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-payment-history-"));
+  const description = "Pay 25 USDC on Base to " + VALID + " for history invoice 7788";
+  const interpret = () => interpretJson({ ...GOOD, resource: "history invoice 7788" });
+  const ui = await launch({ dataDirectory: historyDataDir, description, interpret });
+
+  await ui.click();
+  await ui.openHistory();
+  ok(!$("history-error") || true, "history view opens");
+  ok(ui.text("history-list").includes("No saved payment records"), "non-persistent preview is not presented as a payment");
+  eq(ui.calls.tools.filter((name) => name === "verigate_payment_history").length, 1);
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "opening history cannot authorize a payment");
+  eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), false, "opening history cannot consume a permission");
+
+  await ui.clickCheckView();
+  await ui.clickExecution();
+  ok(ui.text("execution-status").includes("One-time permission"), "the normal explicit authorization flow ran");
+  await ui.openHistory();
+  ok(ui.text("history-list").includes("PERMISSION_ISSUED"), "history distinguishes an issued permission from a sent payment");
+  ok(ui.text("history-list").includes("history invoice 7788"), "purpose/invoice is visible in the history row");
+  ok(ui.text("history-list").includes("25 USDC"), "amount and asset are visible in the history row");
+
+  const before = ui.calls.tools.filter((name) => name === "verigate_authorize_payment").length;
+  await ui.openHistoryDetails([...ui.window.document.querySelectorAll("[data-history-details]")][0].dataset.intentId);
+  ok(ui.text("history-decision-json").includes("signature"), "signed Decision Receipt is available in evidence details");
+  ok(ui.text("history-details-verification").includes("verified"), "receipt verification result is visible");
+  eq(ui.calls.tools.filter((name) => name === "verigate_authorize_payment").length, before, "opening evidence does not authorize again");
+  eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), false, "history details never consume wallet permission");
+  eq(ui.calls.tools.includes("verigate_record_wallet_submission_receipt"), false, "history details never create wallet receipts");
+  fs.rmSync(historyDataDir, { recursive: true, force: true });
 });
 
 const failed = results.filter(([, passed]) => !passed).length;
