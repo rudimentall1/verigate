@@ -12,6 +12,8 @@
 - Keep policy decisions and execution outcomes distinct: ALLOW is not a transfer; PERMISSION_ISSUED is not submission; SUBMITTED is not independent chain confirmation; REJECTED, ABORTED and UNKNOWN remain explicit Anna installation outcome reports.
 - Keep quick examples as field-fill helpers only. They do not invoke Anna AI, Verigate policy or authorization.
 - Add storage, read-only access, bundle-contract and Anna UI E2E regression coverage.
+- Correct the history reader's data-directory resolution so it performs no directory creation or temporary probe-file writes; add a regression test proving the whole history path stays filesystem read-only.
+- Exact-head CI #2409 passes 674 Python tests and 71/71 Anna UI flows; the four-platform Executa 0.1.23 reproducibility/package/smoke workflow also passes. The release job is skipped.
 - Source candidate only. No Anna Console cut, Executa publication, review submission or Marketplace publication is included.
 
 ## Anna App 0.1.30 / Executa 0.1.17
