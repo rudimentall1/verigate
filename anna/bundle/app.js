@@ -7,7 +7,7 @@ const TOOL_ID =
   DEV_FALLBACK_TOOL_ID;
 
 const $ = (id) => document.getElementById(id);
-const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], lastAiAvailable: null, lastDynamicAuthority: null, lastExecutionAuthorization: null, busy: false, lastInterpretedDescription: "", requestId: 0, historyRequestId: 0 };
+const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], lastAiAvailable: null, lastDynamicAuthority: null, lastExecutionAuthorization: null, busy: false, lastInterpretedDescription: "", requestId: 0, historyRequestId: 0, historyDetailsRequestId: 0 };
 const buttons = [$("check-btn"), $("execution-btn"), $("wallet-execute-btn")];
 const inputs = ["action-description", "agent-id", "target", "asset", "network", "amount", "resource", "confirm-details"].map($);
 const FIELD_IDS = ["target", "asset", "network", "amount"];
@@ -1909,6 +1909,7 @@ async function invokePaymentHistory(args) {
 
 async function loadPaymentHistory() {
   const requestId = ++state.historyRequestId;
+  state.historyDetailsRequestId += 1;
   $("history-error").hidden = true;
   $("history-error").textContent = "";
   $("history-status").textContent = "Loading payment history…";
@@ -1928,6 +1929,7 @@ async function loadPaymentHistory() {
 }
 
 async function loadPaymentHistoryDetails(intentId) {
+  const requestId = ++state.historyDetailsRequestId;
   $("history-error").hidden = true;
   $("history-error").textContent = "";
   $("history-details").hidden = true;
@@ -1937,6 +1939,7 @@ async function loadPaymentHistoryDetails(intentId) {
       limit: 1,
       include_details: true
     });
+    if (requestId !== state.historyDetailsRequestId) return;
     const item = data.items?.[0];
     if (!item || item.intent_id !== intentId || !item.details) {
       throw new Error("Verified payment evidence was not returned for this record.");
@@ -1967,6 +1970,7 @@ async function loadPaymentHistoryDetails(intentId) {
     $("history-execution-details").hidden = !details.execution_receipt;
     $("history-details").hidden = false;
   } catch (error) {
+    if (requestId !== state.historyDetailsRequestId) return;
     $("history-error").textContent = errorDetail(error);
     $("history-error").hidden = false;
   }
@@ -1983,6 +1987,8 @@ function showAppView(view) {
     $("nav-check").removeAttribute("aria-current");
     loadPaymentHistory();
   } else {
+    state.historyDetailsRequestId += 1;
+    $("history-details").hidden = true;
     $("nav-check").setAttribute("aria-current", "page");
     $("nav-history").removeAttribute("aria-current");
   }
@@ -2030,6 +2036,7 @@ async function main() {
     if (button?.dataset?.intentId) loadPaymentHistoryDetails(button.dataset.intentId);
   });
   $("history-details-close").addEventListener("click", () => {
+    state.historyDetailsRequestId += 1;
     $("history-details").hidden = true;
   });
   const invalidate = () => {
