@@ -1493,7 +1493,7 @@ await test("payment history excludes previews, lists persistent authorizations, 
 
   await ui.click();
   await ui.openHistory();
-  ok(!$("history-error") || true, "history view opens");
+  ok(ui.$("history-view").hidden === false, "history view opens");
   ok(ui.text("history-list").includes("No saved payment records"), "non-persistent preview is not presented as a payment");
   eq(ui.calls.tools.filter((name) => name === "verigate_payment_history").length, 1);
   eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "opening history cannot authorize a payment");
