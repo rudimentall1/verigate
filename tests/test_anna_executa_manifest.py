@@ -7,8 +7,10 @@ import importlib.util
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 PLUGIN = Path(__file__).resolve().parents[1] / "anna" / "executas" / "verigate-authority" / "verigate_authority_plugin.py"
 SMOKE = Path(__file__).resolve().parents[1] / "anna" / "smoke_binary.py"
@@ -129,6 +131,29 @@ class ExecutaManifestTest(unittest.TestCase):
         with self.assertRaises(self.plugin.RpcError) as ctx:
             self.plugin.handle({"method": "invoke", "params": {"tool": "verigate_check", "arguments": {}}})
         self.assertEqual(ctx.exception.code, -32602)
+
+    def test_payment_history_does_not_create_or_write_to_data_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "not-created"
+            with patch.dict(
+                self.plugin.os.environ,
+                {"VERIGATE_ANNA_DATA_DIR": str(data_dir)},
+                clear=False,
+            ):
+                with patch.object(
+                    self.plugin.Path,
+                    "mkdir",
+                    side_effect=AssertionError("history reader must not create directories"),
+                ), patch.object(
+                    self.plugin.Path,
+                    "write_text",
+                    side_effect=AssertionError("history reader must not write probe files"),
+                ):
+                    result = self.plugin._verigate_payment_history({"limit": 50})
+
+            self.assertTrue(result["success"], result)
+            self.assertEqual(result["data"]["items"], [])
+            self.assertFalse(data_dir.exists())
 
     def test_plugin_process_answers_describe_and_survives_bad_input(self):
         proc = subprocess.run(
