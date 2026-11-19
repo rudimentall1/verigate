@@ -820,7 +820,9 @@ Relevant implementation history: PRs #7, #22, #27, #44, #54 and #62. Re-check th
   - `.github/workflows/ci.yml` Linux package/smoke literals and `.github/workflows/anna-executa-binaries.yml` four-platform defaults/fallbacks: `0.1.23`.
 - Updated `CHANGELOG.md`, `anna/docs/RELEASE-STATUS.md` and `anna/README.md` with the Authority Desk, Payment history, evidence labels and release boundaries.
 - Four-platform Executa workflow has **not** yet been run for 0.1.23. The full CI run #2367 that passed 673 Python tests, 71/71 Anna UI E2E, strict schema validation, Linux Executa build/smoke, contracts and container was before these version-only changes and before the latest E2E extension for SUBMITTED history evidence.
-- A fresh full CI on the latest PR head is still required to confirm all synchronized 0.1.23 version literals and the extended SUBMITTED-history E2E. Four-platform reproducible builds/package/smoke for 0.1.23 remain a separate release gate.
+- Latest PR-head CI run [#2400](https://github.com/rudimentall1/verigate/actions/runs/44513180068) **PASSED**: Python suite, Anna UI E2E, strict schema validation, Linux Executa smoke, contracts and container. Latest source head: `11c47d6194582e35b1888af86dd3080c51a84882`.
+- Four-platform Executa workflow [run #60](https://github.com/rudimentall1/verigate/actions/runs/44513180095) **PASSED** for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel. Its release job was **skipped** (`publish_release=false`); no GitHub binary release was published.
+- Actual Anna WebView screenshot/visual acceptance remains outstanding. Do not claim the source candidate has been verified visually in live Anna.
 - Actual Anna WebView screenshot/visual acceptance remains outstanding. Do not claim the source candidate has been verified visually in live Anna.
 - PR #65 remains **Draft / open / unmerged**. No Anna Console upload, immutable cut, release, review resubmission or Marketplace publication has been performed for 0.1.37 / 0.1.23.
 - Existing App 851 and App 382 immutable versions and pending review rounds must remain untouched until the user explicitly authorizes a release sequence for each account.
