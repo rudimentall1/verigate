@@ -531,7 +531,7 @@ await test("authorization history is clearly distinguished from completed on-cha
   ok(!limits.includes("Rolling 24-hour spend"), "UI does not call authorization budget settled spend");
   ok(!limits.includes("Recipient history"), "UI does not call a prior authorization a completed payment");
   const note = repeat.$("limits").textContent;
-  ok(note.includes("policy-history counters, not proof that an on-chain transfer was signed, submitted, or settled"), "UI explains the limit of the evidence");
+  ok(note.includes("tracks active policy reservations, not chain-confirmed spend"), "UI explains the limit of the evidence");
 });
 
 await test("one-time execution permission is issued only after a separate user click", async () => {
@@ -1511,7 +1511,7 @@ await test("payment history excludes previews, lists persistent authorizations, 
 
   await ui.clickCheckView();
   await ui.clickExecution();
-  ok(ui.text("execution-status").includes("One-time permission"), "the normal explicit authorization flow ran");
+  ok(ui.text("execution-json").includes("authorization_id"), "the normal explicit authorization flow ran");
   await ui.openHistory();
   ok(ui.text("history-list").includes("Permission issued"), "history distinguishes an issued permission from a sent payment");
   ok(ui.text("history-list").includes("history invoice 7788"), "purpose/invoice is visible in the history row");
