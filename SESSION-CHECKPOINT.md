@@ -741,3 +741,72 @@ Relevant implementation history: PRs #7, #22, #27, #44, #54 and #62. Re-check th
 - Capture fresh screenshots of the actual candidate and inspect them before cutting any immutable Anna version. Validate the exact account-specific bundled Executa identity and version.
 - No destructive rollback, replacement of existing immutable versions, review resubmission or Marketplace release as part of this UX work without an explicit release decision.
 
+## 29. Authority Desk restoration and persistent payment history implementation — 2026-11-19
+
+### User-facing correction
+
+- The user confirmed that App 0.1.36 / Executa 0.1.21 had the correct interface. Do not describe that known-good design as the defect. The defect was the later release/source mismatch that reintroduced an older single-column UI and omitted the requested user-facing payment history.
+- The intended direction is the compact responsive two-column **Authority Desk** recovered from `fix/anna-receipt-verification-agent-scope`, not a fresh visual redesign from memory.
+- App 0.1.36 / Executa 0.1.21 remains the user-confirmed visual reference. The current immutable second-account App 382 cut is 0.1.36 (version ID 2634) frozen to Executa 0.1.22 (version ID 1218) and was submitted for review on 2026-11-19. Do not overwrite immutable records or silently assume the review candidate has the new UI/history source.
+
+### Implementation branch and PR
+
+- Dedicated source branch: `fix/anna-user-ux-payment-history`.
+- Draft PR: [#65 — restore Authority Desk and add verified payment history](https://github.com/rudimentall1/verigate/pull/65).
+- Base: `fix/anna-release-readiness`; source-only draft, not merged.
+- Changed source files currently include:
+  - `anna/bundle/index.html`: restore the two-column Authority Desk and add a dedicated Payment history view.
+  - `anna/bundle/app.js`: wire Check / Payment history navigation, quick examples, history query/filter, verified evidence details and explorer links for recognised Base/Ethereum transaction hashes.
+  - `anna/executas/verigate-authority/verigate_authority_plugin.py`: add `verigate_payment_history`; load only the public issuer key; verify saved decision, execution authorization and execution receipts before exposing evidence.
+  - `anna/executas/verigate-authority/manifest.json` and runtime `MANIFEST`: declare the same read-only history tool; keep `describe` parity.
+  - `core/storage.py`: query audit, authorization, consumed nonce and execution receipt records, with recipient/purpose search and network/status/date/intent filters.
+  - `tests/test_storage.py`, `tests/test_anna_app_bundle.py`, `tests/test_payee_validation.py`, `scripts/test_anna_ui.mjs`: storage, manifest, UI contract and end-to-end regression coverage.
+- No Anna Console upload, App cut, Executa publish, review resubmission or Marketplace publication was performed from this branch.
+
+### Payment history semantics and security boundary
+
+- History uses the existing durable SQLite audit/authorization/receipt records. It is not a browser-local transient list.
+- Non-persistent `verigate_check` previews are not persisted and must not appear as saved payments.
+- History is installation-scoped to the Ed25519 issuer public-key fingerprint; do not imply cross-installation/account aggregation.
+- A history query must not load the issuer private key, issue an approval, issue/consume an Execution Authorization, contact a wallet/RPC, retry or broadcast a payment.
+- The history reader must use the strictly read-only SQLite opener (`Storage.open_read_only`, SQLite `mode=ro` plus `query_only=ON`). Do not use the normal `Storage()` constructor for a read-only UI call because it initializes schema/WAL and may perform migrations.
+- Verify Decision Receipts, Execution Authorizations and ExecutionReceipts with the installation public key before showing them. Do not display altered/unverified TX hashes as evidence.
+- Keep lifecycle labels separate:
+  - `POLICY_ALLOWED`: policy allowed; no payment was sent.
+  - `REVIEW_REQUIRED` / `BLOCKED`: policy result only.
+  - `PERMISSION_ISSUED`: a signed one-time permission exists; not consumed and not sent.
+  - `CONSUMED`: ExecutionRouter consumed the one-time permission; wallet outcome unresolved.
+  - `SUBMITTED`: wallet returned a transaction hash and a signed receipt was saved; not independent chain confirmation.
+  - `REJECTED`, `ABORTED`, `UNKNOWN`: signed Anna installation outcome reports; not wallet-signed or independent chain evidence.
+  - Do not label a record `CONFIRMED` or `SETTLED` without a separate independent chain verifier bound to the exact authorization/transaction.
+- Opening history or evidence details must remain a read-only action. All raw signed JSON is behind a deliberate evidence-details interaction.
+
+### CI results and corrections observed so far
+
+- Initial PR CI run #2347 / run ID `44509083553`:
+  - `contracts`: PASS.
+  - `container`: PASS.
+  - `anna-ui`: initially in progress, later failed.
+  - `test`: failed because the new frontend history method was absent from runtime `MANIFEST`, while the JSON manifest declared it.
+- Follow-up CI run #2349 / run ID `44509390439`:
+  - `contracts`: PASS.
+  - `container`: PASS.
+  - Runtime and published manifest parity was corrected; remaining Python failure was an older test's hard-coded tool list missing `verigate_payment_history`.
+  - Anna UI E2E exposed two issues: old authorization-history copy assertion no longer matched the Authority Desk copy, and jsdom did not implement `scrollIntoView`; both were corrected. The history-flow assertion was changed to inspect the signed authorization JSON rather than a non-contractual status phrase.
+- Additional hardening after that run:
+  - Added strictly read-only SQLite connection and regression test.
+  - Added an Evidence Invalid status filter path.
+  - Updated the hard-coded Executa tool list test.
+  - Added bundle contract tests for Authority Desk/history elements and the read-only manifest/tool contract.
+- **Do not report CI green yet.** These latest fixes have not yet been verified by a completed CI run on the latest PR head. Re-run/observe all four jobs on the latest head; inspect any further failures and repair them before calling the source release-ready.
+
+### Remaining work before any new immutable Anna version
+
+1. Obtain a complete passing CI on the latest PR head: Python full suite, contracts, container, Anna UI E2E, strict schema validation and Linux Executa binary build/package/smoke.
+2. Recheck storage read-only behavior, status filter semantics, signed evidence verification and installation isolation.
+3. Verify the actual rendered Authority Desk + Payment history screen in a real browser/embedded Anna WebView. Capture fresh screenshots; jsdom tests alone are not visual acceptance.
+4. Reconfirm responsive desktop/narrow layout, keyboard/focus behavior, no horizontal overflow, accessible status labels and that no history interaction invokes privileged tools.
+5. Since Executa gained a new declared tool, bump all synchronized Executa source/build/runtime/manifest versions to the next immutable version and align `uv.lock`, binary workflow defaults and CI smoke literals. Bump App metadata and raise App manifest `required_executas.min_version` to that new Executa version. Do not reuse immutable 0.1.21 or 0.1.22 with changed content.
+6. Cut and verify a new App/Executa pair separately for each Anna Developer account, checking account-specific App IDs and tool IDs before every CLI operation. Do not touch App 851 while operating on App 382, or vice versa.
+7. Do not publish, submit a new review candidate, or modify either current pending review round without an explicit release decision from the user.
+
