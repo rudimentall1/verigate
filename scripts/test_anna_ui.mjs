@@ -147,7 +147,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, tamperConsumedTransactionRecipient = false, tamperConsumedTransactionAmount = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", dataDirectory = dataDir, description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, tamperConsumedTransactionRecipient = false, tamperConsumedTransactionAmount = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", dataDirectory = dataDir, historyInvokeOverride = null, description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows && window.HTMLDialogElement) {
@@ -188,6 +188,9 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
           calls.tools.push(method);
         }
         calls.toolArgs[method] = args;
+        if (method === "verigate_payment_history" && historyInvokeOverride) {
+          return { result: await historyInvokeOverride(args) };
+        }
         if (method === "verigate_authorize_payment" && authorizeInvokeFails) {
           const error = new Error("Unauthorized while refreshing Anna session");
           error.status = 401;
@@ -1494,6 +1497,105 @@ await test("Anna connection failure is surfaced and app actions stay disabled", 
 });
 
 
+
+
+await test("stale payment history evidence cannot overwrite a newer selection", async () => {
+  let resolveFirst;
+  let resolveSecond;
+  const firstDetails = new Promise((resolve) => { resolveFirst = resolve; });
+  const secondDetails = new Promise((resolve) => { resolveSecond = resolve; });
+  const records = [
+    { intent_id: "history-first", recipient: VALID, asset: "USDC", network: "base", amount: 10, decision: "ALLOW", execution_status: "PERMISSION_ISSUED", created_at: 1, purpose: "first" },
+    { intent_id: "history-second", recipient: VALID, asset: "USDC", network: "base", amount: 20, decision: "ALLOW", execution_status: "PERMISSION_ISSUED", created_at: 2, purpose: "second" }
+  ];
+  const ui = await launch({
+    historyInvokeOverride: async (args) => {
+      if (!args.include_details) return { success: true, data: { items: records, count: records.length } };
+      return args.intent_id === "history-first" ? firstDetails : secondDetails;
+    }
+  });
+  await ui.openHistory();
+  const buttons = [...ui.window.document.querySelectorAll("[data-history-details]")];
+  eq(buttons.length, 2, "two payment records are visible");
+  buttons[0].click();
+  buttons[1].click();
+
+  resolveSecond({
+    success: true,
+    data: {
+      items: [{
+        intent_id: "history-second",
+        receipt_trust_scope: null,
+        details: {
+          decision_verification: { verified: true, key_fingerprint_sha256: "fingerprint-second" },
+          execution_authorization_verification: { verified: true },
+          execution_receipt_verification: { verified: null },
+          decision_receipt: { signature: "second-signature" },
+          execution_receipt: null
+        }
+      }]
+    }
+  });
+  for (let i = 0; i < 100; i++) {
+    if (ui.text("history-details-verification").includes("fingerprint-second")) break;
+    await sleep(10);
+  }
+  ok(ui.text("history-details-verification").includes("fingerprint-second"), "newer selected record opens first");
+
+  resolveFirst({
+    success: true,
+    data: {
+      items: [{
+        intent_id: "history-first",
+        receipt_trust_scope: null,
+        details: {
+          decision_verification: { verified: true, key_fingerprint_sha256: "fingerprint-first" },
+          execution_authorization_verification: { verified: true },
+          execution_receipt_verification: { verified: null },
+          decision_receipt: { signature: "first-signature" },
+          execution_receipt: null
+        }
+      }]
+    }
+  });
+  await sleep(30);
+  ok(ui.text("history-details-verification").includes("fingerprint-second"), "late response from previous selection is ignored");
+  ok(!ui.text("history-details-verification").includes("fingerprint-first"), "stale evidence is never displayed over the selected record");
+});
+
+await test("closing payment evidence cancels its pending response", async () => {
+  let resolveDetails;
+  const pendingDetails = new Promise((resolve) => { resolveDetails = resolve; });
+  const record = { intent_id: "history-close", recipient: VALID, asset: "USDC", network: "base", amount: 10, decision: "ALLOW", execution_status: "PERMISSION_ISSUED", created_at: 1, purpose: "close test" };
+  const ui = await launch({
+    historyInvokeOverride: async (args) => {
+      if (!args.include_details) return { success: true, data: { items: [record], count: 1 } };
+      return pendingDetails;
+    }
+  });
+  await ui.openHistory();
+  ui.window.document.querySelector("[data-history-details]").click();
+  ui.$("history-details-close").click();
+  ok(ui.$("history-details").hidden, "details close immediately");
+  resolveDetails({
+    success: true,
+    data: {
+      items: [{
+        intent_id: "history-close",
+        receipt_trust_scope: null,
+        details: {
+          decision_verification: { verified: true, key_fingerprint_sha256: "late-after-close" },
+          execution_authorization_verification: { verified: true },
+          execution_receipt_verification: { verified: null },
+          decision_receipt: { signature: "late-signature" },
+          execution_receipt: null
+        }
+      }]
+    }
+  });
+  await sleep(30);
+  ok(ui.$("history-details").hidden, "late response does not reopen closed evidence");
+});
 
 await test("payment history excludes previews, lists persistent authorizations, and opens verified receipts", async () => {
   const historyDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-payment-history-"));
