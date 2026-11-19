@@ -388,6 +388,16 @@ async function test(name, fn) {
 const eq = (a, b, m) => { if (a !== b) throw new Error((m || "") + " expected " + JSON.stringify(b) + " got " + JSON.stringify(a)); };
 const ok = (c, m) => { if (!c) throw new Error(m); };
 
+await test("quick examples only fill the request and never start AI or policy checks", async () => {
+  const ui = await launch({});
+  const example = ui.window.document.querySelector("[data-example]");
+  ok(example, "Authority Desk quick example exists");
+  example.click();
+  eq(ui.$("action-description").value, example.dataset.example, "example fills the ordinary payment request field");
+  eq(ui.calls.tools.length, 0, "example selection does not call Verigate");
+  eq(ui.calls.llm, 0, "example selection does not call Anna AI");
+});
+
 await test("valid request: AI reads it, Verigate allows, limits table is shown", async () => {
   const ui = await launch({});
   await ui.click();
@@ -1503,7 +1513,7 @@ await test("payment history excludes previews, lists persistent authorizations, 
   await ui.clickExecution();
   ok(ui.text("execution-status").includes("One-time permission"), "the normal explicit authorization flow ran");
   await ui.openHistory();
-  ok(ui.text("history-list").includes("PERMISSION_ISSUED"), "history distinguishes an issued permission from a sent payment");
+  ok(ui.text("history-list").includes("Permission issued"), "history distinguishes an issued permission from a sent payment");
   ok(ui.text("history-list").includes("history invoice 7788"), "purpose/invoice is visible in the history row");
   ok(ui.text("history-list").includes("25 USDC"), "amount and asset are visible in the history row");
 
