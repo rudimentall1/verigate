@@ -9,7 +9,9 @@
 - Anna schema-4 `required_executas.min_version` is aligned to 0.1.23.
 - The candidate restores the compact two-column Authority Desk and adds a first-class Payment history view backed by the existing durable audit / authorization / execution receipt storage.
 - The history reader is explicitly read-only, uses the installation public key only, verifies signed evidence before showing it, and never treats policy preview or SUBMITTED as completed settlement.
-- Full CI run [#2367](https://github.com/rudimentall1/verigate/actions/runs/44510509315) passed on the PR's pre-version-bump source head: 673 Python tests, 71/71 Anna UI E2E, strict schema-4 validation, Linux Executa package/smoke, contracts and container. The synchronized version bump to App 0.1.37 / Executa 0.1.23 happened after that run; a fresh full CI and four-platform 0.1.23 package build are still required.
+- Full CI [#2400](https://github.com/rudimentall1/verigate/actions/runs/44513180068) **PASSED** on the synchronized App 0.1.37 / Executa 0.1.23 source: 673 Python tests, 71/71 Anna UI flows, strict schema-4 validation, Linux Executa build/smoke, contracts and container.
+- Four-platform Executa 0.1.23 reproducibility/package/smoke [#60](https://github.com/rudimentall1/verigate/actions/runs/44513180095) **PASSED** on Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel. The workflow release job was skipped (publish_release=false); no binary release was published.
+- A fresh actual Anna WebView screenshot and visual acceptance at desktop/narrow widths remain outstanding.
 - **No Anna Console cut has been made for 0.1.37 / 0.1.23.** No App was released, submitted for review or published from this source branch. Both accounts' existing immutable versions and review rounds remain untouched.
 - Before any next Console cut, validate the exact account-specific App/Executa identity, pass current version-alignment CI, run all four platform build/reproducibility/package/smoke checks, and inspect a fresh rendered screenshot from an actual Anna WebView.
 
