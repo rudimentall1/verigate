@@ -13,6 +13,7 @@
 - Keep quick examples as field-fill helpers only. They do not invoke Anna AI, Verigate policy or authorization.
 - Add storage, read-only access, bundle-contract and Anna UI E2E regression coverage.
 - Correct the history reader's data-directory resolution so it performs no directory creation or temporary probe-file writes; add a regression test proving the whole history path stays filesystem read-only.
+- Guard Payment history evidence details against stale asynchronous responses: a newer selection, list refresh, view switch or close invalidates any older request.
 - Exact-head CI #2409 passes 674 Python tests and 71/71 Anna UI flows; the four-platform Executa 0.1.23 reproducibility/package/smoke workflow also passes. The release job is skipped.
 - Source candidate only. No Anna Console cut, Executa publication, review submission or Marketplace publication is included.
 
