@@ -669,3 +669,75 @@ Implement a constrained agent signer service before any production claim:
 - Anna Console remains on immutable Draft App 0.1.31 / Executa 0.1.18 from source baseline `3731ae66c3ed9e8bd5ef36f0c00e48457db746c3`. PR #62 source changes are not part of that cut. The current Console cut has not been refreshed with this branch.
 - No Anna CU, live wallet signature, transaction broadcast, new live payment, Marketplace review or publication occurred as part of PR #62.
 - PR #62 remains Draft, open and unmerged. CI PASS is source/build evidence, not live Anna acceptance or wallet security-classification evidence.
+
+## 28. Anna human-facing UX, known-good interface baseline, and payment history backlog — 2026-11-19
+
+### User correction — preserve the known-good release interface
+
+- The user explicitly confirms that **Anna App 0.1.36 with bundled Executa 0.1.21 had the correct interface**. Treat this as the user-confirmed visual baseline. Do not replace it with an older, longer, developer-oriented layout or redesign from memory.
+- The later Executa 0.1.22 version was frozen during the App 0.1.36 release process because Anna rejected re-publishing changed binaries under immutable Executa version 0.1.21 (`binary_sha256` mismatch). The version bump itself is not evidence of a requested UX redesign. Verify the exact App/Executa pair before attributing UI or runtime behavior to it.
+- On 19 November, App 382 was cut as immutable App 0.1.36 (version ID 2634), frozen to Executa 0.1.22 (version ID 1218), and `apps submit-review` confirmed that review is pinned to 0.1.36. Do not mutate or overwrite immutable versions. A future UX correction must be a new version and must be validated before another review submission.
+- Keep the first Anna account (App 851) separate from App 382. Do not switch or overwrite account-specific app/Executa identities while preparing a new candidate.
+
+### Recovered UX direction — Authority Desk
+
+- Existing source history contains an explicit **Authority Desk interface refresh** in branch `fix/anna-receipt-verification-agent-scope`, documented in `CHANGELOG.md` under App 0.1.33 / Executa 0.1.19. It is historical evidence of the agreed UX direction, not an instruction to blindly roll back to that branch.
+- Reference implementation:
+  - `anna/bundle/index.html` on `fix/anna-receipt-verification-agent-scope`
+  - `anna/bundle/app.js` on the same branch
+  - Visual reference: `anna/assets/listing/v033-authority-desk.png`
+  - E2E reference: `scripts/test_anna_ui.mjs`, test “quick examples populate the payment request without bypassing the normal check”
+  - Changelog entry: `CHANGELOG.md`, “Authority Desk interface refresh”
+- Product direction recorded there: responsive compact two-column Authority Desk; natural-language payment request first; quick examples for ALLOW, WARN, hard-cap BLOCK and missing details; extracted fields available in a collapsed, editable review section; explain the distinct roles of AI interpretation, deterministic Verigate policy and wallet signing on the first screen.
+- Preserve the existing Executa, deterministic policy, signed Decision Receipt, App-scoped approvals, one-time Execution Authorization and wallet hand-off. The visual redesign must not create a second authorization path or bypass explicit user confirmation.
+- Quick examples are helpers only: selecting an example fills the request field and must not invoke Anna AI, call Verigate or create a permission by itself.
+
+### Recovered defects and fixes — retain these as regression requirements
+
+The following problems and corresponding fixes are recorded across the Anna changelog and merged/draft PR history. Keep their regression coverage when making UX changes:
+
+1. Anna Sampling sometimes returned malformed JSON for a valid request. The intake flow was hardened with a larger response allowance, tolerant parsing and one bounded retry with a stricter reminder. The error must identify a malformed Anna response, not blame the user's request.
+2. A failed new check could leave a stale AI explanation visible. Clear prior result and status state before starting a new check.
+3. Missing-detail questions could be duplicated. Produce one deterministic clarification per missing field.
+4. Anna Sampling quota/model availability could prevent even a deterministic preview. Permit only the explicitly labelled policy-only preview fallback for recognized Sampling availability/quota failures; never claim an AI review occurred and never issue execution authority from that degraded path.
+5. Missing, ambiguous or conflicting payment details must stop before policy evaluation and ask the user to clarify or confirm the exact values.
+6. Embedded WebViews could expose `showModal()` but fail to display the native dialog. Use the in-App confirmation overlay with explicit Confirm/Cancel, Escape/backdrop cancellation and focus restoration. Do not write approval state before explicit confirmation.
+7. Cancelling ALLOW permission creation or WARN review must clear pending state, create no App approval, issue no Execution Authorization and leave a deliberate retry possible.
+8. A signed Decision Receipt must match the exact current form intent: recipient, asset, network, amount and purpose/resource. Reject mismatches; do not show an unrelated decision as applying to edited fields.
+9. Anna host/session/permission/quota/runtime failures must remain distinguishable. Preserve the original error code/message and correlation fields such as `invoke_id`, `client_id` and `reason`; do not silently convert a 401 or missing Executa into a policy-only preview.
+10. Wallet hand-off must remain bound to the exact native USDC contract, chain, zero native value, transfer selector, recipient and amount. Fail closed when recipient code cannot be checked; require a separate explicit confirmation for contract recipients; never suppress or bypass MetaMask Malicious/critical warnings.
+11. A lost or ambiguous wallet response must not be retried as though the one-time authorization were unused. Preserve the terminal distinctions REJECTED, ABORTED, UNKNOWN and SUBMITTED, with signed evidence and honest trust-scope labels.
+12. The app must explain that ALLOW is a policy decision, not proof that the recipient is safe, that a transaction was submitted, or that settlement occurred.
+
+Relevant implementation history: PRs #7, #22, #27, #44, #54 and #62. Re-check their source and tests before changing the same flows; do not re-implement already solved defects or remove their regressions.
+
+### New P0 product gap — user-visible payment history is missing
+
+- **The Anna interface still has no dedicated, user-facing payment history.** This is an explicit product requirement, not an optional cosmetic enhancement.
+- Add a first-class **Payment history** view/section reachable from the Authority Desk. Do not make users inspect raw JSON, Executa logs, SQLite files or the technical receipt panel to understand prior payments.
+- Show durable records available from the existing persisted Verigate/Executa evidence. Each entry should present, where known: timestamp; recipient; asset and network; amount; purpose/invoice; policy decision; execution/wallet outcome; transaction hash when returned; and a way to open the associated signed receipt/evidence details.
+- Support practical lookup of prior activity: at minimum search by recipient or invoice/purpose and filter by date, network and status. Keep the default view compact; put raw signed JSON, public-key fingerprint and detailed verification material behind a deliberate “Details” action.
+- Clearly distinguish the lifecycle states. Never collapse them into a generic “Paid” or “Successful” label:
+  - **Preview**: non-persistent policy preview; it is not a payment-history transaction unless explicitly shown in a separately labelled preview/audit area.
+  - **ALLOW / WARN / BLOCK**: policy decision only. It does not establish execution or payment.
+  - **Permission issued / consumed**: authorization lifecycle, not proof of wallet submission or settlement.
+  - **SUBMITTED**: wallet returned a transaction hash and the corresponding signed ExecutionReceipt was stored. This is not independent chain confirmation or settlement.
+  - **REJECTED / ABORTED**: signed Anna-installation outcome receipts with their documented trust scope; these are not wallet-signed statements or chain proofs.
+  - **UNKNOWN**: ambiguous outcome. Do not claim failure or success; preserve the unresolved state and active reservation semantics.
+  - **CONFIRMED / SETTLED**: display only when independent chain-verification evidence exists and is bound to the same transaction/authorization. Do not infer it from SUBMITTED.
+- The history must not expose private keys, wallet secrets, API tokens or sensitive local paths. It must not create a new execution path, retry payments, or change policy decisions.
+- Reuse existing persisted receipts and reservation/accounting records where possible. First inspect the actual persistence model and lifecycle semantics; do not invent an in-memory-only “history” that disappears on restart or fabricate records for non-persistent previews.
+- Ensure history survives supported app/runtime restarts to the extent guaranteed by the chosen Anna persistence layer. Explicitly document any platform persistence limitation rather than implying account-wide or permanent retention.
+- Keep authorization-budget/reservation semantics consistent: verified REJECTED/ABORTED may release a reservation under the existing rules; UNKNOWN and SUBMITTED remain reserved until resolved. History display must not independently mutate that accounting.
+- Required UI/E2E coverage: ALLOW, WARN, BLOCK, preview-only, permission issued/consumed, SUBMITTED with hash, REJECTED, ABORTED, UNKNOWN, and independently verified on-chain confirmation; empty history; search/filter; details/evidence view; refresh/restart persistence; and proof that opening/filtering history never invokes authorization or wallet-send tools.
+
+### Acceptance gate for the next Anna UX release
+
+- Start by comparing the exact source and rendered UI against the user-confirmed App 0.1.36 / Executa 0.1.21 baseline. Do not assume a branch name or version number alone proves the visual state; inspect the actual bundle and screenshots.
+- Build a user-oriented regression checklist covering first-time use, ordinary payment entry, edits to extracted values, missing/ambiguous details, all four quick examples, AI quota unavailable, ALLOW/WARN/BLOCK, both confirmation cancellations, wallet hand-off and every recorded wallet outcome.
+- Implement payment history as a separate, visible product capability while preserving the established authorization boundary.
+- Test desktop and narrow embedded-WebView layouts. Confirm compact hierarchy, readable labels, clear status language, keyboard/focus behavior and no horizontal overflow.
+- Run strict Anna schema validation, all Anna UI E2E tests, relevant Python/backend tests, and the four-platform Executa build/smoke checks when Executa source changes.
+- Capture fresh screenshots of the actual candidate and inspect them before cutting any immutable Anna version. Validate the exact account-specific bundled Executa identity and version.
+- No destructive rollback, replacement of existing immutable versions, review resubmission or Marketplace release as part of this UX work without an explicit release decision.
+
