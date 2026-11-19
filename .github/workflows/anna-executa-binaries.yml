@@ -8,6 +8,13 @@ on:
       - ".github/workflows/anna-executa-binaries.yml"
       - "anna/**"
       - "requirements.txt"
+  pull_request:
+    branches:
+      - fix/anna-release-readiness
+    paths:
+      - ".github/workflows/anna-executa-binaries.yml"
+      - "anna/**"
+      - "requirements.txt"
   workflow_dispatch:
     inputs:
       version:
