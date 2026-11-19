@@ -441,6 +441,9 @@ class StorageTest(unittest.TestCase):
         self._record_payment_history_item(intent_id="issued")
         self._record_payment_history_item(intent_id="consumed", consumed=True)
         self._record_payment_history_item(intent_id="submitted", consumed=True, execution_status="SUBMITTED")
+        self._record_payment_history_item(intent_id="rejected", consumed=True, execution_status="REJECTED")
+        self._record_payment_history_item(intent_id="aborted", consumed=True, execution_status="ABORTED")
+        self._record_payment_history_item(intent_id="unknown", consumed=True, execution_status="UNKNOWN")
         self._record_payment_history_item(
             intent_id="blocked",
             decision=Decision.BLOCK,
@@ -450,11 +453,20 @@ class StorageTest(unittest.TestCase):
         history = self.storage.payment_history("agent-1", limit=20)
 
         by_id = {item["intent_id"]: item for item in history}
-        self.assertEqual(set(by_id), {"issued", "consumed", "submitted", "blocked"})
+        self.assertEqual(
+            set(by_id),
+            {"issued", "consumed", "submitted", "rejected", "aborted", "unknown", "blocked"},
+        )
         self.assertEqual(by_id["issued"]["execution_status"], "PERMISSION_ISSUED")
         self.assertEqual(by_id["consumed"]["execution_status"], "CONSUMED")
         self.assertEqual(by_id["submitted"]["execution_status"], "SUBMITTED")
         self.assertEqual(by_id["submitted"]["transaction_hash"], "0x" + "b" * 64)
+        self.assertEqual(by_id["submitted"]["receipt_trust_scope"], "executor_self_report")
+        for status in ("rejected", "aborted", "unknown"):
+            with self.subTest(status=status):
+                self.assertEqual(by_id[status]["execution_status"], status.upper())
+                self.assertIsNone(by_id[status]["transaction_hash"])
+                self.assertEqual(by_id[status]["receipt_trust_scope"], "wallet_outcome_self_report")
         self.assertEqual(by_id["blocked"]["execution_status"], "BLOCKED")
         self.assertEqual(by_id["issued"]["purpose"], "invoice 1042")
         self.assertEqual(by_id["issued"]["decision"], "ALLOW")
