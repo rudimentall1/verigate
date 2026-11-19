@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import tempfile
 import unittest
 from decimal import Decimal
@@ -420,6 +421,21 @@ class StorageTest(unittest.TestCase):
                 },
                 "signature": "execution-signature",
             })
+
+    def test_read_only_storage_connection_cannot_mutate_or_create_database(self) -> None:
+        read_only = Storage.open_read_only(self.db_path)
+        try:
+            rows = read_only.history("agent-1")
+            self.assertEqual(rows, [])
+            with self.assertRaises(sqlite3.OperationalError):
+                read_only._conn.execute("DELETE FROM audit_log")
+        finally:
+            read_only.close()
+
+        missing_path = Path(self.tmp.name) / "missing.db"
+        with self.assertRaises(sqlite3.OperationalError):
+            Storage.open_read_only(missing_path)
+        self.assertFalse(missing_path.exists())
 
     def test_payment_history_joins_policy_authorization_and_wallet_receipt_states(self) -> None:
         self._record_payment_history_item(intent_id="issued")
