@@ -1358,6 +1358,254 @@ async def _verigate_record_wallet_outcome_receipt(args: dict) -> dict:
         return {"success": False, "error": f"wallet outcome receipt not recorded: {exc}"}
 
 
+def _verigate_payment_history(args: dict) -> dict:
+    """Read and verify persistent payment authorization/execution history.
+
+    This tool is read-only. It loads only the public issuer key and durable
+    SQLite records; it never opens the issuer private key, writes approvals,
+    authorizes actions, consumes permissions, or contacts a wallet/RPC.
+    """
+    if not isinstance(args, dict):
+        return {"success": False, "error": "arguments must be an object"}
+
+    raw_limit = args.get("limit", 50)
+    if isinstance(raw_limit, bool) or not isinstance(raw_limit, int) or not 1 <= raw_limit <= 200:
+        return {"success": False, "error": "limit must be an integer from 1 to 200"}
+
+    def _text_arg(name: str, maximum: int) -> str:
+        value = args.get(name, "")
+        if not isinstance(value, str):
+            raise ValueError(f"{name} must be a string")
+        value = value.strip()
+        if len(value) > maximum:
+            raise ValueError(f"{name} exceeds {maximum} characters")
+        return value
+
+    try:
+        search = _text_arg("search", 160)
+        network = _text_arg("network", 24).lower()
+        status = _text_arg("status", 32).upper()
+        intent_id = _text_arg("intent_id", 128)
+        allowed_statuses = {
+            "", "POLICY_ALLOWED", "REVIEW_REQUIRED", "BLOCKED",
+            "PERMISSION_ISSUED", "CONSUMED", "SUBMITTED",
+            "REJECTED", "ABORTED", "UNKNOWN",
+        }
+        status_aliases = {"ALLOW": "POLICY_ALLOWED", "WARN": "REVIEW_REQUIRED", "BLOCK": "BLOCKED"}
+        status = status_aliases.get(status, status)
+        if status not in allowed_statuses:
+            raise ValueError("unsupported payment history status filter")
+
+        since = args.get("since")
+        until = args.get("until")
+        for name, value in (("since", since), ("until", until)):
+            if value is not None and (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+            ):
+                raise ValueError(f"{name} must be a finite Unix timestamp")
+        if since is not None and until is not None and float(since) >= float(until):
+            raise ValueError("since must be earlier than until")
+        include_details = args.get("include_details", False)
+        if not isinstance(include_details, bool):
+            raise ValueError("include_details must be a boolean")
+        if include_details and not intent_id:
+            raise ValueError("intent_id is required when include_details is true")
+
+        data_dir = _resolve_data_dir()
+        public_path = data_dir / "issuer.pub"
+        database_path = data_dir / "verigate.db"
+        if not database_path.exists() and not public_path.exists():
+            return {"success": True, "data": {
+                "items": [],
+                "count": 0,
+                "limit": raw_limit,
+                "history_note": "Policy previews are not saved. Only persistent authorization records appear here.",
+            }}
+        if not public_path.is_file() or not database_path.is_file():
+            raise RuntimeError("persistent history or its public verification key is unavailable")
+
+        from attest.keys import load_public_key
+        from attest.receipt import (
+            verify_execution_authorization,
+            verify_execution_receipt,
+            verify_receipt,
+        )
+        from core.storage import Storage
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+        public_key = load_public_key(public_path)
+        public_key_raw = public_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
+        key_fingerprint = hashlib.sha256(public_key_raw).hexdigest()
+        public_key_pem = public_key.public_bytes(
+            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+        ).decode("ascii")
+        principal_id = "anna-installation:" + key_fingerprint
+
+        storage = Storage(str(database_path))
+        try:
+            records = storage.payment_history(
+                principal_id,
+                limit=raw_limit,
+                search=search,
+                network=network,
+                status=status,
+                intent_id=intent_id,
+                since=float(since) if since is not None else None,
+                until=float(until) if until is not None else None,
+            )
+        finally:
+            storage.close()
+
+        items = []
+        for record in records:
+            decision_receipt = record.get("decision_receipt")
+            execution_authorization = record.get("execution_authorization")
+            execution_receipt = record.get("execution_receipt")
+
+            decision_verified, decision_reason = (
+                verify_receipt(decision_receipt, public_key)
+                if isinstance(decision_receipt, dict)
+                else (False, "stored Decision Receipt is missing")
+            )
+            if decision_verified:
+                payload = decision_receipt.get("payload", {})
+                signed_intent = payload.get("intent", {}) if isinstance(payload, dict) else {}
+                signed_decision = payload.get("decision", {}) if isinstance(payload, dict) else {}
+                try:
+                    signed_amount = float(signed_intent.get("amount"))
+                    row_amount = float(record.get("amount"))
+                    amount_matches = math.isfinite(signed_amount) and signed_amount == row_amount
+                except (TypeError, ValueError):
+                    amount_matches = False
+                decision_verified = bool(
+                    isinstance(signed_intent, dict)
+                    and signed_intent.get("intent_id") == record.get("intent_id")
+                    and signed_intent.get("agent_id") == principal_id
+                    and signed_intent.get("target") == record.get("recipient")
+                    and str(signed_intent.get("asset") or "").upper() == str(record.get("asset") or "").upper()
+                    and str(signed_intent.get("network") or "").lower() == str(record.get("network") or "").lower()
+                    and amount_matches
+                    and str(signed_decision.get("decision") or "").upper() == record.get("decision")
+                )
+                if not decision_verified:
+                    decision_reason = "signed Decision Receipt does not match the stored payment record"
+
+            authorization_verified = False
+            authorization_reason = "no execution permission was issued"
+            if execution_authorization is not None:
+                auth_payload = (
+                    execution_authorization.get("payload")
+                    if isinstance(execution_authorization, dict) else None
+                )
+                issued_at = auth_payload.get("issued_at") if isinstance(auth_payload, dict) else None
+                if isinstance(issued_at, int) and not isinstance(issued_at, bool):
+                    authorization_verified, authorization_reason = verify_execution_authorization(
+                        execution_authorization, public_key, verification_time=issued_at
+                    )
+                if authorization_verified and (
+                    auth_payload.get("authorization_id") != record.get("authorization_id")
+                    or auth_payload.get("intent_id") != record.get("intent_id")
+                    or auth_payload.get("agent_id") != principal_id
+                ):
+                    authorization_verified = False
+                    authorization_reason = "signed Execution Authorization does not match the payment record"
+
+            execution_receipt_verified = None
+            execution_receipt_reason = None
+            if execution_receipt is not None:
+                if authorization_verified:
+                    execution_receipt_verified, execution_receipt_reason = verify_execution_receipt(
+                        execution_receipt, public_key, execution_authorization
+                    )
+                else:
+                    execution_receipt_verified = False
+                    execution_receipt_reason = "execution authorization could not be verified"
+                receipt_payload = (
+                    execution_receipt.get("payload")
+                    if isinstance(execution_receipt, dict) else None
+                )
+                if execution_receipt_verified and (
+                    not isinstance(receipt_payload, dict)
+                    or receipt_payload.get("intent_id") != record.get("intent_id")
+                    or receipt_payload.get("authorization_id") != record.get("authorization_id")
+                    or str(receipt_payload.get("status") or "").upper() != record.get("receipt_status")
+                    or receipt_payload.get("transaction_ref") != record.get("transaction_hash")
+                ):
+                    execution_receipt_verified = False
+                    execution_receipt_reason = "signed Execution Receipt does not match the payment record"
+
+            final_decision = record.get("decision") if decision_verified else "UNVERIFIED"
+            final_execution_status = record.get("execution_status")
+            transaction_hash = record.get("transaction_hash") if execution_receipt_verified is True else None
+            if not decision_verified:
+                final_execution_status = "EVIDENCE_INVALID"
+            elif execution_receipt is not None and execution_receipt_verified is not True:
+                final_execution_status = "EVIDENCE_INVALID"
+            elif execution_authorization is not None and not authorization_verified and execution_receipt is None:
+                final_execution_status = "EVIDENCE_INVALID"
+
+            item = {
+                "intent_id": record.get("intent_id"),
+                "created_at": record.get("created_at"),
+                "recipient": record.get("recipient"),
+                "asset": record.get("asset"),
+                "network": record.get("network"),
+                "amount": record.get("amount"),
+                "purpose": record.get("purpose"),
+                "decision": final_decision,
+                "decision_verified": bool(decision_verified),
+                "execution_status": final_execution_status,
+                "authorization_issued": bool(authorization_verified),
+                "authorization_consumed": bool(record.get("authorization_consumed")) and bool(authorization_verified),
+                "transaction_hash": transaction_hash,
+                "execution_receipt_verified": execution_receipt_verified,
+                "receipt_trust_scope": record.get("receipt_trust_scope") if execution_receipt_verified is True else None,
+                "independent_chain_confirmation": False,
+            }
+            if include_details:
+                item["details"] = {
+                    "decision_receipt": decision_receipt if decision_verified else None,
+                    "execution_receipt": execution_receipt if execution_receipt_verified is True else None,
+                    "decision_verification": {
+                        "verified": bool(decision_verified),
+                        "reason": decision_reason,
+                        "algorithm": "Ed25519",
+                        "key_fingerprint_sha256": key_fingerprint,
+                        "public_key_pem": public_key_pem,
+                    },
+                    "execution_authorization_verification": {
+                        "verified": bool(authorization_verified),
+                        "reason": authorization_reason,
+                    },
+                    "execution_receipt_verification": {
+                        "verified": execution_receipt_verified,
+                        "reason": execution_receipt_reason,
+                    },
+                }
+            items.append(item)
+
+        if status == "EVIDENCE_INVALID":
+            items = [item for item in items if item["execution_status"] == "EVIDENCE_INVALID"]
+        return {"success": True, "data": {
+            "items": items,
+            "count": len(items),
+            "limit": raw_limit,
+            "filters": {
+                "search": search,
+                "network": network,
+                "status": status,
+                "intent_id": intent_id,
+                "since": since,
+                "until": until,
+            },
+            "history_note": "Previews are not stored. SUBMITTED is not independent chain confirmation. Wallet outcome receipts are installation self-reports.",
+        }}
+    except (OSError, ValueError, TypeError, RuntimeError, StorageError) as exc:
+        return {"success": False, "error": f"payment history unavailable: {exc}"}
+
+
 def _verigate_verify_decision_receipt(args: dict) -> dict:
     raw = args.get("receipt_json")
     if not isinstance(raw, str) or not raw.strip():
@@ -1480,6 +1728,7 @@ def invoke(tool: str, args: dict) -> dict:
         "verigate_record_wallet_submission_receipt",
         "verigate_record_wallet_outcome_receipt",
         "verigate_policy_summary",
+        "verigate_payment_history",
         "verigate_verify_decision_receipt",
     ):
         raise RpcError(-32601, f"Unknown tool: {tool}")
@@ -1497,6 +1746,8 @@ def invoke(tool: str, args: dict) -> dict:
         raise RpcError(-32603, "wallet outcome receipts must run through the async App-context approval gate")
     if tool == "verigate_policy_summary":
         return _verigate_policy_summary(args)
+    if tool == "verigate_payment_history":
+        return _verigate_payment_history(args)
     return _verigate_verify_decision_receipt(args)
 
 
