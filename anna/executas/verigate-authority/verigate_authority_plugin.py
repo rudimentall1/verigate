@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 from decimal import Decimal, InvalidOperation
 import re
+import sqlite3
 
 from cryptography.hazmat.primitives import serialization
 
@@ -1437,7 +1438,7 @@ def _verigate_payment_history(args: dict) -> dict:
         allowed_statuses = {
             "", "POLICY_ALLOWED", "REVIEW_REQUIRED", "BLOCKED",
             "PERMISSION_ISSUED", "CONSUMED", "SUBMITTED",
-            "REJECTED", "ABORTED", "UNKNOWN",
+            "REJECTED", "ABORTED", "UNKNOWN", "EVIDENCE_INVALID",
         }
         status_aliases = {"ALLOW": "POLICY_ALLOWED", "WARN": "REVIEW_REQUIRED", "BLOCK": "BLOCKED"}
         status = status_aliases.get(status, status)
@@ -1491,14 +1492,14 @@ def _verigate_payment_history(args: dict) -> dict:
         ).decode("ascii")
         principal_id = "anna-installation:" + key_fingerprint
 
-        storage = Storage(str(database_path))
+        storage = Storage.open_read_only(database_path)
         try:
             records = storage.payment_history(
                 principal_id,
                 limit=raw_limit,
                 search=search,
                 network=network,
-                status=status,
+                status="" if status == "EVIDENCE_INVALID" else status,
                 intent_id=intent_id,
                 since=float(since) if since is not None else None,
                 until=float(until) if until is not None else None,
@@ -1650,7 +1651,7 @@ def _verigate_payment_history(args: dict) -> dict:
             },
             "history_note": "Previews are not stored. SUBMITTED is not independent chain confirmation. Wallet outcome receipts are installation self-reports.",
         }}
-    except (OSError, ValueError, TypeError, RuntimeError, StorageError) as exc:
+    except (OSError, ValueError, TypeError, RuntimeError, StorageError, sqlite3.Error) as exc:
         return {"success": False, "error": f"payment history unavailable: {exc}"}
 
 
