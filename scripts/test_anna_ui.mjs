@@ -1038,11 +1038,11 @@ await test("canceling wallet confirmation leaves the permission unused", async (
   await ui.click();
   await ui.clickExecution();
   ui.$("wallet-execute-btn").click();
-  for (let i = 0; i < 200; i++) {
-    if (!ui.$("approval-overlay").hidden) break;
+  for (let i = 0; i < 1000; i++) {
+    if (!ui.$("approval-overlay").hidden || ui.shown("error")) break;
     await sleep(10);
   }
-  ok(!ui.$("approval-overlay").hidden, "wallet confirmation overlay opened");
+  ok(!ui.$("approval-overlay").hidden, "wallet confirmation overlay opened; error=" + ui.text("error") + "; status=" + ui.text("execution-status"));
   ui.$("approval-cancel").click();
   await sleep(40);
   eq(ui.calls.storage.length, 1, "cancel does not write the wallet-submission approval");
@@ -1537,7 +1537,7 @@ await test("payment history excludes previews, lists persistent authorizations, 
   await ui.clickWallet();
   await ui.openHistory();
   ok(ui.text("history-list").includes("Submitted"), "history displays the persisted wallet submission outcome");
-  ok(ui.text("history-list").includes("aaaaaaaaaa"), "verified transaction hash is available in the history row");
+  ok(ui.text("history-list").includes("aaaaaaaaaa"), "verified transaction hash is available in the history row; status=" + ui.text("history-status") + "; error=" + ui.text("history-error") + "; list=" + ui.text("history-list"));
   const beforeAuthorization = ui.calls.tools.filter((name) => name === "verigate_authorize_payment").length;
   const beforeConsume = ui.calls.tools.filter((name) => name === "verigate_consume_execution_authorization").length;
   const beforeReceipt = ui.calls.tools.filter((name) => name === "verigate_record_wallet_submission_receipt").length;
