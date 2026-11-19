@@ -1517,13 +1517,36 @@ await test("payment history excludes previews, lists persistent authorizations, 
   ok(ui.text("history-list").includes("history invoice 7788"), "purpose/invoice is visible in the history row");
   ok(ui.text("history-list").includes("25 USDC"), "amount and asset are visible in the history row");
 
-  const before = ui.calls.tools.filter((name) => name === "verigate_authorize_payment").length;
-  await ui.openHistoryDetails([...ui.window.document.querySelectorAll("[data-history-details]")][0].dataset.intentId);
+  const intentId = [...ui.window.document.querySelectorAll("[data-history-details]")][0].dataset.intentId;
+  await ui.openHistoryDetails(intentId);
   ok(ui.text("history-decision-json").includes("signature"), "signed Decision Receipt is available in evidence details");
   ok(ui.text("history-details-verification").includes("verified"), "receipt verification result is visible");
-  eq(ui.calls.tools.filter((name) => name === "verigate_authorize_payment").length, before, "opening evidence does not authorize again");
-  eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), false, "history details never consume wallet permission");
-  eq(ui.calls.tools.includes("verigate_record_wallet_submission_receipt"), false, "history details never create wallet receipts");
+  eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), false, "viewing issued evidence does not consume wallet permission");
+  eq(ui.calls.tools.includes("verigate_record_wallet_submission_receipt"), false, "viewing issued evidence does not create wallet receipts");
+
+  await ui.clickCheckView();
+  ui.window.ethereum = {
+    request: async ({ method }) => {
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x";
+      if (method === "eth_sendTransaction") return "0x" + "a".repeat(64);
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.clickWallet();
+  await ui.openHistory();
+  ok(ui.text("history-list").includes("Submitted"), "history displays the persisted wallet submission outcome");
+  ok(ui.text("history-list").includes("aaaaaaaaaa"), "verified transaction hash is available in the history row");
+  const beforeAuthorization = ui.calls.tools.filter((name) => name === "verigate_authorize_payment").length;
+  const beforeConsume = ui.calls.tools.filter((name) => name === "verigate_consume_execution_authorization").length;
+  const beforeReceipt = ui.calls.tools.filter((name) => name === "verigate_record_wallet_submission_receipt").length;
+  await ui.openHistoryDetails(intentId);
+  ok(ui.text("history-execution-json").includes("signature"), "signed ExecutionReceipt is available in evidence details");
+  ok(ui.text("history-details-verification").includes("Execution Receipt verified"), "ExecutionReceipt verification is shown");
+  eq(ui.calls.tools.filter((name) => name === "verigate_authorize_payment").length, beforeAuthorization, "opening evidence does not authorize again");
+  eq(ui.calls.tools.filter((name) => name === "verigate_consume_execution_authorization").length, beforeConsume, "opening history does not consume permissions");
+  eq(ui.calls.tools.filter((name) => name === "verigate_record_wallet_submission_receipt").length, beforeReceipt, "opening evidence does not create another wallet receipt");
   fs.rmSync(historyDataDir, { recursive: true, force: true });
 });
 
