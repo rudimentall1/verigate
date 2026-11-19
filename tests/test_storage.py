@@ -357,6 +357,130 @@ class StorageTest(unittest.TestCase):
         self.assertEqual(self.storage.history("agent-1", limit=-1), [])
 
 
+    def _record_payment_history_item(
+        self,
+        *,
+        intent_id: str,
+        decision: Decision = Decision.ALLOW,
+        execution_status: str | None = None,
+        include_authorization: bool = True,
+        consumed: bool = False,
+        agent_id: str = "agent-1",
+        network: str = "base",
+        purpose: str = "invoice 1042",
+    ) -> None:
+        intent = PaymentIntent(
+            intent_id=intent_id,
+            agent_id=agent_id,
+            payee="0x" + "a" * 40,
+            asset="USDC",
+            network=network,
+            amount=25.5,
+            resource=purpose,
+        )
+        self.storage.record(intent, self._decision(intent, decision), signature="decision-signature")
+        intent_payload = {
+            "intent_id": intent.intent_id,
+            "agent_id": intent.agent_id,
+            "target": intent.payee,
+            "asset": intent.asset,
+            "network": intent.network,
+            "amount": intent.amount,
+            "resource": intent.resource,
+        }
+        authorization_id = "auth-" + intent_id
+        authorization = {
+            "payload": {"authorization_id": authorization_id, "nonce": "nonce-" + intent_id},
+            "signature": "authorization-signature",
+        } if include_authorization else None
+        self.storage.record_authorization_artifacts({
+            "decision_receipt": {
+                "payload": {
+                    "intent": intent_payload,
+                    "decision": {"decision": decision.value},
+                },
+                "signature": "decision-signature",
+            },
+            "execution_authorization": authorization,
+        })
+        if consumed:
+            self.assertTrue(self.storage.consume_execution_nonce(
+                "nonce-" + intent_id, authorization_id, intent_id, agent_id
+            ))
+        if execution_status:
+            self.storage.record_execution_receipt({
+                "payload": {
+                    "receipt_id": "receipt-" + intent_id,
+                    "authorization_id": authorization_id,
+                    "intent_id": intent_id,
+                    "agent_id": agent_id,
+                    "network": network,
+                    "status": execution_status,
+                    "transaction_ref": "0x" + "b" * 64 if execution_status == "SUBMITTED" else None,
+                },
+                "signature": "execution-signature",
+            })
+
+    def test_payment_history_joins_policy_authorization_and_wallet_receipt_states(self) -> None:
+        self._record_payment_history_item(intent_id="issued")
+        self._record_payment_history_item(intent_id="consumed", consumed=True)
+        self._record_payment_history_item(intent_id="submitted", consumed=True, execution_status="SUBMITTED")
+        self._record_payment_history_item(
+            intent_id="blocked",
+            decision=Decision.BLOCK,
+            include_authorization=False,
+        )
+
+        history = self.storage.payment_history("agent-1", limit=20)
+
+        by_id = {item["intent_id"]: item for item in history}
+        self.assertEqual(set(by_id), {"issued", "consumed", "submitted", "blocked"})
+        self.assertEqual(by_id["issued"]["execution_status"], "PERMISSION_ISSUED")
+        self.assertEqual(by_id["consumed"]["execution_status"], "CONSUMED")
+        self.assertEqual(by_id["submitted"]["execution_status"], "SUBMITTED")
+        self.assertEqual(by_id["submitted"]["transaction_hash"], "0x" + "b" * 64)
+        self.assertEqual(by_id["blocked"]["execution_status"], "BLOCKED")
+        self.assertEqual(by_id["issued"]["purpose"], "invoice 1042")
+        self.assertEqual(by_id["issued"]["decision"], "ALLOW")
+        self.assertEqual(by_id["blocked"]["decision"], "BLOCK")
+
+    def test_payment_history_filters_by_recipient_purpose_network_and_lifecycle_status(self) -> None:
+        self._record_payment_history_item(intent_id="base-invoice", purpose="invoice 1042")
+        self._record_payment_history_item(
+            intent_id="ethereum-renewal",
+            network="ethereum",
+            purpose="annual renewal",
+        )
+        self._record_payment_history_item(
+            intent_id="other-installation",
+            agent_id="agent-2",
+            purpose="invoice 1042",
+        )
+
+        by_purpose = self.storage.payment_history("agent-1", search="invoice 1042")
+        self.assertEqual([item["intent_id"] for item in by_purpose], ["base-invoice"])
+
+        by_network = self.storage.payment_history("agent-1", network="ETHEREUM")
+        self.assertEqual([item["intent_id"] for item in by_network], ["ethereum-renewal"])
+
+        by_status = self.storage.payment_history("agent-1", status="PERMISSION_ISSUED")
+        self.assertEqual({item["intent_id"] for item in by_status}, {"base-invoice", "ethereum-renewal"})
+
+        exact = self.storage.payment_history("agent-1", intent_id="base-invoice")
+        self.assertEqual([item["intent_id"] for item in exact], ["base-invoice"])
+
+    def test_payment_history_excludes_other_installations_and_rejects_invalid_limits(self) -> None:
+        self._record_payment_history_item(intent_id="one", agent_id="agent-1")
+        self._record_payment_history_item(intent_id="two", agent_id="agent-2")
+
+        self.assertEqual(
+            {item["intent_id"] for item in self.storage.payment_history("agent-1")},
+            {"one"},
+        )
+        self.assertEqual(self.storage.payment_history("agent-1", limit=0), [])
+        self.assertEqual(self.storage.payment_history("agent-1", limit=-1), [])
+
+
 if __name__ == "__main__":
     unittest.main()
 
