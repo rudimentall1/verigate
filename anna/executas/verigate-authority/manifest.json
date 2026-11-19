@@ -292,6 +292,63 @@
       ]
     },
     {
+      "name": "verigate_payment_history",
+      "description": "Read-only access to this Anna installation's persistent payment authorization history and signed execution evidence. Filters by recipient or invoice/purpose, network, lifecycle status, date and intent. Non-persistent previews are not saved. SUBMITTED is not independent chain confirmation. This tool never authorizes, consumes permissions, signs or submits payments.",
+      "timeout": 30,
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "integer",
+          "description": "Maximum number of history records to return (1-200).",
+          "required": false,
+          "default": 50
+        },
+        {
+          "name": "search",
+          "type": "string",
+          "description": "Case-insensitive search across recipient and signed payment purpose/invoice.",
+          "required": false
+        },
+        {
+          "name": "network",
+          "type": "string",
+          "description": "Optional network filter such as base or ethereum.",
+          "required": false
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "description": "Optional lifecycle filter: POLICY_ALLOWED, REVIEW_REQUIRED, BLOCKED, PERMISSION_ISSUED, CONSUMED, SUBMITTED, REJECTED, ABORTED or UNKNOWN.",
+          "required": false
+        },
+        {
+          "name": "intent_id",
+          "type": "string",
+          "description": "Optional exact payment intent ID. Required when include_details is true.",
+          "required": false
+        },
+        {
+          "name": "since",
+          "type": "number",
+          "description": "Optional inclusive start time as a Unix timestamp in seconds.",
+          "required": false
+        },
+        {
+          "name": "until",
+          "type": "number",
+          "description": "Optional exclusive end time as a Unix timestamp in seconds.",
+          "required": false
+        },
+        {
+          "name": "include_details",
+          "type": "boolean",
+          "description": "When true, return verified signed Decision Receipt and ExecutionReceipt details for the exact intent_id.",
+          "required": false,
+          "default": false
+        }
+      ]
+    },
+    {
       "name": "verigate_verify_decision_receipt",
       "description": "Cryptographically verify a Verigate Decision Receipt using this installation's trusted Ed25519 issuer public key. Returns the verification result, SHA-256 key fingerprint and PEM public key for independent verification.",
       "timeout": 15,
