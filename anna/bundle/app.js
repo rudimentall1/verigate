@@ -1997,7 +1997,9 @@ async function main() {
   $("nav-check").addEventListener("click", (event) => {
     event.preventDefault();
     showAppView("check");
-    $("request-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (typeof $("request-panel").scrollIntoView === "function") {
+      $("request-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   });
   $("nav-history").addEventListener("click", (event) => {
     event.preventDefault();
@@ -2006,7 +2008,9 @@ async function main() {
   $("nav-how").addEventListener("click", (event) => {
     event.preventDefault();
     showAppView("check");
-    $("security-model").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (typeof $("security-model").scrollIntoView === "function") {
+      $("security-model").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   });
   $("history-refresh").addEventListener("click", loadPaymentHistory);
   $("history-filters").addEventListener("submit", (event) => {
