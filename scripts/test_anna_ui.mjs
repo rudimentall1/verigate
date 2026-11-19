@@ -1537,7 +1537,7 @@ await test("payment history excludes previews, lists persistent authorizations, 
   await ui.clickWallet();
   await ui.openHistory();
   ok(ui.text("history-list").includes("Submitted"), "history displays the persisted wallet submission outcome");
-  ok(ui.text("history-list").includes("aaaaaaaaaa"), "verified transaction hash is available in the history row; status=" + ui.text("history-status") + "; error=" + ui.text("history-error") + "; list=" + ui.text("history-list"));
+  ok(ui.text("history-list").includes("0xaaaaaaaa") && ui.text("history-list").includes("…aaaaaa"), "verified transaction hash is shown in the compact truncated format");
   const beforeAuthorization = ui.calls.tools.filter((name) => name === "verigate_authorize_payment").length;
   const beforeConsume = ui.calls.tools.filter((name) => name === "verigate_consume_execution_authorization").length;
   const beforeReceipt = ui.calls.tools.filter((name) => name === "verigate_record_wallet_submission_receipt").length;
