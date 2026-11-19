@@ -117,7 +117,7 @@ class AnnaAppBundleTest(unittest.TestCase):
         )
         history = next(tool for tool in plugin_manifest["tools"] if tool["name"] == "verigate_payment_history")
         self.assertIn("Read-only", history["description"])
-        self.assertIn("does not authorize", history["description"])
+        self.assertIn("never authorizes", history["description"])
         self.assertIn("mode=ro", (ROOT / "core" / "storage.py").read_text(encoding="utf-8"))
         plugin_source = (ANNA / "executas" / "verigate-authority" / "verigate_authority_plugin.py").read_text(encoding="utf-8")
         self.assertIn("Storage.open_read_only(database_path)", plugin_source)
