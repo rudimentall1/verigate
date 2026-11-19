@@ -1499,6 +1499,23 @@ await test("Anna connection failure is surfaced and app actions stay disabled", 
 
 
 
+await test("payment history labels REJECTED ABORTED and UNKNOWN as installation outcomes", async () => {
+  const records = [
+    { intent_id: "history-rejected", recipient: VALID, asset: "USDC", network: "base", amount: 10, decision: "ALLOW", execution_status: "REJECTED", created_at: 1, purpose: "rejected payment" },
+    { intent_id: "history-aborted", recipient: VALID, asset: "USDC", network: "base", amount: 20, decision: "ALLOW", execution_status: "ABORTED", created_at: 2, purpose: "aborted payment" },
+    { intent_id: "history-unknown", recipient: VALID, asset: "USDC", network: "base", amount: 30, decision: "ALLOW", execution_status: "UNKNOWN", created_at: 3, purpose: "unknown payment" }
+  ];
+  const ui = await launch({
+    historyInvokeOverride: async () => ({ success: true, data: { items: records, count: records.length } })
+  });
+  await ui.openHistory();
+  const rendered = ui.text("history-list");
+  ok(rendered.includes("Wallet rejected"), "REJECTED is clearly labelled");
+  ok(rendered.includes("Aborted before wallet submission"), "ABORTED is clearly labelled");
+  ok(rendered.includes("Outcome unknown"), "UNKNOWN is clearly labelled");
+  ok(!rendered.includes("Settled") && !rendered.includes("Confirmed"), "installation outcome reports are not described as settlement");
+});
+
 await test("stale payment history evidence cannot overwrite a newer selection", async () => {
   let resolveFirst;
   let resolveSecond;
