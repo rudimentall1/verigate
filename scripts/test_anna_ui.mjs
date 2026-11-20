@@ -400,7 +400,7 @@ await test("decision stays beside the request without a full-page scroll", async
   eq(ui.$("result").style.display, "block", "decision is shown after a valid check");
   eq(ui.$("security-model").hidden, true, "static explainer yields the right rail to the active decision");
   ok(html.includes("#result{grid-column:2;grid-row:1"), "decision occupies the right-hand workspace column");
-  ok(html.includes("max-height:calc(100vh - 20px)"), "desktop right rail is bounded to the viewport");
+  ok(html.includes("max-height:calc(100vh - 24px)"), "desktop right rail is bounded to the viewport");
   ok(ui.window.document.querySelector(".evidence-details"), "long verification details are collapsed behind an evidence disclosure");
 });
 
