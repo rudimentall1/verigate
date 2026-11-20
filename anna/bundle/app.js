@@ -7,7 +7,7 @@ const TOOL_ID =
   DEV_FALLBACK_TOOL_ID;
 
 const $ = (id) => document.getElementById(id);
-const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], lastAiAvailable: null, lastDynamicAuthority: null, lastExecutionAuthorization: null, busy: false, lastInterpretedDescription: "", requestId: 0, historyRequestId: 0, historyDetailsRequestId: 0 };
+const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], lastAiAvailable: null, lastDynamicAuthority: null, lastExecutionAuthorization: null, busy: false, lastInterpretedDescription: "", requestId: 0, historyRequestId: 0, historyDetailsRequestId: 0, checkMode: "request" };
 const buttons = [$("check-btn"), $("execution-btn"), $("wallet-execute-btn")];
 const inputs = ["action-description", "agent-id", "target", "asset", "network", "amount", "resource", "confirm-details"].map($);
 const FIELD_IDS = ["target", "asset", "network", "amount"];
@@ -142,6 +142,17 @@ function hideClarify() {
   $("confirm-wrap").style.display = "none";
 }
 
+function setCheckMode(mode) {
+  const normalized = ["request", "result", "how"].includes(mode) ? mode : "request";
+  state.checkMode = normalized;
+  const view = $("check-view");
+  view.classList.toggle("editing-request", normalized === "request");
+  view.classList.toggle("showing-result", normalized === "result");
+  view.classList.toggle("showing-how", normalized === "how");
+  $("result").style.display = normalized === "result" ? "block" : "none";
+  $("security-model").hidden = normalized === "result";
+}
+
 function clearResult() {
   state.lastReceipt = null;
   state.lastValues = null;
@@ -149,8 +160,7 @@ function clearResult() {
   state.lastAiAvailable = null;
   state.lastDynamicAuthority = null;
   state.lastExecutionAuthorization = null;
-  $("result").style.display = "none";
-  $("security-model").hidden = false;
+  setCheckMode("request");
   $("execution-panel").style.display = "none";
   $("execution-summary").textContent = "";
   $("execution-status").textContent = "";
@@ -1061,8 +1071,7 @@ async function checkAuthority() {
     $("proof").textContent = "Ed25519 signature verified against this installation's issuer key. SHA-256 fingerprint: " + fingerprint + ". This proves the receipt has not been altered since signing; it does not mean a transaction was executed.";
     $("issuer-public-key").textContent = envelope.verification.public_key_pem;
     $("receipt-json").textContent = JSON.stringify(envelope.receipt, null, 2);
-    $("security-model").hidden = true;
-    $("result").style.display = "block";
+    setCheckMode("result");
 
     const explained = await explainDecision(envelope, values, limits, review.flags);
     if (requestId !== state.requestId) return;
@@ -1999,16 +2008,23 @@ function showAppView(view) {
 async function main() {
   // Bind UI events before the asynchronous host handshake. A slow or failed
   // Anna connection must not leave the view with uninitialized controls.
+  setCheckMode(state.lastReceipt ? "result" : "request");
+  $("edit-request-btn").addEventListener("click", () => {
+    clearResult();
+    if (typeof $("request-panel").scrollIntoView === "function") {
+      $("request-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    $("action-description").focus();
+  });
   $("check-btn").addEventListener("click", checkAuthority);
   $("execution-btn").addEventListener("click", prepareExecutionAuthorization);
   $("wallet-execute-btn").addEventListener("click", executeWithConnectedWallet);
   $("nav-check").addEventListener("click", (event) => {
     event.preventDefault();
     showAppView("check");
-    $("security-model").hidden = Boolean(state.lastReceipt);
-    $("result").style.display = state.lastReceipt ? "block" : "none";
-    if (typeof $("request-panel").scrollIntoView === "function") {
-      $("request-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    setCheckMode(state.lastReceipt ? "result" : "request");
+    if (typeof $("check-view").scrollIntoView === "function") {
+      $("check-view").scrollIntoView({ behavior: "smooth", block: "start" });
     }
   });
   $("nav-history").addEventListener("click", (event) => {
@@ -2018,8 +2034,7 @@ async function main() {
   $("nav-how").addEventListener("click", (event) => {
     event.preventDefault();
     showAppView("check");
-    $("security-model").hidden = false;
-    $("result").style.display = "none";
+    setCheckMode("how");
     if (typeof $("security-model").scrollIntoView === "function") {
       $("security-model").scrollIntoView({ behavior: "smooth", block: "start" });
     }
