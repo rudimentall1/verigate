@@ -14,7 +14,7 @@
 - Add storage, read-only access, bundle-contract and Anna UI E2E regression coverage.
 - Correct the history reader's data-directory resolution so it performs no directory creation or temporary probe-file writes; add a regression test proving the whole history path stays filesystem read-only.
 - Guard Payment history evidence details against stale asynchronous responses: a newer selection, list refresh, view switch or close invalidates any older request.
-- Exact-head CI #2409 passes 674 Python tests and 71/71 Anna UI flows; the four-platform Executa 0.1.23 reproducibility/package/smoke workflow also passes. The release job is skipped.
+- Exact implementation-head CI [#2433](https://github.com/rudimentall1/verigate/actions/runs/44683309234) passes 675 Python tests and 75/75 Anna UI flows, strict schema validation, Linux Executa build/smoke, contracts and container. Four-platform Executa workflow [#74](https://github.com/rudimentall1/verigate/actions/runs/44683309137) passes Linux, Windows, macOS ARM64 and macOS Intel reproducibility/package/smoke; GitHub Release is skipped.
 - Source candidate only. No Anna Console cut, Executa publication, review submission or Marketplace publication is included.
 
 ## Anna App 0.1.30 / Executa 0.1.17
