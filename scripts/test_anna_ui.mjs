@@ -391,6 +391,19 @@ async function test(name, fn) {
 const eq = (a, b, m) => { if (a !== b) throw new Error((m || "") + " expected " + JSON.stringify(b) + " got " + JSON.stringify(a)); };
 const ok = (c, m) => { if (!c) throw new Error(m); };
 
+await test("decision stays beside the request without a full-page scroll", async () => {
+  const ui = await launch({});
+  const result = ui.$("result");
+  const workspace = ui.window.document.querySelector(".grid");
+  eq(result.parentElement, workspace, "decision panel is part of the two-column workspace");
+  await ui.click();
+  eq(ui.$("result").style.display, "block", "decision is shown after a valid check");
+  eq(ui.$("security-model").hidden, true, "static explainer yields the right rail to the active decision");
+  ok(html.includes("#result{grid-column:2;grid-row:1"), "decision occupies the right-hand workspace column");
+  ok(html.includes("max-height:calc(100vh - 20px)"), "desktop right rail is bounded to the viewport");
+  ok(ui.window.document.querySelector(".evidence-details"), "long verification details are collapsed behind an evidence disclosure");
+});
+
 await test("quick examples only fill the request and never start AI or policy checks", async () => {
   const ui = await launch({});
   const example = ui.window.document.querySelector("[data-example]");
