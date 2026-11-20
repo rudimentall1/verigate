@@ -23,6 +23,32 @@
     #execution-panel{display:none;margin-top:16px;padding:16px;border:1px solid #c9bca8;border-radius:8px;background:#f5f0e7}#execution-panel h2{font-size:15px}#execution-summary,#execution-status{font-size:12px;line-height:1.55;color:#5f574d}
     .approval-overlay{position:fixed;inset:0;z-index:10000;display:grid;place-items:center;padding:14px;background:#15120fa8}.approval-overlay[hidden]{display:none!important}.approval-dialog{width:min(520px,100%);border:1px solid var(--line);border-radius:12px;padding:20px;color:var(--ink);background:var(--surface);box-shadow:0 18px 60px #0003}.approval-dialog h2{margin:0 0 10px;font-size:17px}.approval-dialog p{margin:0;white-space:pre-line;overflow-wrap:anywhere;color:#514c44;font-size:13px;line-height:1.6}.approval-dialog .actions{justify-content:flex-end}.approval-dialog button:focus-visible{outline:3px solid #a7462640;outline-offset:2px}
     .footer{padding-bottom:28px;color:var(--muted);font-size:10px;line-height:1.55}
+    /* Keep the active decision beside the request; detailed evidence stays one click away. */
+    .main{padding-top:14px;padding-bottom:18px}
+    .top-inner{padding-top:13px;padding-bottom:11px}
+    .brand h1{font-size:25px}
+    .subtitle{margin-top:4px;font-size:12px}
+    .nav{padding-top:6px;padding-bottom:7px}
+    .panel{padding:15px}
+    .panel-intro{margin-bottom:10px;font-size:12px}
+    textarea{min-height:88px;padding:9px 10px}
+    label{margin:9px 0 5px}
+    .examples{gap:6px;margin-top:8px}
+    .example{padding:6px 8px}
+    .actions{margin-top:11px}
+    .model-panel,#result{position:sticky;top:10px;max-height:calc(100vh - 20px);overflow:auto}
+    #result{grid-column:2;grid-row:1;margin-top:0;padding:15px}
+    #result .result-top{gap:10px;padding-bottom:9px}
+    #result .decision{min-width:82px;padding:9px 10px;font-size:15px}
+    #result .result-summary{margin:9px 0 5px;font-size:13px}
+    #result .suggestion{margin-bottom:8px}
+    .evidence-details{margin-top:10px;border-top:1px solid var(--line);padding-top:9px}
+    .evidence-details>summary{display:flex;align-items:center;min-height:28px}
+    .evidence-content{padding-top:8px}
+    .evidence-content #ai-review,.evidence-content #limits{margin:8px 0;padding:10px}
+    .evidence-content .proof{margin-top:10px;padding-top:9px}
+    .evidence-content pre{max-height:220px}
+    @media(max-width:760px){.model-panel,#result{position:static;max-height:none;overflow:visible}#result{grid-column:1;grid-row:auto}.main{padding-top:10px}.panel{padding:13px}.brand h1{font-size:23px}}
     @media(max-width:760px){.top-inner{align-items:flex-start;flex-direction:column}.trust-note{text-align:left;max-width:none}.grid{grid-template-columns:1fr}.main{padding-top:14px}.panel{padding:16px}.brand h1{font-size:24px}.nav{overflow-x:auto}.reserve{white-space:normal;text-align:right}}
 
       .nav a { min-height: 38px; }
@@ -127,17 +153,18 @@
         <div class="callout"><strong>Important:</strong> ALLOW means the configured policy permits the request. It does not prove the recipient is safe, and it is not evidence that a transfer was sent or settled.</div>
         <div class="callout">If Anna's host model is unavailable, the app can show a clearly labelled policy-only preview. That degraded path cannot issue execution authority.</div>
       </aside>
-    </div>
 
-    <section id="result" class="panel" aria-live="polite">
+    <section id="result" class="panel result-panel" aria-live="polite">
       <div class="result-top"><span id="decision" class="decision">RESULT</span><div><h2 id="result-title">Authority decision</h2><div id="result-meta" class="result-meta"></div></div></div>
       <p id="result-summary" class="result-summary"></p><p id="suggestion" class="suggestion"></p>
+      <details class="evidence-details"><summary>Policy checks and verification evidence</summary><div class="evidence-content">
       <div id="ai-review"><h2>Anna AI contextual risk review (advisory)</h2><p class="helper">Source: bundled Verigate Executa → Anna protocol-v2 reverse Sampling. Findings are advisory; policy authority stays in Verigate.</p><p id="ai-review-summary" class="helper"></p><ul id="ai-flags" class="rules"></ul></div>
       <div id="limits"><h2>Policy limits</h2><table id="limits-table"></table><p class="helper">The 24-hour counter tracks active policy reservations, not chain-confirmed spend. A verified signed REJECTED or ABORTED wallet outcome releases its reservation. UNKNOWN and SUBMITTED remain reserved until the outcome is resolved.</p></div>
       <h2 id="rules-heading">Policy checks</h2><ul id="rules" class="rules"></ul>
       <div class="proof" id="proof"></div>
       <details><summary>Issuer public key (for independent verification)</summary><pre id="issuer-public-key"></pre></details>
       <details><summary>View signed Decision Receipt JSON</summary><pre id="receipt-json"></pre></details>
+      </div></details>
       <section id="execution-panel">
         <h2>One-time execution permission</h2><p id="execution-summary">A fresh policy check is required before a permission can be issued.</p>
         <div class="actions"><button id="execution-btn" class="secondary" type="button">Create one-time permission</button><button id="wallet-execute-btn" class="primary" type="button" style="display:none" disabled>Send with connected wallet</button></div>
