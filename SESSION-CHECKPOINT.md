@@ -885,3 +885,30 @@ All results below are for PR #65 head **`eafe5e7f9ed4347a7699fbd90186e06e9392a0a
 - PR #65 remains **Draft / open / unmerged**. App 0.1.37 / Executa 0.1.23 is still a source candidate.
 - No Anna Console push/cut, Executa publish, review submission/resubmission or Marketplace publication was performed. App 851 and App 382 immutable versions and review rounds remain untouched.
 - Real Anna WebView screenshots and live runtime acceptance remain outstanding. CI/jsdom is not a visual test of the embedded host.
+
+
+## 33. Latest complete UX/history validation — 2026-11-20
+
+### Final source head and verified gates
+
+- Latest implementation commit: **`d51bcca071f8c1cacf4b14e6a229515e336744e5`** on `fix/anna-user-ux-payment-history`.
+- PR #65 remains **Draft / open / unmerged**. This source is a candidate only.
+- Full CI run [#2433](https://github.com/rudimentall1/verigate/actions/runs/44683309234) passed on the exact implementation head: **675 Python tests**, **75/75 Anna UI E2E flows**, Anna schema-4 strict validation, Linux Executa build/package/smoke, contracts and container.
+- Four-platform Executa workflow [#74](https://github.com/rudimentall1/verigate/actions/runs/44683309137) passed on the same head: Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel reproducibility, package and extracted-package smoke checks. Its GitHub Release step was skipped intentionally; no GitHub Release was published.
+- The formerly failing `EVIDENCE_INVALID` test was corrected: this is a supported filter, not an invalid argument. The no-data response now returns the same `filters` object as the populated-history response. The UI exposes the filter, passes it to Executa and has an E2E assertion that valid records are excluded from the invalid-evidence result.
+
+### Implementation now covered by the candidate
+
+- Compact responsive two-column Authority Desk with request-first entry, four non-privileged quick examples, collapsed editable extracted fields, and clear AI / Verigate policy / wallet responsibility boundaries.
+- Separate persistent Payment history backed by durable authorization and execution evidence, with search, network, lifecycle, date and evidence-integrity filters.
+- Signed Decision Receipt, Execution Authorization and ExecutionReceipt verification before evidence is exposed; installation-scoped records and clear distinctions between permission, consumption, wallet-reported submission/outcome and independent chain confirmation.
+- Read-only is enforced end-to-end: the history path performs no directory creation or probe-file writes, and SQLite uses the dedicated read-only connection (`mode=ro`, `query_only=ON`).
+- History detail requests are invalidated on a new selection, refresh, view change or close, so a late response cannot replace another record or reopen a closed details panel.
+- REJECTED, ABORTED and UNKNOWN have explicit outcome labels. SUBMITTED is explicitly not described as confirmed/settled. Evidence-invalid records can be filtered separately.
+
+### Remaining acceptance and release boundaries
+
+- Fresh rendered screenshots and a live embedded **Anna WebView** check at desktop and narrow viewport sizes are still outstanding. The connected Desktop Commander had no available device; CI/jsdom and binary smoke tests are not substitutes for a real Anna WebView visual check.
+- No Anna Console push/cut, Executa publication, review submission/resubmission or Marketplace publication was performed from this branch.
+- The existing immutable App 851 and App 382 versions and their pending review rounds remain untouched. Do not replace or re-pin either review candidate without an explicit release instruction.
+- Candidate metadata remains App **0.1.37** / bundled Executa **0.1.23**; immutable 0.1.21 / 0.1.22 snapshots must not be overwritten.
