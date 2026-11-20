@@ -9,8 +9,8 @@
 - Anna schema-4 `required_executas.min_version` is aligned to 0.1.23.
 - The candidate restores the compact two-column Authority Desk and adds a first-class Payment history view backed by the existing durable audit / authorization / execution receipt storage.
 - The history reader is explicitly read-only, uses the installation public key only, verifies signed evidence before showing it, and never treats policy preview or SUBMITTED as completed settlement.
-- Latest exact-head full CI [#2416](https://github.com/rudimentall1/verigate/actions/runs/44530447077) **PASSED** on commit `eafe5e7f9ed4347a7699fbd90186e06e9392a0a0`: 674 Python tests, 73/73 Anna UI flows, strict schema-4 validation, Linux Executa build/package/smoke, contracts and container.
-- Latest four-platform Executa 0.1.23 workflow [#68](https://github.com/rudimentall1/verigate/actions/runs/44530455216) **PASSED** on the same commit: Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel. The release job was skipped; no GitHub binary release was published.
+- Latest exact-head full CI [#2433](https://github.com/rudimentall1/verigate/actions/runs/44683309234) **PASSED** on commit `d51bcca071f8c1cacf4b14e6a229515e336744e5`: 675 Python tests, 75/75 Anna UI flows, strict schema-4 validation, Linux Executa build/package/smoke, contracts and container.
+- Latest four-platform Executa 0.1.23 workflow [#74](https://github.com/rudimentall1/verigate/actions/runs/44683309137) **PASSED** on the same commit: Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel. The release job was skipped; no GitHub binary release was published.
 - The full history read path has a regression test proving it creates no directories and writes no probe files. UI evidence-detail requests are also guarded against stale responses after a new selection, refresh, view switch or close.
 - A fresh actual Anna WebView screenshot and visual acceptance at desktop/narrow widths remain outstanding.
 - **No Anna Console cut has been made for 0.1.37 / 0.1.23.** No App was released, submitted for review or published from this source branch. Both accounts' existing immutable versions and review rounds remain untouched.
