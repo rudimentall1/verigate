@@ -1499,6 +1499,53 @@ await test("Anna connection failure is surfaced and app actions stay disabled", 
 
 
 
+await test("payment history exposes an evidence-invalid filter and sends it to Executa", async () => {
+  const validRecord = {
+    intent_id: "history-valid",
+    recipient: VALID,
+    asset: "USDC",
+    network: "base",
+    amount: 10,
+    decision: "ALLOW",
+    execution_status: "PERMISSION_ISSUED",
+    created_at: 1,
+    purpose: "valid record"
+  };
+  const invalidRecord = {
+    intent_id: "history-invalid",
+    recipient: VALID,
+    asset: "USDC",
+    network: "base",
+    amount: 20,
+    decision: "UNVERIFIED",
+    execution_status: "EVIDENCE_INVALID",
+    created_at: 2,
+    purpose: "invalid evidence"
+  };
+  const historyRequests = [];
+  const ui = await launch({
+    historyInvokeOverride: async (args) => {
+      historyRequests.push({ ...args });
+      const items = args.status === "EVIDENCE_INVALID" ? [invalidRecord] : [validRecord];
+      return { success: true, data: { items, count: items.length } };
+    }
+  });
+  await ui.openHistory();
+  const select = ui.$("history-status-filter");
+  ok([...select.options].some(option => option.value === "EVIDENCE_INVALID"), "evidence-invalid filter is visible");
+  select.value = "EVIDENCE_INVALID";
+  ui.$("history-filters").dispatchEvent(new ui.window.Event("submit", { bubbles: true, cancelable: true }));
+  for (let i = 0; i < 100; i++) {
+    if (ui.text("history-list").includes("Evidence could not be verified")) break;
+    await sleep(10);
+  }
+  const lastRequest = historyRequests[historyRequests.length - 1];
+  eq(lastRequest.status, "EVIDENCE_INVALID", "selected invalid-evidence status is sent to Executa");
+  ok(ui.text("history-list").includes("Evidence could not be verified"), "invalid evidence is displayed with an explicit warning label");
+  ok(ui.text("history-list").includes("invalid evidence"), "the filtered record is shown");
+  ok(!ui.text("history-list").includes("valid record"), "records with valid evidence are excluded from this filter");
+});
+
 await test("payment history labels REJECTED ABORTED and UNKNOWN as installation outcomes", async () => {
   const records = [
     { intent_id: "history-rejected", recipient: VALID, asset: "USDC", network: "base", amount: 10, decision: "ALLOW", execution_status: "REJECTED", created_at: 1, purpose: "rejected payment" },
