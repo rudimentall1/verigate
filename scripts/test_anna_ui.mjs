@@ -433,6 +433,7 @@ await test("narrow layouts use one focused screen with touch-sized navigation an
   ok(mobileRules.includes("min-height:44px"), "navigation and primary controls meet touch-target sizing");
   ok(mobileRules.includes("env(safe-area-inset"), "mobile layout accounts for device safe areas");
   ok(html.includes("100dvh"), "sticky desktop panels use the dynamic viewport height where supported");
+  ok(html.includes("@media(hover:none),(pointer:coarse)"), "touch devices receive larger controls even in landscape desktop-width layouts");
 });
 
 await test("quick examples only fill the request and never start AI or policy checks", async () => {
