@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#f3efe6" />
   <title>Verigate Authority</title>
   <style>
@@ -51,6 +51,7 @@
     .evidence-content pre{max-height:220px}
     @media(max-width:960px){
       .top-inner,.nav,.main,.footer{padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
+      .top-inner{padding-top:max(13px,env(safe-area-inset-top))}
       .grid{grid-template-columns:minmax(0,1fr);gap:12px}
       .model-panel,#result{position:static;max-height:none;overflow:visible}
       #result{grid-column:1;grid-row:auto;margin-top:0}
