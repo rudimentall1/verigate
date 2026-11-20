@@ -404,6 +404,37 @@ await test("decision stays beside the request without a full-page scroll", async
   ok(ui.window.document.querySelector(".evidence-details"), "long verification details are collapsed behind an evidence disclosure");
 });
 
+await test("compact workflow switches between request, result and how-to views", async () => {
+  const ui = await launch({});
+  const checkView = ui.$("check-view");
+  const editButton = ui.$("edit-request-btn");
+  ok(editButton, "result view exposes an explicit edit-request action");
+  eq(checkView.classList.contains("showing-result"), false, "new session starts on the request view");
+  await ui.click();
+  eq(checkView.classList.contains("showing-result"), true, "a completed decision switches to the result view");
+  eq(ui.$("result").style.display, "block", "the decision panel is visible");
+  editButton.click();
+  eq(checkView.classList.contains("editing-request"), true, "edit action returns to the request view");
+  eq(ui.$("result").style.display, "none", "old decision is removed before the request can be edited");
+  eq(ui.$("security-model").hidden, false, "the explainer remains available on desktop while editing");
+  await ui.click();
+  eq(checkView.classList.contains("showing-result"), true, "a fresh check returns to the result view");
+  ui.$("nav-how").click();
+  eq(checkView.classList.contains("showing-how"), true, "how-it-works opens as its own compact view");
+  ui.$("nav-check").click();
+  eq(checkView.classList.contains("showing-result"), true, "returning to Check restores the existing result");
+});
+
+await test("narrow layouts use one focused screen with touch-sized navigation and controls", async () => {
+  const mobileRules = html.match(/@media\s*\(max-width:\s*960px\)[\s\S]*?(?=\n\s*@media|\n\s*<\/style>)/)?.[0] || "";
+  ok(mobileRules.includes("#check-view.showing-result #request-panel"), "narrow result mode hides the long request form");
+  ok(mobileRules.includes("#check-view.editing-request #result"), "narrow request mode hides the result until needed");
+  ok(mobileRules.includes("#check-view.showing-how #request-panel"), "narrow how-to mode does not stack beneath the form");
+  ok(mobileRules.includes("min-height:44px"), "navigation and primary controls meet touch-target sizing");
+  ok(mobileRules.includes("env(safe-area-inset"), "mobile layout accounts for device safe areas");
+  ok(mobileRules.includes("100dvh"), "compact panels use the dynamic viewport height where supported");
+});
+
 await test("quick examples only fill the request and never start AI or policy checks", async () => {
   const ui = await launch({});
   const example = ui.window.document.querySelector("[data-example]");
