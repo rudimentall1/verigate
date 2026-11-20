@@ -36,6 +36,12 @@ Use the skills from `~/.agents/skills/` when the corresponding command is reques
 - Never claim live execution was verified unless it was actually run and confirmed.
 - Keep hackathon-specific code isolated under `hackathons/` or adapters.
 
+## Anna release rule — mandatory
+
+Before any Anna release work, read [`_docs/anna-release-checkpoint.md`](./_docs/anna-release-checkpoint.md).
+
+Every Verigate release must update **both** Anna Developer Apps **851** and **382**, using their separate account credentials and their matching Executa identities/tool IDs. A push to only one account is incomplete. Verify the exact App ID and Executa tool ID before each Working Draft push, then verify both drafts after upload. Do not cut, submit for review, or publish immutable versions unless explicitly requested.
+
 ## Verification priorities
 
 When touching authorization/enforcement, verify:
