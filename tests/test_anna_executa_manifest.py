@@ -132,13 +132,14 @@ class ExecutaManifestTest(unittest.TestCase):
             self.plugin.handle({"method": "invoke", "params": {"tool": "verigate_check", "arguments": {}}})
         self.assertEqual(ctx.exception.code, -32602)
 
-    def test_payment_history_rejects_unadvertised_evidence_invalid_filter(self):
+    def test_payment_history_accepts_evidence_invalid_filter(self):
         result = self.plugin._verigate_payment_history({
             "limit": 50,
             "status": "EVIDENCE_INVALID",
         })
-        self.assertFalse(result["success"])
-        self.assertIn("unsupported payment history status filter", result["error"])
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["data"]["items"], [])
+        self.assertEqual(result["data"]["filters"]["status"], "EVIDENCE_INVALID")
 
     def test_payment_history_does_not_create_or_write_to_data_directory(self):
         with tempfile.TemporaryDirectory() as temp_dir:
