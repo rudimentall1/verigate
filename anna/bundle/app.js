@@ -150,6 +150,7 @@ function clearResult() {
   state.lastDynamicAuthority = null;
   state.lastExecutionAuthorization = null;
   $("result").style.display = "none";
+  $("security-model").hidden = false;
   $("execution-panel").style.display = "none";
   $("execution-summary").textContent = "";
   $("execution-status").textContent = "";
@@ -1060,6 +1061,7 @@ async function checkAuthority() {
     $("proof").textContent = "Ed25519 signature verified against this installation's issuer key. SHA-256 fingerprint: " + fingerprint + ". This proves the receipt has not been altered since signing; it does not mean a transaction was executed.";
     $("issuer-public-key").textContent = envelope.verification.public_key_pem;
     $("receipt-json").textContent = JSON.stringify(envelope.receipt, null, 2);
+    $("security-model").hidden = true;
     $("result").style.display = "block";
 
     const explained = await explainDecision(envelope, values, limits, review.flags);
@@ -2003,6 +2005,8 @@ async function main() {
   $("nav-check").addEventListener("click", (event) => {
     event.preventDefault();
     showAppView("check");
+    $("security-model").hidden = Boolean(state.lastReceipt);
+    $("result").style.display = state.lastReceipt ? "block" : "none";
     if (typeof $("request-panel").scrollIntoView === "function") {
       $("request-panel").scrollIntoView({ behavior: "smooth", block: "start" });
     }
@@ -2014,6 +2018,8 @@ async function main() {
   $("nav-how").addEventListener("click", (event) => {
     event.preventDefault();
     showAppView("check");
+    $("security-model").hidden = false;
+    $("result").style.display = "none";
     if (typeof $("security-model").scrollIntoView === "function") {
       $("security-model").scrollIntoView({ behavior: "smooth", block: "start" });
     }
