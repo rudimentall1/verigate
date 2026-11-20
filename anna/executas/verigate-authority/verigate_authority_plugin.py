@@ -1504,6 +1504,14 @@ def _verigate_payment_history(args: dict) -> dict:
                 "items": [],
                 "count": 0,
                 "limit": raw_limit,
+                "filters": {
+                    "search": search,
+                    "network": network,
+                    "status": status,
+                    "intent_id": intent_id,
+                    "since": since,
+                    "until": until,
+                },
                 "history_note": "Policy previews are not saved. Only persistent authorization records appear here.",
             }}
         if not public_path.is_file() or not database_path.is_file():
