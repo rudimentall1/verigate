@@ -432,7 +432,7 @@ await test("narrow layouts use one focused screen with touch-sized navigation an
   ok(mobileRules.includes("#check-view.showing-how #request-panel"), "narrow how-to mode does not stack beneath the form");
   ok(mobileRules.includes("min-height:44px"), "navigation and primary controls meet touch-target sizing");
   ok(mobileRules.includes("env(safe-area-inset"), "mobile layout accounts for device safe areas");
-  ok(mobileRules.includes("100dvh"), "compact panels use the dynamic viewport height where supported");
+  ok(html.includes("100dvh"), "sticky desktop panels use the dynamic viewport height where supported");
 });
 
 await test("quick examples only fill the request and never start AI or policy checks", async () => {
