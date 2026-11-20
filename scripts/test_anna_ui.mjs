@@ -432,6 +432,7 @@ await test("narrow layouts use one focused screen with touch-sized navigation an
   ok(mobileRules.includes("#check-view.showing-how #request-panel"), "narrow how-to mode does not stack beneath the form");
   ok(mobileRules.includes("min-height:44px"), "navigation and primary controls meet touch-target sizing");
   ok(mobileRules.includes("env(safe-area-inset"), "mobile layout accounts for device safe areas");
+  ok(html.includes("viewport-fit=cover"), "edge-to-edge viewport enables safe-area handling on iOS devices");
   ok(html.includes("100dvh"), "sticky desktop panels use the dynamic viewport height where supported");
   ok(html.includes("@media(hover:none),(pointer:coarse)"), "touch devices receive larger controls even in landscape desktop-width layouts");
 });
