@@ -228,6 +228,10 @@ def _replay_attestor_governance_state(
 
     historical_attestor = dict(attestor_data)
     historical_attestor.update(state_at_attestation)
+    if historical_attestor.get("status") == "ACTIVE":
+        # Storage keeps revoked_at as an audit marker after explicit reactivation.
+        # It is not an active revocation boundary once governance restored ACTIVE.
+        historical_attestor["revoked_at"] = None
     return True, "attestor governance state and historical key verified", historical_attestor
 
 
