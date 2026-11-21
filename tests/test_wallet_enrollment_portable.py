@@ -254,6 +254,18 @@ class PortableWalletGovernanceProofTests(unittest.TestCase):
             edges=edges,
             verification=verification,
         )
+        graph = EvidenceGraph(self.storage, self.issuer.public_key())
+        enrolled_key = graph._wallet_enrollment_issuer_key(
+            principal=self.principal, receipt=receipt,
+        )
+        self.assertEqual(
+            enrolled_key.public_bytes(
+                serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+            ),
+            self.issuer.public_key().public_bytes(
+                serialization.Encoding.Raw, serialization.PublicFormat.Raw,
+            ),
+        )
         history = next(
             item for item in nodes
             if item["type"] == "wallet_enrollment_governance_history"
