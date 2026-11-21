@@ -629,6 +629,59 @@ class MultiPartyGovernanceTest(unittest.TestCase):
                 self.assertFalse(ok, (field, reason))
                 self.assertIn("timestamp", reason)
 
+    def test_governance_timestamps_reject_integers_outside_float_range(self):
+        huge = 10 ** 10000
+        action = create_governance_action(
+            action="AUTHORITY_RESET",
+            agent_id=self.capability.agent_id,
+            capability_id=self.capability.capability_id,
+            epoch=1,
+            reason="reject overflowing governance timestamp",
+            policy=self.policy,
+            issued_at=huge,
+            expires_at=huge + 60,
+        )
+        approvals = [
+            sign_governance_approval(
+                action,
+                role="security",
+                private_key=self.keys[0],
+                issued_at=time.time(),
+                expires_at=time.time() + 30,
+            ).as_dict(),
+            sign_governance_approval(
+                action,
+                role="operations",
+                private_key=self.keys[1],
+                issued_at=time.time(),
+                expires_at=time.time() + 30,
+            ).as_dict(),
+        ]
+        ok, reason = verify_governance_quorum(action, approvals, self.policy)
+        self.assertFalse(ok)
+        self.assertIn("timestamp", reason)
+
+    def test_governance_policy_rejects_non_finite_numeric_limits(self):
+        for policy in (
+            GovernancePolicy(
+                policy_id="nan-lifetime",
+                version=1,
+                threshold=2,
+                members=tuple(self.members),
+                max_approval_lifetime_seconds=float("nan"),
+            ),
+            GovernancePolicy(
+                policy_id="nan-required-role",
+                version=1,
+                threshold=2,
+                members=tuple(self.members),
+                required_roles=(("security", float("nan")),),
+            ),
+        ):
+            with self.subTest(policy_id=policy.policy_id):
+                with self.assertRaises(ValueError):
+                    policy.validate()
+
     def test_governance_quorum_rejects_non_finite_verification_time(self):
         action, approvals = self.suspended_action()
         ok, reason = verify_governance_quorum(
