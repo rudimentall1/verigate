@@ -9,6 +9,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
+from core.evidence import EvidenceGraph
 from core.storage import Storage
 from core.wallet_enrollment import WalletEnrollmentService, installation_principal
 from core.wallet_governance_transparency import WalletGovernanceTransparencyLog
@@ -229,6 +230,49 @@ class WalletGovernanceTransactionalOutboxTests(unittest.TestCase):
             service.evm_verifier_for_wallet(self.principal, 8453, self.wallet)
         bundle = self.storage.wallet_governance_transparency_bundle(self.principal)
         self.assertEqual(bundle["checkpoint"]["payload"]["entry_count"], 2)
+
+    def test_evidence_graph_uses_latest_acknowledged_outbox_checkpoint(self):
+        dispatcher = self.make_dispatcher()
+        service = WalletEnrollmentService(
+            self.storage,
+            transparency_dispatcher=dispatcher,
+        )
+        action = self.make_enroll(service)
+        result = service.apply(action, self.approvals(action), self.policy)
+        self.assertEqual(result["status"], "APPLIED")
+
+        graph = EvidenceGraph(self.storage, self.issuer.public_key())
+        receipt = {
+            "payload": {
+                "receipt_id": "outbox-receipt",
+                "submission_data": {
+                    "chain_id": 8453,
+                    "sender": self.wallet,
+                },
+            }
+        }
+        nodes, edges, verification = [], [], {}
+        graph._add_wallet_enrollment_evidence(
+            principal=self.principal,
+            receipt=receipt,
+            nodes=nodes,
+            edges=edges,
+            verification=verification,
+        )
+
+        anchor_node = next(
+            item for item in nodes
+            if item["type"] == "wallet_governance_transparency_log"
+        )
+        self.assertEqual(
+            anchor_node["id"],
+            self.storage.wallet_governance_transparency_bundle(
+                self.principal,
+            )["checkpoint"]["checkpoint_sha256"],
+        )
+        self.assertTrue(
+            verification[f"wallet_governance_transparency:{self.principal}"]["valid"]
+        )
 
     def test_dispatcher_preserves_local_acceptance_order_and_is_idempotent(self):
         dispatcher = self.make_dispatcher()
