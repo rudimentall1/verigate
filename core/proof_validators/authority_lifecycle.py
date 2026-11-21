@@ -1,5 +1,7 @@
 """Authority lifecycle proof-profile semantics."""
 from __future__ import annotations
+
+import math
 from typing import Any
 from core.proof_engine import digest
 from core.authority_protocol import Authority, AuthorityState as GenesisAuthorityState
