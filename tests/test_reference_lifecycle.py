@@ -238,7 +238,11 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertEqual(policy_nodes[0]["id"], policy.digest)
         self.assertEqual(len(action_nodes), 2)
         self.assertEqual(
-            sum(edge["relation"] == "GOVERNS" for edge in edges),
+            sum(
+                edge["relation"] == "GOVERNS"
+                and edge["from"].startswith("governance_policy:")
+                for edge in edges
+            ),
             2,
         )
         self.assertTrue(all(item["valid"] for item in verification.values()))
