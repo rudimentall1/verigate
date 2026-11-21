@@ -468,5 +468,24 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
                 self.assertFalse(result["valid"])
                 self.assertIn("all signed artifacts", result["reason"])
 
+
+    def test_authority_lifecycle_rejects_forged_governance_approval_signature(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        approval = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "governance_approval"
+        )
+        approval["data"]["signature"] = base64.b64encode(b"forged-signature").decode()
+        self._resign_mutated_manifest(forged)
+
+        result = verify_proof(
+            forged,
+            trusted_public_key_b64=forged["issuer_public_key_b64"],
+        )
+
+        self.assertFalse(result["valid"], result)
+        self.assertIn("governance", result["reason"].lower())
+
 if __name__ == "__main__":
     unittest.main()
