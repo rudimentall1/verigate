@@ -9,7 +9,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler
-from typing import Any, Callable
+from typing import Any
 
 from core.wallet_governance_transparency import WalletGovernanceTransparencyLog
 
