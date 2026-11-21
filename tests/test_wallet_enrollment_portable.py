@@ -23,6 +23,16 @@ SPEC = importlib.util.spec_from_file_location("verigate_proof_verifier", VERIFIE
 VERIFIER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(VERIFIER)
 
+PACKAGE_VERIFIER_PATH = (
+    ROOT / "packaging" / "verigate-verify" / "src"
+    / "verigate_verify" / "_verifier.py"
+)
+PACKAGE_SPEC = importlib.util.spec_from_file_location(
+    "verigate_verify_packaged_verifier", PACKAGE_VERIFIER_PATH,
+)
+PACKAGE_VERIFIER = importlib.util.module_from_spec(PACKAGE_SPEC)
+PACKAGE_SPEC.loader.exec_module(PACKAGE_VERIFIER)
+
 
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -273,6 +283,21 @@ class PortableWalletGovernanceProofTests(unittest.TestCase):
             edges,
         )
         self.assertTrue(verification[f"wallet_enrollment:{self.principal}"]["valid"])
+
+    def test_packaged_verifier_matches_wallet_history_trust_contract(self):
+        payload, enrolled_at, _, _, history_sha = self.make_graph(include_revoke=False)
+        kwargs = {
+            "installation_principal": self.principal,
+            "chain_id": 8453,
+            "wallet_address": self.wallet,
+            "attested_at": enrolled_at + 1,
+            "trusted_policy_digests": {self.policy.digest},
+            "trusted_history_digests": {history_sha},
+        }
+        tool_result = VERIFIER.verify_wallet_enrollment_history(payload, **kwargs)
+        package_result = PACKAGE_VERIFIER.verify_wallet_enrollment_history(payload, **kwargs)
+        self.assertEqual(package_result, tool_result)
+        self.assertTrue(package_result[0], package_result[1])
 
     def test_portable_proof_replays_revoke_after_attestation_without_retroactive_invalidation(self):
         payload, enrolled_at, revoke, approvals, history_sha = self.make_graph()
