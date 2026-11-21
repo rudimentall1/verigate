@@ -64,8 +64,9 @@ class WalletEnrollmentService:
     service does not treat a caller-supplied address as proof of ownership.
     """
 
-    def __init__(self, storage: Storage):
+    def __init__(self, storage: Storage, *, transparency_dispatcher=None):
         self.storage = storage
+        self.transparency_dispatcher = transparency_dispatcher
 
     @staticmethod
     def build_action(
@@ -120,6 +121,13 @@ class WalletEnrollmentService:
         )
         if enrollment is None or enrollment["status"] != "ACTIVE":
             raise PermissionError("wallet is not actively enrolled for this installation and chain")
+        delivery_status = self.storage.wallet_enrollment_transparency_delivery_status(
+            enrollment["enrollment_id"],
+        )
+        if delivery_status != "DELIVERED":
+            raise PermissionError(
+                "wallet enrollment is pending independent external transparency-log acknowledgement"
+            )
         from enforcement.chain_verification import EVMChainVerifier
         return EVMChainVerifier(
             expected_sender=enrollment["wallet_address"],
@@ -185,4 +193,34 @@ class WalletEnrollmentService:
             operation=operation, enrollment=enrollment, enrollment_id=enrollment_id,
             installation_principal=principal, envelope=envelope,
         )
-        return {"status": "APPLIED", "enrollment": saved, "governance_action": envelope}
+
+        delivery_result = None
+        if self.transparency_dispatcher is not None:
+            try:
+                results = self.transparency_dispatcher.dispatch_pending(principal)
+                delivery_result = next(
+                    (item for item in results if item.get("action_id") == action["action_id"]),
+                    None,
+                )
+            except Exception as exc:
+                # The outbox is already durable. A transport/dispatcher failure
+                # must not roll back local governance history or drop the event.
+                delivery_result = {
+                    "action_id": action["action_id"],
+                    "status": "PENDING",
+                    "delivered": False,
+                    "reason": str(exc),
+                }
+
+        delivery_status = self.storage.wallet_governance_outbox_action_status(
+            action["action_id"],
+        )
+        return {
+            "status": "APPLIED" if delivery_status == "DELIVERED" else "PENDING_TRANSPARENCY",
+            "enrollment": saved,
+            "governance_action": envelope,
+            "transparency_delivery": {
+                "status": delivery_status or "PENDING",
+                "result": delivery_result,
+            },
+        }

@@ -61,7 +61,38 @@ bundle = log.checkpoint_history(installation_principal, complete_governance_enve
 
 The external log operator should retain the latest checkpoint digest and make it available to proof issuers and independent auditors over a separate authenticated channel. The private key must never be copied into the Verigate service or proof package.
 
-The current repository provides the writer API and proof attachment interface; it does not deploy or operate a remote transparency service, manage a KMS/HSM key, or automatically stream governance actions to a separate host. Those operational integrations must be supplied by the deployment. Until an independent log is configured and its checkpoint is pinned, the wallet transparency check is explicitly \`pinned=false\`.
+### Reliable delivery from Verigate
+
+`WalletEnrollmentService.apply` commits the wallet registry transition, signed governance envelope, and a `wallet_governance_outbox` row in the same local SQLite transaction. The outbox stores the complete envelope, accepted sequence, attempt count, last delivery error, and the signed checkpoint bundle returned by the external log.
+
+Inject a `WalletGovernanceOutboxDispatcher` into the service to attempt synchronous delivery after the local commit:
+
+```python
+from core.wallet_enrollment import WalletEnrollmentService
+from core.wallet_governance_outbox import WalletGovernanceOutboxDispatcher
+
+dispatcher = WalletGovernanceOutboxDispatcher(
+    storage,
+    remote_log_transport,  # implements append_envelope(principal, envelope)
+    trusted_log_public_key_b64=trusted_log_public_key_b64,
+)
+wallets = WalletEnrollmentService(
+    storage,
+    transparency_dispatcher=dispatcher,
+)
+
+result = wallets.apply(action, approvals, governance_policy)
+# result["status"] is APPLIED only after signed external acknowledgement.
+# A transport outage returns PENDING_TRANSPARENCY; the durable outbox remains.
+```
+
+Delivery is **at-least-once**, not exactly-once. A response may be lost after the remote log commits; the dispatcher retries the same action ID, so the transport endpoint MUST implement idempotent append semantics. Before marking an event `DELIVERED`, the dispatcher checks that the returned log entries are the exact locally accepted prefix and validates the signed checkpoint against the independently configured log public key.
+
+A per-installation SQLite lease serializes workers across processes and expires after a crash. Dispatch pending events on startup and periodically with `dispatcher.dispatch_pending()`; `apply` also attempts delivery immediately. The caller must configure a bounded transport timeout shorter than the lease. Events are sent in local acceptance order; a failed event stops delivery of later actions for that installation until retry succeeds.
+
+An enrollment remains locally recorded as `ACTIVE` while delivery is pending, but `WalletEnrollmentService.evm_verifier_for_wallet` refuses to construct a verifier until the corresponding `WALLET_ENROLL` outbox event is externally acknowledged. Revocations take effect locally immediately, even while external delivery is pending. Once a checkpoint is acknowledged, `EvidenceGraph` can attach the latest stored bundle automatically; an out-of-date checkpoint will fail against the complete current history.
+
+The repository defines the transport protocol, durable outbox and dispatcher, but it does not deploy a remote HTTP service or provide a concrete network transport adapter. A deployment must supply a transport to the separately operated writer and run a periodic dispatcher worker. It must also manage the log key independently (KMS/HSM preferred). Until the external log receives every accepted action and its latest checkpoint is pinned by the offline verifier, the wallet transparency check is explicitly `pinned=false`.
 
 ## Proof attachment and verification
 
