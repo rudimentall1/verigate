@@ -19,6 +19,17 @@ verigate-verify proof.json --public-key issuer.pub
 verigate-verify proof.json --public-key issuer.pub --format json
 # or
 python -m verigate_verify proof.json --public-key issuer.pub
+
+For Anna `CHAIN_VERIFIER` proofs, add independently distributed wallet governance anchors:
+
+```bash
+verigate-verify proof.json --public-key issuer.pub \
+  --trusted-governance-policy-sha256 <attestor-policy-sha256> \
+  --trusted-wallet-governance-policy-sha256 <wallet-policy-sha256> \
+  --trusted-wallet-enrollment-history-sha256 <wallet-history-sha256>
+```
+
+Repeat each digest flag for every explicitly trusted policy or history version. Obtain these values through a separate trusted channel. Without wallet pins, the verifier still checks the signed governance envelopes, quorum and registry snapshots, but reports the wallet trust anchors as `NOT PINNED`; it does not independently establish the governor roster or completeness of the supplied history.
 ```
 
 The result is `VALID` or `INVALID` with a reason (for example `proof package digest mismatch` if the
