@@ -1197,7 +1197,17 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             policy,
         )
 
-        graph = EvidenceGraph(self.storage, self.public_key).build(authorization_id)
+        snapshot = DynamicAuthorityService(self.storage).snapshot(
+            "reference-agent", "reference-capability"
+        ).as_dict()
+        event = self.storage.authority_events(
+            agent_id="reference-agent", capability_id="reference-capability"
+        )[-1]
+        snapshot["source_event_id"] = event["event_id"]
+        graph = EvidenceGraph(self.storage, self.public_key).build(
+            authorization_id,
+            authority_snapshot_after=snapshot,
+        )
         outcome_check = graph["verification"][
             f"outcome_attestation:{attestation['id']}"
         ]
@@ -1277,7 +1287,17 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             policy,
         )
 
-        graph = EvidenceGraph(self.storage, self.public_key).build(authorization_id)
+        snapshot = DynamicAuthorityService(self.storage).snapshot(
+            "reference-agent", "reference-capability"
+        ).as_dict()
+        event = self.storage.authority_events(
+            agent_id="reference-agent", capability_id="reference-capability"
+        )[-1]
+        snapshot["source_event_id"] = event["event_id"]
+        graph = EvidenceGraph(self.storage, self.public_key).build(
+            authorization_id,
+            authority_snapshot_after=snapshot,
+        )
         outcome_check = graph["verification"][
             f"outcome_attestation:{attestation['id']}"
         ]
