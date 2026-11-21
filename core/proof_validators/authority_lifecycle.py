@@ -1,5 +1,7 @@
 """Authority lifecycle proof-profile semantics."""
-from __future__ import annotationsimport math
+from __future__ import annotations
+
+import math
 from typing import Any
 
 from cryptography.exceptions import InvalidSignature
