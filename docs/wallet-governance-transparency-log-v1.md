@@ -128,6 +128,20 @@ wallet_service = WalletEnrollmentService(
 )
 ```
 
+Run the durable outbox worker as a separate process using the same local Verigate database, external log URL, public key and bearer token:
+
+```bash
+export VERIGATE_WALLET_GOVERNANCE_LOG_BEARER_TOKEN="<secret-from-secret-manager>"
+python scripts/wallet_governance_outbox_worker.py \
+  --database /var/lib/verigate/verigate.sqlite3 \
+  --log-url https://wallet-log.example.net \
+  --log-public-key /etc/verigate-trust/wallet-governance-log.pub.pem \
+  --interval 5 \
+  --timeout 10
+```
+
+Run this worker under a process supervisor (for example, systemd) with automatic restart. It performs an initial sweep on startup, then retries pending records periodically. `--once` performs a single sweep and exits non-zero if any event remains pending. The outbox lease coordinates the worker with delivery attempts made synchronously during `WalletEnrollmentService.apply`; multiple worker instances are safe to run, although a second worker for the same installation will report `BUSY` while another holds its lease.
+
 The HTTP client refuses plain HTTP except to loopback addresses, disables redirects to avoid forwarding credentials to another host, applies bounded request/response sizes, and uses a finite timeout. Keep the transport timeout below the outbox lease duration. The HTTP service and local SQLite writer are a reference deployment; production still needs TLS/reverse-proxy configuration, secret rotation, operational monitoring, backups, and independent checkpoint distribution.
 
 Until the external log receives every accepted action and its latest checkpoint is pinned by the offline verifier, the wallet transparency check is explicitly `pinned=false`.
