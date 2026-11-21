@@ -84,6 +84,22 @@ jobs:
           VERIGATE_ALLOW_INSECURE_DEV_MODE: "1"
         run: node scripts/test_anna_ui.mjs
 
+      - name: Install Playwright and cross-browser engines for responsive visual QA
+        run: |
+          npm install --no-save --no-package-lock playwright@1.65.1
+          npx playwright install --with-deps chromium firefox webkit
+
+      - name: Verify responsive UI in Chromium Firefox and WebKit
+        run: node scripts/test_anna_visual.mjs
+
+      - name: Upload responsive UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: anna-responsive-browser-screenshots
+          path: artifacts/anna-visual/
+          if-no-files-found: ignore
+
       - name: Build and smoke-test Linux Anna Executa binary
         run: |
           pip install pyinstaller
