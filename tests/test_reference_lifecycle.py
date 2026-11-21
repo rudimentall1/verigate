@@ -260,6 +260,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertEqual(observed.effect_status, "SUCCEEDED")
 
         attestor_key = self._attestor()
+        self._last_attestor_private_key = attestor_key
         claim = build_outcome_claim(
             receipt.as_dict(),
             status="SUCCEEDED",
@@ -797,6 +798,79 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             standalone_result.returncode,
             0,
             "standalone verifier accepted governance revocation with a forged ACTIVE snapshot",
+        )
+
+    def test_authority_lifecycle_accepts_attestation_after_governance_reactivation(self):
+        manifest = self._valid_manifest()
+        payload = manifest["payload"]
+        attestation = next(
+            node for node in payload["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        register_action = next(
+            node["data"] for node in payload["nodes"]
+            if node["type"] == "governance_action"
+            and node["data"]["action"] == "ATTESTOR_REGISTER"
+        )
+        register_issued_at = register_action["issued_at"]
+        revoke_at = register_issued_at + 100
+        activate_at = register_issued_at + 300
+        attested_at = register_issued_at + 400
+        attestation["data"]["payload"]["attested_at"] = attested_at
+        attestation["data"]["signature"] = base64.b64encode(
+            self._last_attestor_private_key.sign(
+                canonical(attestation["data"]["payload"])
+            )
+        ).decode()
+
+        self._append_attestor_governance_action(
+            manifest,
+            operation="ATTESTOR_REVOKE",
+            issued_at=revoke_at,
+            action_id="revoke-before-reactivation",
+        )
+        self._append_attestor_governance_action(
+            manifest,
+            operation="ATTESTOR_ACTIVATE",
+            issued_at=activate_at,
+            action_id="activate-after-revocation",
+        )
+        attestor = next(
+            node for node in payload["nodes"]
+            if node["type"] == "attestor_authority"
+        )
+        attestor["data"]["status"] = "ACTIVE"
+        # Storage retains revoked_at as an audit marker when an attestor is reactivated.
+        attestor["data"]["revoked_at"] = revoke_at + 20
+        self._resign_mutated_manifest(manifest)
+
+        core_result = verify_proof(
+            manifest,
+            trusted_public_key_b64=manifest["issuer_public_key_b64"],
+        )
+        self.assertTrue(core_result["valid"], core_result)
+
+        proof_path = Path(self.tmp.name) / "attestation-after-governance-reactivation.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(manifest))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone_result = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(
+            standalone_result.returncode,
+            0,
+            standalone_result.stdout + standalone_result.stderr,
         )
 
     def test_authority_lifecycle_accepts_attestation_before_later_revocation(self):
