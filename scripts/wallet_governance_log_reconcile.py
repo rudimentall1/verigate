@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 
 from core.storage import Storage
 from core.wallet_governance_transparency import verify_wallet_governance_transparency_bundle
@@ -66,7 +67,7 @@ def main() -> int:
         }
         print(json.dumps(report, sort_keys=True))
         return 0 if valid else 2
-    except (OSError, ValueError, TypeError, LookupError, ConnectionError, TimeoutError, PermissionError) as exc:
+    except (OSError, sqlite3.Error, ValueError, TypeError, LookupError, ConnectionError, TimeoutError, PermissionError) as exc:
         print(json.dumps({
             "status": "UNHEALTHY",
             "reason": str(exc),
