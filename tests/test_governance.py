@@ -603,31 +603,32 @@ class MultiPartyGovernanceTest(unittest.TestCase):
     def test_governance_approval_rejects_non_finite_timestamps(self):
         action, _ = self.suspended_action()
         for field in ("issued_at", "expires_at"):
-            with self.subTest(field=field):
-                values = {
-                    "issued_at": time.time(),
-                    "expires_at": time.time() + 30,
-                }
-                values[field] = float("nan")
-                malformed = sign_governance_approval(
-                    action,
-                    role="security",
-                    private_key=self.keys[0],
-                    issued_at=values["issued_at"],
-                    expires_at=values["expires_at"],
-                ).as_dict()
-                valid_second = sign_governance_approval(
-                    action,
-                    role="operations",
-                    private_key=self.keys[1],
-                    issued_at=time.time(),
-                    expires_at=time.time() + 30,
-                ).as_dict()
-                ok, reason = verify_governance_quorum(
-                    action, [malformed, valid_second], self.policy
-                )
-                self.assertFalse(ok, (field, reason))
-                self.assertIn("timestamp", reason)
+            for invalid_value in (float("nan"), 10 ** 10000):
+                with self.subTest(field=field, invalid_type=type(invalid_value).__name__):
+                    values = {
+                        "issued_at": time.time(),
+                        "expires_at": time.time() + 30,
+                    }
+                    values[field] = invalid_value
+                    malformed = sign_governance_approval(
+                        action,
+                        role="security",
+                        private_key=self.keys[0],
+                        issued_at=values["issued_at"],
+                        expires_at=values["expires_at"],
+                    ).as_dict()
+                    valid_second = sign_governance_approval(
+                        action,
+                        role="operations",
+                        private_key=self.keys[1],
+                        issued_at=time.time(),
+                        expires_at=time.time() + 30,
+                    ).as_dict()
+                    ok, reason = verify_governance_quorum(
+                        action, [malformed, valid_second], self.policy
+                    )
+                    self.assertFalse(ok, (field, reason))
+                    self.assertIn("timestamp", reason)
 
     def test_governance_timestamps_reject_integers_outside_float_range(self):
         huge = 10 ** 10000
@@ -684,11 +685,13 @@ class MultiPartyGovernanceTest(unittest.TestCase):
 
     def test_governance_quorum_rejects_non_finite_verification_time(self):
         action, approvals = self.suspended_action()
-        ok, reason = verify_governance_quorum(
-            action, approvals, self.policy, now=float("nan")
-        )
-        self.assertFalse(ok)
-        self.assertIn("verification time", reason)
+        for now in (float("nan"), 10 ** 10000):
+            with self.subTest(now_type=type(now).__name__):
+                ok, reason = verify_governance_quorum(
+                    action, approvals, self.policy, now=now
+                )
+                self.assertFalse(ok)
+                self.assertIn("verification time", reason)
 
     def test_malformed_governance_action_fails_closed(self):
         action, approvals = self.suspended_action()
