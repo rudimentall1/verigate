@@ -626,6 +626,14 @@ class EvidenceGraph:
                     for attestation in self.storage.outcome_attestations_by_claim(claim_id):
                         attestation_id = attestation["payload"]["attestation_id"]
                         attestor_id = attestation["payload"]["attestor_id"]
+                        if attestation["payload"].get("attestor_type") == "CHAIN_VERIFIER":
+                            self._add_wallet_enrollment_evidence(
+                                principal=claim.get("agent_id", ""),
+                                receipt=receipt,
+                                nodes=nodes,
+                                edges=edges,
+                                verification=verification,
+                            )
                         try:
                             outcome_check = outcome_service.verify_existing(attestation)
                             verification[f"outcome_attestation:{attestation_id}"] = {
