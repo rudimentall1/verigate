@@ -219,6 +219,31 @@ class WalletGovernanceTransparencyLogTests(unittest.TestCase):
         self.assertFalse(wrong_hash_ok)
         self.assertIn("checkpoint", wrong_hash_reason.lower())
 
+    def test_verifier_rejects_non_finite_checkpoint_time_and_malformed_signer_key(self):
+        bundle = self.log.checkpoint_history(self.principal, [self.enroll])
+        overflow = json.loads(json.dumps(bundle))
+        overflow["checkpoint"]["payload"]["issued_at"] = 10 ** 400
+        overflow["checkpoint"]["checkpoint_sha256"] = digest(
+            overflow["checkpoint"]["payload"]
+        )
+        ok, reason, _ = verify_wallet_governance_transparency_bundle(
+            overflow,
+            history_envelopes=[self.enroll],
+            installation_principal=self.principal,
+        )
+        self.assertFalse(ok)
+        self.assertIn("checkpoint", reason.lower())
+
+        malformed_key = json.loads(json.dumps(bundle))
+        malformed_key["checkpoint"]["signer_public_key_b64"] = "%%%not-base64%%%"
+        malformed_ok, malformed_reason, _ = verify_wallet_governance_transparency_bundle(
+            malformed_key,
+            history_envelopes=[self.enroll],
+            installation_principal=self.principal,
+        )
+        self.assertFalse(malformed_ok)
+        self.assertIn("base64", malformed_reason.lower())
+
     def test_verifier_rejects_truncated_or_reordered_log_entries(self):
         bundle = self.log.checkpoint_history(
             self.principal, [self.enroll, self.revoke],
