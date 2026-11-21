@@ -594,5 +594,37 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("attestation", result.stdout.lower())
 
+
+    def test_authority_lifecycle_rejects_unapproved_attestor_key_substitution(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        attestor = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "attestor_authority"
+        )
+        attestation = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        rogue_key = Ed25519PrivateKey.generate()
+        rogue_raw = rogue_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+        attestor["data"]["public_key_b64"] = base64.b64encode(rogue_raw).decode()
+        attestor["data"]["key_id"] = hashlib.sha256(rogue_raw).hexdigest()
+        attestation["data"]["signature"] = base64.b64encode(
+            rogue_key.sign(canonical(attestation["data"]["payload"]))
+        ).decode()
+        self._resign_mutated_manifest(forged)
+
+        result = verify_proof(
+            forged,
+            trusted_public_key_b64=forged["issuer_public_key_b64"],
+        )
+
+        self.assertFalse(result["valid"], result)
+        self.assertIn("attestor", result["reason"].lower())
+
 if __name__ == "__main__":
     unittest.main()
