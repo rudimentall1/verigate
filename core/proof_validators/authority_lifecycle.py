@@ -429,4 +429,24 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         if not valid_quorum:
             return False, f"governance quorum verification failed: {quorum_reason}"
 
+    key_actions = [
+        node for node in governed_actions
+        if node["data"].get("action") in {"ATTESTOR_REGISTER", "ATTESTOR_ROTATE"}
+    ]
+    if not key_actions:
+        return False, "attestor governance lineage has no approved registration or rotation key"
+    latest_key_action = max(
+        key_actions,
+        key=lambda node: float(node["data"]["issued_at"]),
+    )["data"]
+    registered_attestor = attestor["data"]
+    if registered_attestor.get("status") != "ACTIVE":
+        return False, "attestor authority is not active in the signed evidence snapshot"
+    if (
+        registered_attestor.get("public_key_b64") != latest_key_action.get("public_key_b64")
+        or registered_attestor.get("attestor_type") != latest_key_action.get("attestor_type")
+        or registered_attestor.get("expires_at") != latest_key_action.get("attestor_expires_at")
+    ):
+        return False, "registered attestor key or scope differs from the latest approved governance action"
+
     return True, "authority lifecycle proof profile satisfied"
