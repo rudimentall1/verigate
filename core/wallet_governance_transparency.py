@@ -151,7 +151,13 @@ class WalletGovernanceTransparencyLog:
         )
         self.public_key_b64 = _b64(public_raw)
         self.signer_key_id = hashlib.sha256(public_raw).hexdigest()
-        self._connection = sqlite3.connect(self.db_path, timeout=30)
+        # The separately hosted HTTP endpoint receives requests on worker
+        # threads; its handler serializes writes with a dedicated lock.
+        self._connection = sqlite3.connect(
+            self.db_path,
+            timeout=30,
+            check_same_thread=False,
+        )
         self._connection.execute("PRAGMA journal_mode=WAL")
         self._connection.execute("PRAGMA synchronous=FULL")
         self._connection.executescript(

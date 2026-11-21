@@ -92,7 +92,59 @@ A per-installation SQLite lease serializes workers across processes and expires 
 
 An enrollment remains locally recorded as `ACTIVE` while delivery is pending, but `WalletEnrollmentService.evm_verifier_for_wallet` refuses to construct a verifier until the corresponding `WALLET_ENROLL` outbox event is externally acknowledged. Revocations take effect locally immediately, even while external delivery is pending. Once a checkpoint is acknowledged, `EvidenceGraph` can attach the latest stored bundle automatically; an out-of-date checkpoint will fail against the complete current history.
 
-The repository defines the transport protocol, durable outbox and dispatcher, but it does not deploy a remote HTTP service or provide a concrete network transport adapter. A deployment must supply a transport to the separately operated writer and run a periodic dispatcher worker. It must also manage the log key independently (KMS/HSM preferred). Until the external log receives every accepted action and its latest checkpoint is pinned by the offline verifier, the wallet transparency check is explicitly `pinned=false`.
+The repository also provides a minimal authenticated HTTP endpoint and client adapter. Run the independent writer on loopback behind a TLS-terminating reverse proxy:
+
+```bash
+export VERIGATE_WALLET_GOVERNANCE_LOG_BEARER_TOKEN="<secret-from-secret-manager>"
+python scripts/wallet_governance_log_service.py \
+  --database /var/lib/independent-wallet-log/wallet-governance.sqlite3 \
+  --log-id production-wallet-governance-log \
+  --private-key /etc/wallet-log/signing-key.pem \
+  --public-key-output /etc/wallet-log/wallet-governance-log.pub.pem
+```
+
+The reference server listens on `127.0.0.1:8765` by default, accepts authenticated `POST /v1/wallet-governance/append`, and exposes only a non-sensitive `GET /healthz` health check. Do not expose its plain-HTTP listener to an untrusted network. Terminate HTTPS at a reverse proxy, enforce rate limits there, and deliver the bearer token through a secret manager.
+
+Configure Verigate with the HTTPS origin, same bearer token, and independently provisioned Ed25519 public key:
+
+```python
+from core.wallet_governance_transparency_http import WalletGovernanceTransparencyHTTPTransport
+from core.wallet_governance_outbox import WalletGovernanceOutboxDispatcher
+from core.wallet_enrollment import WalletEnrollmentService
+
+transport = WalletGovernanceTransparencyHTTPTransport(
+    "https://wallet-log.example.net",
+    bearer_token=wallet_log_bearer_token,
+    timeout=10,
+)
+dispatcher = WalletGovernanceOutboxDispatcher(
+    storage,
+    transport,
+    trusted_log_public_key_b64=trusted_wallet_log_public_key_b64,
+)
+wallet_service = WalletEnrollmentService(
+    storage,
+    transparency_dispatcher=dispatcher,
+)
+```
+
+Run the durable outbox worker as a separate process using the same local Verigate database, external log URL, public key and bearer token:
+
+```bash
+export VERIGATE_WALLET_GOVERNANCE_LOG_BEARER_TOKEN="<secret-from-secret-manager>"
+python scripts/wallet_governance_outbox_worker.py \
+  --database /var/lib/verigate/verigate.sqlite3 \
+  --log-url https://wallet-log.example.net \
+  --log-public-key /etc/verigate-trust/wallet-governance-log.pub.pem \
+  --interval 5 \
+  --timeout 10
+```
+
+Run this worker under a process supervisor (for example, systemd) with automatic restart. It performs an initial sweep on startup, then retries pending records periodically. `--once` performs a single sweep and exits non-zero if any event remains pending. The outbox lease coordinates the worker with delivery attempts made synchronously during `WalletEnrollmentService.apply`; multiple worker instances are safe to run, although a second worker for the same installation will report `BUSY` while another holds its lease.
+
+The HTTP client refuses plain HTTP except to loopback addresses, disables redirects to avoid forwarding credentials to another host, applies bounded request/response sizes, and uses a finite timeout. Keep the transport timeout below the outbox lease duration. The HTTP service and local SQLite writer are a reference deployment; production still needs TLS/reverse-proxy configuration, secret rotation, operational monitoring, backups, and independent checkpoint distribution.
+
+Until the external log receives every accepted action and its latest checkpoint is pinned by the offline verifier, the wallet transparency check is explicitly `pinned=false`.
 
 ## Proof attachment and verification
 
