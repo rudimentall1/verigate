@@ -317,3 +317,20 @@ class TestSubmissionIngest(unittest.TestCase):
             agent_id=self.principal, capability_id="anna-payment-test",
         )), 1)
         self.assertEqual(len(self.remote.authority_ledger(self.principal, "anna-payment-test")), 1)
+
+        # Historical proof validation must survive a later governed wallet revoke,
+        # while verification of a newly submitted attestation stays current-state strict.
+        revoke = WalletEnrollmentService.build_action(
+            action="WALLET_REVOKE", reason="wallet decommissioned",
+            governance_policy_sha256=self.governance.digest,
+            enrollment_id=enrollment["enrollment_id"],
+        )
+        WalletEnrollmentService(self.remote).apply(
+            revoke,
+            [approval(revoke, self.gov1, "revoke1"), approval(revoke, self.gov2, "revoke2")],
+            self.governance,
+        )
+        with self.assertRaises(PermissionError):
+            service.verify_and_record(retry_attestation)
+        self.assertTrue(service.verify_existing(attestation)["valid"])
+        self.assertTrue(service.verify_existing(retry_attestation)["valid"])
