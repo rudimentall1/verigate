@@ -11,6 +11,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
 from core.storage import Storage
 from core.wallet_enrollment import WalletEnrollmentService, installation_principal
+from core.wallet_governance_transparency import WalletGovernanceTransparencyLog
+from core.wallet_governance_outbox import WalletGovernanceOutboxDispatcher
 
 
 def canonical(value):
@@ -59,9 +61,9 @@ class WalletEnrollmentTests(unittest.TestCase):
         self.storage.close()
         self.tmp.cleanup()
 
-    def make_enroll(self, *, issuer=None, wallet="0x" + "a" * 40, chain=8453, confirmations=12):
+    def make_enroll(self, *, issuer=None, wallet="0x" + "a" * 40, chain=8453, confirmations=12, service=None):
         pub = issuer or self.issuer_b64
-        return self.service.build_action(
+        return (service or self.service).build_action(
             action="WALLET_ENROLL", reason="operator verified wallet ownership",
             governance_policy_sha256=self.policy.digest,
             issuer_public_key_b64=pub, chain_id=chain, network="base",
@@ -88,23 +90,42 @@ class WalletEnrollmentTests(unittest.TestCase):
             enrollment["enrollment_id"],
         )
 
-    def test_verifier_factory_uses_only_active_enrollment_values(self):
-        action = self.make_enroll()
-        enrollment = self.service.apply(action, self.approvals(action), self.policy)["enrollment"]
-        verifier = self.service.evm_verifier_for_wallet(
-            enrollment["installation_principal"], enrollment["chain_id"], enrollment["wallet_address"],
+    def test_verifier_factory_uses_only_active_externally_acknowledged_enrollment_values(self):
+        log = WalletGovernanceTransparencyLog(
+            Path(self.tmp.name) / "independent-wallet-log.db",
+            log_id="wallet-enrollment-factory-test",
+            signing_key=Ed25519PrivateKey.generate(),
         )
-        self.assertEqual(verifier.expected_sender, enrollment["wallet_address"])
-        self.assertEqual(verifier.min_confirmations, enrollment["min_confirmations"])
-        revoke = self.service.build_action(
-            action="WALLET_REVOKE", reason="rotate wallet", governance_policy_sha256=self.policy.digest,
-            enrollment_id=enrollment["enrollment_id"],
-        )
-        self.service.apply(revoke, self.approvals(revoke), self.policy)
-        with self.assertRaises(PermissionError):
-            self.service.evm_verifier_for_wallet(
+        try:
+            dispatcher = WalletGovernanceOutboxDispatcher(
+                self.storage,
+                log,
+                trusted_log_public_key_b64=log.public_key_b64,
+            )
+            service = WalletEnrollmentService(
+                self.storage,
+                transparency_dispatcher=dispatcher,
+            )
+            action = self.make_enroll(service=service)
+            enrollment = service.apply(
+                action, self.approvals(action), self.policy,
+            )["enrollment"]
+            verifier = service.evm_verifier_for_wallet(
                 enrollment["installation_principal"], enrollment["chain_id"], enrollment["wallet_address"],
             )
+            self.assertEqual(verifier.expected_sender, enrollment["wallet_address"])
+            self.assertEqual(verifier.min_confirmations, enrollment["min_confirmations"])
+            revoke = service.build_action(
+                action="WALLET_REVOKE", reason="rotate wallet", governance_policy_sha256=self.policy.digest,
+                enrollment_id=enrollment["enrollment_id"],
+            )
+            service.apply(revoke, self.approvals(revoke), self.policy)
+            with self.assertRaises(PermissionError):
+                service.evm_verifier_for_wallet(
+                    enrollment["installation_principal"], enrollment["chain_id"], enrollment["wallet_address"],
+                )
+        finally:
+            log.close()
 
     def test_revoke_is_governed_and_preserves_audit_history(self):
         register = self.make_enroll()
