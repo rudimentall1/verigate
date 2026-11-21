@@ -118,6 +118,12 @@ class WalletGovernanceTransparencyHTTPTests(unittest.TestCase):
         self.assertEqual(second["checkpoint"]["payload"]["checkpoint_sequence"], 1)
         self.assertEqual(len(second["entries"]), 1)
 
+    def test_http_client_rejects_oversized_envelope_before_network_send(self):
+        envelope = self.make_envelope()
+        envelope["action"]["reason"] = "x" * 1_100_000
+        with self.assertRaisesRegex(ValueError, "size limit"):
+            self.transport.append_envelope(self.principal, envelope)
+
     def test_http_endpoint_rejects_wrong_bearer_token(self):
         unauthorized = WalletGovernanceTransparencyHTTPTransport(
             f"http://127.0.0.1:{self.server.server_port}",
