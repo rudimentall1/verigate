@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 from core.proof_engine import digest
 from core.authority_protocol import Authority, AuthorityState as GenesisAuthorityState
+from core.governance import GovernancePolicy, verify_governance_quorum
 from .common import (
     validate_requirements,
     validate_context_binding,
@@ -245,22 +246,103 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
     ]
     if not governed_actions:
         return False, "attestor authority has no matching governed registration lineage"
-    action_ids = {node["id"] for node in governed_actions}
-    approval_edges = [
-        edge for edge in edges
-        if edge.get("relation") == "APPROVES"
-        and edge.get("to") in {f"governance_action:{action_id}" for action_id in action_ids}
-    ]
-    if not approval_edges:
-        return False, "governed attestor action has no linked governance approval"
-    nodes_by_ref = {f"{node['type']}:{node['id']}": node for node in payload.get("nodes", [])}
-    for edge in approval_edges:
-        approval = nodes_by_ref.get(edge.get("from"))
-        action = nodes_by_ref.get(edge.get("to"))
-        if approval is None or action is None:
-            return False, "governance approval lineage references missing canonical nodes"
-        approval_payload = approval["data"].get("payload", {})
-        if approval_payload.get("action_digest") != digest(action["data"]):
-            return False, "governance approval is not bound to the approved governance action"
+
+    nodes_by_ref = {
+        f"{node['type']}:{node['id']}": node
+        for node in payload.get("nodes", [])
+    }
+    for action_node in governed_actions:
+        action_id = action_node["id"]
+        action_data = action_node["data"]
+        action_ref = f"governance_action:{action_id}"
+        if not isinstance(action_data, dict) or action_data.get("action_id") != action_id:
+            return False, "governance action identifier does not match its evidence node"
+        if action_data.get("attestor_id") != attestor["id"]:
+            return False, "governance action targets a different attestor"
+        if action_data.get("action") not in {
+            "ATTESTOR_REGISTER",
+            "ATTESTOR_ACTIVATE",
+            "ATTESTOR_ROTATE",
+            "ATTESTOR_REVOKE",
+            "ATTESTOR_EXPIRE",
+        }:
+            return False, "unsupported attestor governance action"
+
+        policy_edges = [
+            edge for edge in edges
+            if edge.get("relation") == "GOVERNS"
+            and edge.get("to") == action_ref
+        ]
+        if len(policy_edges) != 1:
+            return False, "governance action must have exactly one linked governance policy"
+        policy_node = nodes_by_ref.get(policy_edges[0].get("from"))
+        if policy_node is None or policy_node.get("type") != "governance_policy":
+            return False, "governance action references missing governance policy evidence"
+        policy_data = policy_node.get("data")
+        if not isinstance(policy_data, dict):
+            return False, "governance policy evidence is malformed"
+
+        approval_edges = [
+            edge for edge in edges
+            if edge.get("relation") == "APPROVES"
+            and edge.get("to") == action_ref
+        ]
+        if not approval_edges:
+            return False, "governed attestor action has no linked governance approval"
+
+        approval_data = []
+        approval_ids = set()
+        approval_issue_times = []
+        for edge in approval_edges:
+            approval_node = nodes_by_ref.get(edge.get("from"))
+            if approval_node is None or approval_node.get("type") != "governance_approval":
+                return False, "governance approval lineage references missing canonical nodes"
+            approval_id = approval_node.get("id")
+            signed_approval = approval_node.get("data")
+            approval_payload = signed_approval.get("payload") if isinstance(signed_approval, dict) else None
+            if (
+                not isinstance(approval_payload, dict)
+                or approval_payload.get("approval_id") != approval_id
+                or approval_id in approval_ids
+            ):
+                return False, "governance approval identity is missing, duplicated, or inconsistent"
+            issued_at = approval_payload.get("issued_at")
+            if (
+                isinstance(issued_at, bool)
+                or not isinstance(issued_at, (int, float))
+                or not math.isfinite(float(issued_at))
+            ):
+                return False, "governance approval issue time is invalid"
+            approval_issue_times.append(float(issued_at))
+            approval_ids.add(approval_id)
+            approval_data.append(signed_approval)
+
+        action_issued_at = action_data.get("issued_at")
+        if (
+            isinstance(action_issued_at, bool)
+            or not isinstance(action_issued_at, (int, float))
+            or not math.isfinite(float(action_issued_at))
+        ):
+            return False, "governance action issue time is invalid"
+        # Verify the quorum at the first instant all collected signatures
+        # existed. This keeps an expired historical approval verifiable while
+        # still requiring every signature and the action to have been live.
+        verification_time = max(
+            [float(action_issued_at), *approval_issue_times]
+        )
+        try:
+            policy = GovernancePolicy.from_dict(policy_data)
+            if policy.digest != action_data.get("governance_policy_sha256"):
+                return False, "governance action policy fingerprint does not match policy evidence"
+            valid_quorum, quorum_reason = verify_governance_quorum(
+                action_data,
+                approval_data,
+                policy,
+                now=verification_time,
+            )
+        except (TypeError, ValueError, KeyError) as exc:
+            return False, f"invalid governance quorum evidence: {exc}"
+        if not valid_quorum:
+            return False, f"governance quorum verification failed: {quorum_reason}"
 
     return True, "authority lifecycle proof profile satisfied"
