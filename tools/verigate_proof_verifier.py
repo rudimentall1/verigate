@@ -472,6 +472,9 @@ def verify_governance(p, attestor_id, attestor_data):
 
     historical_attestor = dict(attestor_data)
     historical_attestor.update(state_at_attestation)
+    if historical_attestor.get("status") == "ACTIVE":
+        # A retained revoked_at timestamp is historical audit data after reactivation.
+        historical_attestor["revoked_at"] = None
     return True, "governance policy, signatures, quorum and historical attestor state verified", historical_attestor
 
 
