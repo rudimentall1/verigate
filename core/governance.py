@@ -29,6 +29,16 @@ def _canonical(payload: dict[str, Any]) -> bytes:
     ).encode("utf-8")
 
 
+def _finite_number(value: Any) -> bool:
+    """Return whether value is a finite int/float without leaking overflow."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except (OverflowError, TypeError, ValueError):
+        return False
+
+
 @dataclass(frozen=True)
 class AuthorityReset:
     reset_id: str
@@ -118,9 +128,7 @@ def verify_authority_reset(
             return False, "invalid governance epoch"
         issued_at = payload.get("issued_at")
         if (
-            isinstance(issued_at, bool)
-            or not isinstance(issued_at, (int, float))
-            or not math.isfinite(float(issued_at))
+            not _finite_number(issued_at)
         ):
             return False, "invalid governance issued_at timestamp"
         now = time.time()
@@ -526,22 +534,16 @@ def verify_governance_approval(
         if any(not isinstance(payload.get(field), str) or not payload[field] for field in required):
             return False, "invalid governance approval fields"
         if (
-            not isinstance(payload.get("issued_at"), (int, float))
-            or isinstance(payload.get("issued_at"), bool)
-            or not math.isfinite(float(payload["issued_at"]))
+            not _finite_number(payload.get("issued_at"))
         ):
             return False, "invalid governance approval issued_at timestamp"
         if (
-            not isinstance(payload.get("expires_at"), (int, float))
-            or isinstance(payload.get("expires_at"), bool)
-            or not math.isfinite(float(payload["expires_at"]))
+            not _finite_number(payload.get("expires_at"))
         ):
             return False, "invalid governance approval expires_at timestamp"
         now = time.time() if now is None else now
         if (
-            isinstance(now, bool)
-            or not isinstance(now, (int, float))
-            or not math.isfinite(float(now))
+            not _finite_number(now)
         ):
             return False, "invalid governance verification time"
         if payload["issued_at"] > now + 60:
@@ -606,7 +608,7 @@ def verify_governance_quorum(
         value = payload.get(field)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             return False, f"invalid governance action {field}"
-        if not math.isfinite(float(value)):
+        if not _finite_number(value):
             return False, f"invalid governance action {field} timestamp"
     if payload["issued_at"] > now + 60:
         return False, "governance action is too far in the future"
