@@ -126,6 +126,24 @@ class WalletGovernanceTransparencyLogTests(unittest.TestCase):
         self.assertTrue(checks["wallet_governance_transparency_anchor"]["pinned"])
         self.assertTrue(checks["wallet_governance_transparency_signature"]["valid"])
 
+    def test_external_log_can_ingest_governance_actions_one_at_a_time(self):
+        first = self.log.append_envelope(self.principal, self.enroll)
+        second = self.log.append_envelope(self.principal, self.revoke)
+        retry = self.log.append_envelope(self.principal, self.revoke)
+
+        self.assertEqual(first["checkpoint"]["payload"]["entry_count"], 1)
+        self.assertEqual(second["checkpoint"]["payload"]["entry_count"], 2)
+        self.assertEqual(
+            second["checkpoint"]["payload"]["previous_checkpoint_sha256"],
+            first["checkpoint"]["checkpoint_sha256"],
+        )
+        self.assertEqual(second, retry)
+
+        rewritten = json.loads(json.dumps(self.revoke))
+        rewritten["reason"] = "altered revoke"
+        with self.assertRaisesRegex(ValueError, "immutable"):
+            self.log.append_envelope(self.principal, rewritten)
+
     def test_checkpointing_same_history_is_idempotent_and_does_not_advance_sequence(self):
         first = self.log.checkpoint_history(self.principal, [self.enroll])
         second = self.log.checkpoint_history(self.principal, [self.enroll])
