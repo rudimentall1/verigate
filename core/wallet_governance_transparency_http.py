@@ -180,6 +180,12 @@ def make_wallet_governance_log_handler(
     class WalletGovernanceLogRequestHandler(BaseHTTPRequestHandler):
         server_version = "VerigateWalletGovernanceLog/1"
 
+        def setup(self) -> None:
+            super().setup()
+            # Bound slow headers and partial request bodies. The reverse proxy
+            # should enforce its own stricter connection/read timeouts too.
+            self.connection.settimeout(15.0)
+
         def _send_json(self, status: int, payload: dict[str, Any]) -> None:
             data = json.dumps(
                 payload, sort_keys=True, separators=(",", ":"),
@@ -234,6 +240,9 @@ def make_wallet_governance_log_handler(
                 if len(raw) != content_length:
                     raise ValueError("request body is truncated")
                 payload = json.loads(raw.decode("utf-8"))
+            except socket.timeout:
+                self._send_json(408, {"error": "request body timed out"})
+                return
             except (UnicodeDecodeError, ValueError):
                 self._send_json(400, {"error": "request body is invalid JSON"})
                 return
