@@ -86,6 +86,11 @@ def _validate_history(
             or action.get("action") not in {"WALLET_ENROLL", "WALLET_REVOKE"}
         ):
             raise ValueError("wallet transparency log action identity is invalid or duplicated")
+        if (
+            action.get("action") == "WALLET_ENROLL"
+            and action.get("installation_principal") != installation_principal
+        ):
+            raise ValueError("wallet transparency log enrollment action has another installation principal")
         by_action[action_id] = envelope
     return _history_order(envelopes), by_action
 
@@ -197,12 +202,14 @@ class WalletGovernanceTransparencyLog:
         connection.execute("BEGIN IMMEDIATE")
         try:
             stored_rows = connection.execute(
-                "SELECT sequence, action_id, entry_sha256, entry_payload_json, envelope_json "
+                "SELECT sequence, action_id, entry_sha256, entry_payload_json, envelope_json, log_id "
                 "FROM wallet_governance_log_entries "
                 "WHERE installation_principal = ? ORDER BY sequence",
                 (installation_principal,),
             ).fetchall()
             stored_by_action = {row[1]: row for row in stored_rows}
+            if any(row[5] != self.log_id for row in stored_rows):
+                raise ValueError("wallet transparency log database is already bound to another log_id")
             omitted = sorted(set(stored_by_action) - set(history_by_action))
             if omitted:
                 raise ValueError(
