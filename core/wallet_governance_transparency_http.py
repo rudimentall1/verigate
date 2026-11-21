@@ -50,17 +50,28 @@ class WalletGovernanceTransparencyHTTPTransport:
             or not parsed.hostname
             or parsed.username is not None
             or parsed.password is not None
+            or parsed.path not in {"", "/"}
             or parsed.query
             or parsed.fragment
         ):
-            raise ValueError("wallet transparency service URL is malformed")
+            raise ValueError("wallet transparency service URL must be an origin without path, query, or credentials")
+        try:
+            _ = parsed.port
+        except ValueError:
+            raise ValueError("wallet transparency service URL port is invalid") from None
         loopback_hosts = {"localhost", "127.0.0.1", "::1"}
         if parsed.scheme != "https" and not (
             parsed.scheme == "http" and parsed.hostname.lower() in loopback_hosts
         ):
             raise ValueError("wallet transparency service requires HTTPS outside loopback")
-        if not isinstance(bearer_token, str) or len(bearer_token) < 32:
-            raise ValueError("wallet transparency bearer token must contain at least 32 characters")
+        if (
+            not isinstance(bearer_token, str)
+            or len(bearer_token) < 32
+            or any(ord(char) < 33 or ord(char) > 126 for char in bearer_token)
+        ):
+            raise ValueError(
+                "wallet transparency bearer token must contain at least 32 printable ASCII characters"
+            )
         if (
             isinstance(timeout, bool)
             or not isinstance(timeout, (int, float))
@@ -151,8 +162,14 @@ def make_wallet_governance_log_handler(
     """
     if not isinstance(log, WalletGovernanceTransparencyLog):
         raise TypeError("wallet governance log writer is required")
-    if not isinstance(bearer_token, str) or len(bearer_token) < 32:
-        raise ValueError("wallet transparency bearer token must contain at least 32 characters")
+    if (
+        not isinstance(bearer_token, str)
+        or len(bearer_token) < 32
+        or any(ord(char) < 33 or ord(char) > 126 for char in bearer_token)
+    ):
+        raise ValueError(
+            "wallet transparency bearer token must contain at least 32 printable ASCII characters"
+        )
 
     import threading
 
