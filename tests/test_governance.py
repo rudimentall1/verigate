@@ -253,6 +253,20 @@ class GovernanceResetTest(unittest.TestCase):
 
 
 
+    def test_single_governor_authority_reset_rejects_non_finite_timestamp(self):
+        signed = create_authority_reset(
+            agent_id=self.capability.agent_id,
+            capability_id=self.capability.capability_id,
+            governor_private_key=load_private_key(self.governance_private),
+            epoch=1,
+            reason="reject non-finite reset timestamp",
+            issued_at=float("nan"),
+        ).as_dict()
+        ok, reason = verify_authority_reset(
+            signed, load_public_key(self.governance_public)
+        )
+        self.assertFalse(ok)
+        self.assertIn("timestamp", reason)
 
 class MultiPartyGovernanceTest(unittest.TestCase):
     def setUp(self):
@@ -622,21 +636,6 @@ class MultiPartyGovernanceTest(unittest.TestCase):
         )
         self.assertFalse(ok)
         self.assertIn("verification time", reason)
-
-    def test_single_governor_authority_reset_rejects_non_finite_timestamp(self):
-        signed = create_authority_reset(
-            agent_id=self.capability.agent_id,
-            capability_id=self.capability.capability_id,
-            governor_private_key=load_private_key(self.governance_private),
-            epoch=1,
-            reason="reject non-finite reset timestamp",
-            issued_at=float("nan"),
-        ).as_dict()
-        ok, reason = verify_authority_reset(
-            signed, load_public_key(self.governance_public)
-        )
-        self.assertFalse(ok)
-        self.assertIn("timestamp", reason)
 
     def test_malformed_governance_action_fails_closed(self):
         action, approvals = self.suspended_action()
