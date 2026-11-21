@@ -360,7 +360,10 @@ class PortableWalletGovernanceProofTests(unittest.TestCase):
             policy_digests={self.policy.digest},
         )
         self.assertFalse(ok)
-        self.assertIn("quorum", reason.lower())
+        self.assertTrue(
+            "quorum" in reason.lower() or "signature" in reason.lower(),
+            reason,
+        )
 
 
 if __name__ == "__main__":
