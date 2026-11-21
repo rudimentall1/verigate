@@ -311,12 +311,23 @@ class GovernancePolicy:
         return hashlib.sha256(_canonical(self.as_dict())).hexdigest()
 
     def validate(self) -> None:
-        if self.version < 1 or self.threshold < 1:
+        if (
+            isinstance(self.version, bool)
+            or not isinstance(self.version, int)
+            or self.version < 1
+            or isinstance(self.threshold, bool)
+            or not isinstance(self.threshold, int)
+            or self.threshold < 1
+        ):
             raise ValueError("invalid governance policy version or threshold")
         if self.threshold > len(self.members):
             raise ValueError("governance threshold exceeds member count")
-        if self.max_approval_lifetime_seconds <= 0:
-            raise ValueError("approval lifetime must be positive")
+        if (
+            isinstance(self.max_approval_lifetime_seconds, bool)
+            or not isinstance(self.max_approval_lifetime_seconds, int)
+            or self.max_approval_lifetime_seconds <= 0
+        ):
+            raise ValueError("approval lifetime must be a positive integer")
         ids = set()
         keys = set()
         for member in self.members:
@@ -333,7 +344,12 @@ class GovernancePolicy:
             keys.add(member.public_key_b64)
         seen_roles = set()
         for role, count in self.required_roles:
-            if not role or count < 1:
+            if (
+                not role
+                or isinstance(count, bool)
+                or not isinstance(count, int)
+                or count < 1
+            ):
                 raise ValueError("invalid required governance role")
             if role in seen_roles:
                 raise ValueError("duplicate required governance role")
