@@ -291,6 +291,25 @@ class WalletGovernanceTransparencyLogTests(unittest.TestCase):
         self.assertFalse(malformed_ok)
         self.assertIn("base64", malformed_reason.lower())
 
+    def test_core_and_standalone_verifiers_reject_malformed_logged_action(self):
+        bundle = self.log.checkpoint_history(self.principal, [self.enroll])
+        malformed = json.loads(json.dumps(bundle))
+        malformed["entries"][0]["payload"]["envelope"]["action"] = None
+        arguments = {
+            "history_envelopes": [self.enroll],
+            "installation_principal": self.principal,
+        }
+
+        core_result = verify_wallet_governance_transparency_bundle(
+            malformed, **arguments,
+        )
+        standalone_result = TOOL_VERIFIER.verify_wallet_governance_transparency_bundle(
+            malformed, **arguments,
+        )
+        self.assertEqual(standalone_result, core_result)
+        self.assertFalse(core_result[0])
+        self.assertIn("action", core_result[1].lower())
+
     def test_verifier_rejects_truncated_or_reordered_log_entries(self):
         bundle = self.log.checkpoint_history(
             self.principal, [self.enroll, self.revoke],
