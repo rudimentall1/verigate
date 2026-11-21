@@ -155,12 +155,17 @@ async function inspect(browserType, engineName) {
         bodyWidth: document.documentElement.scrollWidth,
         historyDisplay: getComputedStyle(document.querySelector("#history-view")).display,
         filterColumns: getComputedStyle(document.querySelector("#history-filters")).gridTemplateColumns,
+        filterColumnCount: new Set(
+          [...document.querySelector("#history-filters").children]
+            .filter(element => !element.classList.contains("history-filter-actions"))
+            .map(element => Math.round(element.getBoundingClientRect().x))
+        ).size,
       }));
       assert(historyState.bodyWidth <= width, `${engineName}/${viewport.name}: horizontal overflow in Payment history`);
       assert(historyState.historyDisplay !== "none", `${engineName}/${viewport.name}: Payment history view is hidden`);
       if (width <= 420) {
-        assert(historyState.filterColumns.trim().split(/\s+/).length === 1,
-          `${engineName}/${viewport.name}: phone filters should use one column`);
+        assert(historyState.filterColumnCount === 1,
+          `${engineName}/${viewport.name}: phone filters should use one column (tracks: ${historyState.filterColumns}; measured columns: ${historyState.filterColumnCount})`);
       }
       if (viewport.name === "tablet-portrait") {
         await page.screenshot({
