@@ -41,7 +41,16 @@ async function inspect(browserType, engineName) {
       });
 
       await page.setContent(html, { waitUntil: "domcontentloaded" });
-      await page.evaluate(() => document.fonts?.ready);
+      await page.evaluate(() => {
+        document.querySelector("#check-view").classList.add("editing-request");
+        document.querySelector("#decision").textContent = "ALLOW";
+        document.querySelector("#result-title").textContent = "Payment allowed by policy";
+        document.querySelector("#result-meta").textContent = "Base · USDC 25.00 · Recipient verified in request";
+        document.querySelector("#result-summary").textContent = "The request satisfies the configured payment policy. A separate one-time permission is required before any wallet action.";
+        document.querySelector("#suggestion").textContent = "No policy rule was violated.";
+        document.querySelector("#rules").innerHTML = "<li>Within per-transaction limit</li><li>Within daily budget</li><li>Recipient address format valid</li>";
+      });
+      await page.evaluate(() => document.fonts?.ready.then(() => true));
       const width = await page.evaluate(() => window.innerWidth);
       const initial = await page.evaluate(() => ({
         bodyWidth: document.documentElement.scrollWidth,
@@ -54,6 +63,10 @@ async function inspect(browserType, engineName) {
       assert(initial.bodyWidth <= width, `${engineName}/${viewport.name}: horizontal overflow in request view (${initial.bodyWidth}px > ${width}px)`);
       assert(initial.requestDisplay !== "none", `${engineName}/${viewport.name}: request form is hidden on initial view`);
       assert(initial.resultDisplay === "none", `${engineName}/${viewport.name}: result should start hidden`);
+      if (initial.coarsePointer) {
+        const controlHeight = await page.locator("#check-btn").evaluate(element => element.getBoundingClientRect().height);
+        assert(controlHeight >= 44, `${engineName}/${viewport.name}: touch check control is below 44px`);
+      }
       if (width > 960) {
         assert(initial.gridColumns.trim().split(/\s+/).length === 2, `${engineName}/${viewport.name}: desktop should use two columns`);
       } else {
