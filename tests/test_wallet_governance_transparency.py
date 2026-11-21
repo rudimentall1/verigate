@@ -54,6 +54,7 @@ class WalletGovernanceTransparencyLogTests(unittest.TestCase):
             "action": {
                 "action_id": "action-enroll-001",
                 "action": "WALLET_ENROLL",
+                "installation_principal": "anna-installation:" + "1" * 64,
                 "enrollment_id": "enrollment-001",
             },
             "approvals": [{"payload": {"approval_id": "approval-enroll"}}],
