@@ -258,6 +258,8 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
 
     attestation_payload = attestation["data"].get("payload", {})
     attested_claim = attestation_payload.get("claim", {})
+    if attested_claim != claim["data"]:
+        return False, "outcome attestation claim payload differs from the canonical outcome claim"
     if attested_claim.get("claim_id") != claim["id"] or attestation_payload.get("claim_sha256") != digest(claim["data"]):
         return False, "outcome attestation is not bound to the canonical outcome claim"
     if attested_claim.get("authorization_id") != execution["id"]:
