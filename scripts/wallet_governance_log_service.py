@@ -15,6 +15,7 @@ from core.wallet_governance_transparency_http import make_wallet_governance_log_
 
 
 TOKEN_ENV = "VERIGATE_WALLET_GOVERNANCE_LOG_BEARER_TOKEN"
+PREVIOUS_TOKEN_ENV = "VERIGATE_WALLET_GOVERNANCE_LOG_PREVIOUS_BEARER_TOKENS"
 
 
 def main() -> int:
@@ -59,9 +60,16 @@ def main() -> int:
     if args.public_key_output:
         log.export_public_key_pem(args.public_key_output)
 
+    previous_tokens_raw = os.environ.get(PREVIOUS_TOKEN_ENV, "")
+    previous_tokens = tuple(
+        token.strip() for token in previous_tokens_raw.split(",") if token.strip()
+    )
+    if len(previous_tokens) != len(set(previous_tokens)):
+        parser.error(f"{PREVIOUS_TOKEN_ENV} must not contain duplicate tokens")
     handler = make_wallet_governance_log_handler(
         log,
         bearer_token=bearer_token,
+        previous_bearer_tokens=previous_tokens,
     )
     server = ThreadingHTTPServer((args.host, args.port), handler)
     server.daemon_threads = False
