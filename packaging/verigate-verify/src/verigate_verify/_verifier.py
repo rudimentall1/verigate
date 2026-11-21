@@ -1113,13 +1113,15 @@ def verify_wallet_governance_transparency_bundle(
             or payload.get("previous_entry_sha256") != previous_entry_sha256
         ):
             return failure("wallet governance transparency entry sequence or hash chain mismatch")
+        envelope_action = envelope.get("action") if isinstance(envelope, dict) else None
         if (
             not isinstance(envelope, dict)
-            or not isinstance(envelope.get("action"), dict)
+            or not isinstance(envelope_action, dict)
             or not isinstance(action_id, str)
             or not action_id
-            or envelope["action"].get("action_id") != action_id
         ):
+            return failure("wallet governance transparency entry action is malformed")
+        if envelope_action.get("action_id") != action_id:
             return failure("wallet governance transparency entry action identity mismatch")
         if action_id in logged_actions:
             return failure("wallet governance transparency log contains a duplicate action")
