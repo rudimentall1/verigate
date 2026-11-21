@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import importlib.util
 import json
 import sqlite3
 import tempfile
@@ -13,6 +14,14 @@ from core.wallet_governance_transparency import (
     WalletGovernanceTransparencyLog,
     verify_wallet_governance_transparency_bundle,
 )
+
+
+TOOL_VERIFIER_PATH = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+TOOL_SPEC = importlib.util.spec_from_file_location(
+    "verigate_transparency_tool_verifier", TOOL_VERIFIER_PATH,
+)
+TOOL_VERIFIER = importlib.util.module_from_spec(TOOL_SPEC)
+TOOL_SPEC.loader.exec_module(TOOL_VERIFIER)
 
 
 def canonical(value):
@@ -71,6 +80,23 @@ class WalletGovernanceTransparencyLogTests(unittest.TestCase):
             trusted_log_public_key_b64=trusted_key,
             trusted_checkpoint_sha256=expected_checkpoint_sha256,
         )
+
+    def test_standalone_verifier_matches_core_transparency_verifier(self):
+        bundle = self.log.checkpoint_history(
+            self.principal, [self.enroll, self.revoke],
+        )
+        arguments = {
+            "history_envelopes": [self.enroll, self.revoke],
+            "installation_principal": self.principal,
+            "trusted_log_public_key_b64": self.public_key_b64,
+            "trusted_checkpoint_sha256": bundle["checkpoint"]["checkpoint_sha256"],
+        }
+        core_result = verify_wallet_governance_transparency_bundle(bundle, **arguments)
+        standalone_result = TOOL_VERIFIER.verify_wallet_governance_transparency_bundle(
+            bundle, **arguments,
+        )
+        self.assertEqual(standalone_result, core_result)
+        self.assertTrue(standalone_result[0], standalone_result[1])
 
     def test_checkpoint_commits_complete_history_through_signed_append_only_chain(self):
         bundle = self.log.checkpoint_history(self.principal, [self.enroll, self.revoke])
