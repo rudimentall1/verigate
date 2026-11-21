@@ -165,9 +165,9 @@ def make_wallet_governance_log_handler(
     """
     if not isinstance(log, WalletGovernanceTransparencyLog):
         raise TypeError("wallet governance log writer is required")
-    accepted_tokens = (bearer_token, *previous_bearer_tokens)
     if not isinstance(previous_bearer_tokens, tuple):
         raise ValueError("previous wallet transparency bearer tokens must be a tuple")
+    accepted_tokens = (bearer_token, *previous_bearer_tokens)
     if len(set(accepted_tokens)) != len(accepted_tokens):
         raise ValueError("wallet transparency bearer tokens must be unique")
     for token in accepted_tokens:
