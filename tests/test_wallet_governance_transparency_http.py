@@ -275,5 +275,25 @@ class WalletGovernanceTransparencyHTTPTests(unittest.TestCase):
             unauthorized.fetch_bundle(self.principal)
 
 
+    def test_fetched_bundle_reconciles_against_independent_key_and_checkpoint_pin(self):
+        envelope = self.make_envelope("reconcile-pinned")
+        self.transport.append_envelope(self.principal, envelope)
+        bundle = self.transport.fetch_bundle(self.principal)
+        valid, reason, checks = verify_wallet_governance_transparency_bundle(
+            bundle,
+            history_envelopes=[envelope],
+            installation_principal=self.principal,
+            trusted_log_public_key_b64=self.log.public_key_b64,
+            trusted_checkpoint_sha256=bundle["checkpoint"]["checkpoint_sha256"],
+        )
+        self.assertTrue(valid, reason)
+        self.assertTrue(checks["wallet_governance_transparency_anchor"]["pinned"])
+
+    def test_fetch_bundle_returns_not_found_for_unknown_principal(self):
+        unknown = "anna-installation:" + "8" * 64
+        with self.assertRaisesRegex(LookupError, "not found"):
+            self.transport.fetch_bundle(unknown)
+
+
 if __name__ == "__main__":
     unittest.main()
