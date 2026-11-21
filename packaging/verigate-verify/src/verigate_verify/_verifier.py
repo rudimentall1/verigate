@@ -1214,7 +1214,11 @@ def main():
   print('VERIGATE AUTHORITY PROOF - STANDALONE')
   print('Protocol:',r.get('protocol',PROTOCOL))
   for k,v in r.get('checks',{}).items():
-   if k == 'governance_policy_trust_anchor' and not v.get('pinned'):
+   if k in {
+    'governance_policy_trust_anchor',
+    'wallet_governance_policy_trust_anchor',
+    'wallet_enrollment_history_anchor',
+   } and not v.get('pinned'):
     status='NOT PINNED'
    else:
     status='PASS' if v.get('valid') else 'FAIL'
