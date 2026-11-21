@@ -255,9 +255,21 @@ class WalletGovernanceTransparencyLogTests(unittest.TestCase):
         self.assertTrue(ok, reason)
         self.assertFalse(checks["wallet_governance_transparency_anchor"]["pinned"])
 
-    def test_checkpoint_rejects_different_installation_scope(self):
+    def test_checkpoint_rejects_malformed_installation_scope(self):
         with self.assertRaisesRegex(ValueError, "principal"):
-            self.log.checkpoint_history("anna-installation:" + "2" * 64, [self.enroll])
+            self.log.checkpoint_history("not-an-installation-principal", [self.enroll])
+
+    def test_log_keeps_installation_principals_in_separate_entry_chains(self):
+        other_principal = "anna-installation:" + "2" * 64
+        primary = self.log.checkpoint_history(self.principal, [self.enroll])
+        other = self.log.checkpoint_history(other_principal, [self.revoke])
+
+        self.assertEqual(primary["entries"][0]["payload"]["sequence"], 1)
+        self.assertEqual(other["entries"][0]["payload"]["sequence"], 1)
+        self.assertEqual(
+            primary["entries"][0]["entry_sha256"],
+            other["entries"][0]["entry_sha256"],
+        )
 
 
 if __name__ == "__main__":
