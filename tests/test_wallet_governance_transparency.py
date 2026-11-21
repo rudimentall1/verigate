@@ -328,14 +328,34 @@ class WalletGovernanceTransparencyLogTests(unittest.TestCase):
         self.assertTrue(ok, reason)
         self.assertFalse(checks["wallet_governance_transparency_anchor"]["pinned"])
 
+    def test_checkpoint_rejects_revoke_for_enrollment_outside_this_installation(self):
+        other_principal = "anna-installation:" + "2" * 64
+        with self.assertRaisesRegex(ValueError, "enrollment"):
+            self.log.checkpoint_history(other_principal, [self.revoke])
+
+    def test_checkpoint_rejects_duplicate_revoke_for_one_enrollment(self):
+        duplicate_revoke = json.loads(json.dumps(self.revoke))
+        duplicate_revoke["action"]["action_id"] = "action-revoke-duplicate"
+        duplicate_revoke["action_sha256"] = digest(duplicate_revoke["action"])
+        with self.assertRaisesRegex(ValueError, "revocation"):
+            self.log.checkpoint_history(
+                self.principal,
+                [self.enroll, self.revoke, duplicate_revoke],
+            )
+
     def test_checkpoint_rejects_malformed_installation_scope(self):
         with self.assertRaisesRegex(ValueError, "principal"):
             self.log.checkpoint_history("not-an-installation-principal", [self.enroll])
 
     def test_log_keeps_installation_principals_in_separate_entry_chains(self):
         other_principal = "anna-installation:" + "2" * 64
-        primary = self.log.checkpoint_history(self.principal, [self.revoke])
-        other = self.log.checkpoint_history(other_principal, [self.revoke])
+        other_enroll = json.loads(json.dumps(self.enroll))
+        other_enroll["action"]["action_id"] = "action-enroll-other"
+        other_enroll["action"]["installation_principal"] = other_principal
+        other_enroll["action_sha256"] = digest(other_enroll["action"])
+
+        primary = self.log.checkpoint_history(self.principal, [self.enroll])
+        other = self.log.checkpoint_history(other_principal, [other_enroll])
 
         self.assertEqual(primary["entries"][0]["payload"]["sequence"], 1)
         self.assertEqual(other["entries"][0]["payload"]["sequence"], 1)
