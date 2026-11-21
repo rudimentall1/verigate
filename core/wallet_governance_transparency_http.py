@@ -101,6 +101,8 @@ class WalletGovernanceTransparencyHTTPTransport:
             separators=(",", ":"),
             ensure_ascii=False,
         ).encode("utf-8")
+        if len(body) > MAX_REQUEST_BYTES:
+            raise ValueError("wallet transparency request exceeds the size limit")
         request = urllib.request.Request(
             self.url,
             data=body,
