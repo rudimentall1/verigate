@@ -460,7 +460,7 @@ def verify_wallet_governance_transparency_bundle(
     }
     if logged_actions != expected_actions:
         return failure(
-            "wallet governance transparency log does not contain the complete exact history"
+            "wallet governance transparency entry chain does not contain the complete exact history"
         )
 
     checkpoint = bundle.get("checkpoint")
