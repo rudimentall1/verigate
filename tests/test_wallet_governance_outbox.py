@@ -173,6 +173,34 @@ class WalletGovernanceTransactionalOutboxTests(unittest.TestCase):
         self.assertEqual(events[0]["envelope"], history[0])
         self.assertEqual(events[0]["status"], "PENDING")
 
+    def test_outbox_insert_failure_rolls_back_registry_and_governance_history(self):
+        with self.storage._lock:
+            self.storage._conn.execute(
+                """
+                CREATE TRIGGER reject_wallet_outbox
+                BEFORE INSERT ON wallet_governance_outbox
+                BEGIN
+                    SELECT RAISE(ABORT, 'simulated outbox storage failure');
+                END
+                """
+            )
+            self.storage._conn.commit()
+
+        service = WalletEnrollmentService(self.storage)
+        action = self.make_enroll(service)
+        with self.assertRaisesRegex(ValueError, "conflicts"):
+            service.apply(action, self.approvals(action), self.policy)
+
+        self.assertIsNone(self.storage.wallet_enrollment(action["enrollment_id"]))
+        self.assertEqual(
+            self.storage.wallet_enrollment_governance_actions(self.principal),
+            [],
+        )
+        self.assertEqual(
+            self.storage.wallet_governance_outbox_events(self.principal),
+            [],
+        )
+
     def test_unavailable_log_keeps_durable_pending_action_and_blocks_verifier(self):
         dispatcher = self.make_dispatcher(AlwaysFailTransport())
         service = WalletEnrollmentService(
