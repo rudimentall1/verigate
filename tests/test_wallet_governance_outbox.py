@@ -300,6 +300,42 @@ class WalletGovernanceTransactionalOutboxTests(unittest.TestCase):
         )
         self.assertEqual(dispatcher.dispatch_pending(self.principal), [])
 
+    def test_dispatcher_lease_excludes_concurrent_worker_and_is_released(self):
+        service = WalletEnrollmentService(self.storage)
+        action = self.make_enroll(service)
+        service.apply(action, self.approvals(action), self.policy)
+
+        lease = self.storage.acquire_wallet_governance_outbox_lease(self.principal)
+        self.assertIsNotNone(lease)
+        dispatcher = self.make_dispatcher()
+        busy = dispatcher.dispatch_pending(self.principal)
+        self.assertEqual(busy[0]["status"], "BUSY")
+        self.assertFalse(busy[0]["delivered"])
+
+        self.storage.release_wallet_governance_outbox_lease(self.principal, lease)
+        completed = dispatcher.dispatch_pending(self.principal)
+        self.assertEqual(len(completed), 1)
+        self.assertTrue(completed[0]["delivered"])
+
+    def test_expired_dispatcher_lease_can_be_reclaimed(self):
+        first = self.storage.acquire_wallet_governance_outbox_lease(
+            self.principal,
+            lease_seconds=1,
+        )
+        self.assertIsNotNone(first)
+        # Move the lease expiry into the past without sleeping.
+        with self.storage._lock:
+            self.storage._conn.execute(
+                "UPDATE wallet_governance_outbox_leases SET lease_expires_at = ? "
+                "WHERE installation_principal = ?",
+                (time.time() - 1, self.principal),
+            )
+            self.storage._conn.commit()
+        second = self.storage.acquire_wallet_governance_outbox_lease(self.principal)
+        self.assertIsNotNone(second)
+        self.assertNotEqual(first, second)
+        self.storage.release_wallet_governance_outbox_lease(self.principal, second)
+
     def test_bad_remote_checkpoint_is_not_acknowledged(self):
         class TamperedTransport:
             def __init__(self, log):
