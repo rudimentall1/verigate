@@ -7,10 +7,20 @@ const TOOL_ID =
   DEV_FALLBACK_TOOL_ID;
 
 const $ = (id) => document.getElementById(id);
-const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], lastAiAvailable: null, lastDynamicAuthority: null, lastExecutionAuthorization: null, busy: false, lastInterpretedDescription: "", requestId: 0 };
+const state = { anna: null, lastReceipt: null, lastValues: null, lastFlags: [], lastAiAvailable: null, lastDynamicAuthority: null, lastExecutionAuthorization: null, busy: false, lastInterpretedDescription: "", requestId: 0, historyRequestId: 0, historyDetailsRequestId: 0, checkMode: "request" };
 const buttons = [$("check-btn"), $("execution-btn"), $("wallet-execute-btn")];
 const inputs = ["action-description", "agent-id", "target", "asset", "network", "amount", "resource", "confirm-details"].map($);
 const FIELD_IDS = ["target", "asset", "network", "amount"];
+
+document.addEventListener("click", (event) => {
+  const button = event.target?.closest?.("[data-example]");
+  if (!button || state.busy) return;
+  const field = $("action-description");
+  if (!field) return;
+  field.value = button.dataset.example || "";
+  field.dispatchEvent(new field.ownerDocument.defaultView.Event("input", { bubbles: true }));
+  field.focus();
+});
 const FIELD_LABELS = { target: "recipient", asset: "asset", network: "network", amount: "amount" };
 const normalizeAgentLabel = (value) => Array.from(String(value ?? "").trim().replace(/\s+/g, " ")).slice(0, 128).join("");
 
@@ -132,6 +142,26 @@ function hideClarify() {
   $("confirm-wrap").style.display = "none";
 }
 
+function setCheckMode(mode) {
+  const normalized = ["request", "result", "how"].includes(mode) ? mode : "request";
+  state.checkMode = normalized;
+  const view = $("check-view");
+  view.classList.toggle("editing-request", normalized === "request");
+  view.classList.toggle("showing-result", normalized === "result");
+  view.classList.toggle("showing-how", normalized === "how");
+  $("result").style.display = normalized === "result" ? "block" : "none";
+  $("security-model").hidden = normalized === "result";
+  $("nav-check").classList.toggle("active", normalized !== "how");
+  $("nav-how").classList.toggle("active", normalized === "how");
+  if (normalized === "how") {
+    $("nav-how").setAttribute("aria-current", "page");
+    $("nav-check").removeAttribute("aria-current");
+  } else {
+    $("nav-check").setAttribute("aria-current", "page");
+    $("nav-how").removeAttribute("aria-current");
+  }
+}
+
 function clearResult() {
   state.lastReceipt = null;
   state.lastValues = null;
@@ -139,7 +169,7 @@ function clearResult() {
   state.lastAiAvailable = null;
   state.lastDynamicAuthority = null;
   state.lastExecutionAuthorization = null;
-  $("result").style.display = "none";
+  setCheckMode("request");
   $("execution-panel").style.display = "none";
   $("execution-summary").textContent = "";
   $("execution-status").textContent = "";
@@ -1050,7 +1080,7 @@ async function checkAuthority() {
     $("proof").textContent = "Ed25519 signature verified against this installation's issuer key. SHA-256 fingerprint: " + fingerprint + ". This proves the receipt has not been altered since signing; it does not mean a transaction was executed.";
     $("issuer-public-key").textContent = envelope.verification.public_key_pem;
     $("receipt-json").textContent = JSON.stringify(envelope.receipt, null, 2);
-    $("result").style.display = "block";
+    setCheckMode("result");
 
     const explained = await explainDecision(envelope, values, limits, review.flags);
     if (requestId !== state.requestId) return;
@@ -1734,12 +1764,311 @@ async function executeWithConnectedWallet() {
 }
 
 
+const HISTORY_STATUS_LABELS = {
+  POLICY_ALLOWED: "Policy allowed · not sent",
+  REVIEW_REQUIRED: "Human review required",
+  BLOCKED: "Blocked by policy",
+  PERMISSION_ISSUED: "Permission issued · not sent",
+  CONSUMED: "Permission consumed · wallet outcome unresolved",
+  SUBMITTED: "Submitted · not chain-confirmed",
+  REJECTED: "Wallet rejected",
+  ABORTED: "Aborted before wallet submission",
+  UNKNOWN: "Outcome unknown",
+  EVIDENCE_INVALID: "Evidence could not be verified"
+};
+
+function historyDate(timestamp) {
+  const value = Number(timestamp);
+  if (!Number.isFinite(value)) return "Date unavailable";
+  return new Date(value * 1000).toLocaleString();
+}
+
+function historyExplorer(network, hash) {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(String(hash || ""))) return "";
+  const explorers = {
+    base: "https://basescan.org/tx/",
+    ethereum: "https://etherscan.io/tx/"
+  };
+  const base = explorers[String(network || "").toLowerCase()];
+  return base ? base + hash : "";
+}
+
+function renderPaymentHistory(items) {
+  const list = $("history-list");
+  list.replaceChildren();
+  if (!Array.isArray(items) || items.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "history-empty";
+    empty.textContent = "No saved payment records. Policy previews are not saved; a record appears after a persistent authorization step.";
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const item of items) {
+    const article = document.createElement("article");
+    article.className = "history-item";
+
+    const main = document.createElement("div");
+    const amountValue = Number(item.amount);
+    const amount = Number.isFinite(amountValue)
+      ? new Intl.NumberFormat(undefined, { maximumFractionDigits: 6 }).format(amountValue)
+      : "—";
+    const title = document.createElement("h3");
+    title.textContent = amount + " " + String(item.asset || "");
+    main.appendChild(title);
+
+    const recipient = document.createElement("p");
+    recipient.textContent = "To: " + String(item.recipient || "Recipient unavailable");
+    main.appendChild(recipient);
+
+    const metadata = document.createElement("div");
+    metadata.className = "history-item-meta";
+    for (const text of [
+      historyDate(item.created_at),
+      String(item.network || "").toUpperCase(),
+      String(item.purpose || "No invoice or purpose")
+    ]) {
+      const span = document.createElement("span");
+      span.textContent = text;
+      metadata.appendChild(span);
+    }
+    main.appendChild(metadata);
+
+    const tags = document.createElement("div");
+    tags.className = "history-tags";
+    const decision = document.createElement("span");
+    decision.className = "history-tag " + (
+      item.decision === "ALLOW" ? "allow" :
+      item.decision === "WARN" ? "warn" :
+      item.decision === "BLOCK" ? "block" : ""
+    );
+    decision.textContent = "Policy: " + String(item.decision || "UNVERIFIED");
+    tags.appendChild(decision);
+
+    const status = document.createElement("span");
+    status.className = "history-tag";
+    status.textContent = HISTORY_STATUS_LABELS[item.execution_status] || String(item.execution_status || "Unknown status");
+    tags.appendChild(status);
+    main.appendChild(tags);
+
+    if (item.execution_status === "SUBMITTED") {
+      const note = document.createElement("p");
+      note.textContent = "The wallet returned a transaction hash. Network inclusion and settlement have not been independently verified.";
+      main.appendChild(note);
+    } else if (item.execution_status === "CONSUMED") {
+      const note = document.createElement("p");
+      note.textContent = "The one-time permission was consumed. No verified wallet outcome receipt is available in this record.";
+      main.appendChild(note);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "history-item-actions";
+    if (item.transaction_hash) {
+      const explorer = historyExplorer(item.network, item.transaction_hash);
+      const hash = document.createElement(explorer ? "a" : "span");
+      hash.textContent = String(item.transaction_hash).slice(0, 10) + "…" + String(item.transaction_hash).slice(-6);
+      if (explorer) {
+        hash.href = explorer;
+        hash.target = "_blank";
+        hash.rel = "noopener noreferrer";
+        hash.setAttribute("aria-label", "Open transaction in block explorer");
+      }
+      actions.appendChild(hash);
+    }
+    const details = document.createElement("button");
+    details.className = "secondary";
+    details.type = "button";
+    details.textContent = "View evidence";
+    details.dataset.historyDetails = "true";
+    details.dataset.intentId = String(item.intent_id || "");
+    actions.appendChild(details);
+
+    article.append(main, actions);
+    list.appendChild(article);
+  }
+}
+
+function historyFilterArgs() {
+  const args = { limit: 50 };
+  const search = $("history-search").value.trim();
+  const network = $("history-network").value;
+  const status = $("history-status-filter").value;
+  const from = $("history-from").value;
+  const to = $("history-to").value;
+  if (search) args.search = search;
+  if (network) args.network = network;
+  if (status) args.status = status;
+  if (from) {
+    const start = new Date(from + "T00:00:00");
+    if (!Number.isNaN(start.getTime())) args.since = Math.floor(start.getTime() / 1000);
+  }
+  if (to) {
+    const end = new Date(to + "T00:00:00");
+    if (!Number.isNaN(end.getTime())) {
+      end.setDate(end.getDate() + 1);
+      args.until = Math.floor(end.getTime() / 1000);
+    }
+  }
+  return args;
+}
+
+async function invokePaymentHistory(args) {
+  if (!state.anna) throw new Error("Anna runtime is not connected.");
+  const response = await state.anna.tools.invoke({
+    tool_id: TOOL_ID,
+    method: "verigate_payment_history",
+    args
+  });
+  const outer = unwrapToolResult(response);
+  const data = toolDataOrDirect(outer, (candidate) => Array.isArray(candidate.items));
+  if (!data || !Array.isArray(data.items)) {
+    throw new Error(outer?.error || "Anna did not return a valid payment history response.");
+  }
+  return data;
+}
+
+async function loadPaymentHistory() {
+  const requestId = ++state.historyRequestId;
+  state.historyDetailsRequestId += 1;
+  $("history-error").hidden = true;
+  $("history-error").textContent = "";
+  $("history-status").textContent = "Loading payment history…";
+  $("history-list").replaceChildren();
+  $("history-details").hidden = true;
+  try {
+    const data = await invokePaymentHistory(historyFilterArgs());
+    if (requestId !== state.historyRequestId) return;
+    renderPaymentHistory(data.items);
+    $("history-status").textContent = data.count + (data.count === 1 ? " saved record" : " saved records");
+  } catch (error) {
+    if (requestId !== state.historyRequestId) return;
+    $("history-status").textContent = "Payment history could not be loaded.";
+    $("history-error").textContent = errorDetail(error);
+    $("history-error").hidden = false;
+  }
+}
+
+async function loadPaymentHistoryDetails(intentId) {
+  const requestId = ++state.historyDetailsRequestId;
+  $("history-error").hidden = true;
+  $("history-error").textContent = "";
+  $("history-details").hidden = true;
+  try {
+    const data = await invokePaymentHistory({
+      intent_id: intentId,
+      limit: 1,
+      include_details: true
+    });
+    if (requestId !== state.historyDetailsRequestId) return;
+    const item = data.items?.[0];
+    if (!item || item.intent_id !== intentId || !item.details) {
+      throw new Error("Verified payment evidence was not returned for this record.");
+    }
+    const details = item.details;
+    const decision = details.decision_verification || {};
+    const authorization = details.execution_authorization_verification || {};
+    const receipt = details.execution_receipt_verification || {};
+    const lines = [
+      "Decision Receipt " + (decision.verified ? "verified." : "not verified: " + (decision.reason || "unknown reason")),
+      authorization.verified
+        ? "Execution Authorization verified."
+        : "No verified one-time execution permission: " + (authorization.reason || "not issued"),
+      receipt.verified === true
+        ? "Execution Receipt verified. Trust scope: " + String(item.receipt_trust_scope || "not specified") + "."
+        : receipt.verified === false
+          ? "Execution Receipt not verified: " + (receipt.reason || "unknown reason")
+          : "No Execution Receipt is recorded for this authorization.",
+      "Issuer key fingerprint: " + String(decision.key_fingerprint_sha256 || "unavailable")
+    ];
+    $("history-details-verification").textContent = lines.join("\n");
+    $("history-decision-json").textContent = details.decision_receipt
+      ? JSON.stringify(details.decision_receipt, null, 2)
+      : "No verified Decision Receipt is available.";
+    $("history-execution-json").textContent = details.execution_receipt
+      ? JSON.stringify(details.execution_receipt, null, 2)
+      : "No verified Execution Receipt is available.";
+    $("history-execution-details").hidden = !details.execution_receipt;
+    $("history-details").hidden = false;
+  } catch (error) {
+    if (requestId !== state.historyDetailsRequestId) return;
+    $("history-error").textContent = errorDetail(error);
+    $("history-error").hidden = false;
+  }
+}
+
+function showAppView(view) {
+  const history = view === "history";
+  $("check-view").hidden = history;
+  $("history-view").hidden = !history;
+  $("nav-check").classList.toggle("active", !history);
+  $("nav-history").classList.toggle("active", history);
+  if (history) {
+    $("nav-history").setAttribute("aria-current", "page");
+    $("nav-check").removeAttribute("aria-current");
+    loadPaymentHistory();
+  } else {
+    state.historyDetailsRequestId += 1;
+    $("history-details").hidden = true;
+    $("nav-check").setAttribute("aria-current", "page");
+    $("nav-history").removeAttribute("aria-current");
+  }
+}
+
 async function main() {
   // Bind UI events before the asynchronous host handshake. A slow or failed
   // Anna connection must not leave the view with uninitialized controls.
+  setCheckMode(state.lastReceipt ? "result" : "request");
+  $("edit-request-btn").addEventListener("click", () => {
+    clearResult();
+    if (typeof $("request-panel").scrollIntoView === "function") {
+      $("request-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    $("action-description").focus();
+  });
   $("check-btn").addEventListener("click", checkAuthority);
   $("execution-btn").addEventListener("click", prepareExecutionAuthorization);
   $("wallet-execute-btn").addEventListener("click", executeWithConnectedWallet);
+  $("nav-check").addEventListener("click", (event) => {
+    event.preventDefault();
+    showAppView("check");
+    setCheckMode(state.lastReceipt ? "result" : "request");
+    if (typeof $("check-view").scrollIntoView === "function") {
+      $("check-view").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+  $("nav-history").addEventListener("click", (event) => {
+    event.preventDefault();
+    showAppView("history");
+  });
+  $("nav-how").addEventListener("click", (event) => {
+    event.preventDefault();
+    showAppView("check");
+    setCheckMode("how");
+    if (typeof $("security-model").scrollIntoView === "function") {
+      $("security-model").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+  $("history-refresh").addEventListener("click", loadPaymentHistory);
+  $("history-filters").addEventListener("submit", (event) => {
+    event.preventDefault();
+    loadPaymentHistory();
+  });
+  $("history-clear").addEventListener("click", () => {
+    $("history-search").value = "";
+    $("history-network").value = "";
+    $("history-status-filter").value = "";
+    $("history-from").value = "";
+    $("history-to").value = "";
+    loadPaymentHistory();
+  });
+  $("history-list").addEventListener("click", (event) => {
+    const button = event.target?.closest?.("[data-history-details]");
+    if (button?.dataset?.intentId) loadPaymentHistoryDetails(button.dataset.intentId);
+  });
+  $("history-details-close").addEventListener("click", () => {
+    state.historyDetailsRequestId += 1;
+    $("history-details").hidden = true;
+  });
   const invalidate = () => {
     state.requestId += 1;
     clearResult();

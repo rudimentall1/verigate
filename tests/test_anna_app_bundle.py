@@ -90,6 +90,39 @@ class AnnaAppBundleTest(unittest.TestCase):
         self.assertIn('src="anna-tool-ids.js"', self.html)
         self.assertIn("window.__ANNA_TOOL_IDS__", self.js)
 
+    def test_authority_desk_and_payment_history_are_first_class_views(self):
+        for element_id in (
+            "nav-check",
+            "nav-history",
+            "check-view",
+            "history-view",
+            "history-search",
+            "history-network",
+            "history-status-filter",
+            "history-from",
+            "history-to",
+            "history-list",
+            "history-details",
+        ):
+            with self.subTest(element_id=element_id):
+                self.assertIn(f'id="{element_id}"', self.html)
+        self.assertIn("Authority Desk", self.html)
+        self.assertIn("data-example=", self.html)
+        self.assertIn("class=\"edit-fields\"", self.html)
+        self.assertIn('method: "verigate_payment_history"', self.js)
+
+    def test_executa_manifest_declares_payment_history_as_read_only(self):
+        plugin_manifest = json.loads(
+            (ANNA / "executas" / "verigate-authority" / "manifest.json").read_text(encoding="utf-8")
+        )
+        history = next(tool for tool in plugin_manifest["tools"] if tool["name"] == "verigate_payment_history")
+        self.assertIn("Read-only", history["description"])
+        self.assertIn("never authorizes", history["description"])
+        self.assertIn("mode=ro", (ROOT / "core" / "storage.py").read_text(encoding="utf-8"))
+        plugin_source = (ANNA / "executas" / "verigate-authority" / "verigate_authority_plugin.py").read_text(encoding="utf-8")
+        self.assertIn("Storage.open_read_only(database_path)", plugin_source)
+        self.assertIn("verify_execution_receipt", plugin_source)
+
     def test_listing_version_is_currently_aligned(self):
         self.assertEqual(self.app["slug"], "verigate-authority")
         self.assertGreaterEqual(tuple(map(int, self.app["version"].split("."))), (0, 1, 4))

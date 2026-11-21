@@ -21,10 +21,10 @@ const VALID = "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-ui-"));
 
-function callPlugin(method, args, { appStorage = new Map(), appContext = true, samplingHandler = {} } = {}) {
+function callPlugin(method, args, { appStorage = new Map(), appContext = true, samplingHandler = {}, dataDirectory = dataDir } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(PY, [PLUGIN], {
-      env: { ...process.env, VERIGATE_ANNA_DATA_DIR: dataDir, PYTHONPATH: root },
+      env: { ...process.env, VERIGATE_ANNA_DATA_DIR: dataDirectory, PYTHONPATH: root },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let buffer = "";
@@ -147,7 +147,7 @@ function interpretJson(o) {
 }
 const GOOD = { payee: VALID, asset: "USDC", network: "base", amount: 25, resource: "invoice 1042", summary: "Pay 25 USDC on Base." };
 
-async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, tamperConsumedTransactionRecipient = false, tamperConsumedTransactionAmount = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
+async function launch({ interpret, explain, connectFails = false, toolsMissing = false, showModalThrows = false, storageSetFails = false, aiReviewInvokeFails = false, aiReviewResponseFailure = null, authorizeInvokeFails = false, verifyAuthorizationInvokeFails = false, verifyAuthorizationReturnsError = false, consumeInvokeDropsResponse = false, policySummaryInvokeFails = false, policySummaryReturnsError = false, tamperSignature = false, tamperAuthorizationDecision = false, tamperExecutionVerificationAction = false, tamperPolicySummaryPrincipal = false, tamperConsumedTransactionRecipient = false, tamperConsumedTransactionAmount = false, decisionIntentOverride = null, verificationResponseShape = "single", hostResponseShape = "wrapped", dataDirectory = dataDir, historyInvokeOverride = null, description = "Pay 25 USDC on Base to " + VALID + " for invoice 1042" }) {
   const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true });
   const { window } = dom;
   if (showModalThrows && window.HTMLDialogElement) {
@@ -188,6 +188,9 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
           calls.tools.push(method);
         }
         calls.toolArgs[method] = args;
+        if (method === "verigate_payment_history" && historyInvokeOverride) {
+          return { result: await historyInvokeOverride(args) };
+        }
         if (method === "verigate_authorize_payment" && authorizeInvokeFails) {
           const error = new Error("Unauthorized while refreshing Anna session");
           error.status = 401;
@@ -215,7 +218,8 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
         const result = await callPlugin(method, pluginArgs, {
           appStorage,
           appContext: true,
-          samplingHandler: { interpret, explain }
+          samplingHandler: { interpret, explain },
+          dataDirectory
         });
         if (method === "verigate_consume_execution_authorization" && tamperConsumedTransactionRecipient) {
           const tx = result?.data?.transaction;
@@ -275,6 +279,38 @@ async function launch({ interpret, explain, connectFails = false, toolsMissing =
       $("check-btn").click();
       for (let i = 0; i < 400; i++) { await sleep(25); if (!$("check-btn").disabled) break; }
       await sleep(30);
+    },
+    async openHistory() {
+      $("nav-history").click();
+      for (let i = 0; i < 400; i++) {
+        if (!$("history-status").textContent.includes("Loading")) break;
+        await sleep(10);
+      }
+      await sleep(30);
+    },
+    async refreshHistory() {
+      $("history-refresh").click();
+      for (let i = 0; i < 400; i++) {
+        if (!$("history-status").textContent.includes("Loading")) break;
+        await sleep(10);
+      }
+      await sleep(30);
+    },
+    async openHistoryDetails(intentId) {
+      const button = [...window.document.querySelectorAll("[data-history-details]")]
+        .find((item) => item.dataset.intentId === intentId);
+      if (!button) throw new Error("history details button was not rendered for " + intentId);
+      button.click();
+      for (let i = 0; i < 400; i++) {
+        if (!$("history-details").hidden) break;
+        await sleep(10);
+      }
+      if ($("history-details").hidden) throw new Error("history evidence details did not open");
+      await sleep(20);
+    },
+    async clickCheckView() {
+      $("nav-check").click();
+      await sleep(20);
     },
     async clickExecution() {
       $("execution-btn").click();
@@ -354,6 +390,67 @@ async function test(name, fn) {
 }
 const eq = (a, b, m) => { if (a !== b) throw new Error((m || "") + " expected " + JSON.stringify(b) + " got " + JSON.stringify(a)); };
 const ok = (c, m) => { if (!c) throw new Error(m); };
+
+await test("decision stays beside the request without a full-page scroll", async () => {
+  const ui = await launch({});
+  const result = ui.$("result");
+  const workspace = ui.window.document.querySelector(".grid");
+  eq(result.parentElement, workspace, "decision panel is part of the two-column workspace");
+  await ui.click();
+  eq(ui.$("result").style.display, "block", "decision is shown after a valid check");
+  eq(ui.$("security-model").hidden, true, "static explainer yields the right rail to the active decision");
+  ok(html.includes("#result{grid-column:2;grid-row:1"), "decision occupies the right-hand workspace column");
+  ok(html.includes("max-height:calc(100vh - 24px)"), "desktop right rail is bounded to the viewport");
+  ok(ui.window.document.querySelector(".evidence-details"), "long verification details are collapsed behind an evidence disclosure");
+});
+
+await test("compact workflow switches between request, result and how-to views", async () => {
+  const ui = await launch({});
+  const checkView = ui.$("check-view");
+  const editButton = ui.$("edit-request-btn");
+  ok(editButton, "result view exposes an explicit edit-request action");
+  eq(checkView.classList.contains("showing-result"), false, "new session starts on the request view");
+  await ui.click();
+  eq(checkView.classList.contains("showing-result"), true, "a completed decision switches to the result view");
+  eq(ui.$("result").style.display, "block", "the decision panel is visible");
+  editButton.click();
+  eq(checkView.classList.contains("editing-request"), true, "edit action returns to the request view");
+  eq(ui.$("result").style.display, "none", "old decision is removed before the request can be edited");
+  eq(ui.$("security-model").hidden, false, "the explainer remains available on desktop while editing");
+  await ui.click();
+  eq(checkView.classList.contains("showing-result"), true, "a fresh check returns to the result view");
+  ui.$("nav-how").click();
+  eq(checkView.classList.contains("showing-how"), true, "how-it-works opens as its own compact view");
+  eq(ui.$("nav-how").classList.contains("active"), true, "how-it-works navigation reflects the active view");
+  eq(ui.$("nav-how").getAttribute("aria-current"), "page", "active how-to view is announced accessibly");
+  eq(ui.$("nav-check").getAttribute("aria-current"), null, "Check is not marked current while how-to is open");
+  ui.$("nav-check").click();
+  eq(checkView.classList.contains("showing-result"), true, "returning to Check restores the existing result");
+  eq(ui.$("nav-check").classList.contains("active"), true, "Check navigation becomes active when returning");
+  eq(ui.$("nav-check").getAttribute("aria-current"), "page", "active Check view is announced accessibly");
+});
+
+await test("narrow layouts use one focused screen with touch-sized navigation and controls", async () => {
+  const mobileRules = html.match(/@media\s*\(max-width:\s*960px\)[\s\S]*?(?=\n\s*@media|\n\s*<\/style>)/)?.[0] || "";
+  ok(mobileRules.includes("#check-view.showing-result #request-panel"), "narrow result mode hides the long request form");
+  ok(mobileRules.includes("#check-view.editing-request #result"), "narrow request mode hides the result until needed");
+  ok(mobileRules.includes("#check-view.showing-how #request-panel"), "narrow how-to mode does not stack beneath the form");
+  ok(mobileRules.includes("min-height:44px"), "navigation and primary controls meet touch-target sizing");
+  ok(mobileRules.includes("env(safe-area-inset"), "mobile layout accounts for device safe areas");
+  ok(html.includes("viewport-fit=cover"), "edge-to-edge viewport enables safe-area handling on iOS devices");
+  ok(html.includes("100dvh"), "sticky desktop panels use the dynamic viewport height where supported");
+  ok(html.includes("@media(hover:none),(pointer:coarse)"), "touch devices receive larger controls even in landscape desktop-width layouts");
+});
+
+await test("quick examples only fill the request and never start AI or policy checks", async () => {
+  const ui = await launch({});
+  const example = ui.window.document.querySelector("[data-example]");
+  ok(example, "Authority Desk quick example exists");
+  example.click();
+  eq(ui.$("action-description").value, example.dataset.example, "example fills the ordinary payment request field");
+  eq(ui.calls.tools.length, 0, "example selection does not call Verigate");
+  eq(ui.calls.llm, 0, "example selection does not call Anna AI");
+});
 
 await test("valid request: AI reads it, Verigate allows, limits table is shown", async () => {
   const ui = await launch({});
@@ -488,7 +585,7 @@ await test("authorization history is clearly distinguished from completed on-cha
   ok(!limits.includes("Rolling 24-hour spend"), "UI does not call authorization budget settled spend");
   ok(!limits.includes("Recipient history"), "UI does not call a prior authorization a completed payment");
   const note = repeat.$("limits").textContent;
-  ok(note.includes("policy-history counters, not proof that an on-chain transfer was signed, submitted, or settled"), "UI explains the limit of the evidence");
+  ok(note.includes("tracks active policy reservations, not chain-confirmed spend"), "UI explains the limit of the evidence");
 });
 
 await test("one-time execution permission is issued only after a separate user click", async () => {
@@ -995,11 +1092,11 @@ await test("canceling wallet confirmation leaves the permission unused", async (
   await ui.click();
   await ui.clickExecution();
   ui.$("wallet-execute-btn").click();
-  for (let i = 0; i < 200; i++) {
-    if (!ui.$("approval-overlay").hidden) break;
+  for (let i = 0; i < 1000; i++) {
+    if (!ui.$("approval-overlay").hidden || ui.shown("error")) break;
     await sleep(10);
   }
-  ok(!ui.$("approval-overlay").hidden, "wallet confirmation overlay opened");
+  ok(!ui.$("approval-overlay").hidden, "wallet confirmation overlay opened; error=" + ui.text("error") + "; status=" + ui.text("execution-status"));
   ui.$("approval-cancel").click();
   await sleep(40);
   eq(ui.calls.storage.length, 1, "cancel does not write the wallet-submission approval");
@@ -1448,6 +1545,226 @@ await test("Anna connection failure is surfaced and app actions stay disabled", 
   ok(ui.text("status").includes("Anna connection failed: no host"), "the original host connection error is visible");
   ok(ui.text("status").includes("check the session"), "the user gets a concrete recovery direction");
   eq(ui.calls.tools.length, 0, "no Executa call can run without a connected host");
+});
+
+
+
+
+await test("payment history exposes an evidence-invalid filter and sends it to Executa", async () => {
+  const validRecord = {
+    intent_id: "history-valid",
+    recipient: VALID,
+    asset: "USDC",
+    network: "base",
+    amount: 10,
+    decision: "ALLOW",
+    execution_status: "PERMISSION_ISSUED",
+    created_at: 1,
+    purpose: "valid record"
+  };
+  const invalidRecord = {
+    intent_id: "history-invalid",
+    recipient: VALID,
+    asset: "USDC",
+    network: "base",
+    amount: 20,
+    decision: "UNVERIFIED",
+    execution_status: "EVIDENCE_INVALID",
+    created_at: 2,
+    purpose: "invalid evidence"
+  };
+  const historyRequests = [];
+  const ui = await launch({
+    historyInvokeOverride: async (args) => {
+      historyRequests.push({ ...args });
+      const items = args.status === "EVIDENCE_INVALID" ? [invalidRecord] : [validRecord];
+      return { success: true, data: { items, count: items.length } };
+    }
+  });
+  await ui.openHistory();
+  const select = ui.$("history-status-filter");
+  ok([...select.options].some(option => option.value === "EVIDENCE_INVALID"), "evidence-invalid filter is visible");
+  select.value = "EVIDENCE_INVALID";
+  ui.$("history-filters").dispatchEvent(new ui.window.Event("submit", { bubbles: true, cancelable: true }));
+  for (let i = 0; i < 100; i++) {
+    if (ui.text("history-list").includes("Evidence could not be verified")) break;
+    await sleep(10);
+  }
+  const lastRequest = historyRequests[historyRequests.length - 1];
+  eq(lastRequest.status, "EVIDENCE_INVALID", "selected invalid-evidence status is sent to Executa");
+  ok(ui.text("history-list").includes("Evidence could not be verified"), "invalid evidence is displayed with an explicit warning label");
+  ok(ui.text("history-list").includes("invalid evidence"), "the filtered record is shown");
+  ok(!ui.text("history-list").includes("valid record"), "records with valid evidence are excluded from this filter");
+});
+
+await test("payment history labels REJECTED ABORTED and UNKNOWN as installation outcomes", async () => {
+  const records = [
+    { intent_id: "history-rejected", recipient: VALID, asset: "USDC", network: "base", amount: 10, decision: "ALLOW", execution_status: "REJECTED", created_at: 1, purpose: "rejected payment" },
+    { intent_id: "history-aborted", recipient: VALID, asset: "USDC", network: "base", amount: 20, decision: "ALLOW", execution_status: "ABORTED", created_at: 2, purpose: "aborted payment" },
+    { intent_id: "history-unknown", recipient: VALID, asset: "USDC", network: "base", amount: 30, decision: "ALLOW", execution_status: "UNKNOWN", created_at: 3, purpose: "unknown payment" }
+  ];
+  const ui = await launch({
+    historyInvokeOverride: async () => ({ success: true, data: { items: records, count: records.length } })
+  });
+  await ui.openHistory();
+  const rendered = ui.text("history-list");
+  ok(rendered.includes("Wallet rejected"), "REJECTED is clearly labelled");
+  ok(rendered.includes("Aborted before wallet submission"), "ABORTED is clearly labelled");
+  ok(rendered.includes("Outcome unknown"), "UNKNOWN is clearly labelled");
+  ok(!rendered.includes("Settled") && !rendered.includes("Confirmed"), "installation outcome reports are not described as settlement");
+});
+
+await test("stale payment history evidence cannot overwrite a newer selection", async () => {
+  let resolveFirst;
+  let resolveSecond;
+  const firstDetails = new Promise((resolve) => { resolveFirst = resolve; });
+  const secondDetails = new Promise((resolve) => { resolveSecond = resolve; });
+  const records = [
+    { intent_id: "history-first", recipient: VALID, asset: "USDC", network: "base", amount: 10, decision: "ALLOW", execution_status: "PERMISSION_ISSUED", created_at: 1, purpose: "first" },
+    { intent_id: "history-second", recipient: VALID, asset: "USDC", network: "base", amount: 20, decision: "ALLOW", execution_status: "PERMISSION_ISSUED", created_at: 2, purpose: "second" }
+  ];
+  const ui = await launch({
+    historyInvokeOverride: async (args) => {
+      if (!args.include_details) return { success: true, data: { items: records, count: records.length } };
+      return args.intent_id === "history-first" ? firstDetails : secondDetails;
+    }
+  });
+  await ui.openHistory();
+  const buttons = [...ui.window.document.querySelectorAll("[data-history-details]")];
+  eq(buttons.length, 2, "two payment records are visible");
+  buttons[0].click();
+  buttons[1].click();
+
+  resolveSecond({
+    success: true,
+    data: {
+      items: [{
+        intent_id: "history-second",
+        receipt_trust_scope: null,
+        details: {
+          decision_verification: { verified: true, key_fingerprint_sha256: "fingerprint-second" },
+          execution_authorization_verification: { verified: true },
+          execution_receipt_verification: { verified: null },
+          decision_receipt: { signature: "second-signature" },
+          execution_receipt: null
+        }
+      }]
+    }
+  });
+  for (let i = 0; i < 100; i++) {
+    if (ui.text("history-details-verification").includes("fingerprint-second")) break;
+    await sleep(10);
+  }
+  ok(ui.text("history-details-verification").includes("fingerprint-second"), "newer selected record opens first");
+
+  resolveFirst({
+    success: true,
+    data: {
+      items: [{
+        intent_id: "history-first",
+        receipt_trust_scope: null,
+        details: {
+          decision_verification: { verified: true, key_fingerprint_sha256: "fingerprint-first" },
+          execution_authorization_verification: { verified: true },
+          execution_receipt_verification: { verified: null },
+          decision_receipt: { signature: "first-signature" },
+          execution_receipt: null
+        }
+      }]
+    }
+  });
+  await sleep(30);
+  ok(ui.text("history-details-verification").includes("fingerprint-second"), "late response from previous selection is ignored");
+  ok(!ui.text("history-details-verification").includes("fingerprint-first"), "stale evidence is never displayed over the selected record");
+});
+
+await test("closing payment evidence cancels its pending response", async () => {
+  let resolveDetails;
+  const pendingDetails = new Promise((resolve) => { resolveDetails = resolve; });
+  const record = { intent_id: "history-close", recipient: VALID, asset: "USDC", network: "base", amount: 10, decision: "ALLOW", execution_status: "PERMISSION_ISSUED", created_at: 1, purpose: "close test" };
+  const ui = await launch({
+    historyInvokeOverride: async (args) => {
+      if (!args.include_details) return { success: true, data: { items: [record], count: 1 } };
+      return pendingDetails;
+    }
+  });
+  await ui.openHistory();
+  ui.window.document.querySelector("[data-history-details]").click();
+  ui.$("history-details-close").click();
+  ok(ui.$("history-details").hidden, "details close immediately");
+  resolveDetails({
+    success: true,
+    data: {
+      items: [{
+        intent_id: "history-close",
+        receipt_trust_scope: null,
+        details: {
+          decision_verification: { verified: true, key_fingerprint_sha256: "late-after-close" },
+          execution_authorization_verification: { verified: true },
+          execution_receipt_verification: { verified: null },
+          decision_receipt: { signature: "late-signature" },
+          execution_receipt: null
+        }
+      }]
+    }
+  });
+  await sleep(30);
+  ok(ui.$("history-details").hidden, "late response does not reopen closed evidence");
+});
+
+await test("payment history excludes previews, lists persistent authorizations, and opens verified receipts", async () => {
+  const historyDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "verigate-payment-history-"));
+  const description = "Pay 25 USDC on Base to " + VALID + " for history invoice 7788";
+  const interpret = () => interpretJson({ ...GOOD, resource: "history invoice 7788" });
+  const ui = await launch({ dataDirectory: historyDataDir, description, interpret });
+
+  await ui.click();
+  await ui.openHistory();
+  ok(ui.$("history-view").hidden === false, "history view opens");
+  ok(ui.text("history-list").includes("No saved payment records"), "non-persistent preview is not presented as a payment");
+  eq(ui.calls.tools.filter((name) => name === "verigate_payment_history").length, 1);
+  eq(ui.calls.tools.includes("verigate_authorize_payment"), false, "opening history cannot authorize a payment");
+  eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), false, "opening history cannot consume a permission");
+
+  await ui.clickCheckView();
+  await ui.clickExecution();
+  ok(ui.text("execution-json").includes("authorization_id"), "the normal explicit authorization flow ran");
+  await ui.openHistory();
+  ok(ui.text("history-list").includes("Permission issued"), "history distinguishes an issued permission from a sent payment");
+  ok(ui.text("history-list").includes("history invoice 7788"), "purpose/invoice is visible in the history row");
+  ok(ui.text("history-list").includes("25 USDC"), "amount and asset are visible in the history row");
+
+  const intentId = [...ui.window.document.querySelectorAll("[data-history-details]")][0].dataset.intentId;
+  await ui.openHistoryDetails(intentId);
+  ok(ui.text("history-decision-json").includes("signature"), "signed Decision Receipt is available in evidence details");
+  ok(ui.text("history-details-verification").includes("verified"), "receipt verification result is visible");
+  eq(ui.calls.tools.includes("verigate_consume_execution_authorization"), false, "viewing issued evidence does not consume wallet permission");
+  eq(ui.calls.tools.includes("verigate_record_wallet_submission_receipt"), false, "viewing issued evidence does not create wallet receipts");
+
+  await ui.clickCheckView();
+  ui.window.ethereum = {
+    request: async ({ method }) => {
+      if (method === "eth_chainId") return "0x2105";
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return [VALID];
+      if (method === "eth_getCode") return "0x";
+      if (method === "eth_sendTransaction") return "0x" + "a".repeat(64);
+      throw new Error("unexpected wallet method " + method);
+    }
+  };
+  await ui.clickWallet();
+  await ui.openHistory();
+  ok(ui.text("history-list").includes("Submitted"), "history displays the persisted wallet submission outcome");
+  ok(ui.text("history-list").includes("0xaaaaaaaa") && ui.text("history-list").includes("…aaaaaa"), "verified transaction hash is shown in the compact truncated format");
+  const beforeAuthorization = ui.calls.tools.filter((name) => name === "verigate_authorize_payment").length;
+  const beforeConsume = ui.calls.tools.filter((name) => name === "verigate_consume_execution_authorization").length;
+  const beforeReceipt = ui.calls.tools.filter((name) => name === "verigate_record_wallet_submission_receipt").length;
+  await ui.openHistoryDetails(intentId);
+  ok(ui.text("history-execution-json").includes("signature"), "signed ExecutionReceipt is available in evidence details");
+  ok(ui.text("history-details-verification").includes("Execution Receipt verified"), "ExecutionReceipt verification is shown");
+  eq(ui.calls.tools.filter((name) => name === "verigate_authorize_payment").length, beforeAuthorization, "opening evidence does not authorize again");
+  eq(ui.calls.tools.filter((name) => name === "verigate_consume_execution_authorization").length, beforeConsume, "opening history does not consume permissions");
+  eq(ui.calls.tools.filter((name) => name === "verigate_record_wallet_submission_receipt").length, beforeReceipt, "opening evidence does not create another wallet receipt");
+  fs.rmSync(historyDataDir, { recursive: true, force: true });
 });
 
 const failed = results.filter(([, passed]) => !passed).length;

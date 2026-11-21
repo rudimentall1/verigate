@@ -1,7 +1,7 @@
 {
   "name": "verigate-authority",
   "display_name": "Verigate Authority",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "Checks agent payment authority and can issue a capability-bound, one-time signed Execution Authorization for an external wallet or executor. Anna does not hold wallet keys or broadcast transactions; execution must pass through a Verigate enforcement adapter.",
   "author": "rudimentall1",
   "homepage": "https://github.com/rudimentall1/verigate",
@@ -288,6 +288,63 @@
           "type": "string",
           "description": "Fresh one-time App-scope approval for this exact wallet outcome.",
           "required": true
+        }
+      ]
+    },
+    {
+      "name": "verigate_payment_history",
+      "description": "Read-only access to this Anna installation's persistent payment authorization history and signed execution evidence. Filters by recipient or invoice/purpose, network, lifecycle status, date and intent. Non-persistent previews are not saved. SUBMITTED is not independent chain confirmation. This tool never authorizes, consumes permissions, signs or submits payments.",
+      "timeout": 30,
+      "parameters": [
+        {
+          "name": "limit",
+          "type": "integer",
+          "description": "Maximum number of history records to return (1-200).",
+          "required": false,
+          "default": 50
+        },
+        {
+          "name": "search",
+          "type": "string",
+          "description": "Case-insensitive search across recipient and signed payment purpose/invoice.",
+          "required": false
+        },
+        {
+          "name": "network",
+          "type": "string",
+          "description": "Optional network filter such as base or ethereum.",
+          "required": false
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "description": "Optional lifecycle filter: POLICY_ALLOWED, REVIEW_REQUIRED, BLOCKED, PERMISSION_ISSUED, CONSUMED, SUBMITTED, REJECTED, ABORTED or UNKNOWN.",
+          "required": false
+        },
+        {
+          "name": "intent_id",
+          "type": "string",
+          "description": "Optional exact payment intent ID. Required when include_details is true.",
+          "required": false
+        },
+        {
+          "name": "since",
+          "type": "number",
+          "description": "Optional inclusive start time as a Unix timestamp in seconds.",
+          "required": false
+        },
+        {
+          "name": "until",
+          "type": "number",
+          "description": "Optional exclusive end time as a Unix timestamp in seconds.",
+          "required": false
+        },
+        {
+          "name": "include_details",
+          "type": "boolean",
+          "description": "When true, return verified signed Decision Receipt and ExecutionReceipt details for the exact intent_id.",
+          "required": false,
+          "default": false
         }
       ]
     },

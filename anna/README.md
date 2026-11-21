@@ -30,6 +30,23 @@ The AI performs payment-context analysis in addition to field extraction, but it
 3. If a required detail is missing or unclear, the App asks for it and does not run the policy check until it is provided (or, for unclear details, confirmed).
 4. Review the result: the deterministic ALLOW/WARN/BLOCK decision, explanation, any AI risk flags (when AI review ran), a table comparing the request with policy limits, and matched rules. The verified receipt, issuer public key and key fingerprint are available in the details panel. A policy-only preview clearly states that no AI contextual review was performed and cannot create execution permission.
 
+
+## Payment history
+
+The Authority Desk includes a separate **Payment history** view. It reads the current Verigate installation's persistent authorization and execution evidence; it is not a browser-local cache or an account-wide ledger.
+
+History search matches recipient and signed invoice/purpose text. Filters cover network, lifecycle status and date range. Each record can open its signed evidence details after the stored Decision Receipt, Execution Authorization and ExecutionReceipt are checked against the installation's Ed25519 public key.
+
+The lifecycle labels are deliberately precise:
+
+- **Policy allowed / review required / blocked** describes Verigate's policy decision, not a completed transfer.
+- **Permission issued** means a signed one-time permission exists. It has not been consumed or sent.
+- **Permission consumed** means ExecutionRouter consumed the one-time permission. The wallet outcome may still be unresolved.
+- **Submitted** means the connected wallet returned a transaction hash and a signed ExecutionReceipt was stored. It is not independent chain confirmation or settlement.
+- **Rejected / Aborted / Unknown** are signed Anna installation outcome reports. They are not wallet-signed statements or independent chain evidence.
+
+Non-persistent policy previews do not appear as saved payments. History access is read-only: it cannot authorize, consume a permission, open a wallet, retry or submit a transaction. Records are scoped to the installation issuer key; they are not aggregated across different Anna installations. The app exposes only evidence it can verify and does not claim permanent retention beyond the persistence guarantees of the Anna Cloud workspace.
+
 ## Identity and accounting scope
 
 The editable Agent label is display metadata, not an identity credential. For Anna payment checks, policy previews, capability registration, authorization-budget/rate accounting and dynamic authority all use a principal derived from the SHA-256 fingerprint of this installation's persistent Ed25519 issuer public key. The entered label is retained in the signed intent/authorization metadata and checked against the App UI, but changing it cannot create a fresh budget. All labels used by one Verigate installation therefore share the same prior-authorization history, rolling authorization budget, rate limit and dynamic-authority state.

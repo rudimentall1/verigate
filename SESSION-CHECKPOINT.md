@@ -741,3 +741,174 @@ Relevant implementation history: PRs #7, #22, #27, #44, #54 and #62. Re-check th
 - Capture fresh screenshots of the actual candidate and inspect them before cutting any immutable Anna version. Validate the exact account-specific bundled Executa identity and version.
 - No destructive rollback, replacement of existing immutable versions, review resubmission or Marketplace release as part of this UX work without an explicit release decision.
 
+## 29. Authority Desk restoration and persistent payment history implementation — 2026-11-19
+
+### User-facing correction
+
+- The user confirmed that App 0.1.36 / Executa 0.1.21 had the correct interface. Do not describe that known-good design as the defect. The defect was the later release/source mismatch that reintroduced an older single-column UI and omitted the requested user-facing payment history.
+- The intended direction is the compact responsive two-column **Authority Desk** recovered from `fix/anna-receipt-verification-agent-scope`, not a fresh visual redesign from memory.
+- App 0.1.36 / Executa 0.1.21 remains the user-confirmed visual reference. The current immutable second-account App 382 cut is 0.1.36 (version ID 2634) frozen to Executa 0.1.22 (version ID 1218) and was submitted for review on 2026-11-19. Do not overwrite immutable records or silently assume the review candidate has the new UI/history source.
+
+### Implementation branch and PR
+
+- Dedicated source branch: `fix/anna-user-ux-payment-history`.
+- Draft PR: [#65 — restore Authority Desk and add verified payment history](https://github.com/rudimentall1/verigate/pull/65).
+- Base: `fix/anna-release-readiness`; source-only draft, not merged.
+- Changed source files currently include:
+  - `anna/bundle/index.html`: restore the two-column Authority Desk and add a dedicated Payment history view.
+  - `anna/bundle/app.js`: wire Check / Payment history navigation, quick examples, history query/filter, verified evidence details and explorer links for recognised Base/Ethereum transaction hashes.
+  - `anna/executas/verigate-authority/verigate_authority_plugin.py`: add `verigate_payment_history`; load only the public issuer key; verify saved decision, execution authorization and execution receipts before exposing evidence.
+  - `anna/executas/verigate-authority/manifest.json` and runtime `MANIFEST`: declare the same read-only history tool; keep `describe` parity.
+  - `core/storage.py`: query audit, authorization, consumed nonce and execution receipt records, with recipient/purpose search and network/status/date/intent filters.
+  - `tests/test_storage.py`, `tests/test_anna_app_bundle.py`, `tests/test_payee_validation.py`, `scripts/test_anna_ui.mjs`: storage, manifest, UI contract and end-to-end regression coverage.
+- No Anna Console upload, App cut, Executa publish, review resubmission or Marketplace publication was performed from this branch.
+
+### Payment history semantics and security boundary
+
+- History uses the existing durable SQLite audit/authorization/receipt records. It is not a browser-local transient list.
+- Non-persistent `verigate_check` previews are not persisted and must not appear as saved payments.
+- History is installation-scoped to the Ed25519 issuer public-key fingerprint; do not imply cross-installation/account aggregation.
+- A history query must not load the issuer private key, issue an approval, issue/consume an Execution Authorization, contact a wallet/RPC, retry or broadcast a payment.
+- The history reader must use the strictly read-only SQLite opener (`Storage.open_read_only`, SQLite `mode=ro` plus `query_only=ON`). Do not use the normal `Storage()` constructor for a read-only UI call because it initializes schema/WAL and may perform migrations.
+- Verify Decision Receipts, Execution Authorizations and ExecutionReceipts with the installation public key before showing them. Do not display altered/unverified TX hashes as evidence.
+- Keep lifecycle labels separate:
+  - `POLICY_ALLOWED`: policy allowed; no payment was sent.
+  - `REVIEW_REQUIRED` / `BLOCKED`: policy result only.
+  - `PERMISSION_ISSUED`: a signed one-time permission exists; not consumed and not sent.
+  - `CONSUMED`: ExecutionRouter consumed the one-time permission; wallet outcome unresolved.
+  - `SUBMITTED`: wallet returned a transaction hash and a signed receipt was saved; not independent chain confirmation.
+  - `REJECTED`, `ABORTED`, `UNKNOWN`: signed Anna installation outcome reports; not wallet-signed or independent chain evidence.
+  - Do not label a record `CONFIRMED` or `SETTLED` without a separate independent chain verifier bound to the exact authorization/transaction.
+- Opening history or evidence details must remain a read-only action. All raw signed JSON is behind a deliberate evidence-details interaction.
+
+### CI results and corrections observed so far
+
+- Initial PR CI run #2347 / run ID `44509083553`:
+  - `contracts`: PASS.
+  - `container`: PASS.
+  - `anna-ui`: initially in progress, later failed.
+  - `test`: failed because the new frontend history method was absent from runtime `MANIFEST`, while the JSON manifest declared it.
+- Follow-up CI run #2349 / run ID `44509390439`:
+  - `contracts`: PASS.
+  - `container`: PASS.
+  - Runtime and published manifest parity was corrected; remaining Python failure was an older test's hard-coded tool list missing `verigate_payment_history`.
+  - Anna UI E2E exposed two issues: old authorization-history copy assertion no longer matched the Authority Desk copy, and jsdom did not implement `scrollIntoView`; both were corrected. The history-flow assertion was changed to inspect the signed authorization JSON rather than a non-contractual status phrase.
+- Additional hardening after that run:
+  - Added strictly read-only SQLite connection and regression test.
+  - Added an Evidence Invalid status filter path.
+  - Updated the hard-coded Executa tool list test.
+  - Added bundle contract tests for Authority Desk/history elements and the read-only manifest/tool contract.
+- Historical checkpoint at the time of section 29. This status was superseded by section 30 and the later full validation recorded in section 31.
+
+### Remaining work before any new immutable Anna version
+
+1. Obtain a complete passing CI on the latest PR head: Python full suite, contracts, container, Anna UI E2E, strict schema validation and Linux Executa binary build/package/smoke.
+2. Recheck storage read-only behavior, status filter semantics, signed evidence verification and installation isolation.
+3. Verify the actual rendered Authority Desk + Payment history screen in a real browser/embedded Anna WebView. Capture fresh screenshots; jsdom tests alone are not visual acceptance.
+4. Reconfirm responsive desktop/narrow layout, keyboard/focus behavior, no horizontal overflow, accessible status labels and that no history interaction invokes privileged tools.
+5. Since Executa gained a new declared tool, bump all synchronized Executa source/build/runtime/manifest versions to the next immutable version and align `uv.lock`, binary workflow defaults and CI smoke literals. Bump App metadata and raise App manifest `required_executas.min_version` to that new Executa version. Do not reuse immutable 0.1.21 or 0.1.22 with changed content.
+6. Cut and verify a new App/Executa pair separately for each Anna Developer account, checking account-specific App IDs and tool IDs before every CLI operation. Do not touch App 851 while operating on App 382, or vice versa.
+7. Do not publish, submit a new review candidate, or modify either current pending review round without an explicit release decision from the user.
+
+## 30. Anna source candidate version alignment — App 0.1.37 / Executa 0.1.23 — 2026-11-19
+
+- The Authority Desk + Payment history source is now versioned as **App 0.1.37 / bundled Executa 0.1.23**.
+- Synchronized source versions:
+  - `anna/app.json`: `0.1.37`.
+  - `anna/manifest.json`: bundled Executa minimum `0.1.23`.
+  - `anna/executas/verigate-authority/executa.json`, `pyproject.toml`, runtime `VERSION`, published protocol `manifest.json`, and `uv.lock`: `0.1.23`.
+  - `.github/workflows/ci.yml` Linux package/smoke literals and `.github/workflows/anna-executa-binaries.yml` four-platform defaults/fallbacks: `0.1.23`.
+- Updated `CHANGELOG.md`, `anna/docs/RELEASE-STATUS.md` and `anna/README.md` with the Authority Desk, Payment history, evidence labels and release boundaries.
+- Four-platform Executa workflow has **not** yet been run for 0.1.23. The full CI run #2367 that passed 673 Python tests, 71/71 Anna UI E2E, strict schema validation, Linux Executa build/smoke, contracts and container was before these version-only changes and before the latest E2E extension for SUBMITTED history evidence.
+- Earlier PR-head CI run [#2400](https://github.com/rudimentall1/verigate/actions/runs/44513180068) passed on head `11c47d6194582e35b1888af86dd3080c51a84882`; it is superseded by the newer complete run recorded in section 31.
+- Earlier four-platform Executa workflow [run #60](https://github.com/rudimentall1/verigate/actions/runs/44513180095) passed for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel; it is superseded by the newer four-platform run recorded in section 31.
+- Actual Anna WebView screenshot/visual acceptance remains outstanding. Do not claim the source candidate has been verified visually in live Anna.
+- PR #65 remains **Draft / open / unmerged**. No Anna Console upload, immutable cut, release, review resubmission or Marketplace publication has been performed for 0.1.37 / 0.1.23.
+- Existing App 851 and App 382 immutable versions and pending review rounds must remain untouched until the user explicitly authorizes a release sequence for each account.
+
+
+
+## 31. Payment history filesystem read-only correction and latest release gates — 2026-11-19
+
+### Defect reproduced and fixed (TDD)
+
+- Audit of PR #65 found that `_verigate_payment_history()` called the general `_resolve_data_dir()`. Although SQLite itself was opened with `mode=ro` and `PRAGMA query_only=ON`, the general resolver could create directories and write/delete a temporary `.write-test` file. That contradicted the read-only contract for the entire history operation.
+- Added regression test `test_payment_history_does_not_create_or_write_to_data_directory` first. It failed on commit `8b97d8e815c52e42eb6bacdd8ef80f322da8867e` exactly at `Path.mkdir()` inside the history call (RED reproduction).
+- Fixed in commit **`28ff7577df0d8d31def3f8295503f4f43c9f5fc4`** on `fix/anna-user-ux-payment-history`: introduced `_resolve_data_dir_read_only()`, which only inspects configured/existing paths and does not create directories, write probe files, or initialize storage. The history reader now uses that resolver. Normal state initialization retains the original writable resolver; SQLite history access remains `Storage.open_read_only()`.
+- If neither the history database nor public issuer key exists, history returns an empty list without creating state. If only one exists, the operation fails closed as unavailable.
+
+### Latest exact-head validation — PASS
+
+All results below are for PR #65 head **`28ff7577df0d8d31def3f8295503f4f43c9f5fc4`**:
+
+- Full CI run [#2409](https://github.com/rudimentall1/verigate/actions/runs/44528218625): **SUCCESS**. All four jobs passed: `test`, `contracts`, `container`, `anna-ui`.
+- Python suite: **674 tests passed**.
+- Anna UI E2E: **71/71 flows passed**; strict Anna schema validation passed; Linux Executa build/package/smoke passed.
+- Four-platform Executa build run [#65](https://github.com/rudimentall1/verigate/actions/runs/44528218514): **SUCCESS** for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel. Reproducibility/package/smoke jobs all passed. The workflow release job was **skipped**; no GitHub binary release was published.
+- The failing test-first run and the successful corrected run are intentionally both retained in Actions history as regression evidence.
+
+### Remaining acceptance boundary
+
+- PR #65 remains **Draft / open / unmerged**. Candidate remains App **0.1.37** / Executa **0.1.23** at source head above.
+- No Anna Console push/cut, Executa publication, review submission/resubmission or Marketplace publication was performed from this branch. Existing immutable App 851 / App 382 versions and their review rounds were not changed.
+- Actual Anna WebView visual acceptance is still outstanding: capture and inspect real desktop and narrow-width screenshots, including the 640 px default viewport. Automated jsdom flows do not replace the real embedded WebView check. No Desktop Commander device was connected during this session.
+- The history implementation still needs explicit coverage/review for every user-requested outcome state (especially REJECTED, ABORTED, UNKNOWN), invalid-evidence filtering, detail-request race/cancel behavior, and retention across actual Anna runtime restart. Do not claim these are all verified solely from the 71 UI flow tests or CI smoke.
+- No release/cut/review step is authorized by this checkpoint. Preserve the account-specific identity guard for both Anna Developer accounts.
+
+
+## 32. Authority Desk provenance and payment-history request-race correction — 2026-11-19
+
+### Reconcile the user-confirmed interface with source history
+
+- The user-confirmed known-good Anna Console pair remains **App 0.1.36 / Executa 0.1.21**. Preserve that as the product acceptance reference; do not reinterpret it from a version number alone.
+- GitHub source history contains the compact responsive **Authority Desk** on branch `fix/anna-receipt-verification-agent-scope`. At the inspected branch head its source metadata is App **0.1.34** / Executa **0.1.21**; the accompanying `anna/bundle/index.html` has the Authority Desk layout, Check / How-it-works navigation, compact two-panel view and quick examples. Its `CHANGELOG.md` documents the original App 0.1.33 / Executa 0.1.19 Authority Desk refresh.
+- By contrast, commit `fb61399d6a1d7f603c5fc5298f7a712d44dce1ae` on `fix/anna-release-readiness` declares App **0.1.36** / Executa **0.1.22**, but its bundle contains the older blue, narrow, one-panel form without the Authority Desk navigation. This is source-history evidence of the mismatch; it does **not** disprove the user's report about the actual Console App 0.1.36 / Executa 0.1.21 pair. Do not claim that the `.34/.21` source commit is byte-for-byte the immutable `.36/.21` Console artifact.
+- PR #65 is the controlled reconciliation: restore the recovered Authority Desk visual direction while retaining the newer payment authorization, exact wallet-transfer validation, WebView confirmation and outcome-receipt code from the release branch, then add persistent Payment history. The actual visual match still requires a fresh screenshot from the real Anna WebView.
+
+### Race condition in evidence details — TDD
+
+- Added two E2E regressions in commit `73f1799f3bd4681efac266976aa67b9b14021209`: (1) a late response for the first selected record must not overwrite a newer selected record; (2) a response arriving after the user closes evidence details must not reopen the panel.
+- Both new tests failed on that test-first commit (71/73 UI flows passed), reproducing the stale-response and closed-panel bugs.
+- Fixed in commit **`eafe5e7f9ed4347a7699fbd90186e06e9392a0a0`**: introduced a monotonically increasing `historyDetailsRequestId`; every new details request supersedes the previous one, and list refresh, switching back to Check, or closing details invalidates outstanding requests. Stale success and error responses are ignored.
+
+### Latest exact-head validation — PASS
+
+All results below are for PR #65 head **`eafe5e7f9ed4347a7699fbd90186e06e9392a0a0`**:
+
+- Full CI [#2416](https://github.com/rudimentall1/verigate/actions/runs/44530447077): **SUCCESS**, all four jobs (`test`, `contracts`, `container`, `anna-ui`) passed.
+- Python suite: **674 tests passed**.
+- Anna UI E2E: **73/73 UI flows passed**, including both new race/cancellation cases. Strict schema-4 validation and the Linux Executa build/package/smoke test also passed.
+- Four-platform Executa build [#68](https://github.com/rudimentall1/verigate/actions/runs/44530455216): **SUCCESS** for Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel. The release job was skipped; no GitHub binary release was published.
+
+### Remaining boundary
+
+- PR #65 remains **Draft / open / unmerged**. App 0.1.37 / Executa 0.1.23 is still a source candidate.
+- No Anna Console push/cut, Executa publish, review submission/resubmission or Marketplace publication was performed. App 851 and App 382 immutable versions and review rounds remain untouched.
+- Real Anna WebView screenshots and live runtime acceptance remain outstanding. CI/jsdom is not a visual test of the embedded host.
+
+
+## 33. Latest complete UX/history validation — 2026-11-20
+
+### Final source head and verified gates
+
+- Latest implementation commit: **`d51bcca071f8c1cacf4b14e6a229515e336744e5`** on `fix/anna-user-ux-payment-history`.
+- PR #65 remains **Draft / open / unmerged**. This source is a candidate only.
+- Full CI run [#2433](https://github.com/rudimentall1/verigate/actions/runs/44683309234) passed on the exact implementation head: **675 Python tests**, **75/75 Anna UI E2E flows**, Anna schema-4 strict validation, Linux Executa build/package/smoke, contracts and container.
+- Four-platform Executa workflow [#74](https://github.com/rudimentall1/verigate/actions/runs/44683309137) passed on the same head: Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel reproducibility, package and extracted-package smoke checks. Its GitHub Release step was skipped intentionally; no GitHub Release was published.
+- The formerly failing `EVIDENCE_INVALID` test was corrected: this is a supported filter, not an invalid argument. The no-data response now returns the same `filters` object as the populated-history response. The UI exposes the filter, passes it to Executa and has an E2E assertion that valid records are excluded from the invalid-evidence result.
+
+### Implementation now covered by the candidate
+
+- Compact responsive two-column Authority Desk with request-first entry, four non-privileged quick examples, collapsed editable extracted fields, and clear AI / Verigate policy / wallet responsibility boundaries.
+- Separate persistent Payment history backed by durable authorization and execution evidence, with search, network, lifecycle, date and evidence-integrity filters.
+- Signed Decision Receipt, Execution Authorization and ExecutionReceipt verification before evidence is exposed; installation-scoped records and clear distinctions between permission, consumption, wallet-reported submission/outcome and independent chain confirmation.
+- Read-only is enforced end-to-end: the history path performs no directory creation or probe-file writes, and SQLite uses the dedicated read-only connection (`mode=ro`, `query_only=ON`).
+- History detail requests are invalidated on a new selection, refresh, view change or close, so a late response cannot replace another record or reopen a closed details panel.
+- REJECTED, ABORTED and UNKNOWN have explicit outcome labels. SUBMITTED is explicitly not described as confirmed/settled. Evidence-invalid records can be filtered separately.
+
+### Remaining acceptance and release boundaries
+
+- Fresh rendered screenshots and a live embedded **Anna WebView** check at desktop and narrow viewport sizes are still outstanding. The connected Desktop Commander had no available device; CI/jsdom and binary smoke tests are not substitutes for a real Anna WebView visual check.
+- No Anna Console push/cut, Executa publication, review submission/resubmission or Marketplace publication was performed from this branch.
+- The existing immutable App 851 and App 382 versions and their pending review rounds remain untouched. Do not replace or re-pin either review candidate without an explicit release instruction.
+- Candidate metadata remains App **0.1.37** / bundled Executa **0.1.23**; immutable 0.1.21 / 0.1.22 snapshots must not be overwritten.
