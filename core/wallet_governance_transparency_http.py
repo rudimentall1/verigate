@@ -274,7 +274,8 @@ def make_wallet_governance_log_handler(
                 if len(principals) != 1 or len(query) != 1:
                     raise ValueError("one installation_principal query parameter is required")
                 principal = principals[0]
-                bundle = log.export_bundle(principal)
+                with writer_lock:
+                    bundle = log.export_bundle(principal)
             except LookupError:
                 self._send_json(404, {"error": "not found"})
                 return
