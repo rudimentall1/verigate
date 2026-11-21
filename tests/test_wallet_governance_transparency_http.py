@@ -138,6 +138,51 @@ class WalletGovernanceTransparencyHTTPTests(unittest.TestCase):
         with self.assertRaises(LookupError):
             self.log.export_bundle(self.principal)
 
+    def test_http_endpoint_accepts_overlapping_tokens_during_rotation(self):
+        rotated_handler = make_wallet_governance_log_handler(
+            self.log,
+            bearer_token="new-bearer-token-" + "n" * 40,
+            previous_bearer_tokens=("old-bearer-token-" + "o" * 40,),
+        )
+        rotated_server = ThreadingHTTPServer(("127.0.0.1", 0), rotated_handler)
+        rotated_server.daemon_threads = True
+        rotated_thread = threading.Thread(
+            target=rotated_server.serve_forever,
+            kwargs={"poll_interval": 0.01},
+            daemon=True,
+        )
+        rotated_thread.start()
+        try:
+            old_client = WalletGovernanceTransparencyHTTPTransport(
+                f"http://127.0.0.1:{rotated_server.server_port}",
+                bearer_token="old-bearer-token-" + "o" * 40,
+                timeout=3,
+            )
+            new_client = WalletGovernanceTransparencyHTTPTransport(
+                f"http://127.0.0.1:{rotated_server.server_port}",
+                bearer_token="new-bearer-token-" + "n" * 40,
+                timeout=3,
+            )
+            rejected_client = WalletGovernanceTransparencyHTTPTransport(
+                f"http://127.0.0.1:{rotated_server.server_port}",
+                bearer_token="untrusted-bearer-token-" + "u" * 40,
+                timeout=3,
+            )
+            old_envelope = self.make_envelope("rotation-old")
+            old_envelope["action"]["enrollment_id"] = "enrollment-rotation-old"
+            new_envelope = self.make_envelope("rotation-new")
+            new_envelope["action"]["enrollment_id"] = "enrollment-rotation-new"
+            rejected_envelope = self.make_envelope("rotation-rejected")
+            rejected_envelope["action"]["enrollment_id"] = "enrollment-rotation-rejected"
+            old_client.append_envelope(self.principal, old_envelope)
+            new_client.append_envelope(self.principal, new_envelope)
+            with self.assertRaisesRegex(PermissionError, "authentication"):
+                rejected_client.append_envelope(self.principal, rejected_envelope)
+        finally:
+            rotated_server.shutdown()
+            rotated_server.server_close()
+            rotated_thread.join(timeout=3)
+
     def test_transport_requires_https_for_non_loopback_services(self):
         with self.assertRaisesRegex(ValueError, "HTTPS"):
             WalletGovernanceTransparencyHTTPTransport(
