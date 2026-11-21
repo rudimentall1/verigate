@@ -9,6 +9,7 @@ from core.authority_protocol import Authority, AuthorityState as GenesisAuthorit
 from core.proof_protocol import verify_authority_assertions
 from core.proof_validators.common import validate_authority_learning_binding, validate_historical_authority_binding
 from core.wallet_enrollment_history import resolve_portable_wallet_enrollment_history
+from core.wallet_governance_transparency import verify_wallet_governance_transparency_bundle
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 def _nodes(payload: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
@@ -143,6 +144,8 @@ def verify_proof(
     trusted_public_key_b64: str | None = None,
     trusted_wallet_governance_policy_sha256: list[str] | set[str] | tuple[str, ...] | None = None,
     trusted_wallet_enrollment_history_sha256: list[str] | set[str] | tuple[str, ...] | None = None,
+    trusted_wallet_governance_log_public_key_b64: str | None = None,
+    trusted_wallet_governance_checkpoint_sha256: str | None = None,
 ) -> dict[str, Any]:
     envelope = verify_manifest(manifest, trusted_public_key_b64); checks: dict[str, dict[str, Any]] = {}
     if not envelope["valid"]:
@@ -237,6 +240,76 @@ def verify_proof(
                 }
                 if not wallet_ok or historical_enrollment is None:
                     return {"valid": False, "reason": wallet_reason, "checks": checks}
+
+                transparency_nodes = [
+                    item for item in payload.get("nodes", [])
+                    if item.get("type") == "wallet_governance_transparency_log"
+                    and isinstance(item.get("data"), dict)
+                    and item["data"].get("installation_principal") == principal
+                ]
+                if len(transparency_nodes) > 1:
+                    return {
+                        "valid": False,
+                        "reason": "wallet governance transparency evidence is ambiguous",
+                        "checks": checks,
+                    }
+                if not transparency_nodes:
+                    pinned_requested = (
+                        trusted_wallet_governance_log_public_key_b64 is not None
+                        or trusted_wallet_governance_checkpoint_sha256 is not None
+                    )
+                    checks["wallet_governance_transparency_anchor"] = {
+                        "valid": not pinned_requested,
+                        "pinned": False,
+                        "reason": (
+                            "trusted transparency anchor was required but the proof contains no log checkpoint"
+                            if pinned_requested
+                            else "no external wallet governance transparency log was supplied"
+                        ),
+                    }
+                    if pinned_requested:
+                        return {
+                            "valid": False,
+                            "reason": checks["wallet_governance_transparency_anchor"]["reason"],
+                            "checks": checks,
+                        }
+                else:
+                    transparency_node = transparency_nodes[0]
+                    checkpoint_data = transparency_node["data"].get("checkpoint", {})
+                    transparency_ref = f"wallet_governance_transparency_log:{transparency_node['id']}"
+                    if transparency_node["id"] != checkpoint_data.get("checkpoint_sha256"):
+                        return {
+                            "valid": False,
+                            "reason": "wallet transparency node identity does not match its checkpoint digest",
+                            "checks": checks,
+                        }
+                    anchored_edges = [
+                        item for item in payload.get("edges", [])
+                        if item.get("from") == history_ref
+                        and item.get("relation") == "ANCHORED_BY"
+                        and item.get("to") == transparency_ref
+                    ]
+                    if len(anchored_edges) != 1:
+                        return {
+                            "valid": False,
+                            "reason": "wallet governance history is not uniquely linked to its external transparency checkpoint",
+                            "checks": checks,
+                        }
+                    log_ok, log_reason, log_checks = verify_wallet_governance_transparency_bundle(
+                        transparency_node["data"],
+                        history_envelopes=history_nodes[0]["data"].get("envelopes", []),
+                        installation_principal=principal,
+                        trusted_log_public_key_b64=trusted_wallet_governance_log_public_key_b64,
+                        trusted_checkpoint_sha256=trusted_wallet_governance_checkpoint_sha256,
+                    )
+                    checks.update(log_checks)
+                    if not log_ok:
+                        return {
+                            "valid": False,
+                            "reason": log_reason,
+                            "checks": checks,
+                        }
+
                 enrollment_id = historical_enrollment["enrollment_id"]
                 enrollment_ref = f"wallet_enrollment:{enrollment_id}"
                 if (
