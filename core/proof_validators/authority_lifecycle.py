@@ -241,9 +241,18 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         items = by_type.get(node_type, [])
         return items[0] if len(items) == 1 else None
 
-    required = {name: one(name) for name in spec["required_nodes"]}
+    # Governance actions and approvals form an ordered, repeatable history;
+    # every other protocol artifact is a singleton canonical node.
+    repeatable_history_types = {"governance_action", "governance_approval"}
+    required = {
+        name: one(name)
+        for name in spec["required_nodes"]
+        if name not in repeatable_history_types
+    }
     if any(value is None for value in required.values()):
-        return False, "authority lifecycle profile requires exactly one canonical node of each required type"
+        return False, "authority lifecycle profile requires exactly one canonical node of each singleton type"
+    if any(not by_type.get(name) for name in repeatable_history_types):
+        return False, "authority lifecycle profile requires governance action and approval history"
 
     verification = payload.get("verification")
     if not isinstance(verification, dict) or verification.get("all_signed_artifacts_valid") is not True:
