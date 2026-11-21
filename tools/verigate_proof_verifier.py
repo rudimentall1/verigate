@@ -152,7 +152,7 @@ def verify_governance(p, attestor_id, attestor_data):
         )
     ]
     if not actions:
-        return False, "attestor governance lineage is missing"
+        return False, "attestor governance lineage is missing", None
 
     verified_actions = []
     for action_node in actions:
@@ -160,7 +160,7 @@ def verify_governance(p, attestor_id, attestor_data):
         action_id = action_node.get("id")
         action_ref = f"governance_action:{action_id}"
         if action.get("action_id") != action_id:
-            return False, "governance action ID does not match its evidence node"
+            return False, "governance action ID does not match its evidence node", None
 
         policy_edges = [
             item for item in p.get("edges", [])
@@ -168,13 +168,13 @@ def verify_governance(p, attestor_id, attestor_data):
             and item.get("to") == action_ref
         ]
         if len(policy_edges) != 1:
-            return False, "governance action must have exactly one policy"
+            return False, "governance action must have exactly one policy", None
         policy_node = nodes.get(policy_edges[0].get("from"))
         if policy_node is None or policy_node.get("type") != "governance_policy":
-            return False, "governance policy evidence is missing"
+            return False, "governance policy evidence is missing", None
         raw_policy = policy_node.get("data")
         if not isinstance(raw_policy, dict) or raw_policy.get("governance_version") != 1:
-            return False, "governance policy evidence is malformed"
+            return False, "governance policy evidence is malformed", None
 
         try:
             members = raw_policy["members"]
@@ -195,22 +195,22 @@ def verify_governance(p, attestor_id, attestor_data):
                 "allowed_actions": list(allowed_actions),
             }
             if not isinstance(members, list) or not isinstance(required_roles, dict):
-                return False, "governance policy members or role requirements are malformed"
+                return False, "governance policy members or role requirements are malformed", None
             if not isinstance(allowed_actions, (list, tuple)):
-                return False, "governance policy allowed actions are malformed"
+                return False, "governance policy allowed actions are malformed", None
             member_map = {}
             member_keys = set()
             for member in members:
                 if not isinstance(member, dict):
-                    return False, "governance policy member is malformed"
+                    return False, "governance policy member is malformed", None
                 governor = member.get("governor_id")
                 role = member.get("role")
                 public_key_b64 = member.get("public_key_b64")
                 raw_key = b64(public_key_b64)
                 if len(raw_key) != 32 or hashlib.sha256(raw_key).hexdigest() != governor:
-                    return False, "governance member public-key fingerprint mismatch"
+                    return False, "governance member public-key fingerprint mismatch", None
                 if not isinstance(role, str) or not role or governor in member_map or raw_key in member_keys:
-                    return False, "governance policy has duplicate or invalid members"
+                    return False, "governance policy has duplicate or invalid members", None
                 policy["members"].append({
                     "governor_id": governor,
                     "role": role,
@@ -229,26 +229,26 @@ def verify_governance(p, attestor_id, attestor_data):
                 or not policy["allowed_actions"]
                 or any(not isinstance(item, str) or not item for item in policy["allowed_actions"])
             ):
-                return False, "governance policy thresholds or metadata are invalid"
+                return False, "governance policy thresholds or metadata are invalid", None
             if any(not role or count < 1 for role, count in policy["required_roles"].items()):
-                return False, "governance policy required roles are invalid"
+                return False, "governance policy required roles are invalid", None
             if any(
                 count > sum(1 for role, _key in member_map.values() if role == required_role)
                 for required_role, count in policy["required_roles"].items()
             ):
-                return False, "governance policy requires unavailable roles"
+                return False, "governance policy requires unavailable roles", None
             if sha(policy) != action.get("governance_policy_sha256"):
-                return False, "governance action policy fingerprint mismatch"
+                return False, "governance action policy fingerprint mismatch", None
         except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
-            return False, "governance policy evidence is malformed"
+            return False, "governance policy evidence is malformed", None
 
         if action.get("attestor_id") != attestor_id or action.get("action") not in policy["allowed_actions"]:
-            return False, "governance action is not allowed for this attestor"
+            return False, "governance action is not allowed for this attestor", None
         if action.get("governance_version") != 1:
-            return False, "unsupported governance action version"
+            return False, "unsupported governance action version", None
         for field in ("action_id", "reason", "nonce"):
             if not isinstance(action.get(field), str) or not action[field]:
-                return False, "governance action fields are invalid"
+                return False, "governance action fields are invalid", None
         action_issued = action.get("issued_at")
         action_expires = action.get("expires_at")
         if (
@@ -261,7 +261,7 @@ def verify_governance(p, attestor_id, attestor_data):
             or action_expires <= action_issued
             or action_expires - action_issued > lifetime
         ):
-            return False, "governance action timestamps are invalid"
+            return False, "governance action timestamps are invalid", None
 
         approval_edges = [
             item for item in p.get("edges", [])
@@ -269,7 +269,7 @@ def verify_governance(p, attestor_id, attestor_data):
             and item.get("to") == action_ref
         ]
         if not approval_edges:
-            return False, "governance action has no approvals"
+            return False, "governance action has no approvals", None
 
         approvals = []
         issue_times = [float(action_issued)]
@@ -279,24 +279,24 @@ def verify_governance(p, attestor_id, attestor_data):
         for item in approval_edges:
             approval_node = nodes.get(item.get("from"))
             if approval_node is None or approval_node.get("type") != "governance_approval":
-                return False, "governance approval evidence is missing"
+                return False, "governance approval evidence is missing", None
             signed = approval_node.get("data")
             approval = signed.get("payload") if isinstance(signed, dict) else None
             if not isinstance(approval, dict) or approval.get("approval_id") != approval_node.get("id"):
-                return False, "governance approval identity is inconsistent"
+                return False, "governance approval identity is inconsistent", None
             if signed.get("algorithm") != "Ed25519" or approval.get("governance_version") != 1:
-                return False, "unsupported governance approval format"
+                return False, "unsupported governance approval format", None
             if approval.get("action_digest") != sha(action):
-                return False, "governance approval targets a different action"
+                return False, "governance approval targets a different action", None
             governor = approval.get("governor_id")
             member = member_map.get(governor)
             if member is None or member[0] != approval.get("role"):
-                return False, "governance signer is not authorized for this role"
+                return False, "governance signer is not authorized for this role", None
             if governor in seen_governors:
-                return False, "duplicate governance signer"
+                return False, "duplicate governance signer", None
             nonce = approval.get("nonce")
             if not isinstance(nonce, str) or not nonce or nonce in seen_nonces:
-                return False, "duplicate or invalid governance approval nonce"
+                return False, "duplicate or invalid governance approval nonce", None
             issued = approval.get("issued_at")
             expires = approval.get("expires_at")
             if (
@@ -309,11 +309,11 @@ def verify_governance(p, attestor_id, attestor_data):
                 or expires <= issued
                 or expires - issued > lifetime
             ):
-                return False, "governance approval timestamps are invalid"
+                return False, "governance approval timestamps are invalid", None
             try:
                 member[1].verify(b64(signed.get("signature")), canon(approval))
             except (InvalidSignature, ValueError, TypeError):
-                return False, "governance approval signature is invalid"
+                return False, "governance approval signature is invalid", None
             issue_times.append(float(issued))
             seen_governors.add(governor)
             seen_nonces.add(nonce)
@@ -325,20 +325,20 @@ def verify_governance(p, attestor_id, attestor_data):
         # verifiable after the short-lived approvals have naturally expired.
         verification_time = max(issue_times)
         if action_expires <= verification_time:
-            return False, "governance action expired before the complete quorum existed"
+            return False, "governance action expired before the complete quorum existed", None
         if len(approvals) < threshold:
-            return False, "governance approval threshold was not reached"
+            return False, "governance approval threshold was not reached", None
         for role, count in policy["required_roles"].items():
             if role_counts.get(role, 0) < count:
-                return False, f"governance required role missing: {role}"
+                return False, f"governance required role missing: {role}", None
         if any(
             signed["payload"]["expires_at"] <= verification_time
             or signed["payload"]["issued_at"] > verification_time + 60
             for signed in approvals
         ):
-            return False, "governance approval was not valid when the complete quorum existed"
+            return False, "governance approval was not valid when the complete quorum existed", None
         if action_issued > verification_time + 60:
-            return False, "governance action issue time is invalid"
+            return False, "governance action issue time is invalid", None
         verified_actions.append((verification_time, action))
 
     attestation_node = node(p, "outcome_attestation")
@@ -473,27 +473,6 @@ def verify_governance(p, attestor_id, attestor_data):
     historical_attestor = dict(attestor_data)
     historical_attestor.update(state_at_attestation)
     return True, "governance policy, signatures, quorum and historical attestor state verified", historical_attestor
-
-
-def verify_outcome_attestation        item for item in actions
-        if item["data"].get("action") in ("ATTESTOR_REGISTER", "ATTESTOR_ROTATE")
-    ]
-    if not key_actions:
-        return False, "attestor governance lineage has no approved registration or rotation key"
-    latest_key_action = max(
-        key_actions,
-        key=lambda item: float(item["data"]["issued_at"]),
-    )["data"]
-    if attestor_data.get("status") != "ACTIVE":
-        return False, "attestor authority is not active in the signed evidence snapshot"
-    if (
-        attestor_data.get("public_key_b64") != latest_key_action.get("public_key_b64")
-        or attestor_data.get("attestor_type") != latest_key_action.get("attestor_type")
-        or attestor_data.get("expires_at") != latest_key_action.get("attestor_expires_at")
-    ):
-        return False, "registered attestor key or scope differs from the latest approved governance action"
-
-    return True, "governance policy, signatures and quorum verified"
 
 
 def verify_outcome_attestation(attestation, attestor):
