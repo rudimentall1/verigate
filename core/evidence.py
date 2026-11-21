@@ -20,6 +20,7 @@ from core.models import ActionIntent
 from core.outcome import OutcomeAttestationService, digest as outcome_digest
 from core.policy_version import verify_policy_version
 from core.storage import Storage
+from core.wallet_governance_transparency import verify_wallet_governance_transparency_bundle
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 
@@ -335,10 +336,16 @@ class EvidenceGraph:
                 "relation": "ANCHORED_BY",
                 "to": f"wallet_governance_transparency_log:{checkpoint_sha256}",
             })
+            log_ok, log_reason, log_checks = verify_wallet_governance_transparency_bundle(
+                transparency_bundle,
+                history_envelopes=history,
+                installation_principal=principal,
+            )
             verification[f"wallet_governance_transparency:{principal}"] = {
-                "valid": True,
-                "reason": "external signed wallet governance checkpoint attached; independent trust still depends on verifier pins",
+                "valid": log_ok,
+                "reason": log_reason,
                 "checkpoint_sha256": checkpoint_sha256,
+                **log_checks,
             }
 
     def build_by_intent(self, intent_id: str) -> dict[str, Any]:
