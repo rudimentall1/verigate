@@ -84,7 +84,10 @@
       .panel{padding:12px}
       .example{flex:1 1 calc(50% - 6px)}
       .actions{gap:8px}
-      #result .result-top{align-items:center}
+      #result .result-top{align-items:flex-start;flex-wrap:wrap}
+      #result .result-top>div{min-width:0;flex:1 1 140px;overflow-wrap:anywhere}
+      #result .edit-request{flex:1 1 100%;width:100%}
+      #result .result-meta,#result .result-summary,#result .suggestion{overflow-wrap:anywhere}
       #result .decision{min-width:72px}
       .history-filters{grid-template-columns:minmax(0,1fr)}
       .history-filter-search{grid-column:1}
