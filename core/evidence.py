@@ -308,6 +308,8 @@ class EvidenceGraph:
         }
 
         transparency_bundle = self.wallet_governance_anchors.get(principal)
+        if transparency_bundle is None:
+            transparency_bundle = self.storage.wallet_governance_transparency_bundle(principal)
         if transparency_bundle is not None:
             if (
                 not isinstance(transparency_bundle, dict)
