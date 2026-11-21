@@ -151,6 +151,15 @@ function setCheckMode(mode) {
   view.classList.toggle("showing-how", normalized === "how");
   $("result").style.display = normalized === "result" ? "block" : "none";
   $("security-model").hidden = normalized === "result";
+  $("nav-check").classList.toggle("active", normalized !== "how");
+  $("nav-how").classList.toggle("active", normalized === "how");
+  if (normalized === "how") {
+    $("nav-how").setAttribute("aria-current", "page");
+    $("nav-check").removeAttribute("aria-current");
+  } else {
+    $("nav-check").setAttribute("aria-current", "page");
+    $("nav-how").removeAttribute("aria-current");
+  }
 }
 
 function clearResult() {
