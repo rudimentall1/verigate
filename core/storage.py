@@ -365,6 +365,12 @@ CREATE INDEX IF NOT EXISTS idx_wallet_governance_outbox_pending
 CREATE INDEX IF NOT EXISTS idx_wallet_governance_outbox_enrollment
     ON wallet_governance_outbox(enrollment_id, action, status);
 
+CREATE TABLE IF NOT EXISTS wallet_governance_outbox_leases (
+    installation_principal TEXT PRIMARY KEY,
+    lease_token TEXT NOT NULL,
+    lease_expires_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS execution_outcome_claims (
     claim_id TEXT PRIMARY KEY,
     authorization_id TEXT NOT NULL,
@@ -1927,6 +1933,57 @@ class Storage:
                 (installation_principal,),
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
+
+    def acquire_wallet_governance_outbox_lease(
+        self,
+        installation_principal: str,
+        *,
+        lease_seconds: int = 120,
+    ) -> str | None:
+        """Acquire a per-installation dispatcher lease across processes."""
+        if not isinstance(installation_principal, str) or not installation_principal:
+            raise ValueError("wallet governance outbox installation principal is required")
+        if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or not 1 <= lease_seconds <= 3600:
+            raise ValueError("wallet governance outbox lease must be between 1 and 3600 seconds")
+        token = str(uuid.uuid4())
+        now = time.time()
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                row = self._conn.execute(
+                    "SELECT lease_token, lease_expires_at FROM wallet_governance_outbox_leases "
+                    "WHERE installation_principal = ?",
+                    (installation_principal,),
+                ).fetchone()
+                if row is not None and row[1] > now:
+                    self._conn.commit()
+                    return None
+                self._conn.execute(
+                    "INSERT INTO wallet_governance_outbox_leases "
+                    "(installation_principal, lease_token, lease_expires_at) "
+                    "VALUES (?, ?, ?) "
+                    "ON CONFLICT(installation_principal) DO UPDATE SET "
+                    "lease_token = excluded.lease_token, lease_expires_at = excluded.lease_expires_at",
+                    (installation_principal, token, now + lease_seconds),
+                )
+                self._conn.commit()
+                return token
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def release_wallet_governance_outbox_lease(
+        self,
+        installation_principal: str,
+        lease_token: str,
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM wallet_governance_outbox_leases "
+                "WHERE installation_principal = ? AND lease_token = ?",
+                (installation_principal, lease_token),
+            )
+            self._conn.commit()
 
     def wallet_governance_outbox_events(
         self,
