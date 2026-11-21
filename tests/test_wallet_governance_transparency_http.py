@@ -168,13 +168,16 @@ class WalletGovernanceTransparencyHTTPTests(unittest.TestCase):
                 bearer_token="untrusted-bearer-token-" + "u" * 40,
                 timeout=3,
             )
-            old_client.append_envelope(self.principal, self.make_envelope("rotation-old"))
-            new_client.append_envelope(self.principal, self.make_envelope("rotation-new"))
+            old_envelope = self.make_envelope("rotation-old")
+            old_envelope["action"]["enrollment_id"] = "enrollment-rotation-old"
+            new_envelope = self.make_envelope("rotation-new")
+            new_envelope["action"]["enrollment_id"] = "enrollment-rotation-new"
+            rejected_envelope = self.make_envelope("rotation-rejected")
+            rejected_envelope["action"]["enrollment_id"] = "enrollment-rotation-rejected"
+            old_client.append_envelope(self.principal, old_envelope)
+            new_client.append_envelope(self.principal, new_envelope)
             with self.assertRaisesRegex(PermissionError, "authentication"):
-                rejected_client.append_envelope(
-                    self.principal,
-                    self.make_envelope("rotation-rejected"),
-                )
+                rejected_client.append_envelope(self.principal, rejected_envelope)
         finally:
             rotated_server.shutdown()
             rotated_server.server_close()
