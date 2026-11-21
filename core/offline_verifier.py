@@ -266,6 +266,12 @@ def verify_proof(
                         "reason": "wallet enrollment issuer public key is invalid",
                         "checks": checks,
                     }
+            if receipt_payload.get("agent_id") != auth_payload.get("agent_id"):
+                return {
+                    "valid": False,
+                    "reason": "execution receipt agent does not match signed authorization",
+                    "checks": checks,
+                }
             ok, reason = verify_execution_receipt(
                 receipt_node["data"], receipt_public_key, auth_node["data"],
             )
