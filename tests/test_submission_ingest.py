@@ -317,3 +317,84 @@ class TestSubmissionIngest(unittest.TestCase):
             agent_id=self.principal, capability_id="anna-payment-test",
         )), 1)
         self.assertEqual(len(self.remote.authority_ledger(self.principal, "anna-payment-test")), 1)
+
+        # Historical proof validation must survive a later governed wallet revoke,
+        # while verification of a newly submitted attestation stays current-state strict.
+        revoke = WalletEnrollmentService.build_action(
+            action="WALLET_REVOKE", reason="wallet decommissioned",
+            governance_policy_sha256=self.governance.digest,
+            enrollment_id=enrollment["enrollment_id"],
+        )
+        revoke_approvals = [
+            approval(revoke, self.gov1, "revoke1"),
+            approval(revoke, self.gov2, "revoke2"),
+        ]
+        WalletEnrollmentService(self.remote).apply(
+            revoke, revoke_approvals, self.governance,
+        )
+        with self.assertRaises(PermissionError):
+            service.verify_and_record(retry_attestation)
+        self.assertTrue(service.verify_existing(attestation)["valid"])
+        self.assertTrue(service.verify_existing(retry_attestation)["valid"])
+
+        # A correctly signed attestation made after the revoke effective time
+        # must not borrow the enrollment's earlier ACTIVE state.
+        after_revoke = json.loads(json.dumps(attestation))
+        revoke_effective_at = max(
+            [revoke["issued_at"], *(item["payload"]["issued_at"] for item in revoke_approvals)]
+        )
+        after_revoke["payload"]["attested_at"] = revoke_effective_at + 0.001
+        after_revoke["signature"] = base64.b64encode(
+            verifier_key.sign(canonical(after_revoke["payload"]))
+        ).decode()
+        with self.assertRaises(PermissionError):
+            service.verify_existing(after_revoke)
+
+        # Re-enrolling the same installation wallet creates a new row.
+        # Historical verification must select the old enrollment for old proofs,
+        # while new attestations must select the new ACTIVE enrollment.
+        reenroll = WalletEnrollmentService.build_action(
+            action="WALLET_ENROLL", reason="wallet ownership re-verified",
+            governance_policy_sha256=self.governance.digest,
+            issuer_public_key_b64=self.issuer_b64, chain_id=8453,
+            network="base", wallet_address=self.sender, min_confirmations=12,
+        )
+        reenrollment = WalletEnrollmentService(self.remote).apply(
+            reenroll,
+            [approval(reenroll, self.gov1, "reenroll1"), approval(reenroll, self.gov2, "reenroll2")],
+            self.governance,
+        )["enrollment"]
+        selected = self.remote.wallet_enrollment_for_wallet(self.principal, 8453, self.sender)
+        self.assertEqual(selected["enrollment_id"], reenrollment["enrollment_id"])
+
+        reenrollment_submission = dict(api_submission)
+        reenrollment_submission["wallet_enrollment"] = reenrollment
+        post_reenrollment_attestation = create_chain_attestation(
+            reenrollment_submission,
+            attestor_id="anna-chain-verifier", attestor_private_key=verifier_key,
+            rpc=EvmRpcClient("http://rpc.test", transport=transport), observed_at=125.0,
+        )
+        self.assertTrue(service.verify_and_record(
+            post_reenrollment_attestation, record_authority_event=False,
+        )["valid"])
+        self.assertTrue(service.verify_existing(attestation)["valid"])
+        with self.assertRaises(PermissionError):
+            service.verify_existing(after_revoke)
+
+        # The registry row alone is not the authority: changing a signed
+        # governance action without updating its quorum evidence is rejected.
+        with self.remote._lock:
+            row = self.remote._conn.execute(
+                "SELECT action_id, envelope_json FROM wallet_enrollment_governance_actions "
+                "WHERE enrollment_id = ? AND action = 'WALLET_ENROLL'",
+                (enrollment["enrollment_id"],),
+            ).fetchone()
+            tampered_envelope = json.loads(row[1])
+            tampered_envelope["action"]["reason"] = "forged enrollment reason"
+            self.remote._conn.execute(
+                "UPDATE wallet_enrollment_governance_actions SET envelope_json = ? WHERE action_id = ?",
+                (json.dumps(tampered_envelope), row[0]),
+            )
+            self.remote._conn.commit()
+        with self.assertRaises(PermissionError):
+            service.verify_existing(attestation)

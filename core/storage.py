@@ -1866,7 +1866,8 @@ class Storage:
         with self._lock:
             row = self._conn.execute(
                 "SELECT enrollment_id FROM wallet_enrollments "
-                "WHERE installation_principal = ? AND chain_id = ? AND wallet_address = ?",
+                "WHERE installation_principal = ? AND chain_id = ? AND wallet_address = ? "
+                "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, created_at DESC LIMIT 1",
                 (installation_principal, chain_id, wallet_address.lower()),
             ).fetchone()
         return self.wallet_enrollment(row[0]) if row else None
