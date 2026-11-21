@@ -584,6 +584,125 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertTrue(trust["valid"], report)
         self.assertFalse(trust["pinned"], report)
 
+    def test_authority_lifecycle_rejects_active_snapshot_after_governance_revocation(self):
+        manifest = self._valid_manifest()
+        payload = manifest["payload"]
+        attestation = next(
+            node for node in payload["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        attested_at = attestation["data"]["payload"]["attested_at"]
+        issued_at = attested_at - 600
+
+        revoke_policy = GovernancePolicy(
+            policy_id="reference-attestor-revocation",
+            version=1,
+            threshold=1,
+            members=(
+                GovernanceMember.from_public_key(
+                    self.governance_key.public_key(), "governor"
+                ),
+            ),
+            allowed_actions=("ATTESTOR_REVOKE",),
+        )
+        action = AttestorAuthorityService.build_action(
+            action="ATTESTOR_REVOKE",
+            attestor_id="external-reference",
+            reason="test historical revocation replay",
+            governance_policy_sha256=revoke_policy.digest,
+            action_id="revoke-after-register",
+            nonce="revoke-after-register-nonce",
+            issued_at=issued_at,
+        )
+        approval_payload = {
+            "governance_version": 1,
+            "action_digest": hashlib.sha256(canonical(action)).hexdigest(),
+            "governor_id": governor_id(self.governance_key.public_key()),
+            "role": "governor",
+            "approval_id": "approval-revoke-after-register",
+            "issued_at": issued_at + 10,
+            "expires_at": issued_at + 200,
+            "nonce": "approval-revoke-after-register-nonce",
+        }
+        approval = {
+            "payload": approval_payload,
+            "signature": base64.b64encode(
+                self.governance_key.sign(canonical(approval_payload))
+            ).decode(),
+            "algorithm": "Ed25519",
+        }
+        policy_data = revoke_policy.as_dict()
+        payload["nodes"].extend([
+            {
+                "type": "governance_policy",
+                "id": revoke_policy.digest,
+                "sha256": "",
+                "data": policy_data,
+            },
+            {
+                "type": "governance_action",
+                "id": action["action_id"],
+                "sha256": "",
+                "data": action,
+            },
+            {
+                "type": "governance_approval",
+                "id": approval_payload["approval_id"],
+                "sha256": "",
+                "data": approval,
+            },
+        ])
+        payload["edges"].extend([
+            {
+                "from": f"attestor_authority:external-reference",
+                "relation": "DERIVED_FROM",
+                "to": f"governance_action:{action['action_id']}",
+            },
+            {
+                "from": f"governance_policy:{revoke_policy.digest}",
+                "relation": "GOVERNS",
+                "to": f"governance_action:{action['action_id']}",
+            },
+            {
+                "from": f"governance_approval:{approval_payload['approval_id']}",
+                "relation": "APPROVES",
+                "to": f"governance_action:{action['action_id']}",
+            },
+        ])
+        self._resign_mutated_manifest(manifest)
+
+        core_result = verify_proof(
+            manifest,
+            trusted_public_key_b64=manifest["issuer_public_key_b64"],
+        )
+        self.assertFalse(
+            core_result["valid"],
+            "a governance-revoked attestor must not pass with a forged ACTIVE snapshot",
+        )
+
+        proof_path = Path(self.tmp.name) / "revoked-attestor-active-snapshot-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(manifest))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone_result = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(
+            standalone_result.returncode,
+            0,
+            "standalone verifier accepted governance revocation with a forged ACTIVE snapshot",
+        )
+
     def test_authority_lifecycle_rejects_forged_governance_approval_signature(self):
         manifest = self._valid_manifest()
         forged = json.loads(json.dumps(manifest))
