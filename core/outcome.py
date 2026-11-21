@@ -349,27 +349,51 @@ class OutcomeAttestationService:
             submission = receipt_payload.get("submission_data")
             if not isinstance(submission, dict):
                 raise ValueError("Anna CHAIN_VERIFIER receipt is missing wallet enrollment metadata")
-            enrollment = self.storage.wallet_enrollment_for_wallet(
-                claim["agent_id"], submission.get("chain_id"), submission.get("sender", "")
-            )
-            if enrollment is None:
+            chain_id = submission.get("chain_id")
+            sender = submission.get("sender")
+            if (
+                isinstance(chain_id, bool)
+                or not isinstance(chain_id, int)
+                or chain_id <= 0
+                or not isinstance(sender, str)
+            ):
+                raise ValueError("Anna execution receipt has invalid wallet enrollment metadata")
+            enrollments = [
+                item
+                for item in self.storage.wallet_enrollments_for_principal(claim["agent_id"])
+                if item.get("chain_id") == chain_id
+                and item.get("wallet_address") == sender.lower()
+            ]
+            if not enrollments:
                 raise PermissionError("Anna installation wallet enrollment is missing")
+
             if historical_at is None:
                 # New incoming attestations must always use the current active
                 # enrollment, even when historical proof replay is supported.
-                if enrollment["status"] != "ACTIVE":
-                    raise PermissionError("Anna installation wallet enrollment is not active")
-                verified_enrollment = enrollment
+                active_enrollments = [
+                    item for item in enrollments if item.get("status") == "ACTIVE"
+                ]
+                if len(active_enrollments) != 1:
+                    raise PermissionError("Anna installation wallet enrollment is not uniquely active")
+                verified_enrollment = active_enrollments[0]
             else:
                 history = self.storage.wallet_enrollment_governance_actions(claim["agent_id"])
-                historical_ok, historical_reason, historical_enrollment = (
-                    resolve_historical_wallet_enrollment(
-                        history, enrollment, historical_at,
+                historical_enrollments = []
+                for item in enrollments:
+                    historical_ok, historical_reason, historical_enrollment = (
+                        resolve_historical_wallet_enrollment(
+                            history, item, historical_at,
+                        )
                     )
-                )
-                if not historical_ok or historical_enrollment is None:
-                    raise PermissionError(historical_reason)
-                verified_enrollment = historical_enrollment
+                    if not historical_ok or historical_enrollment is None:
+                        raise PermissionError(historical_reason)
+                    if historical_enrollment.get("status") == "ACTIVE":
+                        historical_enrollments.append(historical_enrollment)
+                if len(historical_enrollments) != 1:
+                    raise PermissionError(
+                        "Anna installation wallet was not uniquely enrolled and active when the outcome was attested"
+                    )
+                verified_enrollment = historical_enrollments[0]
             if receipt_payload.get("network") != verified_enrollment["network"]:
                 raise ValueError("Anna execution receipt network does not match wallet enrollment")
             try:
