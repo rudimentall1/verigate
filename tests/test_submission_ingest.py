@@ -325,10 +325,12 @@ class TestSubmissionIngest(unittest.TestCase):
             governance_policy_sha256=self.governance.digest,
             enrollment_id=enrollment["enrollment_id"],
         )
+        revoke_approvals = [
+            approval(revoke, self.gov1, "revoke1"),
+            approval(revoke, self.gov2, "revoke2"),
+        ]
         WalletEnrollmentService(self.remote).apply(
-            revoke,
-            [approval(revoke, self.gov1, "revoke1"), approval(revoke, self.gov2, "revoke2")],
-            self.governance,
+            revoke, revoke_approvals, self.governance,
         )
         with self.assertRaises(PermissionError):
             service.verify_and_record(retry_attestation)
@@ -338,10 +340,44 @@ class TestSubmissionIngest(unittest.TestCase):
         # A correctly signed attestation made after the revoke effective time
         # must not borrow the enrollment's earlier ACTIVE state.
         after_revoke = json.loads(json.dumps(attestation))
-        after_revoke["payload"]["attested_at"] = time.time() + 1
+        revoke_effective_at = max(
+            [revoke["issued_at"], *(item["payload"]["issued_at"] for item in revoke_approvals)]
+        )
+        after_revoke["payload"]["attested_at"] = revoke_effective_at + 0.001
         after_revoke["signature"] = base64.b64encode(
             verifier_key.sign(canonical(after_revoke["payload"]))
         ).decode()
+        with self.assertRaises(PermissionError):
+            service.verify_existing(after_revoke)
+
+        # Re-enrolling the same installation wallet creates a new row.
+        # Historical verification must select the old enrollment for old proofs,
+        # while new attestations must select the new ACTIVE enrollment.
+        reenroll = WalletEnrollmentService.build_action(
+            action="WALLET_ENROLL", reason="wallet ownership re-verified",
+            governance_policy_sha256=self.governance.digest,
+            issuer_public_key_b64=self.issuer_b64, chain_id=8453,
+            network="base", wallet_address=self.sender, min_confirmations=12,
+        )
+        reenrollment = WalletEnrollmentService(self.remote).apply(
+            reenroll,
+            [approval(reenroll, self.gov1, "reenroll1"), approval(reenroll, self.gov2, "reenroll2")],
+            self.governance,
+        )["enrollment"]
+        selected = self.remote.wallet_enrollment_for_wallet(self.principal, 8453, self.sender)
+        self.assertEqual(selected["enrollment_id"], reenrollment["enrollment_id"])
+
+        reenrollment_submission = dict(api_submission)
+        reenrollment_submission["wallet_enrollment"] = reenrollment
+        post_reenrollment_attestation = create_chain_attestation(
+            reenrollment_submission,
+            attestor_id="anna-chain-verifier", attestor_private_key=verifier_key,
+            rpc=EvmRpcClient("http://rpc.test", transport=transport), observed_at=125.0,
+        )
+        self.assertTrue(service.verify_and_record(
+            post_reenrollment_attestation, record_authority_event=False,
+        )["valid"])
+        self.assertTrue(service.verify_existing(attestation)["valid"])
         with self.assertRaises(PermissionError):
             service.verify_existing(after_revoke)
 
