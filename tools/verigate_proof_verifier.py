@@ -857,6 +857,17 @@ def verify_wallet_enrollment_history(
         return failure("wallet enrollment registry snapshots are missing or duplicated")
     if any(not isinstance(item, str) or not item for item in enrollment_ids):
         return failure("wallet enrollment registry snapshot identity is invalid")
+    history_ref = f"wallet_enrollment_governance_history:{installation_principal}"
+    for enrollment_node in enrollment_nodes:
+        enrollment_ref = f"wallet_enrollment:{enrollment_node['id']}"
+        covering_edges = [
+            edge_item for edge_item in payload.get("edges", [])
+            if edge_item.get("from") == history_ref
+            and edge_item.get("relation") == "COVERS"
+            and edge_item.get("to") == enrollment_ref
+        ]
+        if len(covering_edges) != 1:
+            return failure("wallet enrollment snapshot is not uniquely covered by its governance history")
 
     verified_actions = []
     seen_action_ids = set()
@@ -1148,7 +1159,12 @@ def verify(
    return bad('wallet enrollment issuer public key is invalid',c)
  try:receipt_public_key.verify(b64(r['data']['signature']),canon(rp)); rsig=True
  except Exception:rsig=False
- c['execution']={'valid':rsig and rp.get('authorization_id')==ap.get('authorization_id') and rp.get('intent_id')==ap.get('intent_id')}
+ c['execution']={
+  'valid':rsig
+  and rp.get('authorization_id')==ap.get('authorization_id')
+  and rp.get('intent_id')==ap.get('intent_id')
+  and rp.get('agent_id')==ap.get('agent_id')
+ }
  if not c['execution']['valid']:return bad('execution receipt verification failed',c)
  l=node(p,'authority_ledger')['data'].get('entries',[]); prev=ZERO; lok=True
  for i,x in enumerate(l,1):
