@@ -47,12 +47,13 @@ def _decode_b64(value: Any, description: str) -> bytes:
         raise ValueError(f"{description} is not valid base64") from None
 
 
-def _valid_digest(value: Any) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) == 64
-        and all(char in "0123456789abcdef" for char in value)
-    )
+def _finite_number(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except (OverflowError, TypeError, ValueError):
+        return False
 
 
 def _history_order(envelopes: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -442,6 +443,8 @@ def verify_wallet_governance_transparency_bundle(
             payload.get("protocol") != WALLET_GOVERNANCE_LOG_PROTOCOL
             or payload.get("log_id") != bundle["log_id"]
             or payload.get("installation_principal") != installation_principal
+            or isinstance(payload.get("sequence"), bool)
+            or not isinstance(payload.get("sequence"), int)
             or payload.get("sequence") != expected_sequence
             or payload.get("previous_entry_sha256") != previous_entry_sha256
         ):
@@ -481,6 +484,8 @@ def verify_wallet_governance_transparency_bundle(
         or checkpoint_payload.get("protocol") != WALLET_GOVERNANCE_LOG_PROTOCOL
         or checkpoint_payload.get("log_id") != bundle["log_id"]
         or checkpoint_payload.get("installation_principal") != installation_principal
+        or isinstance(checkpoint_payload.get("entry_count"), bool)
+        or not isinstance(checkpoint_payload.get("entry_count"), int)
         or checkpoint_payload.get("entry_count") != len(entries)
         or checkpoint_payload.get("head_entry_sha256") != previous_entry_sha256
         or checkpoint_payload.get("history_sha256") != digest(ordered_history)
@@ -489,17 +494,27 @@ def verify_wallet_governance_transparency_bundle(
         or checkpoint_payload["checkpoint_sequence"] < 1
         or not isinstance(checkpoint_payload.get("previous_checkpoint_sha256"), str)
         or not re.fullmatch(r"[0-9a-f]{64}", checkpoint_payload["previous_checkpoint_sha256"])
-        or isinstance(checkpoint_payload.get("issued_at"), bool)
-        or not isinstance(checkpoint_payload.get("issued_at"), (int, float))
-        or not math.isfinite(float(checkpoint_payload["issued_at"]))
+        or (
+            checkpoint_payload.get("checkpoint_sequence") == 1
+            and checkpoint_payload["previous_checkpoint_sha256"] != _ZERO_HASH
+        )
+        or (
+            checkpoint_payload.get("checkpoint_sequence") > 1
+            and checkpoint_payload["previous_checkpoint_sha256"] == _ZERO_HASH
+        )
+        or not _finite_number(checkpoint_payload.get("issued_at"))
         or not isinstance(checkpoint_payload.get("signer_key_id"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", checkpoint_payload["signer_key_id"])
     ):
         return failure("wallet governance transparency checkpoint does not bind the complete log head")
 
-    embedded_public_key = _decode_b64(
-        checkpoint.get("signer_public_key_b64"),
-        "wallet transparency checkpoint signer public key",
-    )
+    try:
+        embedded_public_key = _decode_b64(
+            checkpoint.get("signer_public_key_b64"),
+            "wallet transparency checkpoint signer public key",
+        )
+    except ValueError as exc:
+        return failure(str(exc))
     if len(embedded_public_key) != 32:
         return failure("wallet transparency checkpoint signer key must be Ed25519")
     embedded_key_id = hashlib.sha256(embedded_public_key).hexdigest()
@@ -507,10 +522,13 @@ def verify_wallet_governance_transparency_bundle(
         return failure("wallet governance transparency checkpoint signer key fingerprint mismatch")
 
     if trusted_log_public_key_b64 is not None:
-        trusted_public_key = _decode_b64(
-            trusted_log_public_key_b64,
-            "trusted wallet transparency log public key",
-        )
+        try:
+            trusted_public_key = _decode_b64(
+                trusted_log_public_key_b64,
+                "trusted wallet transparency log public key",
+            )
+        except ValueError as exc:
+            return failure(str(exc))
         if len(trusted_public_key) != 32 or trusted_public_key != embedded_public_key:
             return failure("wallet governance transparency log public key does not match the trusted key")
         if (
