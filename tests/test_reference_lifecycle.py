@@ -503,7 +503,9 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             "--public-key",
             str(self.public_path),
             "--trusted-governance-policy-sha256",
-            policy_digest,
+            policy_digest.upper(),
+            "--trusted-governance-policy-sha256",
+            "0" * 64,
             "--format",
             "json",
         )
@@ -514,6 +516,37 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertTrue(trust["valid"], report)
         self.assertTrue(trust["pinned"], report)
         self.assertEqual(trust["policy_sha256"], [policy_digest])
+        self.assertEqual(
+            trust["trusted_policy_sha256"],
+            sorted([policy_digest, "0" * 64]),
+        )
+
+    def test_standalone_verifier_rejects_malformed_governance_policy_digest(self):
+        manifest = self._valid_manifest()
+
+        result = self._run_standalone_verifier(
+            manifest,
+            "--public-key",
+            str(self.public_path),
+            "--trusted-governance-policy-sha256",
+            "not-a-sha256-digest",
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("64 hexadecimal characters", result.stderr)
+
+    def test_standalone_verifier_prints_unpinned_governance_policy_status(self):
+        manifest = self._valid_manifest()
+
+        result = self._run_standalone_verifier(
+            manifest,
+            "--public-key",
+            str(self.public_path),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("GOVERNANCE_POLICY_TRUST_ANCHOR NOT PINNED", result.stdout)
+        self.assertIn("RESULT: VALID", result.stdout)
 
     def test_standalone_verifier_rejects_untrusted_governance_policy_digest(self):
         manifest = self._valid_manifest()
