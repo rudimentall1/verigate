@@ -1,6 +1,7 @@
 """Evidence Graph: cryptographic provenance for one consequential action."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from typing import Any
@@ -117,6 +118,55 @@ class EvidenceGraph:
                 "relation": "APPROVES",
                 "to": f"governance_action:{action_id}",
             })
+
+    def _wallet_enrollment_issuer_key(
+        self,
+        *,
+        principal: str,
+        receipt: dict[str, Any],
+    ) -> Ed25519PublicKey:
+        """Resolve the issuer key bound to an Anna wallet receipt's enrollment."""
+        payload = receipt.get("payload", {})
+        submission = payload.get("submission_data")
+        chain_id = submission.get("chain_id") if isinstance(submission, dict) else None
+        sender = submission.get("sender") if isinstance(submission, dict) else None
+        if (
+            not isinstance(principal, str)
+            or not principal.startswith("anna-installation:")
+            or isinstance(chain_id, bool)
+            or not isinstance(chain_id, int)
+            or chain_id <= 0
+            or not isinstance(sender, str)
+            or len(sender) != 42
+            or not sender.startswith("0x")
+        ):
+            raise ValueError("Anna execution receipt has invalid wallet enrollment metadata")
+
+        enrollments = [
+            item
+            for item in self.storage.wallet_enrollments_for_principal(principal)
+            if item.get("chain_id") == chain_id
+            and item.get("wallet_address") == sender.lower()
+        ]
+        if not enrollments:
+            raise LookupError("Anna wallet receipt has no matching governed enrollment")
+        public_keys = {item.get("issuer_public_key_b64") for item in enrollments}
+        if len(public_keys) != 1:
+            raise PermissionError("Anna wallet enrollments disagree on their issuer key")
+        public_key_b64 = next(iter(public_keys))
+        try:
+            raw_key = base64.b64decode(public_key_b64, validate=True)
+            if len(raw_key) != 32:
+                raise ValueError("Ed25519 issuer key must contain exactly 32 bytes")
+            key = Ed25519PublicKey.from_public_bytes(raw_key)
+        except (TypeError, ValueError):
+            raise ValueError("Anna wallet enrollment contains an invalid issuer key") from None
+        fingerprint = hashlib.sha256(raw_key).hexdigest()
+        if principal != f"anna-installation:{fingerprint}":
+            raise PermissionError("Anna wallet issuer key does not match its installation principal")
+        if any(item.get("issuer_key_id") != fingerprint for item in enrollments):
+            raise PermissionError("Anna wallet enrollment issuer fingerprint is inconsistent")
+        return key
 
     def _add_wallet_enrollment_evidence(
         self,
@@ -585,9 +635,47 @@ class EvidenceGraph:
 
             receipt = self.storage.execution_receipt_by_authorization(execution_id)
             if receipt is not None:
-                ok, reason = verify_execution_receipt(receipt, self.public_key, execution)
-                verification["execution_receipt"] = {"valid": ok, "reason": reason}
                 receipt_id = receipt["payload"]["receipt_id"]
+                outcome_service = OutcomeAttestationService(
+                    self.storage,
+                    self.public_key,
+                )
+                outcome_claims = self.storage.outcome_claims_by_authorization(execution_id)
+                receipt_public_key = self.public_key
+                wallet_key_error = None
+                has_anna_chain_attestation = (
+                    isinstance(agent_id, str)
+                    and agent_id.startswith("anna-installation:")
+                    and any(
+                        attestation.get("payload", {}).get("attestor_type") == "CHAIN_VERIFIER"
+                        for claim in outcome_claims
+                        for attestation in self.storage.outcome_attestations_by_claim(claim["claim_id"])
+                    )
+                )
+                if has_anna_chain_attestation:
+                    self._add_wallet_enrollment_evidence(
+                        principal=agent_id,
+                        receipt=receipt,
+                        nodes=nodes,
+                        edges=edges,
+                        verification=verification,
+                    )
+                    try:
+                        receipt_public_key = self._wallet_enrollment_issuer_key(
+                            principal=agent_id,
+                            receipt=receipt,
+                        )
+                    except (KeyError, TypeError, ValueError, PermissionError, LookupError) as exc:
+                        wallet_key_error = str(exc)
+
+                ok, reason = verify_execution_receipt(
+                    receipt, receipt_public_key, execution,
+                )
+                if receipt["payload"].get("agent_id") != execution["payload"].get("agent_id"):
+                    ok, reason = False, "execution receipt agent does not match signed authorization"
+                if wallet_key_error is not None:
+                    ok, reason = False, wallet_key_error
+                verification["execution_receipt"] = {"valid": ok, "reason": reason}
                 nodes.append(_node("execution_receipt", receipt_id, receipt))
                 edges.append({"from": f"execution_authorization:{execution_id}", "relation": "PRODUCES", "to": f"execution_receipt:{receipt_id}"})
 
@@ -601,11 +689,7 @@ class EvidenceGraph:
                             nodes.append(_node("authority_event", event["event_id"], event))
                             edges.append({"from": f"execution_receipt:{receipt_id}", "relation": "INFORMS", "to": f"authority_event:{event['event_id']}"})
 
-                outcome_service = OutcomeAttestationService(
-                    self.storage,
-                    self.public_key,
-                )
-                for claim in self.storage.outcome_claims_by_authorization(execution_id):
+                for claim in outcome_claims:
                     claim_id = claim["claim_id"]
                     claim_sha256 = outcome_digest(claim)
                     nodes.append(_node("outcome_claim", claim_id, claim))
