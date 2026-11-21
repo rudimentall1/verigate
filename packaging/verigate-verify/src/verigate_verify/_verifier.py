@@ -1055,6 +1055,31 @@ def verify_wallet_governance_transparency_bundle(
         ):
             return failure("wallet transparency log enrollment action has another installation principal")
         history_by_action[action_id] = envelope
+
+    enrollment_ids = set()
+    revoked_enrollment_ids = set()
+    for envelope in history_envelopes:
+        action = envelope["action"]
+        operation = action["action"]
+        enrollment_id = action.get("enrollment_id")
+        if not isinstance(enrollment_id, str) or not enrollment_id:
+            return failure("wallet transparency log enrollment ID is missing")
+        if operation == "WALLET_ENROLL":
+            if enrollment_id in enrollment_ids:
+                return failure("wallet transparency log contains a duplicate enrollment ID")
+            enrollment_ids.add(enrollment_id)
+        else:
+            if enrollment_id in revoked_enrollment_ids:
+                return failure("wallet transparency log contains a duplicate wallet revocation")
+            revoked_enrollment_ids.add(enrollment_id)
+
+    unknown_revocations = sorted(revoked_enrollment_ids - enrollment_ids)
+    if unknown_revocations:
+        return failure(
+            "wallet transparency log revocation references an enrollment outside this installation: "
+            + ", ".join(unknown_revocations)
+        )
+
     ordered_history = sorted(history_envelopes, key=lambda item: item["action"]["action_id"])
     expected_history_sha256 = sha(ordered_history)
 
