@@ -334,3 +334,31 @@ class TestSubmissionIngest(unittest.TestCase):
             service.verify_and_record(retry_attestation)
         self.assertTrue(service.verify_existing(attestation)["valid"])
         self.assertTrue(service.verify_existing(retry_attestation)["valid"])
+
+        # A correctly signed attestation made after the revoke effective time
+        # must not borrow the enrollment's earlier ACTIVE state.
+        after_revoke = json.loads(json.dumps(attestation))
+        after_revoke["payload"]["attested_at"] = time.time() + 1
+        after_revoke["signature"] = base64.b64encode(
+            verifier_key.sign(canonical(after_revoke["payload"]))
+        ).decode()
+        with self.assertRaises(PermissionError):
+            service.verify_existing(after_revoke)
+
+        # The registry row alone is not the authority: changing a signed
+        # governance action without updating its quorum evidence is rejected.
+        with self.remote._lock:
+            row = self.remote._conn.execute(
+                "SELECT action_id, envelope_json FROM wallet_enrollment_governance_actions "
+                "WHERE enrollment_id = ? AND action = 'WALLET_ENROLL'",
+                (enrollment["enrollment_id"],),
+            ).fetchone()
+            tampered_envelope = json.loads(row[1])
+            tampered_envelope["action"]["reason"] = "forged enrollment reason"
+            self.remote._conn.execute(
+                "UPDATE wallet_enrollment_governance_actions SET envelope_json = ? WHERE action_id = ?",
+                (json.dumps(tampered_envelope), row[0]),
+            )
+            self.remote._conn.commit()
+        with self.assertRaises(PermissionError):
+            service.verify_existing(attestation)
