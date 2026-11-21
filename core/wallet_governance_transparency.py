@@ -224,6 +224,47 @@ class WalletGovernanceTransparencyLog:
         destination.write_bytes(public_key_pem)
         return destination
 
+    def append_envelope(
+        self,
+        installation_principal: str,
+        envelope: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Append one newly accepted governance envelope from an external event stream.
+
+        This is the preferred per-action ingestion API for a separately operated
+        log service. It reuses the current immutable history and returns a fresh
+        signed checkpoint after a new action is committed.
+        """
+        if not isinstance(envelope, dict) or not isinstance(envelope.get("action"), dict):
+            raise ValueError("wallet transparency log envelope is malformed")
+        action_id = envelope["action"].get("action_id")
+        if not isinstance(action_id, str) or not action_id:
+            raise ValueError("wallet transparency log action ID is invalid")
+        rows = self._connection.execute(
+            "SELECT envelope_json FROM wallet_governance_log_entries "
+            "WHERE installation_principal = ? ORDER BY sequence",
+            (installation_principal,),
+        ).fetchall()
+        current_history = [json.loads(row[0]) for row in rows]
+        existing = next(
+            (
+                item for item in current_history
+                if item.get("action", {}).get("action_id") == action_id
+            ),
+            None,
+        )
+        if existing is not None:
+            if canonical(existing) != canonical(envelope):
+                raise ValueError(
+                    f"wallet transparency log action {action_id} is immutable and cannot be rewritten"
+                )
+        else:
+            current_history.append(envelope)
+        return self.checkpoint_history(
+            installation_principal,
+            current_history,
+        )
+
     def checkpoint_history(
         self,
         installation_principal: str,
