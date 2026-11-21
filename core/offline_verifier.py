@@ -275,7 +275,14 @@ def verify_proof(
                         }
                 else:
                     transparency_node = transparency_nodes[0]
+                    checkpoint_data = transparency_node["data"].get("checkpoint", {})
                     transparency_ref = f"wallet_governance_transparency_log:{transparency_node['id']}"
+                    if transparency_node["id"] != checkpoint_data.get("checkpoint_sha256"):
+                        return {
+                            "valid": False,
+                            "reason": "wallet transparency node identity does not match its checkpoint digest",
+                            "checks": checks,
+                        }
                     anchored_edges = [
                         item for item in payload.get("edges", [])
                         if item.get("from") == history_ref
