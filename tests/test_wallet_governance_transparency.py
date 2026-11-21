@@ -133,6 +133,21 @@ class WalletGovernanceTransparencyLogTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(second["checkpoint"]["payload"]["checkpoint_sequence"], 1)
 
+    def test_public_key_export_produces_pem_usable_by_offline_verifier(self):
+        public_path = self.log.export_public_key_pem(
+            Path(self.tmp.name) / "trust" / "wallet-log.pub.pem",
+        )
+        public_key = serialization.load_pem_public_key(public_path.read_bytes())
+        exported_raw = public_key.public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+        expected_raw = self.signing_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+        self.assertEqual(exported_raw, expected_raw)
+
     def test_new_history_advances_entry_and_checkpoint_chains(self):
         first = self.log.checkpoint_history(self.principal, [self.enroll])
         second = self.log.checkpoint_history(self.principal, [self.enroll, self.revoke])
@@ -170,6 +185,20 @@ class WalletGovernanceTransparencyLogTests(unittest.TestCase):
                 connection.execute(
                     "DELETE FROM wallet_governance_log_checkpoints WHERE installation_principal = ?",
                     (self.principal,),
+                )
+            connection.rollback()
+            entry = connection.execute(
+                "SELECT installation_principal, sequence, log_id, action_id, entry_sha256, "
+                "entry_payload_json, envelope_json FROM wallet_governance_log_entries "
+                "WHERE installation_principal = ?",
+                (self.principal,),
+            ).fetchone()
+            with self.assertRaises(sqlite3.IntegrityError):
+                connection.execute(
+                    "INSERT OR REPLACE INTO wallet_governance_log_entries "
+                    "(installation_principal, sequence, log_id, action_id, entry_sha256, "
+                    "entry_payload_json, envelope_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    entry,
                 )
             connection.rollback()
         finally:
