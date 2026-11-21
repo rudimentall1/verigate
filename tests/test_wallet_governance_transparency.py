@@ -334,12 +334,20 @@ class WalletGovernanceTransparencyLogTests(unittest.TestCase):
 
     def test_log_keeps_installation_principals_in_separate_entry_chains(self):
         other_principal = "anna-installation:" + "2" * 64
-        primary = self.log.checkpoint_history(self.principal, [self.enroll])
+        primary = self.log.checkpoint_history(self.principal, [self.revoke])
         other = self.log.checkpoint_history(other_principal, [self.revoke])
 
         self.assertEqual(primary["entries"][0]["payload"]["sequence"], 1)
         self.assertEqual(other["entries"][0]["payload"]["sequence"], 1)
         self.assertEqual(
+            primary["entries"][0]["payload"]["previous_entry_sha256"],
+            "0" * 64,
+        )
+        self.assertEqual(
+            other["entries"][0]["payload"]["previous_entry_sha256"],
+            "0" * 64,
+        )
+        self.assertNotEqual(
             primary["entries"][0]["entry_sha256"],
             other["entries"][0]["entry_sha256"],
         )
