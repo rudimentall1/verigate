@@ -57,83 +57,135 @@ class WalletGovernanceOutboxDispatcher:
         *,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        """Deliver pending actions in local acceptance order; stop at first failure."""
+        """Deliver pending actions in local acceptance order under a per-principal lease."""
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
             raise ValueError("outbox dispatch limit must be a positive integer")
+
+        if installation_principal is None:
+            pending = self.storage.wallet_governance_outbox_events()
+            principals = list(dict.fromkeys(
+                item["installation_principal"]
+                for item in pending if item["status"] == "PENDING"
+            ))
+            results: list[dict[str, Any]] = []
+            remaining = limit
+            for principal in principals:
+                current = self._dispatch_principal(principal, limit=remaining)
+                results.extend(current)
+                remaining -= sum(1 for item in current if item.get("delivered"))
+                if remaining <= 0:
+                    break
+            return results
+
+        return self._dispatch_principal(installation_principal, limit=limit)
+
+    def _dispatch_principal(
+        self,
+        installation_principal: str,
+        *,
+        limit: int,
+    ) -> list[dict[str, Any]]:
         events = self.storage.wallet_governance_outbox_events(installation_principal)
-        results: list[dict[str, Any]] = []
-        delivered_this_call = 0
-        for index, event in enumerate(events):
-            if event["status"] == "DELIVERED":
-                continue
-            if delivered_this_call >= limit:
-                break
+        pending_events = [item for item in events if item["status"] == "PENDING"]
+        if not pending_events:
+            return []
 
-            action_id = event["action_id"]
-            principal = event["installation_principal"]
-            prefix = events[: index + 1]
-            expected_envelopes = [item["envelope"] for item in prefix]
-            try:
-                bundle = self.transport.append_envelope(principal, event["envelope"])
-                if not isinstance(bundle, dict):
-                    raise ValueError("transparency log returned a malformed bundle")
-                returned_entries = bundle.get("entries")
-                if not isinstance(returned_entries, list):
-                    raise ValueError("transparency log returned no append-only entry list")
-                returned_envelopes = []
-                for entry in returned_entries:
-                    if not isinstance(entry, dict) or not isinstance(entry.get("payload"), dict):
-                        raise ValueError("transparency log returned a malformed entry")
-                    returned_envelopes.append(entry["payload"].get("envelope"))
+        lease_token = self.storage.acquire_wallet_governance_outbox_lease(
+            installation_principal,
+        )
+        if lease_token is None:
+            return [{
+                "action_id": pending_events[0]["action_id"],
+                "installation_principal": installation_principal,
+                "status": "BUSY",
+                "delivered": False,
+                "reason": "another transparency outbox worker holds the installation lease",
+            }]
 
-                if len(returned_envelopes) != len(expected_envelopes) or any(
-                    returned != expected
-                    for returned, expected in zip(returned_envelopes, expected_envelopes)
-                ):
-                    raise ValueError(
-                        "transparency log response is not the exact locally accepted outbox prefix"
+        try:
+            # Reload under the lease so another process cannot change the local
+            # acceptance prefix while this worker is delivering it.
+            events = self.storage.wallet_governance_outbox_events(installation_principal)
+            results: list[dict[str, Any]] = []
+            delivered_this_call = 0
+            for index, event in enumerate(events):
+                if event["status"] == "DELIVERED":
+                    continue
+                if delivered_this_call >= limit:
+                    break
+
+                action_id = event["action_id"]
+                prefix = events[: index + 1]
+                expected_envelopes = [item["envelope"] for item in prefix]
+                try:
+                    bundle = self.transport.append_envelope(
+                        installation_principal,
+                        event["envelope"],
                     )
+                    if not isinstance(bundle, dict):
+                        raise ValueError("transparency log returned a malformed bundle")
+                    returned_entries = bundle.get("entries")
+                    if not isinstance(returned_entries, list):
+                        raise ValueError("transparency log returned no append-only entry list")
+                    returned_envelopes = []
+                    for entry in returned_entries:
+                        if not isinstance(entry, dict) or not isinstance(entry.get("payload"), dict):
+                            raise ValueError("transparency log returned a malformed entry")
+                        returned_envelopes.append(entry["payload"].get("envelope"))
 
-                checkpoint = bundle.get("checkpoint")
-                checkpoint_digest = (
-                    checkpoint.get("checkpoint_sha256")
-                    if isinstance(checkpoint, dict) else None
-                )
-                if not isinstance(checkpoint_digest, str):
-                    raise ValueError("transparency log response is missing its checkpoint digest")
+                    if len(returned_envelopes) != len(expected_envelopes) or any(
+                        returned != expected
+                        for returned, expected in zip(returned_envelopes, expected_envelopes)
+                    ):
+                        raise ValueError(
+                            "transparency log response is not the exact locally accepted outbox prefix"
+                        )
 
-                valid, reason, _checks = verify_wallet_governance_transparency_bundle(
-                    bundle,
-                    history_envelopes=expected_envelopes,
-                    installation_principal=principal,
-                    trusted_log_public_key_b64=self.trusted_log_public_key_b64,
-                    trusted_checkpoint_sha256=checkpoint_digest,
-                )
-                if not valid:
-                    raise ValueError(reason)
+                    checkpoint = bundle.get("checkpoint")
+                    checkpoint_digest = (
+                        checkpoint.get("checkpoint_sha256")
+                        if isinstance(checkpoint, dict) else None
+                    )
+                    if not isinstance(checkpoint_digest, str):
+                        raise ValueError("transparency log response is missing its checkpoint digest")
 
-                self.storage.mark_wallet_governance_outbox_delivered(
-                    action_id,
-                    bundle,
-                )
-                results.append({
-                    "action_id": action_id,
-                    "installation_principal": principal,
-                    "status": "DELIVERED",
-                    "delivered": True,
-                    "checkpoint_sha256": checkpoint_digest,
-                })
-                delivered_this_call += 1
-            except Exception as exc:
-                self.storage.mark_wallet_governance_outbox_failed(action_id, str(exc))
-                results.append({
-                    "action_id": action_id,
-                    "installation_principal": principal,
-                    "status": "PENDING",
-                    "delivered": False,
-                    "reason": str(exc),
-                })
-                # Preserve append order: do not send a later event while an
-                # earlier accepted action remains unacknowledged.
-                break
-        return results
+                    valid, reason, _checks = verify_wallet_governance_transparency_bundle(
+                        bundle,
+                        history_envelopes=expected_envelopes,
+                        installation_principal=installation_principal,
+                        trusted_log_public_key_b64=self.trusted_log_public_key_b64,
+                        trusted_checkpoint_sha256=checkpoint_digest,
+                    )
+                    if not valid:
+                        raise ValueError(reason)
+
+                    self.storage.mark_wallet_governance_outbox_delivered(
+                        action_id,
+                        bundle,
+                    )
+                    results.append({
+                        "action_id": action_id,
+                        "installation_principal": installation_principal,
+                        "status": "DELIVERED",
+                        "delivered": True,
+                        "checkpoint_sha256": checkpoint_digest,
+                    })
+                    delivered_this_call += 1
+                except Exception as exc:
+                    self.storage.mark_wallet_governance_outbox_failed(action_id, str(exc))
+                    results.append({
+                        "action_id": action_id,
+                        "installation_principal": installation_principal,
+                        "status": "PENDING",
+                        "delivered": False,
+                        "reason": str(exc),
+                    })
+                    # Preserve append order: do not send a later event while an
+                    # earlier accepted action remains unacknowledged.
+                    break
+            return results
+        finally:
+            self.storage.release_wallet_governance_outbox_lease(
+                installation_principal,
+                lease_token,
+            )
