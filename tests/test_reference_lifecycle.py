@@ -170,6 +170,79 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         )
         return key
 
+    def test_evidence_graph_deduplicates_reused_attestor_governance_policy(self):
+        policy = GovernancePolicy(
+            policy_id="shared-attestor-governance",
+            version=1,
+            threshold=1,
+            members=(
+                GovernanceMember.from_public_key(
+                    self.governance_key.public_key(), "governor"
+                ),
+            ),
+            allowed_actions=("ATTESTOR_REGISTER", "ATTESTOR_ROTATE"),
+        )
+        attestor_key = Ed25519PrivateKey.generate()
+        attestor_public_key = base64.b64encode(
+            attestor_key.public_key().public_bytes(
+                serialization.Encoding.Raw,
+                serialization.PublicFormat.Raw,
+            )
+        ).decode()
+        service = AttestorAuthorityService(self.storage)
+        graph = EvidenceGraph(self.storage, self.public_key)
+        nodes = []
+        edges = []
+        verification = {}
+
+        for index, operation in enumerate(
+            ("ATTESTOR_REGISTER", "ATTESTOR_ROTATE"),
+            start=1,
+        ):
+            action = service.build_action(
+                action=operation,
+                attestor_id="shared-policy-attestor",
+                reason=f"test {operation.lower()}",
+                governance_policy_sha256=policy.digest,
+                public_key_b64=attestor_public_key,
+                attestor_type="EXTERNAL_VERIFIER",
+                action_id=f"shared-policy-action-{index}",
+                nonce=f"shared-policy-nonce-{index}",
+            )
+            envelope = {
+                "action": action,
+                "approvals": [_governance_approval(action, self.governance_key)],
+                "governance_policy": policy.as_dict(),
+                "governance_policy_sha256": policy.digest,
+            }
+            graph._add_governance_envelope(
+                envelope,
+                subject_type="attestor_authority",
+                subject_id="shared-policy-attestor",
+                relation="GOVERNS",
+                verification=verification,
+                nodes=nodes,
+                edges=edges,
+            )
+
+        policy_nodes = [
+            node for node in nodes
+            if node["type"] == "governance_policy"
+        ]
+        action_nodes = [
+            node for node in nodes
+            if node["type"] == "governance_action"
+        ]
+
+        self.assertEqual(len(policy_nodes), 1)
+        self.assertEqual(policy_nodes[0]["id"], policy.digest)
+        self.assertEqual(len(action_nodes), 2)
+        self.assertEqual(
+            sum(edge["relation"] == "GOVERNS" for edge in edges),
+            2,
+        )
+        self.assertTrue(all(item["valid"] for item in verification.values()))
+
     def test_reference_lifecycle_is_offline_verifiable(self):
         authorization, receipt = self._authorized_execution()
         observed = MCPToolVerifier().verify_result(
