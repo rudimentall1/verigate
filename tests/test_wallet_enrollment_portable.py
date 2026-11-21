@@ -11,6 +11,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
+from core.evidence import EvidenceGraph
+from core.wallet_enrollment_history import resolve_portable_wallet_enrollment_history
 from core.storage import Storage
 from core.wallet_enrollment import WalletEnrollmentService
 
@@ -121,13 +123,17 @@ class PortableWalletGovernanceProofTests(unittest.TestCase):
 
         enrollment = self.storage.wallet_enrollment(enroll["enrollment_id"])
         if rewrite_snapshot:
+            # Model a coordinated database rollback: remove the revoke envelope
+            # and rewrite the mutable registry row back to ACTIVE.
             enrollment["status"] = "ACTIVE"
             enrollment["revoked_at"] = None
-        history = sorted(
+        full_history = sorted(
             self.storage.wallet_enrollment_governance_actions(self.principal),
             key=lambda item: item["action"]["action_id"],
         )
-        if not include_revoke:
+        trusted_history_sha256 = digest(full_history)
+        history = full_history
+        if not include_revoke or rewrite_snapshot:
             history = [item for item in history if item["action"]["action"] != "WALLET_REVOKE"]
         history_data = {
             "installation_principal": self.principal,
@@ -158,7 +164,10 @@ class PortableWalletGovernanceProofTests(unittest.TestCase):
                 }
             ],
         }
-        return payload, enroll_effective_at, revoke, revoke_approvals, history_data["history_sha256"]
+        return (
+            payload, enroll_effective_at, revoke, revoke_approvals,
+            trusted_history_sha256 if rewrite_snapshot else history_data["history_sha256"],
+        )
 
     def verify(self, payload, *, attested_at, history_sha, policy_digests=None):
         return VERIFIER.verify_wallet_enrollment_history(
@@ -170,6 +179,100 @@ class PortableWalletGovernanceProofTests(unittest.TestCase):
             trusted_policy_digests=policy_digests,
             trusted_history_digests={history_sha},
         )
+
+    def test_core_resolver_accepts_pinned_history_and_resolves_pre_revoke_state(self):
+        payload, enrolled_at, revoke, approvals, history_sha = self.make_graph()
+        history_node = next(
+            item for item in payload["nodes"]
+            if item["type"] == "wallet_enrollment_governance_history"
+        )
+        enrollment_nodes = [
+            item["data"] for item in payload["nodes"]
+            if item["type"] == "wallet_enrollment"
+        ]
+        revoke_effective_at = max(
+            [revoke["issued_at"], *(item["payload"]["issued_at"] for item in approvals)]
+        )
+        ok, reason, enrollment, checks = resolve_portable_wallet_enrollment_history(
+            history_node["data"],
+            enrollment_nodes,
+            installation_principal=self.principal,
+            chain_id=8453,
+            wallet_address=self.wallet,
+            attested_at=(enrolled_at + revoke_effective_at) / 2,
+            trusted_policy_digests={self.policy.digest},
+            trusted_history_digests={history_sha},
+        )
+        self.assertTrue(ok, reason)
+        self.assertEqual(enrollment["status"], "ACTIVE")
+        self.assertTrue(checks["wallet_enrollment_history_anchor"]["pinned"])
+
+    def test_evidence_graph_builder_exports_complete_wallet_history_and_receipt_binding(self):
+        enroll = self.service.build_action(
+            action="WALLET_ENROLL",
+            reason="operator verified wallet ownership",
+            governance_policy_sha256=self.policy.digest,
+            issuer_public_key_b64=self.issuer_b64,
+            chain_id=8453,
+            network="base",
+            wallet_address=self.wallet,
+            min_confirmations=12,
+        )
+        self.service.apply(
+            enroll,
+            [
+                governance_approval(enroll, self.gov1, "builder-one"),
+                governance_approval(enroll, self.gov2, "builder-two"),
+            ],
+            self.policy,
+        )
+        receipt = {
+            "payload": {
+                "receipt_id": "portable-chain-receipt",
+                "submission_data": {
+                    "chain_id": 8453,
+                    "sender": self.wallet,
+                    "network": "base",
+                },
+            }
+        }
+        nodes, edges, verification = [], [], {}
+        EvidenceGraph(self.storage, self.issuer.public_key())._add_wallet_enrollment_evidence(
+            principal=self.principal,
+            receipt=receipt,
+            nodes=nodes,
+            edges=edges,
+            verification=verification,
+        )
+        history = next(
+            item for item in nodes
+            if item["type"] == "wallet_enrollment_governance_history"
+        )
+        enrollment = next(
+            item for item in nodes if item["type"] == "wallet_enrollment"
+        )
+        self.assertEqual(history["data"]["history_sha256"], digest(history["data"]["envelopes"]))
+        self.assertEqual(
+            sum(1 for item in history["data"]["envelopes"] if item["action"]["action"] == "WALLET_ENROLL"),
+            1,
+        )
+        self.assertIn(
+            {
+                "from": f"wallet_enrollment_governance_history:{self.principal}",
+                "relation": "COVERS",
+                "to": f"wallet_enrollment:{enrollment['id']}",
+            },
+            edges,
+        )
+        self.assertIn(
+            {
+                "from": f"wallet_enrollment:{enrollment['id']}",
+                "relation": "AUTHORIZES_RECEIPT",
+                "to": "execution_receipt:portable-chain-receipt",
+            },
+            edges,
+        )
+        self.assertTrue(verification[f"wallet_enrollment:{self.principal}"]["valid"])
 
     def test_portable_proof_replays_revoke_after_attestation_without_retroactive_invalidation(self):
         payload, enrolled_at, revoke, approvals, history_sha = self.make_graph()
