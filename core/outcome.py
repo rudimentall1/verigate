@@ -20,6 +20,7 @@ from core.attestor_history import (
     resolve_historical_attestor,
     verify_outcome_attestation_signature,
 )
+from core.wallet_enrollment_history import resolve_historical_wallet_enrollment
 
 
 OUTCOME_STATUSES = frozenset({"SUCCEEDED", "FAILED", "UNKNOWN"})
@@ -315,7 +316,9 @@ class OutcomeAttestationService:
         if not valid:
             raise PermissionError(reason)
 
-        claim_ok = self._verify_claim(claim, historical_attestor)
+        claim_ok = self._verify_claim(
+            claim, historical_attestor, historical_at=payload.get("attested_at"),
+        )
         return {
             "valid": True,
             "reason": "valid stored outcome attestation at historical governance state",
@@ -328,6 +331,8 @@ class OutcomeAttestationService:
         self,
         claim: dict[str, Any],
         registered_attestor: dict[str, Any],
+        *,
+        historical_at: float | None = None,
     ) -> dict[str, Any]:
         if claim.get("outcome_claim_version") != 1:
             raise ValueError("unsupported outcome claim version")
@@ -347,13 +352,29 @@ class OutcomeAttestationService:
             enrollment = self.storage.wallet_enrollment_for_wallet(
                 claim["agent_id"], submission.get("chain_id"), submission.get("sender", "")
             )
-            if enrollment is None or enrollment["status"] != "ACTIVE":
-                raise PermissionError("Anna installation wallet enrollment is not active")
-            if receipt_payload.get("network") != enrollment["network"]:
+            if enrollment is None:
+                raise PermissionError("Anna installation wallet enrollment is missing")
+            if historical_at is None:
+                # New incoming attestations must always use the current active
+                # enrollment, even when historical proof replay is supported.
+                if enrollment["status"] != "ACTIVE":
+                    raise PermissionError("Anna installation wallet enrollment is not active")
+                verified_enrollment = enrollment
+            else:
+                history = self.storage.wallet_enrollment_governance_actions(claim["agent_id"])
+                historical_ok, historical_reason, historical_enrollment = (
+                    resolve_historical_wallet_enrollment(
+                        history, enrollment, historical_at,
+                    )
+                )
+                if not historical_ok or historical_enrollment is None:
+                    raise PermissionError(historical_reason)
+                verified_enrollment = historical_enrollment
+            if receipt_payload.get("network") != verified_enrollment["network"]:
                 raise ValueError("Anna execution receipt network does not match wallet enrollment")
             try:
                 issuer_public_key = Ed25519PublicKey.from_public_bytes(
-                    base64.b64decode(enrollment["issuer_public_key_b64"], validate=True)
+                    base64.b64decode(verified_enrollment["issuer_public_key_b64"], validate=True)
                 )
             except (ValueError, TypeError):
                 raise ValueError("enrolled Anna installation issuer key is invalid") from None
