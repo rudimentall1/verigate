@@ -1208,6 +1208,28 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         )
         result = verify_manifest(rebuilt, rebuilt["issuer_public_key_b64"])
         self.assertTrue(result["valid"], result)
+        proof_path = Path(self.tmp.name) / "test_evidence_graph_rebuild_accepts_historical_attestation_after_governance_revocation.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(rebuilt))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(
+            standalone.returncode,
+            0,
+            standalone.stdout + standalone.stderr,
+        )
 
     def test_evidence_graph_rebuild_uses_historical_key_after_governance_rotation(self):
         manifest = self._valid_manifest()
@@ -1266,6 +1288,28 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         )
         result = verify_manifest(rebuilt, rebuilt["issuer_public_key_b64"])
         self.assertTrue(result["valid"], result)
+        proof_path = Path(self.tmp.name) / "test_evidence_graph_rebuild_uses_historical_key_after_governance_rotation.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(rebuilt))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(
+            standalone.returncode,
+            0,
+            standalone.stdout + standalone.stderr,
+        )
 
 
 if __name__ == "__main__":
