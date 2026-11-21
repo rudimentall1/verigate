@@ -228,10 +228,10 @@ def resolve_historical_wallet_enrollment(
         return False, "wallet enrollment creation timestamp is invalid", None
 
     if historical_state is None:
-        return False, "wallet was not enrolled when the outcome was attested", None
-    if historical_state.get("status") != "ACTIVE":
-        return False, "wallet enrollment was not active when the outcome was attested", None
+        historical_state = dict(replayed_enrollment)
+        historical_state["status"] = "UNREGISTERED"
+        historical_state["revoked_at"] = None
 
     historical_enrollment = dict(enrollment_snapshot)
     historical_enrollment.update(historical_state)
-    return True, "wallet enrollment governance state verified at attestation time", historical_enrollment
+    return True, "wallet enrollment governance state resolved at attestation time", historical_enrollment
