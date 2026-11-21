@@ -343,6 +343,28 @@ CREATE TABLE IF NOT EXISTS wallet_enrollment_governance_actions (
 CREATE INDEX IF NOT EXISTS idx_wallet_enrollment_actions_scope
     ON wallet_enrollment_governance_actions(installation_principal, created_at);
 
+CREATE TABLE IF NOT EXISTS wallet_governance_outbox (
+    outbox_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+    action_id TEXT NOT NULL UNIQUE,
+    installation_principal TEXT NOT NULL,
+    enrollment_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    envelope_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING'
+        CHECK (status IN ('PENDING', 'DELIVERED')),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    last_error TEXT,
+    delivered_bundle_json TEXT,
+    created_at REAL NOT NULL,
+    delivered_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_governance_outbox_pending
+    ON wallet_governance_outbox(status, installation_principal, outbox_sequence);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_governance_outbox_enrollment
+    ON wallet_governance_outbox(enrollment_id, action, status);
+
 CREATE TABLE IF NOT EXISTS execution_outcome_claims (
     claim_id TEXT PRIMARY KEY,
     authorization_id TEXT NOT NULL,
@@ -1822,14 +1844,30 @@ class Storage:
                     )
                     if cursor.rowcount != 1:
                         raise LookupError("active wallet enrollment not found")
+                recorded_at = time.time()
+                envelope_json = json.dumps(
+                    envelope, sort_keys=True, separators=(",", ":"),
+                )
                 self._conn.execute(
                     "INSERT INTO wallet_enrollment_governance_actions "
                     "(action_id, action_sha256, enrollment_id, installation_principal, action, envelope_json, created_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
                         action["action_id"], envelope["action_sha256"], enrollment_id,
-                        installation_principal, operation,
-                        json.dumps(envelope, sort_keys=True, separators=(",", ":")), time.time(),
+                        installation_principal, operation, envelope_json, recorded_at,
+                    ),
+                )
+                # The transactional outbox is committed with both the registry
+                # transition and signed governance history. A process crash
+                # after this commit cannot lose the intent to notify the
+                # separately administered transparency log.
+                self._conn.execute(
+                    "INSERT INTO wallet_governance_outbox "
+                    "(action_id, installation_principal, enrollment_id, action, envelope_json, status, attempts, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, 'PENDING', 0, ?)",
+                    (
+                        action["action_id"], installation_principal,
+                        enrollment_id, operation, envelope_json, recorded_at,
                     ),
                 )
                 self._conn.commit()
@@ -1889,6 +1927,148 @@ class Storage:
                 (installation_principal,),
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
+
+    def wallet_governance_outbox_events(
+        self,
+        installation_principal: str | None = None,
+    ) -> list[dict]:
+        query = (
+            "SELECT outbox_sequence, action_id, installation_principal, enrollment_id, "
+            "action, envelope_json, status, attempts, last_error, delivered_bundle_json, "
+            "created_at, delivered_at FROM wallet_governance_outbox"
+        )
+        values: tuple = ()
+        if installation_principal is not None:
+            query += " WHERE installation_principal = ?"
+            values = (installation_principal,)
+        query += " ORDER BY outbox_sequence"
+        with self._lock:
+            rows = self._conn.execute(query, values).fetchall()
+        keys = (
+            "outbox_sequence", "action_id", "installation_principal",
+            "enrollment_id", "action", "envelope_json", "status",
+            "attempts", "last_error", "delivered_bundle_json",
+            "created_at", "delivered_at",
+        )
+        events = []
+        for row in rows:
+            event = dict(zip(keys, row))
+            event["envelope"] = json.loads(event.pop("envelope_json"))
+            raw_bundle = event.pop("delivered_bundle_json")
+            event["delivered_bundle"] = json.loads(raw_bundle) if raw_bundle else None
+            events.append(event)
+        return events
+
+    def wallet_governance_outbox_event(self, action_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT outbox_sequence, action_id, installation_principal, enrollment_id, "
+                "action, envelope_json, status, attempts, last_error, delivered_bundle_json, "
+                "created_at, delivered_at FROM wallet_governance_outbox WHERE action_id = ?",
+                (action_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        keys = (
+            "outbox_sequence", "action_id", "installation_principal",
+            "enrollment_id", "action", "envelope_json", "status",
+            "attempts", "last_error", "delivered_bundle_json",
+            "created_at", "delivered_at",
+        )
+        event = dict(zip(keys, row))
+        event["envelope"] = json.loads(event.pop("envelope_json"))
+        raw_bundle = event.pop("delivered_bundle_json")
+        event["delivered_bundle"] = json.loads(raw_bundle) if raw_bundle else None
+        return event
+
+    def wallet_governance_outbox_action_status(self, action_id: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT status FROM wallet_governance_outbox WHERE action_id = ?",
+                (action_id,),
+            ).fetchone()
+        return row[0] if row else None
+
+    def wallet_enrollment_transparency_delivery_status(self, enrollment_id: str) -> str | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT status FROM wallet_governance_outbox "
+                "WHERE enrollment_id = ? AND action = 'WALLET_ENROLL' "
+                "ORDER BY outbox_sequence DESC LIMIT 1",
+                (enrollment_id,),
+            ).fetchone()
+        return row[0] if row else None
+
+    def mark_wallet_governance_outbox_failed(
+        self,
+        action_id: str,
+        error: str,
+    ) -> None:
+        safe_error = str(error)[:1000]
+        with self._lock:
+            self._conn.execute(
+                "UPDATE wallet_governance_outbox "
+                "SET attempts = attempts + 1, last_error = ? "
+                "WHERE action_id = ? AND status = 'PENDING'",
+                (safe_error, action_id),
+            )
+            self._conn.commit()
+
+    def mark_wallet_governance_outbox_delivered(
+        self,
+        action_id: str,
+        bundle: dict,
+    ) -> None:
+        bundle_json = json.dumps(
+            bundle, sort_keys=True, separators=(",", ":"),
+        )
+        checkpoint = bundle.get("checkpoint") if isinstance(bundle, dict) else None
+        if not isinstance(checkpoint, dict) or not isinstance(
+            checkpoint.get("checkpoint_sha256"), str
+        ):
+            raise ValueError("verified wallet transparency checkpoint is required")
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE wallet_governance_outbox "
+                "SET status = 'DELIVERED', attempts = attempts + 1, last_error = NULL, "
+                "delivered_bundle_json = ?, delivered_at = ? "
+                "WHERE action_id = ? AND status = 'PENDING'",
+                (bundle_json, time.time(), action_id),
+            )
+            if cursor.rowcount != 1:
+                row = self._conn.execute(
+                    "SELECT status, delivered_bundle_json FROM wallet_governance_outbox "
+                    "WHERE action_id = ?",
+                    (action_id,),
+                ).fetchone()
+                if row is None:
+                    self._conn.rollback()
+                    raise LookupError("wallet governance outbox action not found")
+                if row[0] != "DELIVERED":
+                    self._conn.rollback()
+                    raise RuntimeError("wallet governance outbox delivery state changed")
+                existing_bundle = json.loads(row[1]) if row[1] else None
+                if (
+                    existing_bundle is None
+                    or existing_bundle.get("checkpoint", {}).get("checkpoint_sha256")
+                    != checkpoint["checkpoint_sha256"]
+                ):
+                    self._conn.rollback()
+                    raise ValueError("wallet governance outbox action was acknowledged with another checkpoint")
+            self._conn.commit()
+
+    def wallet_governance_transparency_bundle(
+        self,
+        installation_principal: str,
+    ) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT delivered_bundle_json FROM wallet_governance_outbox "
+                "WHERE installation_principal = ? AND status = 'DELIVERED' "
+                "ORDER BY outbox_sequence DESC LIMIT 1",
+                (installation_principal,),
+            ).fetchone()
+        return json.loads(row[0]) if row and row[0] else None
 
     def register_outcome_attestor(self, attestor: dict) -> None:
         with self._lock:
