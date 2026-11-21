@@ -260,7 +260,6 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertEqual(observed.effect_status, "SUCCEEDED")
 
         attestor_key = self._attestor()
-        self._last_attestor_private_key = attestor_key
         claim = build_outcome_claim(
             receipt.as_dict(),
             status="SUCCEEDED",
@@ -370,6 +369,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             target_identity="orders-service",
         )
         attestor_key = self._attestor()
+        self._last_attestor_private_key = attestor_key
         claim = build_outcome_claim(
             receipt.as_dict(),
             status="SUCCEEDED",
