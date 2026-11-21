@@ -136,7 +136,7 @@ def verify_learning(claim,att,ev,before,after,entries,policy,expected_head):
  return True,'valid deterministic learning transition'
 
 
-def verify_governance(p, attestor_id):
+def verify_governance(p, attestor_id, attestor_data):
     """Independently verify the governance quorum behind an attestor."""
     nodes = {ref(item): item for item in p.get("nodes", [])}
     actions = [
@@ -339,6 +339,25 @@ def verify_governance(p, attestor_id):
         if action_issued > verification_time + 60:
             return False, "governance action issue time is invalid"
 
+    key_actions = [
+        item for item in actions
+        if item["data"].get("action") in ("ATTESTOR_REGISTER", "ATTESTOR_ROTATE")
+    ]
+    if not key_actions:
+        return False, "attestor governance lineage has no approved registration or rotation key"
+    latest_key_action = max(
+        key_actions,
+        key=lambda item: float(item["data"]["issued_at"]),
+    )["data"]
+    if attestor_data.get("status") != "ACTIVE":
+        return False, "attestor authority is not active in the signed evidence snapshot"
+    if (
+        attestor_data.get("public_key_b64") != latest_key_action.get("public_key_b64")
+        or attestor_data.get("attestor_type") != latest_key_action.get("attestor_type")
+        or attestor_data.get("expires_at") != latest_key_action.get("attestor_expires_at")
+    ):
+        return False, "registered attestor key or scope differs from the latest approved governance action"
+
     return True, "governance policy, signatures and quorum verified"
 
 
@@ -428,7 +447,7 @@ def verify(proof,key):
  if not ok:return bad(why,c)
  attestor_node=node(p,'attestor_authority')
  if attestor_node is None:return bad('attestor authority evidence is missing',c)
- governance_ok,governance_reason=verify_governance(p,attestor_node['id'])
+ governance_ok,governance_reason=verify_governance(p,attestor_node['id'],attestor_node['data'])
  c['governance_quorum']={'valid':governance_ok,'reason':governance_reason}
  if not governance_ok:return bad(governance_reason,c)
  a=node(p,'execution_authorization'); r=node(p,'execution_receipt'); ap=a['data']['payload']; rp=r['data']['payload']; t=rp.get('executed_at')
