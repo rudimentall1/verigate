@@ -16,6 +16,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from attest.receipt import verify_execution_receipt
 from core.authority_state import DynamicAuthorityService
 from core.storage import Storage
+from core.attestor_history import (
+    resolve_historical_attestor,
+    verify_outcome_attestation_signature,
+)
 
 
 OUTCOME_STATUSES = frozenset({"SUCCEEDED", "FAILED", "UNKNOWN"})
@@ -279,34 +283,42 @@ class OutcomeAttestationService:
     ) -> dict[str, Any]:
         payload = attestation["payload"]
         claim = payload["claim"]
-        registered = self.storage.outcome_attestor(payload["attestor_id"])
-        if registered is None or registered["status"] != "ACTIVE":
-            raise PermissionError("outcome attestor is not registered and active")
+        attestor_id = payload["attestor_id"]
+        registered = self.storage.outcome_attestor(attestor_id)
+        if registered is None:
+            raise LookupError("outcome attestor registry entry is missing")
         if payload.get("outcome_attestation_version") != 1:
             raise ValueError("unsupported outcome attestation version")
         if payload.get("claim_sha256") != digest(claim):
             raise ValueError("outcome claim fingerprint mismatch")
+
+        historical_ok, historical_reason, historical_attestor = resolve_historical_attestor(
+            self.storage.attestor_governance_actions(attestor_id),
+            registered,
+            payload.get("attested_at"),
+        )
+        if not historical_ok or historical_attestor is None:
+            raise PermissionError(historical_reason)
+
         expected_type = (
             "EXECUTOR_SELF_REPORT"
-            if registered["attestor_type"] == "EXECUTOR"
-            else registered["attestor_type"]
+            if historical_attestor["attestor_type"] == "EXECUTOR"
+            else historical_attestor["attestor_type"]
         )
         if payload.get("attestor_type") != expected_type:
-            raise PermissionError("attestation type does not match registered attestor")
-        public_key = Ed25519PublicKey.from_public_bytes(
-            base64.b64decode(registered["public_key_b64"])
-        )
-        valid, reason = verify_payload_signature(
-            payload,
-            attestation["signature"],
-            public_key,
+            raise PermissionError("attestation type does not match historical attestor authority")
+
+        valid, reason = verify_outcome_attestation_signature(
+            attestation,
+            historical_attestor,
         )
         if not valid:
             raise PermissionError(reason)
-        claim_ok = self._verify_claim(claim, registered)
+
+        claim_ok = self._verify_claim(claim, historical_attestor)
         return {
             "valid": True,
-            "reason": "valid stored outcome attestation",
+            "reason": "valid stored outcome attestation at historical governance state",
             "claim_sha256": digest(claim),
             "attestation_sha256": digest(attestation),
             "claim_verification": claim_ok,
