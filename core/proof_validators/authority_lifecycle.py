@@ -92,6 +92,145 @@ def _verify_outcome_attestation_signature(
     return True, "outcome attestation signature and historical attestor authority verified"
 
 
+
+def _replay_attestor_governance_state(
+    verified_actions: list[tuple[float, dict[str, Any]]],
+    attestor_data: dict[str, Any],
+    attested_at: float,
+) -> tuple[bool, str, dict[str, Any] | None]:
+    """Replay quorum-approved registry changes and select the key at attested_at.
+
+    The registry node is a snapshot, not the historical source of truth for
+    every attestation. Governance actions determine both its final state and
+    the key that was authorised when the signed outcome was produced.
+    """
+    if not verified_actions:
+        return False, "attestor governance history is empty", None
+
+    ordered_actions = sorted(verified_actions, key=lambda item: item[0])
+    previous_time = None
+    registered = False
+    state = "UNREGISTERED"
+    public_key_b64 = None
+    key_id = None
+    attestor_type = None
+    expires_at = None
+    revoked_at = None
+    state_at_attestation = None
+
+    for effective_at, action in ordered_actions:
+        if previous_time is not None and effective_at <= previous_time:
+            return False, "attestor governance actions have ambiguous or non-monotonic ordering", None
+        previous_time = effective_at
+        operation = action.get("action")
+
+        if operation == "ATTESTOR_REGISTER":
+            if registered:
+                return False, "attestor governance history contains a duplicate registration", None
+            next_key_b64 = action.get("public_key_b64")
+            next_type = action.get("attestor_type")
+            try:
+                raw_key = base64.b64decode(next_key_b64, validate=True)
+                if len(raw_key) != 32:
+                    raise ValueError("Ed25519 key must be 32 bytes")
+                if next_type not in {"EXECUTOR", "EXTERNAL_VERIFIER", "CHAIN_VERIFIER"}:
+                    raise ValueError("invalid attestor type")
+                next_expiry = action.get("attestor_expires_at")
+                if next_expiry is not None and (
+                    isinstance(next_expiry, bool)
+                    or not isinstance(next_expiry, (int, float))
+                    or not math.isfinite(float(next_expiry))
+                ):
+                    raise ValueError("invalid attestor expiry")
+            except (TypeError, ValueError):
+                return False, "attestor registration contains an invalid key, type or expiry", None
+            registered = True
+            state = "ACTIVE"
+            public_key_b64 = next_key_b64
+            key_id = hashlib.sha256(raw_key).hexdigest()
+            attestor_type = next_type
+            expires_at = next_expiry
+            revoked_at = None
+
+        elif operation == "ATTESTOR_ACTIVATE":
+            if not registered:
+                return False, "attestor activation precedes registration", None
+            state = "ACTIVE"
+
+        elif operation == "ATTESTOR_ROTATE":
+            if not registered:
+                return False, "attestor rotation precedes registration", None
+            next_key_b64 = action.get("public_key_b64")
+            next_type = action.get("attestor_type")
+            try:
+                raw_key = base64.b64decode(next_key_b64, validate=True)
+                if len(raw_key) != 32:
+                    raise ValueError("Ed25519 key must be 32 bytes")
+                if next_type not in {"EXECUTOR", "EXTERNAL_VERIFIER", "CHAIN_VERIFIER"}:
+                    raise ValueError("invalid attestor type")
+                next_expiry = action.get("attestor_expires_at")
+                if next_expiry is not None and (
+                    isinstance(next_expiry, bool)
+                    or not isinstance(next_expiry, (int, float))
+                    or not math.isfinite(float(next_expiry))
+                ):
+                    raise ValueError("invalid attestor expiry")
+            except (TypeError, ValueError):
+                return False, "attestor rotation contains an invalid key, type or expiry", None
+            state = "ACTIVE"
+            public_key_b64 = next_key_b64
+            key_id = hashlib.sha256(raw_key).hexdigest()
+            attestor_type = next_type
+            expires_at = next_expiry
+            revoked_at = None
+
+        elif operation == "ATTESTOR_REVOKE":
+            if not registered or state != "ACTIVE":
+                return False, "attestor revocation does not follow an active registration", None
+            state = "REVOKED"
+            revoked_at = effective_at
+
+        elif operation == "ATTESTOR_EXPIRE":
+            if not registered:
+                return False, "attestor expiry precedes registration", None
+            state = "EXPIRED"
+
+        else:
+            return False, "unsupported attestor governance state transition", None
+
+        if effective_at <= attested_at:
+            state_at_attestation = {
+                "status": state,
+                "public_key_b64": public_key_b64,
+                "key_id": key_id,
+                "attestor_type": attestor_type,
+                "expires_at": expires_at,
+                "revoked_at": revoked_at,
+            }
+
+    if not registered:
+        return False, "attestor governance history has no registration", None
+
+    if (
+        attestor_data.get("status") != state
+        or attestor_data.get("public_key_b64") != public_key_b64
+        or attestor_data.get("key_id") != key_id
+        or attestor_data.get("attestor_type") != attestor_type
+        or attestor_data.get("expires_at") != expires_at
+        or bool(attestor_data.get("revoked_at")) != bool(revoked_at)
+    ):
+        return False, "attestor registry snapshot does not match replayed governance state", None
+
+    if state_at_attestation is None:
+        return False, "attestor was not registered when the outcome was attested", None
+    if state_at_attestation["status"] != "ACTIVE":
+        return False, "attestor was not active when the outcome was attested", None
+
+    historical_attestor = dict(attestor_data)
+    historical_attestor.update(state_at_attestation)
+    return True, "attestor governance state and historical key verified", historical_attestor
+
+
 def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> tuple[bool, str]:
     spec, node_types, edges, error = validate_requirements(payload, profile)
     if error:
@@ -266,13 +405,6 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         return False, "outcome attestation authorization binding is inconsistent"
     if attestor["id"] != attestation_payload.get("attestor_id") or attestor["data"].get("attestor_id") != attestor["id"]:
         return False, "outcome attestation is not bound to the registered attestor"
-    attestation_signature_ok, attestation_signature_reason = _verify_outcome_attestation_signature(
-        attestation["data"],
-        attestor["data"],
-    )
-    if not attestation_signature_ok:
-        return False, attestation_signature_reason
-
     if identity["id"] != execution_payload.get("identity_id") or identity["data"].get("agent_id") != payload["agent_id"]:
         return False, "identity binding is inconsistent with execution authorization"
     if capability["id"] != execution_payload.get("capability_id") or capability["data"].get("agent_id") != payload["agent_id"]:
@@ -337,6 +469,7 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         f"{node['type']}:{node['id']}": node
         for node in payload.get("nodes", [])
     }
+    verified_governance_actions: list[tuple[float, dict[str, Any]]] = []
     for action_node in governed_actions:
         action_id = action_node["id"]
         action_data = action_node["data"]
@@ -430,25 +563,30 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
             return False, f"invalid governance quorum evidence: {exc}"
         if not valid_quorum:
             return False, f"governance quorum verification failed: {quorum_reason}"
+        verified_governance_actions.append((verification_time, action_data))
 
-    key_actions = [
-        node for node in governed_actions
-        if node["data"].get("action") in {"ATTESTOR_REGISTER", "ATTESTOR_ROTATE"}
-    ]
-    if not key_actions:
-        return False, "attestor governance lineage has no approved registration or rotation key"
-    latest_key_action = max(
-        key_actions,
-        key=lambda node: float(node["data"]["issued_at"]),
-    )["data"]
-    registered_attestor = attestor["data"]
-    if registered_attestor.get("status") != "ACTIVE":
-        return False, "attestor authority is not active in the signed evidence snapshot"
+    attestation_payload = attestation["data"].get("payload", {})
+    attested_at = attestation_payload.get("attested_at")
     if (
-        registered_attestor.get("public_key_b64") != latest_key_action.get("public_key_b64")
-        or registered_attestor.get("attestor_type") != latest_key_action.get("attestor_type")
-        or registered_attestor.get("expires_at") != latest_key_action.get("attestor_expires_at")
+        isinstance(attested_at, bool)
+        or not isinstance(attested_at, (int, float))
+        or not math.isfinite(float(attested_at))
     ):
-        return False, "registered attestor key or scope differs from the latest approved governance action"
+        return False, "outcome attestation timestamp is invalid"
+    governance_state_ok, governance_state_reason, historical_attestor = (
+        _replay_attestor_governance_state(
+            verified_governance_actions,
+            attestor["data"],
+            float(attested_at),
+        )
+    )
+    if not governance_state_ok or historical_attestor is None:
+        return False, governance_state_reason
+    attestation_signature_ok, attestation_signature_reason = _verify_outcome_attestation_signature(
+        attestation["data"],
+        historical_attestor,
+    )
+    if not attestation_signature_ok:
+        return False, attestation_signature_reason
 
     return True, "authority lifecycle proof profile satisfied"
