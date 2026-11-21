@@ -1,9 +1,15 @@
 """Authority lifecycle proof-profile semantics."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import math
 from typing import Any
-from core.proof_engine import digest
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+from core.proof_engine import canonical, digest
 from core.authority_protocol import Authority, AuthorityState as GenesisAuthorityState
 from core.governance import GovernancePolicy, verify_governance_quorum
 from .common import (
@@ -15,6 +21,76 @@ from .common import (
     validate_authority_learning_binding,
     validate_historical_authority_binding,
 )
+
+def _verify_outcome_attestation_signature(
+    attestation_data: dict[str, Any],
+    attestor_data: dict[str, Any],
+) -> tuple[bool, str]:
+    """Verify the independent outcome signature against its registered key.
+
+    Expiry and revocation are evaluated at attestation time so later governance
+    changes do not retroactively invalidate an otherwise valid historical proof.
+    """
+    if not isinstance(attestation_data, dict) or attestation_data.get("algorithm") != "Ed25519":
+        return False, "unsupported outcome attestation signature algorithm"
+    attestation_payload = attestation_data.get("payload")
+    if not isinstance(attestation_payload, dict):
+        return False, "outcome attestation payload is malformed"
+
+    attestor_id = attestation_payload.get("attestor_id")
+    if attestor_id != attestor_data.get("attestor_id"):
+        return False, "outcome attestation signer identity mismatch"
+
+    registered_type = attestor_data.get("attestor_type")
+    expected_type = (
+        "EXECUTOR_SELF_REPORT"
+        if registered_type == "EXECUTOR"
+        else registered_type
+    )
+    if expected_type not in {"EXECUTOR_SELF_REPORT", "EXTERNAL_VERIFIER", "CHAIN_VERIFIER"}:
+        return False, "registered outcome attestor type is invalid"
+    if attestation_payload.get("attestor_type") != expected_type:
+        return False, "outcome attestation type does not match registered attestor"
+
+    attested_at = attestation_payload.get("attested_at")
+    created_at = attestor_data.get("created_at")
+    if (
+        isinstance(attested_at, bool)
+        or not isinstance(attested_at, (int, float))
+        or not math.isfinite(float(attested_at))
+        or isinstance(created_at, bool)
+        or not isinstance(created_at, (int, float))
+        or not math.isfinite(float(created_at))
+        or float(attested_at) < float(created_at)
+    ):
+        return False, "outcome attestation time is invalid for registered attestor authority"
+
+    for field, comparison in (("expires_at", "expiry"), ("revoked_at", "revocation")):
+        boundary = attestor_data.get(field)
+        if boundary is not None:
+            if (
+                isinstance(boundary, bool)
+                or not isinstance(boundary, (int, float))
+                or not math.isfinite(float(boundary))
+            ):
+                return False, f"registered attestor {comparison} time is invalid"
+            if float(attested_at) >= float(boundary):
+                return False, f"outcome attestor authority had {comparison} before attestation"
+
+    public_key_b64 = attestor_data.get("public_key_b64")
+    try:
+        raw_public_key = base64.b64decode(public_key_b64, validate=True)
+        if len(raw_public_key) != 32:
+            raise ValueError("Ed25519 public key must be 32 bytes")
+        if hashlib.sha256(raw_public_key).hexdigest() != attestor_data.get("key_id"):
+            raise ValueError("registered attestor key fingerprint mismatch")
+        public_key = Ed25519PublicKey.from_public_bytes(raw_public_key)
+        signature = base64.b64decode(attestation_data.get("signature"), validate=True)
+        public_key.verify(signature, canonical(attestation_payload))
+    except (InvalidSignature, TypeError, ValueError):
+        return False, "outcome attestation signature verification failed"
+    return True, "outcome attestation signature and historical attestor authority verified"
+
 
 def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> tuple[bool, str]:
     spec, node_types, edges, error = validate_requirements(payload, profile)
@@ -188,6 +264,12 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         return False, "outcome attestation authorization binding is inconsistent"
     if attestor["id"] != attestation_payload.get("attestor_id") or attestor["data"].get("attestor_id") != attestor["id"]:
         return False, "outcome attestation is not bound to the registered attestor"
+    attestation_signature_ok, attestation_signature_reason = _verify_outcome_attestation_signature(
+        attestation["data"],
+        attestor["data"],
+    )
+    if not attestation_signature_ok:
+        return False, attestation_signature_reason
 
     if identity["id"] != execution_payload.get("identity_id") or identity["data"].get("agent_id") != payload["agent_id"]:
         return False, "identity binding is inconsistent with execution authorization"
