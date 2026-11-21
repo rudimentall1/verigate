@@ -415,7 +415,103 @@ def verify_outcome_attestation(attestation, attestor):
         return False, "outcome attestation signature verification failed"
     return True, "outcome attestation signature and historical authority verified"
 
-def verify(proof,key):
+def normalize_trusted_governance_policy_digests(values):
+    if values is None:
+        return None
+    if isinstance(values, str):
+        values = [values]
+    if not isinstance(values, (list, tuple, set)) or not values:
+        raise ValueError("at least one trusted governance policy digest is required")
+    normalized = set()
+    for value in values:
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdefABCDEF" for character in value)
+        ):
+            raise ValueError(
+                "trusted governance policy digest must be exactly 64 hexadecimal characters"
+            )
+        normalized.add(value.lower())
+    return normalized
+
+
+def trusted_policy_digest_argument(value):
+    try:
+        normalized = normalize_trusted_governance_policy_digests([value])
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    return next(iter(normalized))
+
+
+def verify_governance_policy_trust_anchor(p, attestor_id, trusted_digests):
+    actions = [
+        item for item in p.get("nodes", [])
+        if item.get("type") == "governance_action"
+        and isinstance(item.get("data"), dict)
+        and item["data"].get("attestor_id") == attestor_id
+        and edge(
+            p,
+            f"attestor_authority:{attestor_id}",
+            "DERIVED_FROM",
+            ref(item),
+        )
+    ]
+    policy_digests = sorted({
+        item["data"].get("governance_policy_sha256")
+        for item in actions
+    })
+    if not actions or not policy_digests or any(not isinstance(item, str) for item in policy_digests):
+        return {
+            "valid": False,
+            "pinned": trusted_digests is not None,
+            "policy_sha256": policy_digests,
+            "trusted_policy_sha256": sorted(trusted_digests or ()),
+            "untrusted_policy_sha256": policy_digests,
+            "reason": "governance policy digests are missing from attestor lineage",
+        }
+    if trusted_digests is None:
+        return {
+            "valid": True,
+            "pinned": False,
+            "policy_sha256": policy_digests,
+            "trusted_policy_sha256": [],
+            "untrusted_policy_sha256": [],
+            "reason": (
+                "no trusted governance policy digest supplied; policy integrity and "
+                "quorum are verified, but the governance roster is not externally pinned"
+            ),
+        }
+    untrusted = sorted(set(policy_digests) - trusted_digests)
+    if untrusted:
+        return {
+            "valid": False,
+            "pinned": True,
+            "policy_sha256": policy_digests,
+            "trusted_policy_sha256": sorted(trusted_digests),
+            "untrusted_policy_sha256": untrusted,
+            "reason": (
+                "governance policy digest is not present in the trusted allowlist: "
+                + ", ".join(untrusted)
+            ),
+        }
+    return {
+        "valid": True,
+        "pinned": True,
+        "policy_sha256": policy_digests,
+        "trusted_policy_sha256": sorted(trusted_digests),
+        "untrusted_policy_sha256": [],
+        "reason": "every governance policy in the attestor lineage matches the trusted allowlist",
+    }
+
+
+def verify(proof,key,trusted_governance_policy_sha256=None):
+ try:
+  trusted_policy_digests = normalize_trusted_governance_policy_digests(
+   trusted_governance_policy_sha256
+  )
+ except ValueError as exc:
+  return bad(str(exc),{})
  c={}; d=json.loads(Path(proof).read_text(encoding='utf-8')); trusted=load_trusted_key(key); pkg=d.get('package'); ph=d.get('package_sha256')
  c['package_integrity']={'valid':isinstance(pkg,dict) and sha(pkg)==ph}
  if not c['package_integrity']['valid']:return bad('package digest mismatch',c)
@@ -450,6 +546,11 @@ def verify(proof,key):
  governance_ok,governance_reason=verify_governance(p,attestor_node['id'],attestor_node['data'])
  c['governance_quorum']={'valid':governance_ok,'reason':governance_reason}
  if not governance_ok:return bad(governance_reason,c)
+ policy_trust = verify_governance_policy_trust_anchor(
+  p, attestor_node['id'], trusted_policy_digests
+ )
+ c['governance_policy_trust_anchor'] = policy_trust
+ if not policy_trust['valid']:return bad(policy_trust['reason'],c)
  a=node(p,'execution_authorization'); r=node(p,'execution_receipt'); ap=a['data']['payload']; rp=r['data']['payload']; t=rp.get('executed_at')
  identity_node=node(p,'identity'); capability_node=node(p,'capability'); intent_node=node(p,'action_intent'); authority_node=node(p,'authority_state'); genesis_node=node(p,'genesis_authority')
  if any(x is None for x in (identity_node,capability_node,intent_node,authority_node,genesis_node)): return bad('authority binding evidence incomplete',c)
@@ -519,14 +620,40 @@ def verify(proof,key):
  if not c['post_learning_authority']['valid']:return bad('post-learning authority is not ledger-bound',c)
  return {'valid':True,'protocol':PROTOCOL,'root_digest':p['root_digest'],'package_sha256':ph,'assertion_set_sha256':pkg.get('assertion_set_sha256'),'checks':c}
 def main():
- x=argparse.ArgumentParser();x.add_argument('proof');x.add_argument('--public-key',required=True);x.add_argument('--format',choices=['text','json'],default='text');a=x.parse_args()
+ x=argparse.ArgumentParser()
+ x.add_argument('proof')
+ x.add_argument('--public-key',required=True)
+ x.add_argument(
+  '--trusted-governance-policy-sha256',
+  action='append',
+  type=trusted_policy_digest_argument,
+  default=None,
+  metavar='SHA256',
+  help=(
+   'trusted governance policy digest (repeat for each accepted policy version); '
+   'every policy in the attestor lineage must match one supplied digest'
+  ),
+ )
+ x.add_argument('--format',choices=['text','json'],default='text')
+ a=x.parse_args()
  try:
-  r=verify(a.proof,a.public_key)
+  r=verify(a.proof,a.public_key,a.trusted_governance_policy_sha256)
  except Exception as exc:
   r=bad('verification failed closed: '+str(exc),{})
- if a.format=='json':print(json.dumps(r,indent=2,sort_keys=True))
+ if a.format=='json':
+  print(json.dumps(r,indent=2,sort_keys=True))
  else:
-  print('VERIGATE AUTHORITY PROOF - STANDALONE');print('Protocol:',r.get('protocol',PROTOCOL));[print(f"{k.upper():28} {'PASS' if v.get('valid') else 'FAIL'}") for k,v in r.get('checks',{}).items()];print('RESULT:', 'VALID' if r.get('valid') else 'INVALID'); print('Reason:',r['reason']) if not r.get('valid') else None
+  print('VERIGATE AUTHORITY PROOF - STANDALONE')
+  print('Protocol:',r.get('protocol',PROTOCOL))
+  for k,v in r.get('checks',{}).items():
+   if k == 'governance_policy_trust_anchor' and not v.get('pinned'):
+    status='NOT PINNED'
+   else:
+    status='PASS' if v.get('valid') else 'FAIL'
+   print(f"{k.upper():28} {status}")
+  print('RESULT:', 'VALID' if r.get('valid') else 'INVALID')
+  if not r.get('valid'):
+   print('Reason:',r['reason'])
  return 0 if r.get('valid') else 1
 if __name__=='__main__':raise SystemExit(main())
 
