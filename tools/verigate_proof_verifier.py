@@ -341,6 +341,61 @@ def verify_governance(p, attestor_id):
 
     return True, "governance policy, signatures and quorum verified"
 
+
+def verify_outcome_attestation(attestation, attestor):
+    """Verify the independent attestor signature and authority at attestation time."""
+    if not isinstance(attestation, dict) or attestation.get("algorithm") != "Ed25519":
+        return False, "unsupported outcome attestation signature algorithm"
+    payload = attestation.get("payload")
+    if not isinstance(payload, dict):
+        return False, "outcome attestation payload is malformed"
+    if payload.get("attestor_id") != attestor.get("attestor_id"):
+        return False, "outcome attestation signer identity mismatch"
+
+    registered_type = attestor.get("attestor_type")
+    expected_type = "EXECUTOR_SELF_REPORT" if registered_type == "EXECUTOR" else registered_type
+    if expected_type not in ("EXECUTOR_SELF_REPORT", "EXTERNAL_VERIFIER", "CHAIN_VERIFIER"):
+        return False, "registered outcome attestor type is invalid"
+    if payload.get("attestor_type") != expected_type:
+        return False, "outcome attestation type does not match registered attestor"
+
+    attested_at = payload.get("attested_at")
+    created_at = attestor.get("created_at")
+    if (
+        isinstance(attested_at, bool)
+        or not isinstance(attested_at, (int, float))
+        or not math.isfinite(float(attested_at))
+        or isinstance(created_at, bool)
+        or not isinstance(created_at, (int, float))
+        or not math.isfinite(float(created_at))
+        or float(attested_at) < float(created_at)
+    ):
+        return False, "outcome attestation time is invalid for registered attestor authority"
+
+    for field, label in (("expires_at", "expiry"), ("revoked_at", "revocation")):
+        boundary = attestor.get(field)
+        if boundary is not None:
+            if (
+                isinstance(boundary, bool)
+                or not isinstance(boundary, (int, float))
+                or not math.isfinite(float(boundary))
+            ):
+                return False, f"registered attestor {label} time is invalid"
+            if float(attested_at) >= float(boundary):
+                return False, f"outcome attestor authority had {label} before attestation"
+
+    try:
+        raw_key = b64(attestor.get("public_key_b64"))
+        if len(raw_key) != 32:
+            return False, "registered attestor Ed25519 public key must be 32 bytes"
+        if hashlib.sha256(raw_key).hexdigest() != attestor.get("key_id"):
+            return False, "registered attestor public-key fingerprint mismatch"
+        public_key = Ed25519PublicKey.from_public_bytes(raw_key)
+        public_key.verify(b64(attestation.get("signature")), canon(payload))
+    except (InvalidSignature, TypeError, ValueError):
+        return False, "outcome attestation signature verification failed"
+    return True, "outcome attestation signature and historical authority verified"
+
 def verify(proof,key):
  c={}; d=json.loads(Path(proof).read_text(encoding='utf-8')); trusted=load_trusted_key(key); pkg=d.get('package'); ph=d.get('package_sha256')
  c['package_integrity']={'valid':isinstance(pkg,dict) and sha(pkg)==ph}
@@ -437,7 +492,9 @@ def verify(proof,key):
  if not c['historical_authority']['valid']:return bad('historical authority binding failed',c)
  h_ok,h_reason=verify_historical(authority_data,l,ap.get('authority_policy') or {},head); c['historical_authority_semantics']={'valid':h_ok,'reason':h_reason}
  if not h_ok:return bad('historical authority semantics failed',c)
- cl=node(p,'outcome_claim'); oe=node(p,'observed_effect'); at=node(p,'outcome_attestation'); ev=node(p,'authority_event'); af=node(p,'authority_state_after'); claim_data=cl['data']; observed_data=oe['data']; att_payload=at['data'].get('payload',{}); out=edge(p,ref(r),'OBSERVED_BY',ref(cl)) and edge(p,ref(cl),'SUPPORTED_BY',ref(oe)) and claim_data.get('execution_receipt_sha256')==sha(r['data']) and claim_data.get('observed_effect_sha256')==sha(observed_data) and oe['id']==claim_data.get('observed_effect_sha256') and observed_data.get('authorization_id')==ap.get('authorization_id') and observed_data.get('action_sha256')==claim_data.get('action_sha256') and observed_data.get('evidence_ref')==claim_data.get('evidence_ref') and observed_data.get('result_sha256')==claim_data.get('result_sha256') and observed_data.get('observation_sha256')==sha({'verifier_type':observed_data.get('verifier_type'),'evidence_kind':observed_data.get('evidence_kind'),'effect_status':observed_data.get('effect_status'),'authorization_id':observed_data.get('authorization_id'),'action_sha256':observed_data.get('action_sha256'),'observed_at':observed_data.get('observed_at'),'evidence_ref':observed_data.get('evidence_ref'),'result_sha256':observed_data.get('result_sha256'),'observation':observed_data.get('observation')}) and edge(p,ref(at),'ATTESTS',ref(cl)) and att_payload.get('claim_sha256')==sha(claim_data) and att_payload.get('claim',{}).get('claim_id')==claim_data.get('claim_id'); c['outcome']={'valid':out}; learn_ok,learn_reason=verify_learning(claim_data,att_payload,ev['data'],authority_node['data'],af['data'],l,ap.get('authority_policy') or {},ap.get('authority_ledger_head_hash','')); learn=learn_ok; c['learning']={'valid':learn,'reason':learn_reason}
+ cl=node(p,'outcome_claim'); oe=node(p,'observed_effect'); at=node(p,'outcome_attestation'); ev=node(p,'authority_event'); af=node(p,'authority_state_after'); claim_data=cl['data']; observed_data=oe['data']; att_payload=at['data'].get('payload',{});  attestor_data=attestor_node['data']; attestor_signature_ok,attestor_signature_reason=verify_outcome_attestation(at['data'],attestor_data); c['outcome_attestation_signature']={'valid':attestor_signature_ok,'reason':attestor_signature_reason}; 
+ if not attestor_signature_ok:return bad(attestor_signature_reason,c)
+out=edge(p,ref(r),'OBSERVED_BY',ref(cl)) and edge(p,ref(cl),'SUPPORTED_BY',ref(oe)) and claim_data.get('execution_receipt_sha256')==sha(r['data']) and claim_data.get('observed_effect_sha256')==sha(observed_data) and oe['id']==claim_data.get('observed_effect_sha256') and observed_data.get('authorization_id')==ap.get('authorization_id') and observed_data.get('action_sha256')==claim_data.get('action_sha256') and observed_data.get('evidence_ref')==claim_data.get('evidence_ref') and observed_data.get('result_sha256')==claim_data.get('result_sha256') and observed_data.get('observation_sha256')==sha({'verifier_type':observed_data.get('verifier_type'),'evidence_kind':observed_data.get('evidence_kind'),'effect_status':observed_data.get('effect_status'),'authorization_id':observed_data.get('authorization_id'),'action_sha256':observed_data.get('action_sha256'),'observed_at':observed_data.get('observed_at'),'evidence_ref':observed_data.get('evidence_ref'),'result_sha256':observed_data.get('result_sha256'),'observation':observed_data.get('observation')}) and edge(p,ref(at),'ATTESTS',ref(cl)) and att_payload.get('claim_sha256')==sha(claim_data) and att_payload.get('claim',{}).get('claim_id')==claim_data.get('claim_id'); c['outcome']={'valid':out}; learn_ok,learn_reason=verify_learning(claim_data,att_payload,ev['data'],authority_node['data'],af['data'],l,ap.get('authority_policy') or {},ap.get('authority_ledger_head_hash','')); learn=learn_ok; c['learning']={'valid':learn,'reason':learn_reason}
  if not out or not learn:return bad('outcome or learning binding failed',c)
  eh=next((x.get('event_hash') for x in l if x.get('event_id')==ev['data'].get('event_id')),None); c['post_learning_authority']={'valid':eh is not None and af['data'].get('ledger_head_hash')==eh}
  if not c['post_learning_authority']['valid']:return bad('post-learning authority is not ledger-bound',c)
