@@ -142,6 +142,20 @@ python scripts/wallet_governance_outbox_worker.py \
 
 Run this worker under a process supervisor (for example, systemd) with automatic restart. It performs an initial sweep on startup, then retries pending records periodically. `--once` performs a single sweep and exits non-zero if any event remains pending. The outbox lease coordinates the worker with delivery attempts made synchronously during `WalletEnrollmentService.apply`; multiple worker instances are safe to run, although a second worker for the same installation will report `BUSY` while another holds its lease.
 
+### Bearer-token rotation
+
+The reference log service supports a bounded overlap window during credential rotation. Keep the current token in `VERIGATE_WALLET_GOVERNANCE_LOG_BEARER_TOKEN`; while clients are being migrated, configure one or more previous tokens as a comma-separated list in `VERIGATE_WALLET_GOVERNANCE_LOG_PREVIOUS_BEARER_TOKENS`. Every configured token must be unique, at least 32 printable ASCII characters, and delivered through the secret manager.
+
+Rotation procedure:
+
+1. Generate a new high-entropy token and add it as the service's current token. Keep the old token in the previous-token list.
+2. Roll the new token to all Verigate API instances and outbox workers.
+3. Confirm that delivery succeeds from every instance and that no old worker remains.
+4. Remove the old token from the previous-token list and restart the log service.
+5. If compromise is suspected, do not use an overlap period: remove the compromised token immediately, issue a new token, and accept that stale clients will fail closed until reconfigured.
+
+The endpoint compares the supplied credential against every configured token using constant-time comparisons. This is a compatibility window, not token revocation automation: operators must remove retired tokens and restart/reload the service. The reference service does not persist bearer tokens or provide per-client identities/audit attribution.
+
 The HTTP client refuses plain HTTP except to loopback addresses, disables redirects to avoid forwarding credentials to another host, applies bounded request/response sizes, and uses a finite timeout. Keep the transport timeout below the outbox lease duration. The HTTP service and local SQLite writer are a reference deployment; production still needs TLS/reverse-proxy configuration, secret rotation, operational monitoring, backups, and independent checkpoint distribution.
 
 Until the external log receives every accepted action and its latest checkpoint is pinned by the offline verifier, the wallet transparency check is explicitly `pinned=false`.
