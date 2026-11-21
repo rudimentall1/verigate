@@ -81,7 +81,22 @@ class EvidenceGraph:
             "reason": reason,
         }
         governance_policy_id = envelope.get("governance_policy_sha256") or policy.digest
-        nodes.append(_node("governance_policy", governance_policy_id, policy_data))
+        existing_policy_node = next(
+            (
+                node for node in nodes
+                if node.get("type") == "governance_policy"
+                and node.get("id") == governance_policy_id
+            ),
+            None,
+        )
+        if existing_policy_node is None:
+            nodes.append(_node("governance_policy", governance_policy_id, policy_data))
+        elif existing_policy_node.get("data") != policy_data:
+            verification[f"governance:{action.get('action_id', subject_id)}"] = {
+                "valid": False,
+                "reason": "governance policy digest is reused for different policy content",
+            }
+            return
         action_id = action.get("action_id", subject_id)
         nodes.append(_node("governance_action", action_id, action))
         edges.append({

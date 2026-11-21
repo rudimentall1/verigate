@@ -170,6 +170,83 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         )
         return key
 
+    def test_evidence_graph_deduplicates_reused_attestor_governance_policy(self):
+        policy = GovernancePolicy(
+            policy_id="shared-attestor-governance",
+            version=1,
+            threshold=1,
+            members=(
+                GovernanceMember.from_public_key(
+                    self.governance_key.public_key(), "governor"
+                ),
+            ),
+            allowed_actions=("ATTESTOR_REGISTER", "ATTESTOR_ROTATE"),
+        )
+        attestor_key = Ed25519PrivateKey.generate()
+        attestor_public_key = base64.b64encode(
+            attestor_key.public_key().public_bytes(
+                serialization.Encoding.Raw,
+                serialization.PublicFormat.Raw,
+            )
+        ).decode()
+        service = AttestorAuthorityService(self.storage)
+        graph = EvidenceGraph(self.storage, self.public_key)
+        nodes = []
+        edges = []
+        verification = {}
+
+        for index, operation in enumerate(
+            ("ATTESTOR_REGISTER", "ATTESTOR_ROTATE"),
+            start=1,
+        ):
+            action = service.build_action(
+                action=operation,
+                attestor_id="shared-policy-attestor",
+                reason=f"test {operation.lower()}",
+                governance_policy_sha256=policy.digest,
+                public_key_b64=attestor_public_key,
+                attestor_type="EXTERNAL_VERIFIER",
+                action_id=f"shared-policy-action-{index}",
+                nonce=f"shared-policy-nonce-{index}",
+            )
+            envelope = {
+                "action": action,
+                "approvals": [_governance_approval(action, self.governance_key)],
+                "governance_policy": policy.as_dict(),
+                "governance_policy_sha256": policy.digest,
+            }
+            graph._add_governance_envelope(
+                envelope,
+                subject_type="attestor_authority",
+                subject_id="shared-policy-attestor",
+                relation="GOVERNS",
+                verification=verification,
+                nodes=nodes,
+                edges=edges,
+            )
+
+        policy_nodes = [
+            node for node in nodes
+            if node["type"] == "governance_policy"
+        ]
+        action_nodes = [
+            node for node in nodes
+            if node["type"] == "governance_action"
+        ]
+
+        self.assertEqual(len(policy_nodes), 1)
+        self.assertEqual(policy_nodes[0]["id"], policy.digest)
+        self.assertEqual(len(action_nodes), 2)
+        self.assertEqual(
+            sum(
+                edge["relation"] == "GOVERNS"
+                and edge["from"].startswith("governance_policy:")
+                for edge in edges
+            ),
+            2,
+        )
+        self.assertTrue(all(item["valid"] for item in verification.values()))
+
     def test_reference_lifecycle_is_offline_verifiable(self):
         authorization, receipt = self._authorized_execution()
         observed = MCPToolVerifier().verify_result(
@@ -292,6 +369,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             target_identity="orders-service",
         )
         attestor_key = self._attestor()
+        self._last_attestor_private_key = attestor_key
         claim = build_outcome_claim(
             receipt.as_dict(),
             status="SUCCEEDED",
@@ -332,6 +410,97 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             self.private_key.sign(canonical(payload))
         ).decode()
         return manifest
+
+    def _append_attestor_governance_action(
+        self,
+        manifest,
+        *,
+        operation,
+        issued_at,
+        action_id,
+        public_key_b64=None,
+        attestor_type=None,
+        attestor_expires_at=None,
+    ):
+        policy = GovernancePolicy(
+            policy_id=f"reference-{action_id}",
+            version=1,
+            threshold=1,
+            members=(
+                GovernanceMember.from_public_key(
+                    self.governance_key.public_key(), "governor"
+                ),
+            ),
+            allowed_actions=(operation,),
+        )
+        action = AttestorAuthorityService.build_action(
+            action=operation,
+            attestor_id="external-reference",
+            reason=f"test {operation.lower()} governance replay",
+            governance_policy_sha256=policy.digest,
+            public_key_b64=public_key_b64,
+            attestor_type=attestor_type,
+            expires_at=attestor_expires_at,
+            action_id=action_id,
+            nonce=f"{action_id}-nonce",
+            issued_at=issued_at,
+        )
+        approval_payload = {
+            "governance_version": 1,
+            "action_digest": hashlib.sha256(canonical(action)).hexdigest(),
+            "governor_id": governor_id(self.governance_key.public_key()),
+            "role": "governor",
+            "approval_id": f"approval-{action_id}",
+            "issued_at": issued_at + 10,
+            "expires_at": issued_at + 200,
+            "nonce": f"approval-{action_id}-nonce",
+        }
+        approval = {
+            "payload": approval_payload,
+            "signature": base64.b64encode(
+                self.governance_key.sign(canonical(approval_payload))
+            ).decode(),
+            "algorithm": "Ed25519",
+        }
+        payload = manifest["payload"]
+        payload["nodes"].extend([
+            {
+                "type": "governance_policy",
+                "id": policy.digest,
+                "sha256": "",
+                "data": policy.as_dict(),
+            },
+            {
+                "type": "governance_action",
+                "id": action["action_id"],
+                "sha256": "",
+                "data": action,
+            },
+            {
+                "type": "governance_approval",
+                "id": approval_payload["approval_id"],
+                "sha256": "",
+                "data": approval,
+            },
+        ])
+        payload["edges"].extend([
+            {
+                "from": "attestor_authority:external-reference",
+                "relation": "DERIVED_FROM",
+                "to": f"governance_action:{action['action_id']}",
+            },
+            {
+                "from": f"governance_policy:{policy.digest}",
+                "relation": "GOVERNS",
+                "to": f"governance_action:{action['action_id']}",
+            },
+            {
+                "from": f"governance_approval:{approval_payload['approval_id']}",
+                "relation": "APPROVES",
+                "to": f"governance_action:{action['action_id']}",
+            },
+        ])
+        return action
 
     def test_adversarial_semantic_mutations_are_rejected(self):
         mutations = []
@@ -583,6 +752,238 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         trust = report["checks"]["governance_policy_trust_anchor"]
         self.assertTrue(trust["valid"], report)
         self.assertFalse(trust["pinned"], report)
+
+    def test_authority_lifecycle_rejects_active_snapshot_after_governance_revocation(self):
+        manifest = self._valid_manifest()
+        attested_at = next(
+            node["data"]["payload"]["attested_at"]
+            for node in manifest["payload"]["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        self._append_attestor_governance_action(
+            manifest,
+            operation="ATTESTOR_REVOKE",
+            issued_at=attested_at - 600,
+            action_id="revoke-before-attestation",
+        )
+        self._resign_mutated_manifest(manifest)
+
+        core_result = verify_proof(
+            manifest,
+            trusted_public_key_b64=manifest["issuer_public_key_b64"],
+        )
+        self.assertFalse(
+            core_result["valid"],
+            "a governance-revoked attestor must not pass with a forged ACTIVE snapshot",
+        )
+
+        proof_path = Path(self.tmp.name) / "revoked-attestor-active-snapshot-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(manifest))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone_result = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(
+            standalone_result.returncode,
+            0,
+            "standalone verifier accepted governance revocation with a forged ACTIVE snapshot",
+        )
+
+    def test_authority_lifecycle_accepts_attestation_after_governance_reactivation(self):
+        manifest = self._valid_manifest()
+        payload = manifest["payload"]
+        attestation = next(
+            node for node in payload["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        register_action = next(
+            node["data"] for node in payload["nodes"]
+            if node["type"] == "governance_action"
+            and node["data"]["action"] == "ATTESTOR_REGISTER"
+        )
+        register_issued_at = register_action["issued_at"]
+        revoke_at = register_issued_at + 100
+        activate_at = register_issued_at + 300
+        attested_at = register_issued_at + 400
+        attestation["data"]["payload"]["attested_at"] = attested_at
+        attestation["data"]["signature"] = base64.b64encode(
+            self._last_attestor_private_key.sign(
+                canonical(attestation["data"]["payload"])
+            )
+        ).decode()
+
+        self._append_attestor_governance_action(
+            manifest,
+            operation="ATTESTOR_REVOKE",
+            issued_at=revoke_at,
+            action_id="revoke-before-reactivation",
+        )
+        self._append_attestor_governance_action(
+            manifest,
+            operation="ATTESTOR_ACTIVATE",
+            issued_at=activate_at,
+            action_id="activate-after-revocation",
+        )
+        attestor = next(
+            node for node in payload["nodes"]
+            if node["type"] == "attestor_authority"
+        )
+        attestor["data"]["status"] = "ACTIVE"
+        # Storage retains revoked_at as an audit marker when an attestor is reactivated.
+        attestor["data"]["revoked_at"] = revoke_at + 20
+        self._resign_mutated_manifest(manifest)
+
+        core_result = verify_proof(
+            manifest,
+            trusted_public_key_b64=manifest["issuer_public_key_b64"],
+        )
+        self.assertTrue(core_result["valid"], core_result)
+
+        proof_path = Path(self.tmp.name) / "attestation-after-governance-reactivation.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(manifest))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone_result = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(
+            standalone_result.returncode,
+            0,
+            standalone_result.stdout + standalone_result.stderr,
+        )
+
+    def test_authority_lifecycle_accepts_attestation_before_later_revocation(self):
+        manifest = self._valid_manifest()
+        attested_at = next(
+            node["data"]["payload"]["attested_at"]
+            for node in manifest["payload"]["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        revoke_at = attested_at + 600
+        self._append_attestor_governance_action(
+            manifest,
+            operation="ATTESTOR_REVOKE",
+            issued_at=revoke_at,
+            action_id="revoke-after-attestation",
+        )
+        attestor = next(
+            node for node in manifest["payload"]["nodes"]
+            if node["type"] == "attestor_authority"
+        )
+        attestor["data"]["status"] = "REVOKED"
+        attestor["data"]["revoked_at"] = revoke_at + 20
+        self._resign_mutated_manifest(manifest)
+
+        core_result = verify_proof(
+            manifest,
+            trusted_public_key_b64=manifest["issuer_public_key_b64"],
+        )
+        self.assertTrue(core_result["valid"], core_result)
+
+        proof_path = Path(self.tmp.name) / "historical-attestation-before-revoke.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(manifest))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone_result = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(
+            standalone_result.returncode,
+            0,
+            standalone_result.stdout + standalone_result.stderr,
+        )
+
+    def test_authority_lifecycle_uses_historical_key_after_governance_rotation(self):
+        manifest = self._valid_manifest()
+        attested_at = next(
+            node["data"]["payload"]["attested_at"]
+            for node in manifest["payload"]["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        rotated_key = Ed25519PrivateKey.generate()
+        rotated_public_key = base64.b64encode(
+            rotated_key.public_key().public_bytes(
+                serialization.Encoding.Raw,
+                serialization.PublicFormat.Raw,
+            )
+        ).decode()
+        self._append_attestor_governance_action(
+            manifest,
+            operation="ATTESTOR_ROTATE",
+            issued_at=attested_at + 600,
+            action_id="rotate-after-attestation",
+            public_key_b64=rotated_public_key,
+            attestor_type="EXTERNAL_VERIFIER",
+        )
+        attestor = next(
+            node for node in manifest["payload"]["nodes"]
+            if node["type"] == "attestor_authority"
+        )
+        attestor["data"]["public_key_b64"] = rotated_public_key
+        attestor["data"]["key_id"] = hashlib.sha256(
+            base64.b64decode(rotated_public_key)
+        ).hexdigest()
+        self._resign_mutated_manifest(manifest)
+
+        core_result = verify_proof(
+            manifest,
+            trusted_public_key_b64=manifest["issuer_public_key_b64"],
+        )
+        self.assertTrue(core_result["valid"], core_result)
+
+        proof_path = Path(self.tmp.name) / "historical-attestation-before-rotation.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(manifest))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone_result = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(
+            standalone_result.returncode,
+            0,
+            standalone_result.stdout + standalone_result.stderr,
+        )
 
     def test_authority_lifecycle_rejects_forged_governance_approval_signature(self):
         manifest = self._valid_manifest()
