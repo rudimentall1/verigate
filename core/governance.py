@@ -604,11 +604,9 @@ def verify_governance_quorum(
         return False, "governance action is not allowed"
     for field in ("issued_at", "expires_at"):
         value = payload.get(field)
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(float(value))
-        ):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False, f"invalid governance action {field}"
+        if not math.isfinite(float(value)):
             return False, f"invalid governance action {field} timestamp"
     if payload["issued_at"] > now + 60:
         return False, "governance action is too far in the future"
