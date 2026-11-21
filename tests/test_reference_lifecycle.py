@@ -626,5 +626,25 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertFalse(result["valid"], result)
         self.assertIn("attestor", result["reason"].lower())
 
+        proof_path = Path(self.tmp.name) / "unapproved-attestor-key-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
+        self.assertIn("attestor", standalone.stdout.lower())
+
 if __name__ == "__main__":
     unittest.main()
