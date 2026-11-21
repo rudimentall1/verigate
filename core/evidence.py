@@ -118,6 +118,142 @@ class EvidenceGraph:
                 "to": f"governance_action:{action_id}",
             })
 
+    def _add_wallet_enrollment_evidence(
+        self,
+        *,
+        principal: str,
+        receipt: dict[str, Any],
+        nodes: list[dict[str, Any]],
+        edges: list[dict[str, str]],
+        verification: dict[str, Any],
+    ) -> None:
+        """Add the complete signed wallet-governance history needed offline."""
+        if not isinstance(principal, str) or not principal.startswith("anna-installation:"):
+            return
+        receipt_payload = receipt.get("payload", {})
+        submission = receipt_payload.get("submission_data")
+        if not isinstance(submission, dict):
+            verification[f"wallet_enrollment:{principal}"] = {
+                "valid": False,
+                "reason": "Anna CHAIN_VERIFIER receipt is missing wallet enrollment metadata",
+            }
+            return
+        chain_id = submission.get("chain_id")
+        sender = submission.get("sender")
+        if (
+            isinstance(chain_id, bool)
+            or not isinstance(chain_id, int)
+            or chain_id <= 0
+            or not isinstance(sender, str)
+            or len(sender) != 42
+            or not sender.startswith("0x")
+        ):
+            verification[f"wallet_enrollment:{principal}"] = {
+                "valid": False,
+                "reason": "Anna CHAIN_VERIFIER receipt has invalid wallet enrollment metadata",
+            }
+            return
+
+        enrollments = self.storage.wallet_enrollments_for_principal(principal)
+        if not enrollments:
+            verification[f"wallet_enrollment:{principal}"] = {
+                "valid": False,
+                "reason": "Anna wallet enrollment registry evidence is missing",
+            }
+            return
+        history = self.storage.wallet_enrollment_governance_actions(principal)
+        history = sorted(
+            history,
+            key=lambda item: (
+                item.get("action", {}).get("action_id", "")
+                if isinstance(item, dict) else ""
+            ),
+        )
+        history_data = {
+            "installation_principal": principal,
+            "envelopes": history,
+            "history_sha256": _digest(history),
+        }
+        history_id = f"wallet_enrollment_governance_history:{principal}"
+        existing_history = next(
+            (
+                node for node in nodes
+                if node.get("type") == "wallet_enrollment_governance_history"
+                and node.get("id") == principal
+            ),
+            None,
+        )
+        if existing_history is None:
+            nodes.append(_node(
+                "wallet_enrollment_governance_history", principal, history_data,
+            ))
+        elif existing_history.get("data") != history_data:
+            verification[f"wallet_enrollment:{principal}"] = {
+                "valid": False,
+                "reason": "wallet enrollment governance history differs within the evidence graph",
+            }
+            return
+
+        matching_enrollments = []
+        for enrollment in enrollments:
+            enrollment_id = enrollment.get("enrollment_id")
+            if not isinstance(enrollment_id, str) or not enrollment_id:
+                verification[f"wallet_enrollment:{principal}"] = {
+                    "valid": False,
+                    "reason": "wallet enrollment registry identity is missing",
+                }
+                return
+            node_id = f"wallet_enrollment:{enrollment_id}"
+            existing = next(
+                (
+                    node for node in nodes
+                    if node.get("type") == "wallet_enrollment"
+                    and node.get("id") == enrollment_id
+                ),
+                None,
+            )
+            if existing is None:
+                nodes.append(_node("wallet_enrollment", enrollment_id, enrollment))
+            elif existing.get("data") != enrollment:
+                verification[f"wallet_enrollment:{principal}"] = {
+                    "valid": False,
+                    "reason": "wallet enrollment registry snapshot differs within the evidence graph",
+                }
+                return
+            covers_edge = {
+                "from": history_id,
+                "relation": "COVERS",
+                "to": node_id,
+            }
+            if covers_edge not in edges:
+                edges.append(covers_edge)
+            if (
+                enrollment.get("chain_id") == chain_id
+                and enrollment.get("wallet_address") == sender.lower()
+            ):
+                matching_enrollments.append(enrollment_id)
+                receipt_edge = {
+                    "from": node_id,
+                    "relation": "AUTHORIZES_RECEIPT",
+                    "to": f"execution_receipt:{receipt_payload.get('receipt_id')}",
+                }
+                if receipt_edge not in edges:
+                    edges.append(receipt_edge)
+
+        if not matching_enrollments:
+            verification[f"wallet_enrollment:{principal}"] = {
+                "valid": False,
+                "reason": "wallet receipt does not match a governed enrollment",
+            }
+            return
+        verification[f"wallet_enrollment:{principal}"] = {
+            "valid": True,
+            "reason": "wallet enrollment registry snapshots and complete governance history included",
+            "enrollment_count": len(enrollments),
+            "governance_action_count": len(history),
+            "history_sha256": history_data["history_sha256"],
+        }
+
     def build_by_intent(self, intent_id: str) -> dict[str, Any]:
         artifacts = self.storage.authorization_by_intent(intent_id)
         if artifacts is None:
