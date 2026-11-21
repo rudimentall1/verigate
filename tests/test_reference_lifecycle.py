@@ -543,5 +543,24 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("RESULT: VALID", result.stdout)
 
+
+    def test_authority_lifecycle_rejects_forged_outcome_attestor_signature(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        attestation = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        attestation["data"]["signature"] = base64.b64encode(b"forged-attestor-signature").decode()
+        self._resign_mutated_manifest(forged)
+
+        result = verify_proof(
+            forged,
+            trusted_public_key_b64=forged["issuer_public_key_b64"],
+        )
+
+        self.assertFalse(result["valid"], result)
+        self.assertIn("attestation", result["reason"].lower())
+
 if __name__ == "__main__":
     unittest.main()
