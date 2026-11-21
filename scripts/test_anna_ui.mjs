@@ -421,8 +421,13 @@ await test("compact workflow switches between request, result and how-to views",
   eq(checkView.classList.contains("showing-result"), true, "a fresh check returns to the result view");
   ui.$("nav-how").click();
   eq(checkView.classList.contains("showing-how"), true, "how-it-works opens as its own compact view");
+  eq(ui.$("nav-how").classList.contains("active"), true, "how-it-works navigation reflects the active view");
+  eq(ui.$("nav-how").getAttribute("aria-current"), "page", "active how-to view is announced accessibly");
+  eq(ui.$("nav-check").getAttribute("aria-current"), null, "Check is not marked current while how-to is open");
   ui.$("nav-check").click();
   eq(checkView.classList.contains("showing-result"), true, "returning to Check restores the existing result");
+  eq(ui.$("nav-check").classList.contains("active"), true, "Check navigation becomes active when returning");
+  eq(ui.$("nav-check").getAttribute("aria-current"), "page", "active Check view is announced accessibly");
 });
 
 await test("narrow layouts use one focused screen with touch-sized navigation and controls", async () => {
