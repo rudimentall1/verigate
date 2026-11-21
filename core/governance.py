@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import math
 import json
 import time
 import uuid
@@ -26,6 +27,16 @@ def _canonical(payload: dict[str, Any]) -> bytes:
         separators=(",", ":"),
         ensure_ascii=False,
     ).encode("utf-8")
+
+
+def _finite_number(value: Any) -> bool:
+    """Return whether value is a finite int/float without leaking overflow."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except (OverflowError, TypeError, ValueError):
+        return False
 
 
 @dataclass(frozen=True)
@@ -116,8 +127,10 @@ def verify_authority_reset(
         ) or payload["epoch"] < 1:
             return False, "invalid governance epoch"
         issued_at = payload.get("issued_at")
-        if isinstance(issued_at, bool) or not isinstance(issued_at, (int, float)):
-            return False, "invalid governance issued_at"
+        if (
+            not _finite_number(issued_at)
+        ):
+            return False, "invalid governance issued_at timestamp"
         now = time.time()
         if issued_at > now + 60:
             return False, "governance action is too far in the future"
@@ -298,12 +311,23 @@ class GovernancePolicy:
         return hashlib.sha256(_canonical(self.as_dict())).hexdigest()
 
     def validate(self) -> None:
-        if self.version < 1 or self.threshold < 1:
+        if (
+            isinstance(self.version, bool)
+            or not isinstance(self.version, int)
+            or self.version < 1
+            or isinstance(self.threshold, bool)
+            or not isinstance(self.threshold, int)
+            or self.threshold < 1
+        ):
             raise ValueError("invalid governance policy version or threshold")
         if self.threshold > len(self.members):
             raise ValueError("governance threshold exceeds member count")
-        if self.max_approval_lifetime_seconds <= 0:
-            raise ValueError("approval lifetime must be positive")
+        if (
+            isinstance(self.max_approval_lifetime_seconds, bool)
+            or not isinstance(self.max_approval_lifetime_seconds, int)
+            or self.max_approval_lifetime_seconds <= 0
+        ):
+            raise ValueError("approval lifetime must be a positive integer")
         ids = set()
         keys = set()
         for member in self.members:
@@ -320,7 +344,12 @@ class GovernancePolicy:
             keys.add(member.public_key_b64)
         seen_roles = set()
         for role, count in self.required_roles:
-            if not role or count < 1:
+            if (
+                not role
+                or isinstance(count, bool)
+                or not isinstance(count, int)
+                or count < 1
+            ):
                 raise ValueError("invalid required governance role")
             if role in seen_roles:
                 raise ValueError("duplicate required governance role")
@@ -520,11 +549,19 @@ def verify_governance_approval(
             return False, "unsupported governance approval version"
         if any(not isinstance(payload.get(field), str) or not payload[field] for field in required):
             return False, "invalid governance approval fields"
-        if not isinstance(payload.get("issued_at"), (int, float)) or isinstance(payload.get("issued_at"), bool):
-            return False, "invalid governance approval issued_at"
-        if not isinstance(payload.get("expires_at"), (int, float)) or isinstance(payload.get("expires_at"), bool):
-            return False, "invalid governance approval expires_at"
+        if (
+            not _finite_number(payload.get("issued_at"))
+        ):
+            return False, "invalid governance approval issued_at timestamp"
+        if (
+            not _finite_number(payload.get("expires_at"))
+        ):
+            return False, "invalid governance approval expires_at timestamp"
         now = time.time() if now is None else now
+        if (
+            not _finite_number(now)
+        ):
+            return False, "invalid governance verification time"
         if payload["issued_at"] > now + 60:
             return False, "governance approval is too far in the future"
         if payload["expires_at"] <= now:
@@ -553,6 +590,8 @@ def verify_governance_quorum(
     policy.validate()
     payload = action.as_dict() if hasattr(action, "as_dict") else action
     now = time.time() if now is None else now
+    if not _finite_number(now):
+        return False, "invalid governance verification time"
     if not isinstance(payload, dict):
         return False, "invalid governance action payload"
     if payload.get("governance_version") != 1:
@@ -578,10 +617,11 @@ def verify_governance_quorum(
     if payload.get("action") not in policy.allowed_actions:
         return False, "governance action is not allowed"
     for field in ("issued_at", "expires_at"):
-        if isinstance(payload.get(field), bool) or not isinstance(
-            payload.get(field), (int, float)
-        ):
+        value = payload.get(field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
             return False, f"invalid governance action {field}"
+        if not _finite_number(value):
+            return False, f"invalid governance action {field} timestamp"
     if payload["issued_at"] > now + 60:
         return False, "governance action is too far in the future"
     if payload["expires_at"] <= now:
