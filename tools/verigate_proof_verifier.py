@@ -154,6 +154,7 @@ def verify_governance(p, attestor_id, attestor_data):
     if not actions:
         return False, "attestor governance lineage is missing"
 
+    verified_actions = []
     for action_node in actions:
         action = action_node["data"]
         action_id = action_node.get("id")
@@ -338,9 +339,143 @@ def verify_governance(p, attestor_id, attestor_data):
             return False, "governance approval was not valid when the complete quorum existed"
         if action_issued > verification_time + 60:
             return False, "governance action issue time is invalid"
+        verified_actions.append((verification_time, action))
 
-    key_actions = [
-        item for item in actions
+    attestation_node = node(p, "outcome_attestation")
+    attestation_payload = attestation_node.get("data", {}).get("payload", {}) if attestation_node else {}
+    attested_at = attestation_payload.get("attested_at")
+    if (
+        isinstance(attested_at, bool)
+        or not isinstance(attested_at, (int, float))
+        or not math.isfinite(float(attested_at))
+    ):
+        return False, "outcome attestation timestamp is invalid", None
+
+    ordered_actions = sorted(verified_actions, key=lambda item: item[0])
+    previous_time = None
+    registered = False
+    state = "UNREGISTERED"
+    public_key_b64 = None
+    key_id = None
+    attestor_type = None
+    expires_at = None
+    revoked_at = None
+    state_at_attestation = None
+
+    for effective_at, action in ordered_actions:
+        if previous_time is not None and effective_at <= previous_time:
+            return False, "attestor governance actions have ambiguous or non-monotonic ordering", None
+        previous_time = effective_at
+        operation = action.get("action")
+
+        if operation == "ATTESTOR_REGISTER":
+            if registered:
+                return False, "attestor governance history contains a duplicate registration", None
+            next_key_b64 = action.get("public_key_b64")
+            next_type = action.get("attestor_type")
+            try:
+                raw_key = b64(next_key_b64)
+                if len(raw_key) != 32:
+                    raise ValueError("Ed25519 key must be 32 bytes")
+                if next_type not in ("EXECUTOR", "EXTERNAL_VERIFIER", "CHAIN_VERIFIER"):
+                    raise ValueError("invalid attestor type")
+                next_expiry = action.get("attestor_expires_at")
+                if next_expiry is not None and (
+                    isinstance(next_expiry, bool)
+                    or not isinstance(next_expiry, (int, float))
+                    or not math.isfinite(float(next_expiry))
+                ):
+                    raise ValueError("invalid attestor expiry")
+            except (TypeError, ValueError):
+                return False, "attestor registration contains an invalid key, type or expiry", None
+            registered = True
+            state = "ACTIVE"
+            public_key_b64 = next_key_b64
+            key_id = hashlib.sha256(raw_key).hexdigest()
+            attestor_type = next_type
+            expires_at = next_expiry
+            revoked_at = None
+
+        elif operation == "ATTESTOR_ACTIVATE":
+            if not registered:
+                return False, "attestor activation precedes registration", None
+            state = "ACTIVE"
+
+        elif operation == "ATTESTOR_ROTATE":
+            if not registered:
+                return False, "attestor rotation precedes registration", None
+            next_key_b64 = action.get("public_key_b64")
+            next_type = action.get("attestor_type")
+            try:
+                raw_key = b64(next_key_b64)
+                if len(raw_key) != 32:
+                    raise ValueError("Ed25519 key must be 32 bytes")
+                if next_type not in ("EXECUTOR", "EXTERNAL_VERIFIER", "CHAIN_VERIFIER"):
+                    raise ValueError("invalid attestor type")
+                next_expiry = action.get("attestor_expires_at")
+                if next_expiry is not None and (
+                    isinstance(next_expiry, bool)
+                    or not isinstance(next_expiry, (int, float))
+                    or not math.isfinite(float(next_expiry))
+                ):
+                    raise ValueError("invalid attestor expiry")
+            except (TypeError, ValueError):
+                return False, "attestor rotation contains an invalid key, type or expiry", None
+            state = "ACTIVE"
+            public_key_b64 = next_key_b64
+            key_id = hashlib.sha256(raw_key).hexdigest()
+            attestor_type = next_type
+            expires_at = next_expiry
+            revoked_at = None
+
+        elif operation == "ATTESTOR_REVOKE":
+            if not registered or state != "ACTIVE":
+                return False, "attestor revocation does not follow an active registration", None
+            state = "REVOKED"
+            revoked_at = effective_at
+
+        elif operation == "ATTESTOR_EXPIRE":
+            if not registered:
+                return False, "attestor expiry precedes registration", None
+            state = "EXPIRED"
+
+        else:
+            return False, "unsupported attestor governance state transition", None
+
+        if effective_at <= float(attested_at):
+            state_at_attestation = {
+                "status": state,
+                "public_key_b64": public_key_b64,
+                "key_id": key_id,
+                "attestor_type": attestor_type,
+                "expires_at": expires_at,
+                "revoked_at": revoked_at,
+            }
+
+    if not registered:
+        return False, "attestor governance history has no registration", None
+
+    if (
+        attestor_data.get("status") != state
+        or attestor_data.get("public_key_b64") != public_key_b64
+        or attestor_data.get("key_id") != key_id
+        or attestor_data.get("attestor_type") != attestor_type
+        or attestor_data.get("expires_at") != expires_at
+        or bool(attestor_data.get("revoked_at")) != bool(revoked_at)
+    ):
+        return False, "attestor registry snapshot does not match replayed governance state", None
+
+    if state_at_attestation is None:
+        return False, "attestor was not registered when the outcome was attested", None
+    if state_at_attestation["status"] != "ACTIVE":
+        return False, "attestor was not active when the outcome was attested", None
+
+    historical_attestor = dict(attestor_data)
+    historical_attestor.update(state_at_attestation)
+    return True, "governance policy, signatures, quorum and historical attestor state verified", historical_attestor
+
+
+def verify_outcome_attestation        item for item in actions
         if item["data"].get("action") in ("ATTESTOR_REGISTER", "ATTESTOR_ROTATE")
     ]
     if not key_actions:
@@ -543,9 +678,9 @@ def verify(proof,key,trusted_governance_policy_sha256=None):
  if not ok:return bad(why,c)
  attestor_node=node(p,'attestor_authority')
  if attestor_node is None:return bad('attestor authority evidence is missing',c)
- governance_ok,governance_reason=verify_governance(p,attestor_node['id'],attestor_node['data'])
+ governance_ok,governance_reason,historical_attestor=verify_governance(p,attestor_node['id'],attestor_node['data'])
  c['governance_quorum']={'valid':governance_ok,'reason':governance_reason}
- if not governance_ok:return bad(governance_reason,c)
+ if not governance_ok or historical_attestor is None:return bad(governance_reason,c)
  policy_trust = verify_governance_policy_trust_anchor(
   p, attestor_node['id'], trusted_policy_digests
  )
@@ -612,7 +747,7 @@ def verify(proof,key,trusted_governance_policy_sha256=None):
  if not c['historical_authority']['valid']:return bad('historical authority binding failed',c)
  h_ok,h_reason=verify_historical(authority_data,l,ap.get('authority_policy') or {},head); c['historical_authority_semantics']={'valid':h_ok,'reason':h_reason}
  if not h_ok:return bad('historical authority semantics failed',c)
- cl=node(p,'outcome_claim'); oe=node(p,'observed_effect'); at=node(p,'outcome_attestation'); ev=node(p,'authority_event'); af=node(p,'authority_state_after'); claim_data=cl['data']; observed_data=oe['data']; att_payload=at['data'].get('payload',{});  attestor_data=attestor_node['data']; attestor_signature_ok,attestor_signature_reason=verify_outcome_attestation(at['data'],attestor_data); c['outcome_attestation_signature']={'valid':attestor_signature_ok,'reason':attestor_signature_reason}; 
+ cl=node(p,'outcome_claim'); oe=node(p,'observed_effect'); at=node(p,'outcome_attestation'); ev=node(p,'authority_event'); af=node(p,'authority_state_after'); claim_data=cl['data']; observed_data=oe['data']; att_payload=at['data'].get('payload',{});  attestor_signature_ok,attestor_signature_reason=verify_outcome_attestation(at['data'],historical_attestor); c['outcome_attestation_signature']={'valid':attestor_signature_ok,'reason':attestor_signature_reason}; 
  if not attestor_signature_ok:return bad(attestor_signature_reason,c)
  out=edge(p,ref(r),'OBSERVED_BY',ref(cl)) and edge(p,ref(cl),'SUPPORTED_BY',ref(oe)) and claim_data.get('execution_receipt_sha256')==sha(r['data']) and claim_data.get('observed_effect_sha256')==sha(observed_data) and oe['id']==claim_data.get('observed_effect_sha256') and observed_data.get('authorization_id')==ap.get('authorization_id') and observed_data.get('action_sha256')==claim_data.get('action_sha256') and observed_data.get('evidence_ref')==claim_data.get('evidence_ref') and observed_data.get('result_sha256')==claim_data.get('result_sha256') and observed_data.get('observation_sha256')==sha({'verifier_type':observed_data.get('verifier_type'),'evidence_kind':observed_data.get('evidence_kind'),'effect_status':observed_data.get('effect_status'),'authorization_id':observed_data.get('authorization_id'),'action_sha256':observed_data.get('action_sha256'),'observed_at':observed_data.get('observed_at'),'evidence_ref':observed_data.get('evidence_ref'),'result_sha256':observed_data.get('result_sha256'),'observation':observed_data.get('observation')}) and edge(p,ref(at),'ATTESTS',ref(cl)) and att_payload.get('claim_sha256')==sha(claim_data) and att_payload.get('claim')==claim_data; c['outcome']={'valid':out}; learn_ok,learn_reason=verify_learning(claim_data,att_payload,ev['data'],authority_node['data'],af['data'],l,ap.get('authority_policy') or {},ap.get('authority_ledger_head_hash','')); learn=learn_ok; c['learning']={'valid':learn,'reason':learn_reason}
  if not out or not learn:return bad('outcome or learning binding failed',c)
