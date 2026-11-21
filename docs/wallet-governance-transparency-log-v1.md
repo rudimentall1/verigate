@@ -50,6 +50,12 @@ log = WalletGovernanceTransparencyLog(
     log_id="production-wallet-governance-log",
     signing_key=log_signing_private_key,
 )
+log.export_public_key_pem("/etc/verigate-trust/wallet-governance-log.pub.pem")
+
+# Preferred event-stream ingestion: one call for each accepted action.
+bundle = log.append_envelope(installation_principal, accepted_governance_envelope)
+
+# Bulk initial load or reconciliation from the independent log's own event store.
 bundle = log.checkpoint_history(installation_principal, complete_governance_envelopes)
 \`\`\`
 
