@@ -15,6 +15,7 @@ from core.wallet_governance_transparency import WalletGovernanceTransparencyLog
 
 
 WALLET_GOVERNANCE_APPEND_PATH = "/v1/wallet-governance/append"
+WALLET_GOVERNANCE_BUNDLE_PATH = "/v1/wallet-governance/bundle"
 WALLET_GOVERNANCE_HEALTH_PATH = "/healthz"
 MAX_REQUEST_BYTES = 1_048_576
 MAX_RESPONSE_BYTES = 32 * 1_048_576
@@ -86,6 +87,50 @@ class WalletGovernanceTransparencyHTTPTransport:
         if ssl_context is not None:
             handlers.append(urllib.request.HTTPSHandler(context=ssl_context))
         self._opener = urllib.request.build_opener(*handlers)
+
+
+    def fetch_bundle(self, installation_principal: str) -> dict[str, Any]:
+        """Fetch the complete remote history for independent reconciliation."""
+        if not isinstance(installation_principal, str) or not installation_principal:
+            raise ValueError("wallet transparency installation principal is required")
+        query = urllib.parse.urlencode({"installation_principal": installation_principal})
+        request = urllib.request.Request(
+            self.url.rsplit(WALLET_GOVERNANCE_APPEND_PATH, 1)[0]
+            + WALLET_GOVERNANCE_BUNDLE_PATH + "?" + query,
+            method="GET",
+            headers={
+                "Authorization": f"Bearer {self.bearer_token}",
+                "Accept": "application/json",
+            },
+        )
+        try:
+            with self._opener.open(request, timeout=self.timeout) as response:
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+        except urllib.error.HTTPError as exc:
+            if exc.code in {401, 403}:
+                raise PermissionError(
+                    f"wallet transparency service rejected authentication (HTTP {exc.code})"
+                ) from None
+            if exc.code == 404:
+                raise LookupError("wallet transparency checkpoint not found") from None
+            raise ConnectionError(
+                f"wallet transparency service returned HTTP {exc.code}"
+            ) from None
+        except urllib.error.URLError as exc:
+            reason = exc.reason
+            if isinstance(reason, (socket.timeout, TimeoutError)):
+                raise TimeoutError("wallet transparency service request timed out") from None
+            raise ConnectionError("wallet transparency service is unavailable") from None
+
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise ValueError("wallet transparency service response exceeds the size limit")
+        try:
+            result = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            raise ValueError("wallet transparency service returned invalid JSON") from None
+        if not isinstance(result, dict):
+            raise ValueError("wallet transparency service response must be a JSON object")
+        return result
 
     def append_envelope(
         self,
@@ -205,10 +250,41 @@ def make_wallet_governance_log_handler(
             self.wfile.write(data)
 
         def do_GET(self) -> None:
-            if self.path == WALLET_GOVERNANCE_HEALTH_PATH:
+            parsed = urllib.parse.urlsplit(self.path)
+            if parsed.path == WALLET_GOVERNANCE_HEALTH_PATH and not parsed.query:
                 self._send_json(200, {"status": "ok"})
                 return
-            self._send_json(404, {"error": "not found"})
+            if parsed.path != WALLET_GOVERNANCE_BUNDLE_PATH:
+                self._send_json(404, {"error": "not found"})
+                return
+
+            authorization = self.headers.get("Authorization", "")
+            scheme, separator, supplied_token = authorization.partition(" ")
+            token_matches = False
+            if scheme.lower() == "bearer" and separator:
+                for accepted_token in accepted_tokens:
+                    token_matches |= hmac.compare_digest(supplied_token, accepted_token)
+            if not token_matches:
+                self._send_json(401, {"error": "unauthorized"})
+                return
+
+            try:
+                query = urllib.parse.parse_qs(parsed.query, strict_parsing=True)
+                principals = query.get("installation_principal", [])
+                if len(principals) != 1 or len(query) != 1:
+                    raise ValueError("one installation_principal query parameter is required")
+                principal = principals[0]
+                bundle = log.export_bundle(principal)
+            except LookupError:
+                self._send_json(404, {"error": "not found"})
+                return
+            except ValueError:
+                self._send_json(400, {"error": "invalid installation_principal query"})
+                return
+            except Exception:
+                self._send_json(503, {"error": "transparency log export failed"})
+                return
+            self._send_json(200, bundle)
 
         def do_POST(self) -> None:
             if self.path != WALLET_GOVERNANCE_APPEND_PATH:
