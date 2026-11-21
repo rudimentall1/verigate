@@ -603,7 +603,7 @@ class MultiPartyGovernanceTest(unittest.TestCase):
     def test_governance_approval_rejects_non_finite_timestamps(self):
         action, _ = self.suspended_action()
         for field in ("issued_at", "expires_at"):
-            for invalid_value in (float("nan"), 10 ** 10000):
+            for invalid_value in (float("nan"), 10 ** 400):
                 with self.subTest(field=field, invalid_type=type(invalid_value).__name__):
                     values = {
                         "issued_at": time.time(),
@@ -631,7 +631,7 @@ class MultiPartyGovernanceTest(unittest.TestCase):
                     self.assertIn("timestamp", reason)
 
     def test_governance_timestamps_reject_integers_outside_float_range(self):
-        huge = 10 ** 10000
+        huge = 10 ** 400
         action = create_governance_action(
             action="AUTHORITY_RESET",
             agent_id=self.capability.agent_id,
@@ -685,7 +685,7 @@ class MultiPartyGovernanceTest(unittest.TestCase):
 
     def test_governance_quorum_rejects_non_finite_verification_time(self):
         action, approvals = self.suspended_action()
-        for now in (float("nan"), 10 ** 10000):
+        for now in (float("nan"), 10 ** 400):
             with self.subTest(now_type=type(now).__name__):
                 ok, reason = verify_governance_quorum(
                     action, approvals, self.policy, now=now
