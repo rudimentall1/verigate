@@ -255,5 +255,25 @@ class WalletGovernanceTransparencyHTTPTests(unittest.TestCase):
             storage.close()
 
 
+    def test_http_transport_fetches_full_bundle_for_reconciliation(self):
+        envelope = self.make_envelope("reconcile-fetch")
+        appended = self.transport.append_envelope(self.principal, envelope)
+        fetched = self.transport.fetch_bundle(self.principal)
+        self.assertEqual(fetched, appended)
+
+    def test_http_bundle_endpoint_requires_bearer_authentication(self):
+        self.transport.append_envelope(
+            self.principal,
+            self.make_envelope("reconcile-auth"),
+        )
+        unauthorized = WalletGovernanceTransparencyHTTPTransport(
+            f"http://127.0.0.1:{self.server.server_port}",
+            bearer_token="wrong-token-" + "x" * 40,
+            timeout=3,
+        )
+        with self.assertRaisesRegex(PermissionError, "authentication"):
+            unauthorized.fetch_bundle(self.principal)
+
+
 if __name__ == "__main__":
     unittest.main()
