@@ -10,6 +10,8 @@ A conforming verifier MUST be able to verify a portable proof from the supplied 
 
 The issuer public key is the trust anchor. A verifier MUST obtain it from an independent trusted channel. The public key embedded in the signed manifest identifies the issuer but is not, by itself, a trust decision.
 
+The authority-lifecycle package also carries the governance policy and member public keys used for attestor registration. A verifier MUST cryptographically verify the policy fingerprint, every approval signature, member role, signer uniqueness, required roles, threshold, and historical validity window. This establishes that the action was approved by a quorum of the keys declared in that policy. It does **not** independently establish that those keys were the organisation's authorised governors: when that distinction matters, the verifier MUST pin the expected governance-policy digest or member set through a separate trusted channel. An issuer-signed policy node is evidence of which policy was presented, not an independent governance root of trust.
+
 ## Verification layers
 
 A verifier MUST fail closed and perform these checks:
@@ -20,6 +22,7 @@ A verifier MUST fail closed and perform these checks:
 4. **Trust anchor** — when a trusted public key is supplied, it equals the manifest issuer key.
 5. **Graph integrity** — every node data hash, edge reference, node inventory, graph counts, and Merkle root match the signed manifest.
 6. **Authority protocol** — authority-lifecycle proofs contain exactly the signed `verigate-authority-proof-v1` assertions and their assertion-set digest.
+7. **Governance quorum** — for governed attestor lineage, the governance policy fingerprint and member-key fingerprints are valid; each Ed25519 approval signs the exact action; member roles, unique signers/nonces, required roles, and quorum threshold pass. Historical validity is evaluated at the latest issue time among the action and its approvals, when the complete quorum first existed, rather than against the verifier's current clock.
 7. **Authorization** — the execution authorization signature, identity, capability, action, authority snapshot, policy bindings, timing, and execution graph bindings are valid.
 8. **Historical authority** — the authorization's committed ledger head resolves to a valid historical ledger prefix; later ledger events MUST NOT invalidate the historical proof.
 9. **Execution** — the execution receipt is cryptographically bound to the authorization.
