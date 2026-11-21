@@ -1211,6 +1211,8 @@ def verify(
  trusted_governance_policy_sha256=None,
  trusted_wallet_governance_policy_sha256=None,
  trusted_wallet_enrollment_history_sha256=None,
+ trusted_wallet_governance_log_public_key=None,
+ trusted_wallet_governance_checkpoint_sha256=None,
 ):
  try:
   trusted_policy_digests = normalize_trusted_governance_policy_digests(
@@ -1221,6 +1223,14 @@ def verify(
   )
   trusted_wallet_history_digests = normalize_trusted_governance_policy_digests(
    trusted_wallet_enrollment_history_sha256
+  )
+  if (trusted_wallet_governance_log_public_key is None) != (trusted_wallet_governance_checkpoint_sha256 is None):
+   raise ValueError(
+    'wallet governance log public key and checkpoint digest must be supplied together'
+   )
+  trusted_wallet_log_public_key_b64 = (
+   load_trusted_key(trusted_wallet_governance_log_public_key)
+   if trusted_wallet_governance_log_public_key is not None else None
   )
  except ValueError as exc:
   return bad(str(exc),{})
@@ -1336,6 +1346,56 @@ def verify(
   c['wallet_enrollment']={'valid':wallet_ok,'reason':wallet_reason}
   if not wallet_ok or historical_enrollment is None:
    return bad(wallet_reason,c)
+  transparency_nodes = [
+   item for item in p.get('nodes',[])
+   if item.get('type') == 'wallet_governance_transparency_log'
+   and isinstance(item.get('data'),dict)
+   and item['data'].get('installation_principal') == ap['agent_id']
+  ]
+  if len(transparency_nodes) > 1:
+   return bad('wallet governance transparency evidence is ambiguous',c)
+  if not transparency_nodes:
+   pinned_requested = (
+    trusted_wallet_log_public_key_b64 is not None
+    or trusted_wallet_governance_checkpoint_sha256 is not None
+   )
+   c['wallet_governance_transparency_anchor']={
+    'valid':not pinned_requested,
+    'pinned':False,
+    'reason':(
+     'trusted transparency anchor was required but the proof contains no log checkpoint'
+     if pinned_requested
+     else 'no external wallet governance transparency log was supplied'
+    )
+   }
+   if pinned_requested:
+    return bad(c['wallet_governance_transparency_anchor']['reason'],c)
+  else:
+   transparency_node=transparency_nodes[0]
+   transparency_ref=ref(transparency_node)
+   if (
+    not edge(
+     p,
+     f"wallet_enrollment_governance_history:{ap['agent_id']}",
+     'ANCHORED_BY',
+     transparency_ref,
+    )
+    or transparency_node['id'] != transparency_node['data'].get('checkpoint',{}).get('checkpoint_sha256')
+   ):
+    return bad('wallet governance history is not linked to its external checkpoint',c)
+   history_node = node(p,'wallet_enrollment_governance_history')
+   if history_node is None:
+    return bad('wallet enrollment history node is missing',c)
+   log_ok,log_reason,log_checks=verify_wallet_governance_transparency_bundle(
+    transparency_node['data'],
+    history_envelopes=history_node['data'].get('envelopes',[]),
+    installation_principal=ap['agent_id'],
+    trusted_log_public_key_b64=trusted_wallet_log_public_key_b64,
+    trusted_checkpoint_sha256=trusted_wallet_governance_checkpoint_sha256,
+   )
+   c.update(log_checks)
+   if not log_ok:
+    return bad(log_reason,c)
   wallet_node_id = historical_enrollment['enrollment_id']
   if (
    not edge(p,f"wallet_enrollment_governance_history:{ap['agent_id']}",'COVERS',f"wallet_enrollment:{wallet_node_id}")
@@ -1404,6 +1464,19 @@ def main():
   metavar='SHA256',
   help='independently trusted wallet enrollment history digest (repeat for each trusted history version)',
  )
+ x.add_argument(
+  '--wallet-governance-log-public-key',
+  default=None,
+  metavar='PEM',
+  help='independently trusted Ed25519 public key of the wallet governance transparency log',
+ )
+ x.add_argument(
+  '--trusted-wallet-governance-checkpoint-sha256',
+  type=trusted_policy_digest_argument,
+  default=None,
+  metavar='SHA256',
+  help='out-of-band digest of the latest signed wallet governance checkpoint',
+ )
  x.add_argument('--format',choices=['text','json'],default='text')
  a=x.parse_args()
  try:
@@ -1413,6 +1486,8 @@ def main():
    a.trusted_governance_policy_sha256,
    a.trusted_wallet_governance_policy_sha256,
    a.trusted_wallet_enrollment_history_sha256,
+   a.wallet_governance_log_public_key,
+   a.trusted_wallet_governance_checkpoint_sha256,
   )
  except Exception as exc:
   r=bad('verification failed closed: '+str(exc),{})
@@ -1426,6 +1501,7 @@ def main():
     'governance_policy_trust_anchor',
     'wallet_governance_policy_trust_anchor',
     'wallet_enrollment_history_anchor',
+    'wallet_governance_transparency_anchor',
    } and not v.get('pinned'):
     status='NOT PINNED'
    else:
