@@ -1049,6 +1049,11 @@ def verify_wallet_governance_transparency_bundle(
             or action.get("action") not in ("WALLET_ENROLL", "WALLET_REVOKE")
         ):
             return failure("wallet transparency log action identity is invalid or duplicated")
+        if (
+            action.get("action") == "WALLET_ENROLL"
+            and action.get("installation_principal") != installation_principal
+        ):
+            return failure("wallet transparency log enrollment action has another installation principal")
         history_by_action[action_id] = envelope
     ordered_history = sorted(history_envelopes, key=lambda item: item["action"]["action_id"])
     expected_history_sha256 = sha(ordered_history)
@@ -1077,6 +1082,8 @@ def verify_wallet_governance_transparency_bundle(
             payload.get("protocol") != "verigate-wallet-governance-log-v1"
             or payload.get("log_id") != bundle["log_id"]
             or payload.get("installation_principal") != installation_principal
+            or isinstance(payload.get("sequence"), bool)
+            or not isinstance(payload.get("sequence"), int)
             or payload.get("sequence") != sequence
             or payload.get("previous_entry_sha256") != previous_entry_sha256
         ):
@@ -1121,6 +1128,8 @@ def verify_wallet_governance_transparency_bundle(
         or cp.get("protocol") != "verigate-wallet-governance-log-v1"
         or cp.get("log_id") != bundle["log_id"]
         or cp.get("installation_principal") != installation_principal
+        or isinstance(cp.get("entry_count"), bool)
+        or not isinstance(cp.get("entry_count"), int)
         or cp.get("entry_count") != len(entries)
         or cp.get("head_entry_sha256") != previous_entry_sha256
         or cp.get("history_sha256") != expected_history_sha256
@@ -1129,10 +1138,17 @@ def verify_wallet_governance_transparency_bundle(
         or cp["checkpoint_sequence"] < 1
         or not isinstance(cp.get("previous_checkpoint_sha256"), str)
         or not re.fullmatch(r"[0-9a-f]{64}", cp["previous_checkpoint_sha256"])
-        or isinstance(issued_at, bool)
-        or not isinstance(issued_at, (int, float))
-        or not math.isfinite(float(issued_at))
+        or (
+            cp.get("checkpoint_sequence") == 1
+            and cp["previous_checkpoint_sha256"] != "0" * 64
+        )
+        or (
+            cp.get("checkpoint_sequence") > 1
+            and cp["previous_checkpoint_sha256"] == "0" * 64
+        )
+        or not _finite_wallet_time(issued_at)
         or not isinstance(cp.get("signer_key_id"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", cp["signer_key_id"])
     ):
         return failure("wallet governance transparency checkpoint does not bind the complete log head")
 
