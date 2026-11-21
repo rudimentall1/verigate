@@ -325,6 +325,18 @@ class PortableWalletGovernanceProofTests(unittest.TestCase):
         self.assertFalse(ok_after)
         self.assertIn("active", reason_after.lower())
 
+    def test_portable_proof_requires_every_enrollment_snapshot_to_be_covered(self):
+        payload, enrolled_at, _, _, history_sha = self.make_graph(include_revoke=False)
+        payload["edges"] = []
+        ok, reason, _, _ = self.verify(
+            payload,
+            attested_at=enrolled_at + 1,
+            history_sha=history_sha,
+            policy_digests={self.policy.digest},
+        )
+        self.assertFalse(ok)
+        self.assertIn("covered", reason.lower())
+
     def test_portable_proof_rejects_untrusted_wallet_governance_policy(self):
         payload, enrolled_at, _, _, history_sha = self.make_graph(include_revoke=False)
         ok, reason, _, checks = self.verify(
