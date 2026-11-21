@@ -1002,10 +1002,22 @@ def verify_wallet_enrollment_history(
     return True, "wallet enrollment governance state verified at attestation time", historical_matches[0], checks
 
 
-def verify(proof,key,trusted_governance_policy_sha256=None):
+def verify(
+ proof,
+ key,
+ trusted_governance_policy_sha256=None,
+ trusted_wallet_governance_policy_sha256=None,
+ trusted_wallet_enrollment_history_sha256=None,
+):
  try:
   trusted_policy_digests = normalize_trusted_governance_policy_digests(
    trusted_governance_policy_sha256
+  )
+  trusted_wallet_policy_digests = normalize_trusted_governance_policy_digests(
+   trusted_wallet_governance_policy_sha256
+  )
+  trusted_wallet_history_digests = normalize_trusted_governance_policy_digests(
+   trusted_wallet_enrollment_history_sha256
   )
  except ValueError as exc:
   return bad(str(exc),{})
@@ -1097,7 +1109,44 @@ def verify(proof,key,trusted_governance_policy_sha256=None):
  except Exception:asig=False
  c['authorization']={'valid':asig and ap.get('expires_at',-1)>=t>=ap.get('issued_at',10**30),'historical_verification_time':t}
  if not c['authorization']['valid']:return bad('execution authorization verification failed',c)
- try:pub.verify(b64(r['data']['signature']),canon(rp)); rsig=True
+ receipt_public_key = pub
+ attestation_node = node(p,'outcome_attestation')
+ attestation_payload = attestation_node['data'].get('payload',{}) if attestation_node is not None else {}
+ if (
+  attestation_payload.get('attestor_type') == 'CHAIN_VERIFIER'
+  and isinstance(ap.get('agent_id'),str)
+  and ap['agent_id'].startswith('anna-installation:')
+ ):
+  submission_data = rp.get('submission_data')
+  if not isinstance(submission_data,dict):
+   return bad('Anna CHAIN_VERIFIER receipt is missing wallet enrollment metadata',c)
+  wallet_ok,wallet_reason,historical_enrollment,wallet_checks = verify_wallet_enrollment_history(
+   p,
+   installation_principal=ap['agent_id'],
+   chain_id=submission_data.get('chain_id'),
+   wallet_address=submission_data.get('sender'),
+   attested_at=attestation_payload.get('attested_at'),
+   trusted_policy_digests=trusted_wallet_policy_digests,
+   trusted_history_digests=trusted_wallet_history_digests,
+  )
+  c.update(wallet_checks)
+  c['wallet_enrollment']={'valid':wallet_ok,'reason':wallet_reason}
+  if not wallet_ok or historical_enrollment is None:
+   return bad(wallet_reason,c)
+  wallet_node_id = historical_enrollment['enrollment_id']
+  if (
+   not edge(p,f"wallet_enrollment_governance_history:{ap['agent_id']}",'COVERS',f"wallet_enrollment:{wallet_node_id}")
+   or not edge(p,f"wallet_enrollment:{wallet_node_id}",'AUTHORIZES_RECEIPT',ref(r))
+   or rp.get('network') != historical_enrollment.get('network')
+  ):
+   return bad('wallet enrollment is not bound to the Anna execution receipt',c)
+  try:
+   receipt_public_key = Ed25519PublicKey.from_public_bytes(
+    b64(historical_enrollment['issuer_public_key_b64'])
+   )
+  except (KeyError,TypeError,ValueError):
+   return bad('wallet enrollment issuer public key is invalid',c)
+ try:receipt_public_key.verify(b64(r['data']['signature']),canon(rp)); rsig=True
  except Exception:rsig=False
  c['execution']={'valid':rsig and rp.get('authorization_id')==ap.get('authorization_id') and rp.get('intent_id')==ap.get('intent_id')}
  if not c['execution']['valid']:return bad('execution receipt verification failed',c)
@@ -1131,10 +1180,32 @@ def main():
    'every policy in the attestor lineage must match one supplied digest'
   ),
  )
+ x.add_argument(
+  '--trusted-wallet-governance-policy-sha256',
+  action='append',
+  type=trusted_policy_digest_argument,
+  default=None,
+  metavar='SHA256',
+  help='trusted wallet governance policy digest (repeat for every accepted policy version)',
+ )
+ x.add_argument(
+  '--trusted-wallet-enrollment-history-sha256',
+  action='append',
+  type=trusted_policy_digest_argument,
+  default=None,
+  metavar='SHA256',
+  help='independently trusted wallet enrollment history digest (repeat for each trusted history version)',
+ )
  x.add_argument('--format',choices=['text','json'],default='text')
  a=x.parse_args()
  try:
-  r=verify(a.proof,a.public_key,a.trusted_governance_policy_sha256)
+  r=verify(
+   a.proof,
+   a.public_key,
+   a.trusted_governance_policy_sha256,
+   a.trusted_wallet_governance_policy_sha256,
+   a.trusted_wallet_enrollment_history_sha256,
+  )
  except Exception as exc:
   r=bad('verification failed closed: '+str(exc),{})
  if a.format=='json':
