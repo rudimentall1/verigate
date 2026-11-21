@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -65,7 +64,8 @@ def main() -> int:
         bearer_token=bearer_token,
     )
     server = ThreadingHTTPServer((args.host, args.port), handler)
-    server.daemon_threads = True
+    server.daemon_threads = False
+    server.block_on_close = True
     print(
         f"Wallet governance transparency log '{args.log_id}' listening on "
         f"http://{args.host}:{args.port}{'/v1/wallet-governance/append'}"
