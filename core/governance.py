@@ -590,11 +590,7 @@ def verify_governance_quorum(
     policy.validate()
     payload = action.as_dict() if hasattr(action, "as_dict") else action
     now = time.time() if now is None else now
-    if (
-        isinstance(now, bool)
-        or not isinstance(now, (int, float))
-        or not math.isfinite(float(now))
-    ):
+    if not _finite_number(now):
         return False, "invalid governance verification time"
     if not isinstance(payload, dict):
         return False, "invalid governance action payload"
