@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import math
 import json
 import time
 import uuid
@@ -116,8 +117,12 @@ def verify_authority_reset(
         ) or payload["epoch"] < 1:
             return False, "invalid governance epoch"
         issued_at = payload.get("issued_at")
-        if isinstance(issued_at, bool) or not isinstance(issued_at, (int, float)):
-            return False, "invalid governance issued_at"
+        if (
+            isinstance(issued_at, bool)
+            or not isinstance(issued_at, (int, float))
+            or not math.isfinite(float(issued_at))
+        ):
+            return False, "invalid governance issued_at timestamp"
         now = time.time()
         if issued_at > now + 60:
             return False, "governance action is too far in the future"
@@ -520,11 +525,25 @@ def verify_governance_approval(
             return False, "unsupported governance approval version"
         if any(not isinstance(payload.get(field), str) or not payload[field] for field in required):
             return False, "invalid governance approval fields"
-        if not isinstance(payload.get("issued_at"), (int, float)) or isinstance(payload.get("issued_at"), bool):
-            return False, "invalid governance approval issued_at"
-        if not isinstance(payload.get("expires_at"), (int, float)) or isinstance(payload.get("expires_at"), bool):
-            return False, "invalid governance approval expires_at"
+        if (
+            not isinstance(payload.get("issued_at"), (int, float))
+            or isinstance(payload.get("issued_at"), bool)
+            or not math.isfinite(float(payload["issued_at"]))
+        ):
+            return False, "invalid governance approval issued_at timestamp"
+        if (
+            not isinstance(payload.get("expires_at"), (int, float))
+            or isinstance(payload.get("expires_at"), bool)
+            or not math.isfinite(float(payload["expires_at"]))
+        ):
+            return False, "invalid governance approval expires_at timestamp"
         now = time.time() if now is None else now
+        if (
+            isinstance(now, bool)
+            or not isinstance(now, (int, float))
+            or not math.isfinite(float(now))
+        ):
+            return False, "invalid governance verification time"
         if payload["issued_at"] > now + 60:
             return False, "governance approval is too far in the future"
         if payload["expires_at"] <= now:
@@ -553,6 +572,12 @@ def verify_governance_quorum(
     policy.validate()
     payload = action.as_dict() if hasattr(action, "as_dict") else action
     now = time.time() if now is None else now
+    if (
+        isinstance(now, bool)
+        or not isinstance(now, (int, float))
+        or not math.isfinite(float(now))
+    ):
+        return False, "invalid governance verification time"
     if not isinstance(payload, dict):
         return False, "invalid governance action payload"
     if payload.get("governance_version") != 1:
@@ -578,10 +603,13 @@ def verify_governance_quorum(
     if payload.get("action") not in policy.allowed_actions:
         return False, "governance action is not allowed"
     for field in ("issued_at", "expires_at"):
-        if isinstance(payload.get(field), bool) or not isinstance(
-            payload.get(field), (int, float)
+        value = payload.get(field)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
         ):
-            return False, f"invalid governance action {field}"
+            return False, f"invalid governance action {field} timestamp"
     if payload["issued_at"] > now + 60:
         return False, "governance action is too far in the future"
     if payload["expires_at"] <= now:
