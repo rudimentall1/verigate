@@ -154,6 +154,35 @@ class WalletGovernanceTransparencyLog:
                 PRIMARY KEY (installation_principal, checkpoint_sequence)
             );
 
+            CREATE TRIGGER IF NOT EXISTS wallet_governance_log_entries_no_replace
+            BEFORE INSERT ON wallet_governance_log_entries
+            WHEN EXISTS (
+                SELECT 1 FROM wallet_governance_log_entries
+                WHERE installation_principal = NEW.installation_principal
+                  AND (
+                    sequence = NEW.sequence
+                    OR action_id = NEW.action_id
+                    OR entry_sha256 = NEW.entry_sha256
+                  )
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'wallet governance log entries cannot be replaced');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS wallet_governance_log_checkpoints_no_replace
+            BEFORE INSERT ON wallet_governance_log_checkpoints
+            WHEN EXISTS (
+                SELECT 1 FROM wallet_governance_log_checkpoints
+                WHERE installation_principal = NEW.installation_principal
+                  AND (
+                    checkpoint_sequence = NEW.checkpoint_sequence
+                    OR checkpoint_sha256 = NEW.checkpoint_sha256
+                  )
+            )
+            BEGIN
+                SELECT RAISE(ABORT, 'wallet governance log checkpoints cannot be replaced');
+            END;
+
             CREATE TRIGGER IF NOT EXISTS wallet_governance_log_entries_no_update
             BEFORE UPDATE ON wallet_governance_log_entries
             BEGIN
@@ -183,6 +212,17 @@ class WalletGovernanceTransparencyLog:
 
     def close(self) -> None:
         self._connection.close()
+
+    def export_public_key_pem(self, path: str | Path) -> Path:
+        """Write the public key in PEM form for out-of-band verifier provisioning."""
+        destination = Path(path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        public_key_pem = self.signing_key.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        destination.write_bytes(public_key_pem)
+        return destination
 
     def checkpoint_history(
         self,
