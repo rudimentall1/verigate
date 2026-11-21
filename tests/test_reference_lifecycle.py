@@ -562,5 +562,37 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertFalse(result["valid"], result)
         self.assertIn("attestation", result["reason"].lower())
 
+
+    def test_standalone_verifier_rejects_forged_outcome_attestor_signature(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        attestation = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        attestation["data"]["signature"] = base64.b64encode(b"forged-attestor-signature").decode()
+        self._resign_mutated_manifest(forged)
+
+        proof_path = Path(self.tmp.name) / "forged-outcome-attestation-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("attestation", result.stdout.lower())
+
 if __name__ == "__main__":
     unittest.main()
