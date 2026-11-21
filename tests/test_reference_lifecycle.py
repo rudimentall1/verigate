@@ -1159,5 +1159,114 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
         self.assertIn("attestor", standalone.stdout.lower())
 
+
+    def test_evidence_graph_rebuild_accepts_historical_attestation_after_governance_revocation(self):
+        manifest = self._valid_manifest()
+        payload = manifest["payload"]
+        attestation = next(
+            node for node in payload["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        authorization_id = next(
+            node["data"]["payload"]["authorization_id"]
+            for node in payload["nodes"]
+            if node["type"] == "execution_authorization"
+        )
+
+        policy = GovernancePolicy(
+            policy_id="reference-attestor-revoke",
+            version=1,
+            threshold=1,
+            members=(
+                GovernanceMember.from_public_key(
+                    self.governance_key.public_key(), "governor"
+                ),
+            ),
+            allowed_actions=("ATTESTOR_REVOKE",),
+        )
+        service = AttestorAuthorityService(self.storage)
+        action = service.build_action(
+            action="ATTESTOR_REVOKE",
+            attestor_id="external-reference",
+            reason="revoke after historical outcome attestation",
+            governance_policy_sha256=policy.digest,
+        )
+        service.apply(
+            action,
+            [_governance_approval(action, self.governance_key)],
+            policy,
+        )
+
+        graph = EvidenceGraph(self.storage, self.public_key).build(authorization_id)
+        outcome_check = graph["verification"][
+            f"outcome_attestation:{attestation['id']}"
+        ]
+        self.assertTrue(outcome_check["valid"], outcome_check)
+
+        rebuilt = build_manifest(
+            graph, self.private_key, proof_profile="authority_lifecycle"
+        )
+        result = verify_manifest(rebuilt, rebuilt["issuer_public_key_b64"])
+        self.assertTrue(result["valid"], result)
+
+    def test_evidence_graph_rebuild_uses_historical_key_after_governance_rotation(self):
+        manifest = self._valid_manifest()
+        payload = manifest["payload"]
+        attestation = next(
+            node for node in payload["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        authorization_id = next(
+            node["data"]["payload"]["authorization_id"]
+            for node in payload["nodes"]
+            if node["type"] == "execution_authorization"
+        )
+
+        rotated_key = Ed25519PrivateKey.generate()
+        rotated_public_key = base64.b64encode(
+            rotated_key.public_key().public_bytes(
+                serialization.Encoding.Raw,
+                serialization.PublicFormat.Raw,
+            )
+        ).decode()
+        policy = GovernancePolicy(
+            policy_id="reference-attestor-rotate",
+            version=1,
+            threshold=1,
+            members=(
+                GovernanceMember.from_public_key(
+                    self.governance_key.public_key(), "governor"
+                ),
+            ),
+            allowed_actions=("ATTESTOR_ROTATE",),
+        )
+        service = AttestorAuthorityService(self.storage)
+        action = service.build_action(
+            action="ATTESTOR_ROTATE",
+            attestor_id="external-reference",
+            reason="rotate after historical outcome attestation",
+            governance_policy_sha256=policy.digest,
+            public_key_b64=rotated_public_key,
+            attestor_type="EXTERNAL_VERIFIER",
+        )
+        service.apply(
+            action,
+            [_governance_approval(action, self.governance_key)],
+            policy,
+        )
+
+        graph = EvidenceGraph(self.storage, self.public_key).build(authorization_id)
+        outcome_check = graph["verification"][
+            f"outcome_attestation:{attestation['id']}"
+        ]
+        self.assertTrue(outcome_check["valid"], outcome_check)
+
+        rebuilt = build_manifest(
+            graph, self.private_key, proof_profile="authority_lifecycle"
+        )
+        result = verify_manifest(rebuilt, rebuilt["issuer_public_key_b64"])
+        self.assertTrue(result["valid"], result)
+
+
 if __name__ == "__main__":
     unittest.main()
