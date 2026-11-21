@@ -7,12 +7,15 @@
 - Candidate App: **0.1.37**.
 - Candidate bundled Executa: **0.1.23**. The new history tool makes this a real Executa source change; the immutable 0.1.21 and 0.1.22 versions must not be overwritten.
 - Anna schema-4 `required_executas.min_version` is aligned to 0.1.23.
-- The candidate restores the compact two-column Authority Desk and adds a first-class Payment history view backed by the existing durable audit / authorization / execution receipt storage.
+- The candidate restores the responsive Authority Desk and adds a first-class Payment history view backed by the existing durable audit / authorization / execution receipt storage.
+- Desktop keeps the request and decision side by side. Compact tablet, phone and embedded-WebView layouts switch between request, result and how-it-works views; users can return to edit with one action.
+- Touch targets are at least 44px, mobile safe-area and dynamic viewport handling are included, the result header wraps on 320px screens, and phone history filters use one column.
+- Playwright visual QA checks Chromium, Firefox and WebKit at six viewport sizes across request, result, how-it-works and history views. All 18 browser/viewport combinations passed; screenshots are in the CI artifact.
 - The history reader is explicitly read-only, uses the installation public key only, verifies signed evidence before showing it, and never treats policy preview or SUBMITTED as completed settlement.
-- Latest exact-head full CI [#2433](https://github.com/rudimentall1/verigate/actions/runs/44683309234) **PASSED** on commit `d51bcca071f8c1cacf4b14e6a229515e336744e5`: 675 Python tests, 75/75 Anna UI flows, strict schema-4 validation, Linux Executa build/package/smoke, contracts and container.
-- Latest four-platform Executa 0.1.23 workflow [#74](https://github.com/rudimentall1/verigate/actions/runs/44683309137) **PASSED** on the same commit: Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel. The release job was skipped; no GitHub binary release was published.
+- Final-head full CI [#44872289769](https://github.com/rudimentall1/verigate/actions/runs/44872289769) **PASSED** on commit `ee2b0ef851bed8ded9db312bdb674b3a34587c43`: 675 Python tests, 78/78 Anna UI E2E, 18/18 Playwright browser/viewport visual checks, strict schema-4 validation, Linux Executa build/smoke, contracts and container.
+- Final-head four-platform Executa 0.1.23 workflow [#44872289696](https://github.com/rudimentall1/verigate/actions/runs/44872289696) **PASSED** on commit `ee2b0ef851bed8ded9db312bdb674b3a34587c43`: Linux x86_64, Windows x86_64, macOS ARM64 and macOS Intel. Release job skipped; no binary release was published.
 - The full history read path has a regression test proving it creates no directories and writes no probe files. UI evidence-detail requests are also guarded against stale responses after a new selection, refresh, view switch or close.
-- A fresh actual Anna WebView screenshot and visual acceptance at desktop/narrow widths remain outstanding.
+- Playwright browser screenshots cover desktop, tablet and phone layouts; a live Anna WebView/host-runtime screenshot and visual acceptance still remain outstanding.
 - **No Anna Console cut has been made for 0.1.37 / 0.1.23.** No App was released, submitted for review or published from this source branch. Both accounts' existing immutable versions and review rounds remain untouched.
 - Before any next Console cut, validate the exact account-specific App/Executa identity, pass current version-alignment CI, run all four platform build/reproducibility/package/smoke checks, and inspect a fresh rendered screenshot from an actual Anna WebView.
 
