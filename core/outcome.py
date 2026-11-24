@@ -112,7 +112,7 @@ def _attestor_authority_at(
         return current
 
     state: dict[str, Any] | None = None
-    previous_issued_at: float | None = None
+    previous_effective_at: float | None = None
     for envelope in history:
         if not isinstance(envelope, dict):
             raise ValueError("attestor governance history contains a malformed envelope")
@@ -130,10 +130,6 @@ def _attestor_authority_at(
         expires_at = _finite_timestamp(action.get("expires_at"))
         if issued_at is None or expires_at is None or expires_at <= issued_at:
             raise ValueError("attestor governance action timestamps are invalid")
-        if previous_issued_at is not None and issued_at < previous_issued_at:
-            raise ValueError("attestor governance history is not chronologically ordered")
-        previous_issued_at = issued_at
-
         approval_times = [
             _finite_timestamp(item.get("payload", {}).get("issued_at"))
             for item in approvals
@@ -157,6 +153,22 @@ def _attestor_authority_at(
         if not quorum_ok:
             raise PermissionError(f"attestor governance quorum verification failed: {quorum_reason}")
 
+        recorded_at = envelope.get("recorded_at")
+        effective_at = (
+            verification_time
+            if recorded_at is None
+            else _finite_timestamp(recorded_at)
+        )
+        if (
+            effective_at is None
+            or effective_at < verification_time
+            or effective_at >= expires_at
+        ):
+            raise ValueError("attestor governance application timestamp is invalid")
+        if previous_effective_at is not None and effective_at < previous_effective_at:
+            raise ValueError("attestor governance history is not chronologically ordered")
+        previous_effective_at = effective_at
+
         operation = action.get("action")
         if operation not in {
             "ATTESTOR_REGISTER",
@@ -166,7 +178,7 @@ def _attestor_authority_at(
             "ATTESTOR_EXPIRE",
         }:
             raise ValueError("unsupported attestor governance action")
-        if issued_at > timestamp:
+        if effective_at > timestamp:
             continue
         if operation == "ATTESTOR_REGISTER":
             if state is not None:
@@ -198,7 +210,7 @@ def _attestor_authority_at(
             state["revoked_at"] = None
         elif operation == "ATTESTOR_REVOKE":
             state["status"] = "REVOKED"
-            state["revoked_at"] = issued_at
+            state["revoked_at"] = effective_at
         elif operation == "ATTESTOR_EXPIRE":
             state["status"] = "EXPIRED"
 
