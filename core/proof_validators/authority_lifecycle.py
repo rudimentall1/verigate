@@ -13,6 +13,16 @@ from core.proof_engine import canonical, digest
 from core.authority_protocol import Authority, AuthorityState as GenesisAuthorityState
 from core.governance import GovernancePolicy, verify_governance_quorum
 
+from .common import (
+    validate_requirements,
+    validate_context_binding,
+    validate_execution_enforcement_scope,
+    validate_external_state_execution_scope,
+    validate_observed_effect_binding,
+    validate_authority_learning_binding,
+    validate_historical_authority_binding,
+)
+
 
 def _finite_timestamp(value: Any) -> float | None:
     """Return a finite timestamp, rejecting values that overflow float conversion."""
@@ -23,16 +33,6 @@ def _finite_timestamp(value: Any) -> float | None:
     except (OverflowError, TypeError, ValueError):
         return None
     return timestamp if math.isfinite(timestamp) else None
-
-from .common import (
-    validate_requirements,
-    validate_context_binding,
-    validate_execution_enforcement_scope,
-    validate_external_state_execution_scope,
-    validate_observed_effect_binding,
-    validate_authority_learning_binding,
-    validate_historical_authority_binding,
-)
 
 def _verify_outcome_attestation_signature(
     attestation_data: dict[str, Any],
