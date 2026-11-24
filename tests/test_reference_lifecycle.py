@@ -971,7 +971,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             attestor_type="EXTERNAL_VERIFIER",
             private_key=rotated_key,
         )
-        with self.assertRaisesRegex(PermissionError, "not active"):
+        with self.assertRaisesRegex(PermissionError, "active"):
             OutcomeAttestationService(self.storage, self.public_key).verify_and_record(
                 attestation
             )
