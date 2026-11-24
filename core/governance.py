@@ -359,26 +359,58 @@ class GovernancePolicy:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "GovernancePolicy":
-        members = tuple(
-            GovernanceMember(
-                governor_id=item["governor_id"],
-                role=item["role"],
-                public_key_b64=item["public_key_b64"],
+        if not isinstance(data, dict):
+            raise ValueError("governance policy must be an object")
+
+        integer_fields = {
+            "version": data.get("version", 1),
+            "threshold": data.get("threshold"),
+            "max_approval_lifetime_seconds": data.get(
+                "max_approval_lifetime_seconds", 300
+            ),
+        }
+        for field, value in integer_fields.items():
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(f"governance policy {field} must be an integer")
+
+        required_roles = data.get("required_roles", {})
+        if not isinstance(required_roles, dict):
+            raise ValueError("governance policy required_roles must be an object")
+        for role, count in required_roles.items():
+            if (
+                not isinstance(role, str)
+                or isinstance(count, bool)
+                or not isinstance(count, int)
+            ):
+                raise ValueError("governance policy role names and counts are invalid")
+
+        raw_members = data.get("members")
+        if not isinstance(raw_members, (list, tuple)):
+            raise ValueError("governance policy members must be a list")
+        try:
+            members = tuple(
+                GovernanceMember(
+                    governor_id=item["governor_id"],
+                    role=item["role"],
+                    public_key_b64=item["public_key_b64"],
+                )
+                for item in raw_members
+                if isinstance(item, dict)
             )
-            for item in data["members"]
-        )
+        except (KeyError, TypeError) as exc:
+            raise ValueError("governance policy member is malformed") from exc
+        if len(members) != len(raw_members):
+            raise ValueError("governance policy member is malformed")
+
         policy = cls(
             policy_id=data["policy_id"],
-            version=int(data.get("version", 1)),
-            threshold=int(data["threshold"]),
+            version=integer_fields["version"],
+            threshold=integer_fields["threshold"],
             members=members,
-            required_roles=tuple(
-                (str(role), int(count))
-                for role, count in data.get("required_roles", {}).items()
-            ),
-            max_approval_lifetime_seconds=int(
-                data.get("max_approval_lifetime_seconds", 300)
-            ),
+            required_roles=tuple(required_roles.items()),
+            max_approval_lifetime_seconds=integer_fields[
+                "max_approval_lifetime_seconds"
+            ],
             allowed_actions=tuple(data.get("allowed_actions", ("AUTHORITY_RESET",))),
         )
         policy.validate()
