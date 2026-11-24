@@ -864,26 +864,66 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
     def test_attestor_rotation_does_not_reactivate_revoked_authority(self):
         self._attestor()
         service = AttestorAuthorityService(self.storage)
+
+        revoke = service.build_action(
+            action="ATTESTOR_REVOKE",
+            attestor_id="external-reference",
+            reason="revoke before key replacement",
+            governance_policy_sha256=self.governance_policy.digest,
+        )
         service.apply(
-            service.build_action(
-                action="ATTESTOR_REVOKE",
-                attestor_id="external-reference",
-                reason="revoke before key replacement",
-                governance_policy_sha256=self.governance_policy.digest,
-            ),
-            [
-                _governance_approval(
-                    service.build_action(
-                        action="ATTESTOR_REVOKE",
-                        attestor_id="external-reference",
-                        reason="unused",
-                        governance_policy_sha256=self.governance_policy.digest,
-                    ),
-                    self.governance_key,
-                )
-            ],
+            revoke,
+            [_governance_approval(revoke, self.governance_key)],
             self.governance_policy,
         )
+
+        rotated_key = Ed25519PrivateKey.generate()
+        raw_key = rotated_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+        rotate = service.build_action(
+            action="ATTESTOR_ROTATE",
+            attestor_id="external-reference",
+            reason="replace key without restoring authority",
+            governance_policy_sha256=self.governance_policy.digest,
+            public_key_b64=base64.b64encode(raw_key).decode(),
+            attestor_type="EXTERNAL_VERIFIER",
+        )
+        service.apply(
+            rotate,
+            [_governance_approval(rotate, self.governance_key)],
+            self.governance_policy,
+        )
+
+        authorization, receipt = self._authorized_execution()
+        observed = MCPToolVerifier().verify_result(
+            authorization,
+            tool_name="orders.create",
+            result={"order_id": "order-after-revocation", "status": "created"},
+            evidence_ref="mcp://orders.create/order-after-revocation",
+            target_identity="orders-service",
+        )
+        claim = build_outcome_claim(
+            receipt.as_dict(),
+            status="SUCCEEDED",
+            executor_id="executor-reference",
+            evidence_kind=observed.evidence_kind,
+            evidence_ref=observed.evidence_ref,
+            result_sha256=observed.result_sha256,
+            observed_effect=observed.as_dict(),
+        )
+        attestation = build_outcome_attestation(
+            claim,
+            attestor_id="external-reference",
+            attestor_type="EXTERNAL_VERIFIER",
+            private_key=rotated_key,
+        )
+
+        with self.assertRaisesRegex(PermissionError, "not active"):
+            OutcomeAttestationService(self.storage, self.public_key).verify_and_record(
+                attestation
+            )
 
     def test_historical_attestation_survives_attestor_key_rotation(self):
         original_manifest = self._valid_manifest()
