@@ -202,9 +202,9 @@ def _attestor_authority_at(
                 "key_id": hashlib.sha256(raw_key).hexdigest(),
                 "attestor_type": action["attestor_type"],
                 "expires_at": action.get("attestor_expires_at"),
-                "status": "ACTIVE",
-                "revoked_at": None,
             })
+            if operation == "ATTESTOR_REGISTER":
+                state.update({"status": "ACTIVE", "revoked_at": None})
         elif operation == "ATTESTOR_ACTIVATE":
             state["status"] = "ACTIVE"
             state["revoked_at"] = None
