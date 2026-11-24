@@ -74,7 +74,13 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
                     self.governance_key.public_key(), "governor"
                 ),
             ),
-            allowed_actions=("ATTESTOR_REGISTER",),
+            allowed_actions=(
+                "ATTESTOR_REGISTER",
+                "ATTESTOR_ACTIVATE",
+                "ATTESTOR_ROTATE",
+                "ATTESTOR_REVOKE",
+                "ATTESTOR_EXPIRE",
+            ),
         )
 
     def tearDown(self):
