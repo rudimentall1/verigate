@@ -47,15 +47,15 @@ def _resolve_attestor_authority_at(
         return None, "outcome attestation time is invalid for registered attestor authority"
 
     state: dict[str, Any] | None = None
-    ordered_actions = sorted(
-        governed_actions,
-        key=lambda node: effective_times.get(node["id"], float("inf")),
-    )
-    for node in ordered_actions:
+    previous_effective_at: float | None = None
+    for node in governed_actions:
         action = node["data"]
         effective_at = effective_times.get(node["id"])
         if effective_at is None:
             return None, "governance action application time is invalid"
+        if previous_effective_at is not None and effective_at < previous_effective_at:
+            return None, "attestor governance history is not chronologically ordered"
+        previous_effective_at = effective_at
         if effective_at > timestamp:
             continue
         operation = action.get("action")
@@ -424,6 +424,7 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         for node in payload.get("nodes", [])
     }
     effective_times: dict[str, float] = {}
+    previous_effective_at: float | None = None
     for action_node in governed_actions:
         action_id = action_node["id"]
         action_data = action_node["data"]
@@ -533,6 +534,9 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
             or effective_at >= float(action_expires_at)
         ):
             return False, "governance action application timestamp is invalid"
+        if previous_effective_at is not None and effective_at < previous_effective_at:
+            return False, "governance action application times are not chronological"
+        previous_effective_at = effective_at
         effective_times[action_id] = effective_at
 
     historical_attestor, historical_reason = _resolve_attestor_authority_at(
