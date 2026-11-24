@@ -8,7 +8,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 PROTOCOL='verigate-authority-proof-v1'; PKG='verigate-proof-package-v1'; MEDIA='application/vnd.verigate.proof-package+json'; ZERO='0'*64
 
 
-def finite_timestamp(value):
+def _finite_timestamp(value):
     """Return a finite timestamp, rejecting values that overflow float conversion."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
