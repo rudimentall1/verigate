@@ -9,6 +9,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from core.attestor import AttestorAuthorityService
+from core.attestor_history import resolve_historical_attestor
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
 from core.storage import Storage
 
@@ -91,6 +92,34 @@ class AttestorAuthorityTests(unittest.TestCase):
         result = self.service.apply(a3, [approval(a3, self.gov_key)], self.policy)
         self.assertEqual(result["attestor"]["status"], "REVOKED")
         self.assertEqual(len(self.storage.attestor_governance_actions("verifier-1")), 3)
+
+    def test_historical_replay_rejects_oversized_action_and_approval_timestamps(self):
+        public_key = Ed25519PrivateKey.generate().public_key().public_bytes_raw()
+        action = self.action("ATTESTOR_REGISTER", base64.b64encode(public_key).decode())
+        applied = self.service.apply(action, [approval(action, self.gov_key)], self.policy)
+        snapshot = applied["attestor"]
+        history = self.storage.attestor_governance_actions("verifier-1")
+        huge = 10 ** 400
+
+        malformed_action_history = json.loads(json.dumps(history))
+        malformed_action_history[0]["action"]["issued_at"] = huge
+        valid, reason, _ = resolve_historical_attestor(
+            malformed_action_history,
+            snapshot,
+            time.time(),
+        )
+        self.assertFalse(valid)
+        self.assertIn("issue time is invalid", reason)
+
+        malformed_approval_history = json.loads(json.dumps(history))
+        malformed_approval_history[0]["approvals"][0]["payload"]["issued_at"] = huge
+        valid, reason, _ = resolve_historical_attestor(
+            malformed_approval_history,
+            snapshot,
+            time.time(),
+        )
+        self.assertFalse(valid)
+        self.assertIn("issue time is invalid", reason)
 
     def test_wrong_policy_digest_is_rejected(self):
         key = Ed25519PrivateKey.generate().public_key().public_bytes_raw()
