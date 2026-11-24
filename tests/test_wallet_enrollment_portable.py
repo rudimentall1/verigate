@@ -190,6 +190,35 @@ class PortableWalletGovernanceProofTests(unittest.TestCase):
             trusted_history_digests={history_sha},
         )
 
+    def test_core_resolver_rejects_oversized_timestamps_without_overflow(self):
+        payload, enrolled_at, _revoke, _approvals, history_sha = self.make_graph(
+            include_revoke=False,
+        )
+        history_node = next(
+            item for item in payload["nodes"]
+            if item["type"] == "wallet_enrollment_governance_history"
+        )
+        enrollment_nodes = [
+            item["data"] for item in payload["nodes"]
+            if item["type"] == "wallet_enrollment"
+        ]
+
+        for timestamp in (10 ** 400, -(10 ** 400)):
+            with self.subTest(timestamp="out_of_range"):
+                ok, reason, enrollment, checks = resolve_portable_wallet_enrollment_history(
+                    history_node["data"],
+                    enrollment_nodes,
+                    installation_principal=self.principal,
+                    chain_id=8453,
+                    wallet_address=self.wallet,
+                    attested_at=timestamp,
+                    trusted_policy_digests={self.policy.digest},
+                    trusted_history_digests={history_sha},
+                )
+                self.assertFalse(ok)
+                self.assertIn("malformed", reason)
+                self.assertIsNone(enrollment)
+
     def test_core_resolver_accepts_pinned_history_and_resolves_pre_revoke_state(self):
         payload, enrolled_at, revoke, approvals, history_sha = self.make_graph()
         history_node = next(
