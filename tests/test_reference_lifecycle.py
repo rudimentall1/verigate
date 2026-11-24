@@ -653,6 +653,43 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertIn("attestor", standalone.stdout.lower())
 
 
+    def test_authority_lifecycle_rejects_overflowing_governance_policy_without_exception(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        policy_node = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "governance_policy"
+        )
+        policy_node["data"]["version"] = float("inf")
+        self._resign_mutated_manifest(forged)
+
+        result = verify_manifest(
+            forged,
+            forged["issuer_public_key_b64"],
+        )
+        self.assertFalse(result["valid"], result)
+        self.assertIn("governance", result["reason"].lower())
+
+        proof_path = Path(self.tmp.name) / "overflowing-governance-policy-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
+        self.assertIn("governance", standalone.stdout.lower())
+
     def test_authority_lifecycle_rejects_oversized_timestamps_without_overflow(self):
         timestamp_mutations = (
             ("governance action issued_at", "governance_action", ("issued_at",)),
