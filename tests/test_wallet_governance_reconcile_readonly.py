@@ -3,6 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.wallet_governance_log_reconcile import load_local_history_read_only
 
@@ -69,7 +70,7 @@ class WalletGovernanceReconcileReadOnlyDatabaseTests(unittest.TestCase):
                 row_count_before,
             )
 
-    def test_read_only_connection_rejects_database_writes(self):
+    def test_loader_connection_rejects_database_writes(self):
         database = self.root / "verigate.db"
         principal = "anna-installation:" + "3" * 64
         with sqlite3.connect(database) as connection:
@@ -82,17 +83,41 @@ class WalletGovernanceReconcileReadOnlyDatabaseTests(unittest.TestCase):
             )
             connection.commit()
 
-        # The helper must never open the database in a writable mode.
-        load_local_history_read_only(database, principal)
-        uri = database.resolve().as_uri() + "?mode=ro"
-        with sqlite3.connect(uri, uri=True) as connection:
-            with self.assertRaises(sqlite3.OperationalError):
-                connection.execute(
-                    "INSERT INTO wallet_enrollment_governance_actions "
-                    "(action_id, installation_principal, envelope_json, created_at) "
-                    "VALUES ('x', ?, '{}', 1)",
-                    (principal,),
-                )
+        real_connect = sqlite3.connect
+        write_was_rejected = []
+
+        class ProbedConnection:
+            def __init__(self, connection):
+                self.connection = connection
+
+            def execute(self, sql, parameters=()):
+                if sql.startswith("SELECT") and not write_was_rejected:
+                    with self_case.assertRaises(sqlite3.OperationalError):
+                        self.connection.execute(
+                            "INSERT INTO wallet_enrollment_governance_actions "
+                            "(action_id, installation_principal, envelope_json, created_at) "
+                            "VALUES ('write-probe', ?, '{}', 1)",
+                            (principal,),
+                        )
+                    write_was_rejected.append(True)
+                return self.connection.execute(sql, parameters)
+
+            def close(self):
+                self.connection.close()
+
+        self_case = self
+
+        def connect_and_probe(*args, **kwargs):
+            return ProbedConnection(real_connect(*args, **kwargs))
+
+        with patch(
+            "scripts.wallet_governance_log_reconcile.sqlite3.connect",
+            side_effect=connect_and_probe,
+        ):
+            history = load_local_history_read_only(database, principal)
+
+        self.assertEqual(history, [])
+        self.assertEqual(write_was_rejected, [True])
 
 
 if __name__ == "__main__":
