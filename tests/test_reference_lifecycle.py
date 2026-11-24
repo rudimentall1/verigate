@@ -861,6 +861,30 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             self.governance_policy,
         )
 
+    def test_attestor_rotation_does_not_reactivate_revoked_authority(self):
+        self._attestor()
+        service = AttestorAuthorityService(self.storage)
+        service.apply(
+            service.build_action(
+                action="ATTESTOR_REVOKE",
+                attestor_id="external-reference",
+                reason="revoke before key replacement",
+                governance_policy_sha256=self.governance_policy.digest,
+            ),
+            [
+                _governance_approval(
+                    service.build_action(
+                        action="ATTESTOR_REVOKE",
+                        attestor_id="external-reference",
+                        reason="unused",
+                        governance_policy_sha256=self.governance_policy.digest,
+                    ),
+                    self.governance_key,
+                )
+            ],
+            self.governance_policy,
+        )
+
     def test_historical_attestation_survives_attestor_key_rotation(self):
         original_manifest = self._valid_manifest()
         self._apply_attestor_lifecycle_action(
