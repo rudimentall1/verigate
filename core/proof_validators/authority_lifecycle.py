@@ -12,6 +12,18 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from core.proof_engine import canonical, digest
 from core.authority_protocol import Authority, AuthorityState as GenesisAuthorityState
 from core.governance import GovernancePolicy, verify_governance_quorum
+
+
+def _finite_timestamp(value: Any) -> float | None:
+    """Return a finite timestamp, rejecting values that overflow float conversion."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        timestamp = float(value)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    return timestamp if math.isfinite(timestamp) else None
+
 from .common import (
     validate_requirements,
     validate_context_binding,
@@ -57,10 +69,10 @@ def _verify_outcome_attestation_signature(
     if (
         isinstance(attested_at, bool)
         or not isinstance(attested_at, (int, float))
-        or not math.isfinite(float(attested_at))
+        or _finite_timestamp(attested_at) is None
         or isinstance(created_at, bool)
         or not isinstance(created_at, (int, float))
-        or not math.isfinite(float(created_at))
+        or _finite_timestamp(created_at) is None
         or float(attested_at) < float(created_at)
     ):
         return False, "outcome attestation time is invalid for registered attestor authority"
@@ -71,7 +83,7 @@ def _verify_outcome_attestation_signature(
             if (
                 isinstance(boundary, bool)
                 or not isinstance(boundary, (int, float))
-                or not math.isfinite(float(boundary))
+                or _finite_timestamp(boundary) is None
             ):
                 return False, f"registered attestor {comparison} time is invalid"
             if float(attested_at) >= float(boundary):
@@ -396,7 +408,7 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
             if (
                 isinstance(issued_at, bool)
                 or not isinstance(issued_at, (int, float))
-                or not math.isfinite(float(issued_at))
+                or _finite_timestamp(issued_at) is None
             ):
                 return False, "governance approval issue time is invalid"
             approval_issue_times.append(float(issued_at))
@@ -407,7 +419,7 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         if (
             isinstance(action_issued_at, bool)
             or not isinstance(action_issued_at, (int, float))
-            or not math.isfinite(float(action_issued_at))
+            or _finite_timestamp(action_issued_at) is None
         ):
             return False, "governance action issue time is invalid"
         # Verify the quorum at the first instant all collected signatures
