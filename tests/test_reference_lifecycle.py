@@ -646,5 +646,56 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
         self.assertIn("attestor", standalone.stdout.lower())
 
+
+    def test_authority_lifecycle_rejects_oversized_timestamps_without_overflow(self):
+        timestamp_mutations = (
+            ("governance action issued_at", "governance_action", ("issued_at",)),
+            ("governance action expires_at", "governance_action", ("expires_at",)),
+            ("governance approval issued_at", "governance_approval", ("payload", "issued_at")),
+            ("governance approval expires_at", "governance_approval", ("payload", "expires_at")),
+            ("outcome attestation attested_at", "outcome_attestation", ("payload", "attested_at")),
+        )
+        valid_manifest = self._valid_manifest()
+
+        for label, node_type, path in timestamp_mutations:
+            for oversized in (10**400, -(10**400)):
+                with self.subTest(field=label, value_sign="negative" if oversized < 0 else "positive"):
+                    manifest = json.loads(json.dumps(valid_manifest))
+                    node = next(
+                        item for item in manifest["payload"]["nodes"]
+                        if item["type"] == node_type
+                    )
+                    target = node["data"]
+                    for key in path[:-1]:
+                        target = target[key]
+                    target[path[-1]] = oversized
+                    self._resign_mutated_manifest(manifest)
+
+                    result = verify_proof(
+                        manifest,
+                        trusted_public_key_b64=manifest["issuer_public_key_b64"],
+                    )
+                    self.assertFalse(result["valid"], result)
+
+                    proof_path = Path(self.tmp.name) / "oversized-timestamp-proof.json"
+                    proof_path.write_bytes(
+                        serialize_proof_package(build_proof_package(manifest))
+                    )
+                    verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+                    standalone = subprocess.run(
+                        [
+                            sys.executable,
+                            str(verifier),
+                            str(proof_path),
+                            "--public-key",
+                            str(self.public_path),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
+                    self.assertNotIn("Traceback", standalone.stderr)
+
 if __name__ == "__main__":
     unittest.main()
