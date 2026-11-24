@@ -683,6 +683,33 @@ class MultiPartyGovernanceTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     policy.validate()
 
+    def test_governance_policy_from_dict_rejects_coercible_non_integer_values(self):
+        base = self.policy.as_dict()
+        invalid_cases = (
+            ("version", True),
+            ("version", 1.5),
+            ("version", "1"),
+            ("threshold", True),
+            ("threshold", 2.5),
+            ("threshold", "2"),
+            ("max_approval_lifetime_seconds", False),
+            ("max_approval_lifetime_seconds", 30.5),
+            ("max_approval_lifetime_seconds", "300"),
+        )
+        for field, value in invalid_cases:
+            with self.subTest(field=field, value=value):
+                malformed = dict(base)
+                malformed[field] = value
+                with self.assertRaisesRegex(ValueError, "must be an integer"):
+                    GovernancePolicy.from_dict(malformed)
+
+        for value in (True, 1.5, "1"):
+            with self.subTest(required_role_count=value):
+                malformed = dict(base)
+                malformed["required_roles"] = {"security": value}
+                with self.assertRaisesRegex(ValueError, "role names and counts"):
+                    GovernancePolicy.from_dict(malformed)
+
     def test_governance_quorum_rejects_non_finite_verification_time(self):
         action, approvals = self.suspended_action()
         for now in (float("nan"), 10 ** 400):
