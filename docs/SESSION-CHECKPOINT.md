@@ -366,7 +366,7 @@ This section supersedes earlier "unmerged/pending" statements above where they c
 
 ### PR #81 checkpoint branch refresh
 
-- This checkpoint PR is being rebased to the current `main` so its branch does not retain stale ancestry after #66's squash merge.
+- Rebase onto current `main` is complete; this checkpoint branch no longer retains stale ancestry after #66's squash merge.
 - It remains documentation-only; no runtime or production behavior is changed.
 
 ### Immediate next steps
