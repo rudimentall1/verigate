@@ -345,7 +345,8 @@ class GovernancePolicy:
         seen_roles = set()
         for role, count in self.required_roles:
             if (
-                not role
+                not isinstance(role, str)
+                or not role
                 or isinstance(count, bool)
                 or not isinstance(count, int)
                 or count < 1
@@ -369,15 +370,15 @@ class GovernancePolicy:
         )
         policy = cls(
             policy_id=data["policy_id"],
-            version=int(data.get("version", 1)),
-            threshold=int(data["threshold"]),
+            version=data.get("version", 1),
+            threshold=data["threshold"],
             members=members,
             required_roles=tuple(
-                (str(role), int(count))
+                (role, count)
                 for role, count in data.get("required_roles", {}).items()
             ),
-            max_approval_lifetime_seconds=int(
-                data.get("max_approval_lifetime_seconds", 300)
+            max_approval_lifetime_seconds=data.get(
+                "max_approval_lifetime_seconds", 300
             ),
             allowed_actions=tuple(data.get("allowed_actions", ("AUTHORITY_RESET",))),
         )
