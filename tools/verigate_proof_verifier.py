@@ -6,6 +6,17 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 PROTOCOL='verigate-authority-proof-v1'; PKG='verigate-proof-package-v1'; MEDIA='application/vnd.verigate.proof-package+json'; ZERO='0'*64
+
+
+def finite_timestamp(value):
+    """Return a finite timestamp, rejecting values that overflow float conversion."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        timestamp = float(value)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    return timestamp if math.isfinite(timestamp) else None
 REQUIRED_AUTHORITY_TYPES=('action_intent','execution_authorization','execution_receipt','outcome_claim','observed_effect','outcome_attestation','authority_event','authority_state','authority_state_after','authority_ledger','genesis_authority','capability')
 def canon(x): return json.dumps(x,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
 def sha(x): return hashlib.sha256(canon(x)).hexdigest()
@@ -255,8 +266,8 @@ def verify_governance(p, attestor_id, attestor_data):
             or not isinstance(action_issued, (int, float))
             or isinstance(action_expires, bool)
             or not isinstance(action_expires, (int, float))
-            or not math.isfinite(float(action_issued))
-            or not math.isfinite(float(action_expires))
+            or _finite_timestamp(action_issued) is None
+            or _finite_timestamp(action_expires) is None
             or action_expires <= action_issued
             or action_expires - action_issued > lifetime
         ):
@@ -303,8 +314,8 @@ def verify_governance(p, attestor_id, attestor_data):
                 or not isinstance(issued, (int, float))
                 or isinstance(expires, bool)
                 or not isinstance(expires, (int, float))
-                or not math.isfinite(float(issued))
-                or not math.isfinite(float(expires))
+                or _finite_timestamp(issued) is None
+                or _finite_timestamp(expires) is None
                 or expires <= issued
                 or expires - issued > lifetime
             ):
@@ -383,10 +394,10 @@ def verify_outcome_attestation(attestation, attestor):
     if (
         isinstance(attested_at, bool)
         or not isinstance(attested_at, (int, float))
-        or not math.isfinite(float(attested_at))
+        or _finite_timestamp(attested_at) is None
         or isinstance(created_at, bool)
         or not isinstance(created_at, (int, float))
-        or not math.isfinite(float(created_at))
+        or _finite_timestamp(created_at) is None
         or float(attested_at) < float(created_at)
     ):
         return False, "outcome attestation time is invalid for registered attestor authority"
@@ -397,7 +408,7 @@ def verify_outcome_attestation(attestation, attestor):
             if (
                 isinstance(boundary, bool)
                 or not isinstance(boundary, (int, float))
-                or not math.isfinite(float(boundary))
+                or _finite_timestamp(boundary) is None
             ):
                 return False, f"registered attestor {label} time is invalid"
             if float(attested_at) >= float(boundary):
