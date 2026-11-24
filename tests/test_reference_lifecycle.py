@@ -735,8 +735,13 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             new_key=Ed25519PrivateKey.generate(),
         )
 
+        authority_snapshot_after = next(
+            node["data"] for node in original_manifest["payload"]["nodes"]
+            if node["type"] == "authority_state_after"
+        )
         graph = EvidenceGraph(self.storage, self.public_key).build(
-            original_manifest["payload"]["authorization_id"]
+            original_manifest["payload"]["authorization_id"],
+            authority_snapshot_after=authority_snapshot_after,
         )
         self.assertTrue(
             graph["verification"]["all_signed_artifacts_valid"],
