@@ -405,23 +405,23 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
             ):
                 return False, "governance approval identity is missing, duplicated, or inconsistent"
             issued_at = approval_payload.get("issued_at")
+            expires_at = approval_payload.get("expires_at")
             if (
-                isinstance(issued_at, bool)
-                or not isinstance(issued_at, (int, float))
-                or _finite_timestamp(issued_at) is None
+                _finite_timestamp(issued_at) is None
+                or _finite_timestamp(expires_at) is None
             ):
-                return False, "governance approval issue time is invalid"
+                return False, "governance approval timestamps are invalid"
             approval_issue_times.append(float(issued_at))
             approval_ids.add(approval_id)
             approval_data.append(signed_approval)
 
         action_issued_at = action_data.get("issued_at")
+        action_expires_at = action_data.get("expires_at")
         if (
-            isinstance(action_issued_at, bool)
-            or not isinstance(action_issued_at, (int, float))
-            or _finite_timestamp(action_issued_at) is None
+            _finite_timestamp(action_issued_at) is None
+            or _finite_timestamp(action_expires_at) is None
         ):
-            return False, "governance action issue time is invalid"
+            return False, "governance action timestamps are invalid"
         # Verify the quorum at the first instant all collected signatures
         # existed. This keeps an expired historical approval verifiable while
         # still requiring every signature and the action to have been live.
