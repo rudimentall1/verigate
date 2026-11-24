@@ -421,3 +421,17 @@ This section supersedes earlier "unmerged/pending" statements above where they c
 - PR #69 remains based on the old #68 head and must be rebased after #68 is accepted.
 - Source review of its current `core/attestor_history.py` found that `ATTESTOR_ROTATE` sets state to ACTIVE and clears `revoked_at`. This conflicts with the #66 invariant that key rotation must preserve revoked/expired authority state. Fix with a test-first regression before #69 can merge.
 - The same module has timestamp conversions that need overflow-safe validation; PR #82 contains related hardening, but must be reviewed on the integrated rebased tree.
+
+
+### PR #68 latest head and transition-state regression — 2026-11-24
+
+- PR #68 head advanced to `48e7a7f076e55ff4c34eac503971e50d481c2f60`.
+- Added a test-first regression for repeated `ATTESTOR_REVOKE`; the red run [45353938356](https://github.com/rudimentall1/verigate/actions/runs/45353938356) showed both core and standalone verifiers accepted the invalid repeated transition.
+- Both verifiers now require revocation to follow ACTIVE state. Rotation continues to preserve existing status/revocation marker; activation retains the marker in the current snapshot.
+- Current-head GitHub Actions run [45354080414](https://github.com/rudimentall1/verigate/actions/runs/45354080414): **all four jobs passed**, Python suite **706 tests OK**, including Anna UI E2E and Linux binary smoke.
+- Current-head Codex code review for `48e7a7f...` is running. No distinct security-review receipt/status has been returned. PR #68 remains Draft and unmerged.
+
+### PR #69 additional source-review findings
+
+- In addition to the rotation-state issue already recorded, `core/attestor_history.py` currently sorts governance actions by effective time before checking monotonic order. This can normalize malformed/out-of-order persisted history instead of rejecting it. Preserve source order and reject non-monotonic input with a regression test.
+- The module also contains numeric-to-float conversions that need explicit overflow-safe handling; inspect together with PR #82's deserialization hardening after rebasing.
