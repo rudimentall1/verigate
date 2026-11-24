@@ -74,7 +74,7 @@ class EvidenceGraph:
         try:
             policy = GovernancePolicy.from_dict(policy_data)
             ok, reason = verify_governance_quorum(action, approvals, policy)
-        except (TypeError, ValueError, KeyError) as exc:
+        except (TypeError, ValueError, KeyError, OverflowError) as exc:
             ok, reason = False, f"invalid governance envelope: {exc}"
         verification[f"governance:{action.get('action_id', subject_id)}"] = {
             "valid": ok,
