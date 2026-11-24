@@ -429,9 +429,18 @@ This section supersedes earlier "unmerged/pending" statements above where they c
 - Added a test-first regression for repeated `ATTESTOR_REVOKE`; the red run [45353938356](https://github.com/rudimentall1/verigate/actions/runs/45353938356) showed both core and standalone verifiers accepted the invalid repeated transition.
 - Both verifiers now require revocation to follow ACTIVE state. Rotation continues to preserve existing status/revocation marker; activation retains the marker in the current snapshot.
 - Current-head GitHub Actions run [45354080414](https://github.com/rudimentall1/verigate/actions/runs/45354080414): **all four jobs passed**, Python suite **706 tests OK**, including Anna UI E2E and Linux binary smoke.
-- Current-head Codex code review for `48e7a7f...` is running. No distinct security-review receipt/status has been returned. PR #68 remains Draft and unmerged.
+- Exact-head Codex Code Review for `48e7a7f...` completed with no findings before the PR was marked Ready for review. Marking it Ready triggered another review cycle, which is currently running; a separate security-review receipt/status has not yet been returned. PR #68 is Ready for review and remains unmerged.
 
 ### PR #69 additional source-review findings
 
 - In addition to the rotation-state issue already recorded, `core/attestor_history.py` currently sorts governance actions by effective time before checking monotonic order. This can normalize malformed/out-of-order persisted history instead of rejecting it. Preserve source order and reject non-monotonic input with a regression test.
 - The module also contains numeric-to-float conversions that need explicit overflow-safe handling; inspect together with PR #82's deserialization hardening after rebasing.
+
+
+### PR #68 / #81 follow-up status — 2026-11-24
+
+- PR #68 was marked Ready for review after the exact-head code review of `48e7a7f...` completed without findings and the 706-test CI run passed all four jobs.
+- The Ready transition triggered a fresh Codex review cycle for the same head; it is running. A separate security-review receipt/status is still absent despite an explicit request. Do not merge until the fresh review finishes and security review is resolved or explicitly determined not to be a required gate.
+- PR #81's P3 checkpoint wording finding was fixed: the document now says the rebase onto `main` is complete. Its review thread is resolved. Updated-head CI run [45357618214](https://github.com/rudimentall1/verigate/actions/runs/45357618214) has Python, contracts and container jobs passed; Anna UI E2E was still running at last poll.
+- PR #81 was re-reviewed on the updated head `d15ad99...`; the new review request is pending.
+- PR #69 remains stacked on the pre-final #68 head and is not ready to rebase or merge until #68 lands. Its source review found rotation reactivating revoked state, sorting before validating chronological input, and unguarded numeric-to-float conversions in `core/attestor_history.py`.
