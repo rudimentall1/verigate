@@ -11,7 +11,7 @@ from core.policy import Policy
 from core.storage import Storage
 from core.models import Capability, PaymentIntent
 from enforcement.local import ExecutionGate
-from enforcement.protocol import ExecutionAdapter
+from enforcement.protocol import ExecutionAdapter, ExecutionPermit, _issue_execution_permit
 
 
 class ExecutionGateTest(unittest.TestCase):
@@ -113,6 +113,84 @@ class ExecutionGateTest(unittest.TestCase):
             ok, reason = gate.consume(auth)
             self.assertFalse(ok)
             self.assertEqual(reason, "execution authorization already consumed")
+        finally:
+            storage.close()
+
+    def test_direct_consume_uses_gate_owned_authorization_snapshot(self):
+        auth, action = self._auth_pair()
+        original_nonce = auth["payload"]["nonce"]
+        original_authorization_id = auth["payload"]["authorization_id"]
+        storage = Storage(self.db)
+        try:
+            gate = ExecutionGate(storage, load_public_key(self.pub))
+            original_validate = gate.validate
+
+            def validate_then_mutate(snapshot, *, verification_time=None):
+                result = original_validate(snapshot, verification_time=verification_time)
+                # Mutate the caller-owned object after verification. The gate
+                # must consume the nonce from its own pre-verification copy.
+                auth["payload"]["nonce"] = "attacker-nonce"
+                auth["payload"]["authorization_id"] = "f" * 64
+                return result
+
+            with patch.object(gate, "validate", side_effect=validate_then_mutate):
+                ok, reason = gate.consume(auth)
+
+            self.assertTrue(ok, reason)
+            auth["payload"]["nonce"] = original_nonce
+            auth["payload"]["authorization_id"] = original_authorization_id
+            ok, reason = gate.consume(auth)
+            self.assertFalse(ok)
+            self.assertEqual(reason, "execution authorization already consumed")
+        finally:
+            storage.close()
+
+    def test_direct_execute_uses_gate_owned_authorization_snapshot(self):
+        auth, action = self._auth_pair()
+        original_target = auth["payload"]["action"]["target"]
+        calls = []
+        storage = Storage(self.db)
+        try:
+            gate = ExecutionGate(storage, load_public_key(self.pub))
+            original_validate = gate.validate
+
+            def validate_then_mutate(snapshot, *, verification_time=None):
+                result = original_validate(snapshot, verification_time=verification_time)
+                auth["payload"]["action"]["target"] = "attacker-target"
+                return result
+
+            with patch.object(gate, "validate", side_effect=validate_then_mutate):
+                gate.execute(auth, lambda authorized_action: calls.append(authorized_action["target"]))
+
+            self.assertEqual(calls, [original_target])
+            self.assertEqual(auth["payload"]["action"]["target"], "attacker-target")
+        finally:
+            storage.close()
+
+    def test_post_consume_hook_uses_snapshot_after_permit_claim(self):
+        auth, action = self._auth_pair()
+        original_target = auth["payload"]["action"]["target"]
+        calls = []
+        storage = Storage(self.db)
+        try:
+            gate = ExecutionGate(storage, load_public_key(self.pub))
+            ok, reason = gate.consume(auth)
+            self.assertTrue(ok, reason)
+            permit = _issue_execution_permit(auth)
+            original_claim = ExecutionPermit.claim
+
+            def claim_then_mutate(permit_instance, snapshot):
+                original_claim(permit_instance, snapshot)
+                auth["payload"]["action"]["target"] = "attacker-target"
+
+            with patch.object(ExecutionPermit, "claim", autospec=True, side_effect=claim_then_mutate):
+                gate.execute_after_consume(
+                    auth, lambda authorized_action: calls.append(authorized_action["target"]),
+                    permit=permit,
+                )
+
+            self.assertEqual(calls, [original_target])
+            self.assertEqual(auth["payload"]["action"]["target"], "attacker-target")
         finally:
             storage.close()
 

@@ -25,6 +25,8 @@ from core.models import AgentIdentity, Capability, Decision
 from core.policy import Policy
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
+from enforcement.protocol import ExecutionPermit, _issue_execution_permit
+from unittest.mock import patch
 from enforcement.router import ExecutionRouter
 
 
@@ -145,6 +147,35 @@ class ValtaProxyAdapterTests(unittest.TestCase):
         )
 
         self.assertEqual("chatcmpl-valta-mock", result["id"])
+        self.assertEqual(1, len(client.calls))
+        self.assertEqual(body, client.calls[0][0])
+        self.assertEqual(self.run_id, client.calls[0][1])
+
+
+    def test_post_consume_hook_claims_router_snapshot(self):
+        artifacts = self.authorize()
+        authorization = artifacts["execution_authorization"]
+        body = canonical_request_bytes(self.request)
+        client = FakeValtaClient()
+        adapter = ValtaProxyExecutionAdapter(body, self.run_id, client)
+        permit = _issue_execution_permit(authorization)
+        original_claim = ExecutionPermit.claim
+        seen = []
+
+        def claim_and_mutate(permit_instance, snapshot):
+            seen.append(snapshot)
+            original_claim(permit_instance, snapshot)
+            authorization["payload"]["action"]["target"] = "https://attacker.invalid"
+
+        with patch.object(ExecutionPermit, "claim", autospec=True, side_effect=claim_and_mutate):
+            adapter.execute_after_consume(
+                authorization,
+                lambda _action: self.fail("Valta adapter must use its bound request"),
+                permit=permit,
+            )
+
+        self.assertEqual(1, len(seen))
+        self.assertIsNot(authorization, seen[0])
         self.assertEqual(1, len(client.calls))
         self.assertEqual(body, client.calls[0][0])
         self.assertEqual(self.run_id, client.calls[0][1])

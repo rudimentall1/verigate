@@ -49,6 +49,13 @@ class SolanaRpcClient:
             raise SolanaRpcError(f"Solana RPC error: {body['error']}")
         return body.get("result")
 
+    def get_genesis_hash(self) -> str:
+        """Return the genesis hash identifying the connected Solana cluster."""
+        result = self._request("getGenesisHash", [])
+        if not isinstance(result, str) or not result:
+            raise SolanaRpcError("getGenesisHash returned invalid result")
+        return result
+
     def request_airdrop(self, public_key: str, lamports: int) -> str:
         if not isinstance(public_key, str) or not public_key:
             raise ValueError("invalid Solana public key")

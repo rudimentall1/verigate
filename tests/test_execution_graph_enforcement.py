@@ -10,6 +10,7 @@ from core.policy import Policy
 from core.storage import Storage
 from enforcement.router import ExecutionRouter
 from enforcement.networks import NetworkRegistry
+from enforcement.protocol import ExecutionPermit
 
 
 class RecordingAdapter:
@@ -23,7 +24,8 @@ class RecordingAdapter:
         self.calls += 1
         return True, "consumed"
 
-    def execute_after_consume(self, authorization, side_effect):
+    def execute_after_consume(self, authorization, side_effect, *, permit):
+        permit.claim(authorization)
         self.calls += 1
         return side_effect(authorization["payload"]["action"])
 

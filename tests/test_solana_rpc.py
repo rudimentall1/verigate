@@ -1,4 +1,3 @@
-import base64
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,9 +10,42 @@ from core.authority_state import DynamicAuthorityService
 from core.policy import Policy
 from enforcement.solana import SolanaExecutionAdapter
 from enforcement.solana_rpc import SolanaRpcClient, SolanaRpcError
+from solana_fixtures import make_signed_transfer
 
 
 class SolanaRpcClientTest(unittest.TestCase):
+    def test_get_genesis_hash_parses_cluster_identity(self):
+        calls = []
+
+        def transport(endpoint, payload, headers, timeout):
+            calls.append(payload)
+            return b'{"jsonrpc":"2.0","id":1,"result":"EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"}'
+
+        client = SolanaRpcClient("https://example.invalid", transport=transport)
+        self.assertEqual(
+            client.get_genesis_hash(),
+            "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+        )
+        self.assertEqual(len(calls), 1)
+        self.assertIn(b'"method":"getGenesisHash"', calls[0])
+        self.assertIn(b'"params":[]', calls[0])
+
+    def test_get_genesis_hash_rejects_missing_result(self):
+        client = SolanaRpcClient(
+            "https://example.invalid",
+            transport=lambda *_: b'{"jsonrpc":"2.0","id":1,"result":null}',
+        )
+        with self.assertRaises(SolanaRpcError):
+            client.get_genesis_hash()
+
+    def test_get_genesis_hash_propagates_rpc_error(self):
+        client = SolanaRpcClient(
+            "https://example.invalid",
+            transport=lambda *_: b'{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"bad"}}',
+        )
+        with self.assertRaises(SolanaRpcError):
+            client.get_genesis_hash()
+
     def test_get_balance_parses_lamports(self):
         client = SolanaRpcClient(
             "https://example.invalid",
@@ -52,14 +84,15 @@ class SolanaExecutionIntegrationTest(unittest.TestCase):
             generate_keypair(private, public)
             storage = Storage(Path(td) / "audit.db")
             try:
-                raw = base64.b64encode(b"signed-solana-transaction").decode("ascii")
+                raw, sender_address, recipient_address = make_signed_transfer()
                 intent = ActionIntent(
                     agent_id="solana-agent",
-                    action_type="token.transfer",
-                    target="recipient",
-                    asset="USDC",
+                    action_type="native.transfer",
+                    target=recipient_address,
+                    amount=0.001,
+                    asset="SOL",
                     network="solana",
-                    metadata={"solana_transaction": raw},
+                    metadata={"solana_transaction": raw, "solana_sender": sender_address, "destination": recipient_address, "solana_genesis_hash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"},
                 )
                 decision = GuardrailDecision(
                     intent_id=intent.intent_id,
@@ -70,10 +103,10 @@ class SolanaExecutionIntegrationTest(unittest.TestCase):
                 capability = Capability(
                     capability_id="cap-solana-rpc",
                     agent_id=intent.agent_id,
-                    allowed_actions=("token.transfer",),
-                    allowed_targets=("recipient",),
+                    allowed_actions=("native.transfer",),
+                    allowed_targets=(recipient_address,),
                     allowed_networks=("solana",),
-                    allowed_assets=("USDC",),
+                    allowed_assets=("SOL",),
                 )
                 storage.register_capability(capability)
                 authority = DynamicAuthorityService(storage).snapshot(
@@ -94,7 +127,7 @@ class SolanaExecutionIntegrationTest(unittest.TestCase):
                     "https://example.invalid",
                     transport=lambda *_: b'{"jsonrpc":"2.0","id":1,"result":"5nSig"}',
                 )
-                adapter = SolanaExecutionAdapter(storage, load_public_key(public))
+                adapter = SolanaExecutionAdapter(storage, load_public_key(public), lambda: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG")
                 self.assertEqual(adapter.execute(auth, rpc.send_transaction), "5nSig")
             finally:
                 storage.close()

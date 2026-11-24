@@ -8,21 +8,25 @@ from core.policy import Policy
 from core.external_state import ExternalStateVerifierRegistry
 from core.storage import Storage
 from enforcement.router import ExecutionRouter
+from enforcement.protocol import _issue_execution_permit
 from enforcement.networks import NetworkRegistry
 from core.proof_validators.common import validate_external_state_execution_scope
 
 class Adapter:
     def validate(self, authorization): return True, "validated"
-    def execute_after_consume(self, authorization, side_effect): return side_effect(authorization["payload"]["action"])
+    def execute_after_consume(self, authorization, side_effect, *, permit):
+        permit.claim(authorization)
+        return side_effect(authorization["payload"]["action"])
     def execute(self, authorization, side_effect):
         self.consume(authorization)
-        return self.execute_after_consume(authorization, side_effect)
+        return self.execute_after_consume(authorization, side_effect, permit=_issue_execution_permit(authorization))
     def consume(self, authorization): return True, "ok"
 
 class BoundAdapter(Adapter):
     execution_external_state_scope = "atomic"
 
-    def execute_bound_after_consume(self, authorization, external_state, side_effect):
+    def execute_bound_after_consume(self, authorization, external_state, side_effect, *, permit):
+        permit.claim(authorization)
         # Test adapter models an execution backend that atomically binds the
         # state precondition before the side effect.
         assert external_state == authorization["payload"]["external_state"]
@@ -30,7 +34,10 @@ class BoundAdapter(Adapter):
 
     def execute_bound(self, authorization, external_state, side_effect):
         self.consume(authorization)
-        return self.execute_bound_after_consume(authorization, external_state, side_effect)
+        return self.execute_bound_after_consume(
+            authorization, external_state, side_effect,
+            permit=_issue_execution_permit(authorization),
+        )
 
 class ExternalStateTest(unittest.TestCase):
     def setUp(self):
@@ -126,7 +133,8 @@ class ExternalStateTest(unittest.TestCase):
 
     def test_required_state_blocks_adapter_that_fakes_bound_method_without_atomic_scope(self):
         class FakeBoundAdapter(Adapter):
-            def execute_bound_after_consume(self, authorization, external_state, side_effect):
+            def execute_bound_after_consume(self, authorization, external_state, side_effect, *, permit):
+                permit.claim(authorization)
                 return side_effect(authorization["payload"]["action"])
 
         action=ActionIntent(agent_id='a',action_type='orders.create',target='orders',metadata={'external_state':{'kind':'http.state','reference':'orders','digest':'b'*64}})

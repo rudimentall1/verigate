@@ -5,6 +5,7 @@ followed by persistent, atomic nonce consumption before a side effect.
 """
 from __future__ import annotations
 
+import copy
 import time
 from typing import Any, Callable
 
@@ -12,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from attest.receipt import verify_execution_authorization
 from core.storage import Storage
-from enforcement.protocol import ExecutionAdapter
+from enforcement.protocol import ExecutionAdapter, ExecutionPermit, _issue_execution_permit
 
 
 class ExecutionGate(ExecutionAdapter):
@@ -24,6 +25,7 @@ class ExecutionGate(ExecutionAdapter):
 
     def validate(self, authorization: dict[str, Any], *, verification_time: int | None = None) -> tuple[bool, str]:
         """Verify prerequisites without consuming the authorization."""
+        authorization = copy.deepcopy(authorization)
         ok, reason = verify_execution_authorization(
             authorization,
             self.public_key,
@@ -44,6 +46,8 @@ class ExecutionGate(ExecutionAdapter):
         execute after it returns (True, ...). Nonce consumption is persistent
         and protected by a UNIQUE database constraint.
         """
+        # Bind verification and nonce consumption to one gate-owned envelope.
+        authorization = copy.deepcopy(authorization)
         if verification_time is None:
             ok, reason = self.validate(authorization)
         else:
@@ -63,13 +67,24 @@ class ExecutionGate(ExecutionAdapter):
 
         return True, "execution authorization consumed"
 
-    def execute_after_consume(
+    def _execute_after_consume(
         self,
         authorization: dict[str, Any],
         side_effect: Callable[[dict[str, Any]], Any],
     ) -> Any:
         """Invoke exactly one side effect after router-side consumption."""
         return side_effect(authorization["payload"]["action"])
+
+    def execute_after_consume(
+        self,
+        authorization: dict[str, Any],
+        side_effect: Callable[[dict[str, Any]], Any],
+        *,
+        permit: ExecutionPermit,
+    ) -> Any:
+        authorization = copy.deepcopy(authorization)
+        permit.claim(authorization)
+        return self._execute_after_consume(authorization, side_effect)
 
     def execute(
         self,
@@ -81,19 +96,33 @@ class ExecutionGate(ExecutionAdapter):
         The callback is unreachable unless authorization verification and
         one-time nonce consumption both succeed.
         """
+        authorization = copy.deepcopy(authorization)
         ok, reason = self.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return self.execute_after_consume(authorization, side_effect)
+        return self.execute_after_consume(authorization, side_effect, permit=_issue_execution_permit(authorization))
 
-    def execute_bound_after_consume(
+    def _execute_bound_after_consume(
         self,
         authorization: dict[str, Any],
         external_state: dict[str, Any],
         side_effect: Callable[[dict[str, Any]], Any],
     ) -> Any:
         """Default atomic contract: subclasses may require stronger binding."""
-        return self.execute_after_consume(authorization, side_effect)
+        return self._execute_after_consume(authorization, side_effect)
+
+    def execute_bound_after_consume(
+        self,
+        authorization: dict[str, Any],
+        external_state: dict[str, Any],
+        side_effect: Callable[[dict[str, Any]], Any],
+        *,
+        permit: ExecutionPermit,
+    ) -> Any:
+        authorization = copy.deepcopy(authorization)
+        external_state = copy.deepcopy(external_state)
+        permit.claim(authorization)
+        return self._execute_bound_after_consume(authorization, external_state, side_effect)
 
     def execute_bound(
         self,
@@ -101,7 +130,11 @@ class ExecutionGate(ExecutionAdapter):
         external_state: dict[str, Any],
         side_effect: Callable[[dict[str, Any]], Any],
     ) -> Any:
+        authorization = copy.deepcopy(authorization)
         ok, reason = self.consume(authorization)
         if not ok:
             raise PermissionError(reason)
-        return self.execute_bound_after_consume(authorization, external_state, side_effect)
+        return self.execute_bound_after_consume(
+            authorization, external_state, side_effect,
+            permit=_issue_execution_permit(authorization),
+        )
