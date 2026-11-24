@@ -142,6 +142,25 @@ class WalletEnrollmentTests(unittest.TestCase):
         self.assertEqual(first_enrollment["status"], "ACTIVE")
         self.assertEqual(self.storage.wallet_enrollment(first_enrollment["enrollment_id"])["status"], "REVOKED")
 
+    def test_same_installation_reenrollment_lookup_prefers_the_new_active_row(self):
+        first_action = self.make_enroll()
+        first = self.service.apply(first_action, self.approvals(first_action), self.policy)["enrollment"]
+        revoke = self.service.build_action(
+            action="WALLET_REVOKE", reason="rotate enrollment",
+            governance_policy_sha256=self.policy.digest,
+            enrollment_id=first["enrollment_id"],
+        )
+        self.service.apply(revoke, self.approvals(revoke), self.policy)
+
+        second_action = self.make_enroll()
+        second = self.service.apply(second_action, self.approvals(second_action), self.policy)["enrollment"]
+        current = self.storage.wallet_enrollment_for_wallet(
+            first["installation_principal"], first["chain_id"], first["wallet_address"],
+        )
+        self.assertNotEqual(first["enrollment_id"], second["enrollment_id"])
+        self.assertEqual(current["enrollment_id"], second["enrollment_id"])
+        self.assertEqual(current["status"], "ACTIVE")
+
     def test_same_wallet_cannot_be_enrolled_under_two_installations_on_same_chain(self):
         first = self.make_enroll()
         self.service.apply(first, self.approvals(first), self.policy)
