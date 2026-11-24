@@ -683,6 +683,29 @@ class MultiPartyGovernanceTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     policy.validate()
 
+    def test_governance_policy_from_dict_rejects_coerced_integer_fields(self):
+        invalid_fields = (
+            ("version", True),
+            ("version", 1.5),
+            ("threshold", True),
+            ("threshold", 2.5),
+            ("max_approval_lifetime_seconds", True),
+            ("max_approval_lifetime_seconds", 2.5),
+        )
+        for field, invalid_value in invalid_fields:
+            with self.subTest(field=field, invalid_value=invalid_value):
+                data = self.policy.as_dict()
+                data[field] = invalid_value
+                with self.assertRaises(ValueError):
+                    GovernancePolicy.from_dict(data)
+
+        for invalid_count in (True, 1.5):
+            with self.subTest(required_role_count=invalid_count):
+                data = self.policy.as_dict()
+                data["required_roles"] = {"security": invalid_count}
+                with self.assertRaises(ValueError):
+                    GovernancePolicy.from_dict(data)
+
     def test_governance_quorum_rejects_non_finite_verification_time(self):
         action, approvals = self.suspended_action()
         for now in (float("nan"), 10 ** 400):
