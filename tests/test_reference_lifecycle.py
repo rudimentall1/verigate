@@ -738,6 +738,10 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         graph = EvidenceGraph(self.storage, self.public_key).build(
             original_manifest["payload"]["authorization_id"]
         )
+        self.assertTrue(
+            graph["verification"]["all_signed_artifacts_valid"],
+            graph["verification"],
+        )
         rebuilt = build_manifest(
             graph,
             self.private_key,
