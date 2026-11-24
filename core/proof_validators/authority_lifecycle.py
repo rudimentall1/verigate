@@ -37,6 +37,7 @@ def _finite_timestamp(value: Any) -> float | None:
 def _resolve_attestor_authority_at(
     attestor_data: dict[str, Any],
     governed_actions: list[dict[str, Any]],
+    effective_times: dict[str, float],
     attested_at: Any,
 ) -> tuple[dict[str, Any] | None, str]:
     """Reconstruct the attestor key and lifecycle state effective at attested_at."""
@@ -48,14 +49,14 @@ def _resolve_attestor_authority_at(
     state: dict[str, Any] | None = None
     ordered_actions = sorted(
         governed_actions,
-        key=lambda node: _finite_timestamp(node["data"].get("issued_at")) or float("inf"),
+        key=lambda node: effective_times.get(node["id"], float("inf")),
     )
     for node in ordered_actions:
         action = node["data"]
-        issued_at = _finite_timestamp(action.get("issued_at"))
-        if issued_at is None:
-            return None, "governance action timestamps are invalid"
-        if issued_at > timestamp:
+        effective_at = effective_times.get(node["id"])
+        if effective_at is None:
+            return None, "governance action application time is invalid"
+        if effective_at > timestamp:
             continue
         operation = action.get("action")
         if operation == "ATTESTOR_REGISTER":
@@ -92,7 +93,7 @@ def _resolve_attestor_authority_at(
             state["revoked_at"] = None
         elif operation == "ATTESTOR_REVOKE":
             state["status"] = "REVOKED"
-            state["revoked_at"] = issued_at
+            state["revoked_at"] = effective_at
         elif operation == "ATTESTOR_EXPIRE":
             state["status"] = "EXPIRED"
         else:
@@ -422,9 +423,14 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         f"{node['type']}:{node['id']}": node
         for node in payload.get("nodes", [])
     }
+    effective_times: dict[str, float] = {}
     for action_node in governed_actions:
         action_id = action_node["id"]
         action_data = action_node["data"]
+        signed_action_data = {
+            key: value for key, value in action_data.items()
+            if key != "effective_at"
+        }
         action_ref = f"governance_action:{action_id}"
         if not isinstance(action_data, dict) or action_data.get("action_id") != action_id:
             return False, "governance action identifier does not match its evidence node"
@@ -506,7 +512,7 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
             if policy.digest != action_data.get("governance_policy_sha256"):
                 return False, "governance action policy fingerprint does not match policy evidence"
             valid_quorum, quorum_reason = verify_governance_quorum(
-                action_data,
+                signed_action_data,
                 approval_data,
                 policy,
                 now=verification_time,
@@ -515,10 +521,24 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
             return False, f"invalid governance quorum evidence: {exc}"
         if not valid_quorum:
             return False, f"governance quorum verification failed: {quorum_reason}"
+        recorded_at = action_data.get("effective_at")
+        effective_at = (
+            verification_time
+            if recorded_at is None
+            else _finite_timestamp(recorded_at)
+        )
+        if (
+            effective_at is None
+            or effective_at < verification_time
+            or effective_at >= float(action_expires_at)
+        ):
+            return False, "governance action application timestamp is invalid"
+        effective_times[action_id] = effective_at
 
     historical_attestor, historical_reason = _resolve_attestor_authority_at(
         attestor["data"],
         governed_actions,
+        effective_times,
         attestation_payload.get("attested_at"),
     )
     if historical_attestor is None:
