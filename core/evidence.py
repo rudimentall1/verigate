@@ -87,7 +87,10 @@ class EvidenceGraph:
         ):
             nodes.append(_node("governance_policy", governance_policy_id, policy_data))
         action_id = action.get("action_id", subject_id)
-        nodes.append(_node("governance_action", action_id, action))
+        action_evidence = dict(action)
+        if subject_type == "attestor_authority" and envelope.get("recorded_at") is not None:
+            action_evidence["effective_at"] = envelope["recorded_at"]
+        nodes.append(_node("governance_action", action_id, action_evidence))
         edges.append({
             "from": f"governance_action:{action_id}",
             "relation": relation,
