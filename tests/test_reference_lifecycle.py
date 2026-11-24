@@ -794,15 +794,14 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             manifest,
             trusted_public_key_b64=manifest["issuer_public_key_b64"],
         )
-        self.assertFalse(
-            core_result["valid"],
-            "verifier accepted a registry snapshot that contradicts the final governance state",
-        )
-
         standalone_result = self._run_standalone_verifier(
             manifest,
             "--public-key",
             str(self.public_path),
+        )
+        self.assertFalse(
+            core_result["valid"],
+            "core verifier accepted a registry snapshot that contradicts the final governance state",
         )
         self.assertNotEqual(
             standalone_result.returncode,
