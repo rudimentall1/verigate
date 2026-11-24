@@ -809,6 +809,66 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             standalone_result.stdout + standalone_result.stderr,
         )
 
+    def test_authority_lifecycle_accepts_attestation_after_governance_reactivation(self):
+        manifest = self._valid_manifest()
+        payload = manifest["payload"]
+        attestation = next(
+            node for node in payload["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        register_action = next(
+            node["data"] for node in payload["nodes"]
+            if node["type"] == "governance_action"
+            and node["data"]["action"] == "ATTESTOR_REGISTER"
+        )
+        register_issued_at = register_action["issued_at"]
+        revoke_at = register_issued_at + 100
+        activate_at = register_issued_at + 300
+        attested_at = register_issued_at + 400
+        attestation["data"]["payload"]["attested_at"] = attested_at
+        attestation["data"]["signature"] = base64.b64encode(
+            self._last_attestor_private_key.sign(
+                canonical(attestation["data"]["payload"])
+            )
+        ).decode()
+
+        self._append_attestor_governance_action(
+            manifest,
+            operation="ATTESTOR_REVOKE",
+            issued_at=revoke_at,
+            action_id="revoke-before-reactivation",
+        )
+        self._append_attestor_governance_action(
+            manifest,
+            operation="ATTESTOR_ACTIVATE",
+            issued_at=activate_at,
+            action_id="activate-after-revocation",
+        )
+        attestor = next(
+            node for node in payload["nodes"]
+            if node["type"] == "attestor_authority"
+        )
+        attestor["data"]["status"] = "ACTIVE"
+        # Storage retains revoked_at as an audit marker after reactivation.
+        attestor["data"]["revoked_at"] = revoke_at + 20
+        self._resign_mutated_manifest(manifest)
+
+        core_result = verify_proof(
+            manifest,
+            trusted_public_key_b64=manifest["issuer_public_key_b64"],
+        )
+        standalone_result = self._run_standalone_verifier(
+            manifest,
+            "--public-key",
+            str(self.public_path),
+        )
+        self.assertTrue(core_result["valid"], core_result)
+        self.assertEqual(
+            standalone_result.returncode,
+            0,
+            standalone_result.stdout + standalone_result.stderr,
+        )
+
     def test_authority_lifecycle_rejects_forged_governance_approval_signature(self):
         manifest = self._valid_manifest()
         forged = json.loads(json.dumps(manifest))
