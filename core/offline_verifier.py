@@ -8,6 +8,8 @@ from core.proof_engine import canonical, digest
 from core.authority_protocol import Authority, AuthorityState as GenesisAuthorityState
 from core.proof_protocol import verify_authority_assertions
 from core.proof_validators.common import validate_authority_learning_binding, validate_historical_authority_binding
+from core.wallet_enrollment_history import resolve_portable_wallet_enrollment_history
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 def _nodes(payload: dict[str, Any]) -> dict[tuple[str, str], dict[str, Any]]:
     return {(n["type"], n["id"]): n for n in payload.get("nodes", [])}
@@ -135,7 +137,13 @@ def _check_authority_transition(payload: dict[str, Any]) -> tuple[bool, str, dic
     }
 
 
-def verify_proof(manifest: dict[str, Any], *, trusted_public_key_b64: str | None = None) -> dict[str, Any]:
+def verify_proof(
+    manifest: dict[str, Any],
+    *,
+    trusted_public_key_b64: str | None = None,
+    trusted_wallet_governance_policy_sha256: list[str] | set[str] | tuple[str, ...] | None = None,
+    trusted_wallet_enrollment_history_sha256: list[str] | set[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
     envelope = verify_manifest(manifest, trusted_public_key_b64); checks: dict[str, dict[str, Any]] = {}
     if not envelope["valid"]:
         return {"valid": False, "reason": envelope["reason"], "checks": {"manifest": {"valid": False, "reason": envelope["reason"]}}}
@@ -158,7 +166,116 @@ def verify_proof(manifest: dict[str, Any], *, trusted_public_key_b64: str | None
         ok, reason = verify_execution_authorization(auth_node["data"], public_key, verification_time=verification_time); checks["execution_authorization"] = {"valid": ok, "reason": reason, "historical_verification_time": verification_time}
         if not ok: return {"valid": False, "reason": reason, "checks": checks}
         if receipt_node is not None:
-            ok, reason = verify_execution_receipt(receipt_node["data"], public_key, auth_node["data"]); checks["execution_receipt"] = {"valid": ok, "reason": reason}
+            receipt_public_key = public_key
+            auth_payload = auth_node["data"].get("payload", {})
+            receipt_payload = receipt_node["data"].get("payload", {})
+            attestation_node = _node(payload, "outcome_attestation")
+            attestation_payload = (
+                attestation_node["data"].get("payload", {})
+                if attestation_node is not None else {}
+            )
+            principal = auth_payload.get("agent_id")
+            if (
+                attestation_payload.get("attestor_type") == "CHAIN_VERIFIER"
+                and isinstance(principal, str)
+                and principal.startswith("anna-installation:")
+            ):
+                submission = receipt_payload.get("submission_data")
+                if not isinstance(submission, dict):
+                    return {
+                        "valid": False,
+                        "reason": "Anna CHAIN_VERIFIER receipt is missing wallet enrollment metadata",
+                        "checks": checks,
+                    }
+                history_nodes = [
+                    item for item in payload.get("nodes", [])
+                    if item.get("type") == "wallet_enrollment_governance_history"
+                    and item.get("id") == principal
+                ]
+                enrollment_nodes = [
+                    item for item in payload.get("nodes", [])
+                    if item.get("type") == "wallet_enrollment"
+                    and isinstance(item.get("data"), dict)
+                    and item["data"].get("installation_principal") == principal
+                ]
+                if len(history_nodes) != 1 or not enrollment_nodes:
+                    return {
+                        "valid": False,
+                        "reason": "portable Anna wallet governance evidence is missing or ambiguous",
+                        "checks": checks,
+                    }
+                history_ref = f"wallet_enrollment_governance_history:{principal}"
+                for enrollment_item in enrollment_nodes:
+                    enrollment_ref = f"wallet_enrollment:{enrollment_item['id']}"
+                    if not any(
+                        edge.get("from") == history_ref
+                        and edge.get("relation") == "COVERS"
+                        and edge.get("to") == enrollment_ref
+                        for edge in payload.get("edges", [])
+                    ):
+                        return {
+                            "valid": False,
+                            "reason": "wallet enrollment snapshot is not covered by the signed governance history",
+                            "checks": checks,
+                        }
+                wallet_ok, wallet_reason, historical_enrollment, wallet_checks = (
+                    resolve_portable_wallet_enrollment_history(
+                        history_nodes[0]["data"],
+                        [item["data"] for item in enrollment_nodes],
+                        installation_principal=principal,
+                        chain_id=submission.get("chain_id"),
+                        wallet_address=submission.get("sender"),
+                        attested_at=attestation_payload.get("attested_at"),
+                        trusted_policy_digests=trusted_wallet_governance_policy_sha256,
+                        trusted_history_digests=trusted_wallet_enrollment_history_sha256,
+                    )
+                )
+                checks.update(wallet_checks)
+                checks["wallet_enrollment"] = {
+                    "valid": wallet_ok,
+                    "reason": wallet_reason,
+                }
+                if not wallet_ok or historical_enrollment is None:
+                    return {"valid": False, "reason": wallet_reason, "checks": checks}
+                enrollment_id = historical_enrollment["enrollment_id"]
+                enrollment_ref = f"wallet_enrollment:{enrollment_id}"
+                if (
+                    not any(
+                        edge.get("from") == enrollment_ref
+                        and edge.get("relation") == "AUTHORIZES_RECEIPT"
+                        and edge.get("to") == f"execution_receipt:{receipt_node['id']}"
+                        for edge in payload.get("edges", [])
+                    )
+                    or receipt_payload.get("network") != historical_enrollment.get("network")
+                ):
+                    return {
+                        "valid": False,
+                        "reason": "wallet enrollment is not bound to the Anna execution receipt",
+                        "checks": checks,
+                    }
+                try:
+                    receipt_public_key = Ed25519PublicKey.from_public_bytes(
+                        base64.b64decode(
+                            historical_enrollment["issuer_public_key_b64"],
+                            validate=True,
+                        )
+                    )
+                except (KeyError, TypeError, ValueError):
+                    return {
+                        "valid": False,
+                        "reason": "wallet enrollment issuer public key is invalid",
+                        "checks": checks,
+                    }
+            if receipt_payload.get("agent_id") != auth_payload.get("agent_id"):
+                return {
+                    "valid": False,
+                    "reason": "execution receipt agent does not match signed authorization",
+                    "checks": checks,
+                }
+            ok, reason = verify_execution_receipt(
+                receipt_node["data"], receipt_public_key, auth_node["data"],
+            )
+            checks["execution_receipt"] = {"valid": ok, "reason": reason}
             if not ok: return {"valid": False, "reason": reason, "checks": checks}
         ok, reason, details = _check_authority_binding(payload); checks["historical_authority"] = {"valid": ok, "reason": reason, "details": details}
         if not ok: return {"valid": False, "reason": reason, "checks": checks}

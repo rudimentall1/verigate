@@ -235,3 +235,258 @@ def resolve_historical_wallet_enrollment(
     historical_enrollment = dict(enrollment_snapshot)
     historical_enrollment.update(historical_state)
     return True, "wallet enrollment governance state resolved at attestation time", historical_enrollment
+
+
+def resolve_portable_wallet_enrollment_history(
+    history_data: dict[str, Any],
+    enrollment_snapshots: list[dict[str, Any]],
+    *,
+    installation_principal: str,
+    chain_id: int,
+    wallet_address: str,
+    attested_at: float,
+    trusted_policy_digests: list[str] | set[str] | tuple[str, ...] | None = None,
+    trusted_history_digests: list[str] | set[str] | tuple[str, ...] | None = None,
+) -> tuple[bool, str, dict[str, Any] | None, dict[str, Any]]:
+    """Verify the complete portable wallet history and resolve its historical active row.
+
+    Policy and history digests are optional for compatibility. When supplied,
+    they are independent allowlists and must match every policy and the exact
+    canonical complete-history root carried by the proof.
+    """
+    checks: dict[str, Any] = {}
+
+    def failure(reason: str):
+        return False, reason, None, checks
+
+    if (
+        not isinstance(history_data, dict)
+        or history_data.get("installation_principal") != installation_principal
+        or not isinstance(installation_principal, str)
+        or not installation_principal.startswith("anna-installation:")
+        or isinstance(chain_id, bool)
+        or not isinstance(chain_id, int)
+        or chain_id <= 0
+        or not isinstance(wallet_address, str)
+        or not re.fullmatch(r"0x[0-9a-fA-F]{40}", wallet_address)
+        or isinstance(attested_at, bool)
+        or not isinstance(attested_at, (int, float))
+        or not _finite_timestamp(attested_at)
+    ):
+        return failure("portable wallet enrollment verification request is malformed")
+
+    envelopes = history_data.get("envelopes")
+    if not isinstance(envelopes, list) or not envelopes:
+        return failure("wallet enrollment governance history is empty")
+    try:
+        ordered_history = sorted(
+            envelopes,
+            key=lambda item: item.get("action", {}).get("action_id", "")
+            if isinstance(item, dict) else "",
+        )
+    except (AttributeError, TypeError):
+        return failure("wallet enrollment governance history is malformed")
+    history_sha256 = digest(ordered_history)
+    if history_data.get("history_sha256") != history_sha256:
+        checks["wallet_enrollment_history_anchor"] = {
+            "valid": False,
+            "pinned": trusted_history_digests is not None,
+            "history_sha256": history_data.get("history_sha256"),
+            "reason": "wallet enrollment governance history fingerprint mismatch",
+        }
+        return failure("wallet enrollment governance history fingerprint mismatch")
+
+    def normalize(values: Any, label: str) -> set[str] | None:
+        if values is None:
+            return None
+        if isinstance(values, str):
+            values = [values]
+        if not isinstance(values, (list, tuple, set)) or not values:
+            raise ValueError(f"at least one trusted {label} digest is required")
+        result = set()
+        for value in values:
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(char not in "0123456789abcdefABCDEF" for char in value)
+            ):
+                raise ValueError(f"trusted {label} digest must be 64 hexadecimal characters")
+            result.add(value.lower())
+        return result
+
+    try:
+        trusted_history = normalize(trusted_history_digests, "wallet enrollment history")
+        trusted_policies = normalize(trusted_policy_digests, "wallet governance policy")
+    except ValueError as exc:
+        return failure(str(exc))
+
+    if trusted_history is None:
+        checks["wallet_enrollment_history_anchor"] = {
+            "valid": True,
+            "pinned": False,
+            "history_sha256": history_sha256,
+            "trusted_history_sha256": [],
+            "reason": "no independent wallet enrollment history digest supplied",
+        }
+    else:
+        untrusted_history = sorted({history_sha256} - trusted_history)
+        checks["wallet_enrollment_history_anchor"] = {
+            "valid": not untrusted_history,
+            "pinned": True,
+            "history_sha256": history_sha256,
+            "trusted_history_sha256": sorted(trusted_history),
+            "untrusted_history_sha256": untrusted_history,
+            "reason": (
+                "wallet enrollment history matches trusted digest"
+                if not untrusted_history
+                else "wallet enrollment history digest is not present in the trusted allowlist"
+            ),
+        }
+        if untrusted_history:
+            return failure(checks["wallet_enrollment_history_anchor"]["reason"])
+
+    if not isinstance(enrollment_snapshots, list) or not enrollment_snapshots:
+        return failure("wallet enrollment registry snapshots are missing")
+    snapshot_by_id: dict[str, dict[str, Any]] = {}
+    for snapshot in enrollment_snapshots:
+        if not isinstance(snapshot, dict):
+            return failure("wallet enrollment registry snapshot is malformed")
+        enrollment_id = snapshot.get("enrollment_id")
+        if (
+            not isinstance(enrollment_id, str)
+            or not enrollment_id
+            or enrollment_id in snapshot_by_id
+            or snapshot.get("installation_principal") != installation_principal
+        ):
+            return failure("wallet enrollment registry identity is missing, duplicated or mismatched")
+        snapshot_by_id[enrollment_id] = snapshot
+
+    seen_action_ids: set[str] = set()
+    policy_digests: set[str] = set()
+    for envelope in ordered_history:
+        if not isinstance(envelope, dict):
+            return failure("wallet enrollment governance envelope is malformed")
+        action = envelope.get("action")
+        approvals = envelope.get("approvals")
+        policy_data = envelope.get("governance_policy")
+        if not isinstance(action, dict) or not isinstance(policy_data, dict):
+            return failure("wallet enrollment governance envelope is incomplete")
+        action_id = action.get("action_id")
+        enrollment_id = action.get("enrollment_id")
+        if (
+            not isinstance(action_id, str)
+            or not action_id
+            or action_id in seen_action_ids
+            or enrollment_id not in snapshot_by_id
+        ):
+            return failure("wallet enrollment governance action identity is duplicated or targets a missing row")
+        seen_action_ids.add(action_id)
+        if (
+            action.get("action") not in {"WALLET_ENROLL", "WALLET_REVOKE"}
+            or not isinstance(approvals, list)
+            or not approvals
+            or envelope.get("algorithm") != "Ed25519-MULTIPARTY"
+        ):
+            return failure("wallet enrollment governance action or approval evidence is invalid")
+
+        action_issued_at = action.get("issued_at")
+        if (
+            isinstance(action_issued_at, bool)
+            or not isinstance(action_issued_at, (int, float))
+            or not _finite_timestamp(action_issued_at)
+        ):
+            return failure("wallet enrollment governance action timestamp is invalid")
+        approval_ids: set[str] = set()
+        approval_issued_at: list[float] = []
+        for approval in approvals:
+            approval_payload = approval.get("payload") if isinstance(approval, dict) else None
+            approval_id = (
+                approval_payload.get("approval_id")
+                if isinstance(approval_payload, dict) else None
+            )
+            issued_at = (
+                approval_payload.get("issued_at")
+                if isinstance(approval_payload, dict) else None
+            )
+            if (
+                not isinstance(approval_id, str)
+                or not approval_id
+                or approval_id in approval_ids
+                or isinstance(issued_at, bool)
+                or not isinstance(issued_at, (int, float))
+                or not _finite_timestamp(issued_at)
+            ):
+                return failure("wallet enrollment governance approval identity or timestamp is invalid")
+            approval_ids.add(approval_id)
+            approval_issued_at.append(float(issued_at))
+
+        verification_time = max([float(action_issued_at), *approval_issued_at])
+        try:
+            policy = GovernancePolicy.from_dict(policy_data)
+            if (
+                policy.digest != action.get("governance_policy_sha256")
+                or envelope.get("governance_policy_sha256") != policy.digest
+                or envelope.get("action_sha256") != digest(action)
+            ):
+                return failure("wallet enrollment governance evidence fingerprint mismatch")
+            valid_quorum, quorum_reason = verify_governance_quorum(
+                action, approvals, policy, now=verification_time,
+            )
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            return failure(f"invalid wallet enrollment governance quorum evidence: {exc}")
+        if not valid_quorum:
+            return failure(f"wallet enrollment governance quorum verification failed: {quorum_reason}")
+        policy_digests.add(policy.digest)
+
+    ordered_policy_digests = sorted(policy_digests)
+    if trusted_policies is None:
+        checks["wallet_governance_policy_trust_anchor"] = {
+            "valid": True,
+            "pinned": False,
+            "policy_sha256": ordered_policy_digests,
+            "trusted_policy_sha256": [],
+            "reason": "wallet governance quorum is verified, but the governor roster is not externally pinned",
+        }
+    else:
+        untrusted_policies = sorted(policy_digests - trusted_policies)
+        checks["wallet_governance_policy_trust_anchor"] = {
+            "valid": not untrusted_policies,
+            "pinned": True,
+            "policy_sha256": ordered_policy_digests,
+            "trusted_policy_sha256": sorted(trusted_policies),
+            "untrusted_policy_sha256": untrusted_policies,
+            "reason": (
+                "every wallet governance policy matches the trusted allowlist"
+                if not untrusted_policies
+                else "wallet governance policy digest is not present in the trusted allowlist"
+            ),
+        }
+        if untrusted_policies:
+            return failure(checks["wallet_governance_policy_trust_anchor"]["reason"])
+
+    historical_matches = []
+    ordered_enrollments = sorted(
+        snapshot_by_id.values(),
+        key=lambda item: item["enrollment_id"],
+    )
+    for snapshot in ordered_enrollments:
+        valid, reason, historical = resolve_historical_wallet_enrollment(
+            ordered_history, snapshot, float(attested_at),
+        )
+        if not valid or historical is None:
+            return failure(reason)
+        if (
+            snapshot.get("chain_id") == chain_id
+            and snapshot.get("wallet_address") == wallet_address.lower()
+            and historical.get("status") == "ACTIVE"
+        ):
+            historical_matches.append(historical)
+
+    if len(historical_matches) != 1:
+        return failure("wallet was not uniquely enrolled and active when the outcome was attested")
+    return (
+        True,
+        "wallet enrollment governance state verified at attestation time",
+        historical_matches[0],
+        checks,
+    )
