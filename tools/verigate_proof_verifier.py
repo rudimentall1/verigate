@@ -374,7 +374,7 @@ def verify_governance(p, attestor_id, attestor_data):
 
 
 def resolve_attestor_authority_at(p, attestor_id, attestor_data, attested_at):
-    """Reconstruct the attestor authority effective at the signed attestation time."""
+    """Replay the full attestor history and select the authority at attested_at."""
     timestamp = _finite_timestamp(attested_at)
     created_at = _finite_timestamp(attestor_data.get("created_at"))
     if timestamp is None or created_at is None or timestamp < created_at:
@@ -425,18 +425,18 @@ def resolve_attestor_authority_at(p, attestor_id, attestor_data, attested_at):
         effective_actions.append((effective_at, action))
 
     state = None
+    state_at_attestation = None
     previous_effective_at = None
     for effective_at, action in effective_actions:
         if previous_effective_at is not None and effective_at < previous_effective_at:
             return None, "attestor governance history is not chronologically ordered"
         previous_effective_at = effective_at
-        if effective_at > timestamp:
-            continue
+
         operation = action.get("action")
         if operation == "ATTESTOR_REGISTER":
             if state is not None:
                 return None, "attestor governance lineage contains duplicate registration"
-            state = {"status": "ACTIVE"}
+            state = {"status": "ACTIVE", "revoked_at": None}
         elif state is None:
             return None, "attestor governance lineage changes an unregistered authority"
 
@@ -459,9 +459,10 @@ def resolve_attestor_authority_at(p, attestor_id, attestor_data, attested_at):
             })
             if operation == "ATTESTOR_REGISTER":
                 state.update({"status": "ACTIVE", "revoked_at": None})
+            # Rotation deliberately preserves status and revoked_at.
         elif operation == "ATTESTOR_ACTIVATE":
             state["status"] = "ACTIVE"
-            state["revoked_at"] = None
+            # Keep revoked_at as an audit marker in the current registry snapshot.
         elif operation == "ATTESTOR_REVOKE":
             state["status"] = "REVOKED"
             state["revoked_at"] = effective_at
@@ -470,14 +471,32 @@ def resolve_attestor_authority_at(p, attestor_id, attestor_data, attested_at):
         else:
             return None, "unsupported attestor governance action"
 
-    if state is None or state.get("status") != "ACTIVE":
+        if effective_at <= timestamp:
+            state_at_attestation = dict(state)
+
+    if state is None:
+        return None, "attestor governance history has no registration"
+    if (
+        attestor_data.get("status") != state.get("status")
+        or attestor_data.get("public_key_b64") != state.get("public_key_b64")
+        or attestor_data.get("key_id") != state.get("key_id")
+        or attestor_data.get("attestor_type") != state.get("attestor_type")
+        or attestor_data.get("expires_at") != state.get("expires_at")
+        or (attestor_data.get("revoked_at") is None) != (state.get("revoked_at") is None)
+    ):
+        return None, "attestor registry snapshot does not match replayed governance state"
+
+    if state_at_attestation is None or state_at_attestation.get("status") != "ACTIVE":
         return None, "attestor authority was not active at outcome attestation time"
-    expiry = state.get("expires_at")
+    expiry = state_at_attestation.get("expires_at")
     if expiry is not None and (
         _finite_timestamp(expiry) is None or timestamp >= float(expiry)
     ):
         return None, "attestor authority had expired before outcome attestation"
-    return {**attestor_data, **state, "status": "ACTIVE", "revoked_at": None}, ""
+
+    historical_attestor = {**attestor_data, **state_at_attestation}
+    historical_attestor["revoked_at"] = None
+    return historical_attestor, ""
 
 
 def verify_outcome_attestation(attestation, attestor):
