@@ -174,7 +174,7 @@ def _verify_outcome_attestation_signature(
         signature = base64.b64decode(attestation_data.get("signature"), validate=True)
         public_key.verify(signature, canonical(attestation_payload))
     except (InvalidSignature, TypeError, ValueError):
-        return False, "outcome attestation signature verification failed"
+        return False, "outcome attestor signature verification failed"
     return True, "outcome attestation signature and historical attestor authority verified"
 
 
@@ -188,7 +188,13 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
         items = by_type.get(node_type, [])
         return items[0] if len(items) == 1 else None
 
-    required = {name: one(name) for name in spec["required_nodes"]}
+    # Governance actions and approvals are a lineage, not singleton nodes:
+    # later rotations/revocations must coexist with the original registration.
+    singular_required_nodes = spec["required_nodes"] - {
+        "governance_action",
+        "governance_approval",
+    }
+    required = {name: one(name) for name in singular_required_nodes}
     if any(value is None for value in required.values()):
         return False, "authority lifecycle profile requires exactly one canonical node of each required type"
 
