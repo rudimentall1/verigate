@@ -403,3 +403,21 @@ This section supersedes earlier "unmerged/pending" statements above where they c
 1. Refresh the remaining stacked PR metadata and verify dependency ancestry before changing any bases.
 2. Continue the stack in dependency order; preserve merge-base integrity and validate each integrated tree with current-head CI.
 3. Keep the independent external integration milestone as the product priority. Infrastructure expansion is not a substitute for repeated external ALLOW/BLOCK evidence.
+
+
+## PR #68 rebase and snapshot-consistency hardening — 2026-11-24
+
+- PR [#68](https://github.com/rudimentall1/verigate/pull/68) was rebuilt on current `main` after #66/#67 squash merges. Current head: `eacff3fd88e08ef394a7407bc30b45dd1e3de99d`.
+- The rebased diff is 7 commits / 4 files only: `core/evidence.py`, `core/proof_validators/authority_lifecycle.py`, `tools/verigate_proof_verifier.py`, and `tests/test_reference_lifecycle.py`.
+- Test-first run [45352821577](https://github.com/rudimentall1/verigate/actions/runs/45352821577) reproduced two failures: an ACTIVE registry snapshot inconsistent with a later governance revocation was accepted, and a reused policy-node digest with different content was silently deduplicated.
+- Fixed both core and standalone verifiers to replay the full governance history, compare the final signed registry snapshot against the replayed state, and select the historical key/status at attestation time. Key rotation preserves prior status; activation retains the revocation marker in the current snapshot but clears it from the historical active authority view.
+- Evidence export now rejects different policy content under an existing governance-policy node ID.
+- Added a reactivation regression covering both core and standalone paths.
+- Current-head GitHub Actions run [45353320943](https://github.com/rudimentall1/verigate/actions/runs/45353320943): all four jobs passed; Python suite **704 tests OK**, contracts, container/API-auth, Anna UI E2E and Linux binary smoke passed.
+- Fresh Codex code review and security review were requested for exact head `eacff3f...`; code review is still running and no separate security-review receipt/status has been returned. PR #68 remains Draft and unmerged.
+
+### Next stacked PR risk — #69
+
+- PR #69 remains based on the old #68 head and must be rebased after #68 is accepted.
+- Source review of its current `core/attestor_history.py` found that `ATTESTOR_ROTATE` sets state to ACTIVE and clears `revoked_at`. This conflicts with the #66 invariant that key rotation must preserve revoked/expired authority state. Fix with a test-first regression before #69 can merge.
+- The same module has timestamp conversions that need overflow-safe validation; PR #82 contains related hardening, but must be reviewed on the integrated rebased tree.
