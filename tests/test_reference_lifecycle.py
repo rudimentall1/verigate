@@ -704,6 +704,26 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
                     self.assertNotIn("Traceback", standalone.stderr)
 
 
+    def _assert_standalone_proof_valid(self, manifest, filename):
+        proof_path = Path(self.tmp.name) / filename
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(manifest))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def _apply_attestor_lifecycle_action(self, action_name, *, new_key=None):
         service = AttestorAuthorityService(self.storage)
         action = service.build_action(
@@ -758,6 +778,10 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         )
 
         self.assertTrue(result["valid"], result)
+        self._assert_standalone_proof_valid(
+            rebuilt,
+            "historical-attestation-after-rotation.json",
+        )
 
     def test_historical_attestation_survives_later_attestor_revocation(self):
         original_manifest = self._valid_manifest()
@@ -786,6 +810,10 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         )
 
         self.assertTrue(result["valid"], result)
+        self._assert_standalone_proof_valid(
+            rebuilt,
+            "historical-attestation-after-revocation.json",
+        )
 
 
 if __name__ == "__main__":
