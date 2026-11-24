@@ -163,7 +163,7 @@ def replay_attestor_governance_state(
                 if next_expiry is not None and (
                     isinstance(next_expiry, bool)
                     or not isinstance(next_expiry, (int, float))
-                    or not math.isfinite(float(next_expiry))
+                    or not _finite_number(next_expiry)
                 ):
                     raise ValueError("invalid attestor expiry")
             except (TypeError, ValueError):
@@ -242,7 +242,7 @@ def resolve_historical_attestor(
     if (
         isinstance(attested_at, bool)
         or not isinstance(attested_at, (int, float))
-        or not math.isfinite(float(attested_at))
+        or not _finite_number(attested_at)
     ):
         return False, "outcome attestation timestamp is invalid", None
 
