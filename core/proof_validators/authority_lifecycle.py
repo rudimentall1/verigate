@@ -174,7 +174,7 @@ def _verify_outcome_attestation_signature(
         signature = base64.b64decode(attestation_data.get("signature"), validate=True)
         public_key.verify(signature, canonical(attestation_payload))
     except (InvalidSignature, TypeError, ValueError):
-        return False, "outcome attestor signature verification failed"
+        return False, "outcome attestation signature verification failed for registered attestor"
     return True, "outcome attestation signature and historical attestor authority verified"
 
 
