@@ -23,6 +23,6 @@ Exit code `0` means the complete local history matches the remotely fetched chai
 - Obtain the public key and current checkpoint SHA-256 through a channel independent of the transparency service and the Verigate application database.
 - Do not copy the checkpoint digest from the just-fetched HTTP response into the trusted argument. Doing so removes the independent freshness/rollback check.
 - The service endpoint requires bearer authentication and returns only the requested installation principal's full bundle. The existing `/healthz` endpoint remains unauthenticated and does not disclose log data.
-- Reconciliation is read-only. It does not append events, update outbox delivery state, rotate credentials, or update trusted pins.
+- Reconciliation opens the application database through SQLite `mode=ro` and `query_only`; it does not create a missing database, run application schema migrations, append events, update outbox delivery state, rotate credentials, or update trusted pins.
 - The check proves that the remote bundle is the exact locally recorded accepted history and that the current checkpoint matches the operator-supplied pin. It cannot prove that the local database itself contains every action ever accepted if that database was rolled back or tampered with. Preserve independent checkpoint pins and backups.
 - A checkpoint pin must be advanced only after an independently trusted process has reviewed and accepted the new checkpoint. Never auto-learn a new pin from the service response.
