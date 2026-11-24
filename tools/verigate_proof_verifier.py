@@ -1,11 +1,22 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import argparse,base64,hashlib,json
+import argparse,base64,hashlib,json,math
 from pathlib import Path
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 PROTOCOL='verigate-authority-proof-v1'; PKG='verigate-proof-package-v1'; MEDIA='application/vnd.verigate.proof-package+json'; ZERO='0'*64
+
+
+def _finite_timestamp(value):
+    """Return a finite timestamp, rejecting values that overflow float conversion."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        timestamp = float(value)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    return timestamp if math.isfinite(timestamp) else None
 REQUIRED_AUTHORITY_TYPES=('action_intent','execution_authorization','execution_receipt','outcome_claim','observed_effect','outcome_attestation','authority_event','authority_state','authority_state_after','authority_ledger','genesis_authority','capability')
 def canon(x): return json.dumps(x,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()
 def sha(x): return hashlib.sha256(canon(x)).hexdigest()
@@ -135,6 +146,394 @@ def verify_learning(claim,att,ev,before,after,entries,policy,expected_head):
  if after.get('reason')!=reason:return False,'post-learning authority reason is inconsistent'
  return True,'valid deterministic learning transition'
 
+
+def verify_governance(p, attestor_id, attestor_data):
+    """Independently verify the governance quorum behind an attestor."""
+    nodes = {ref(item): item for item in p.get("nodes", [])}
+    actions = [
+        item for item in p.get("nodes", [])
+        if item.get("type") == "governance_action"
+        and isinstance(item.get("data"), dict)
+        and item["data"].get("attestor_id") == attestor_id
+        and edge(
+            p,
+            f"attestor_authority:{attestor_id}",
+            "DERIVED_FROM",
+            ref(item),
+        )
+    ]
+    if not actions:
+        return False, "attestor governance lineage is missing"
+
+    previous_effective_at = None
+    for action_node in actions:
+        action = action_node["data"]
+        signed_action = {
+            key: value for key, value in action.items()
+            if key != "effective_at"
+        }
+        action_id = action_node.get("id")
+        action_ref = f"governance_action:{action_id}"
+        if action.get("action_id") != action_id:
+            return False, "governance action ID does not match its evidence node"
+
+        policy_edges = [
+            item for item in p.get("edges", [])
+            if item.get("relation") == "GOVERNS"
+            and item.get("to") == action_ref
+        ]
+        if len(policy_edges) != 1:
+            return False, "governance action must have exactly one policy"
+        policy_node = nodes.get(policy_edges[0].get("from"))
+        if policy_node is None or policy_node.get("type") != "governance_policy":
+            return False, "governance policy evidence is missing"
+        raw_policy = policy_node.get("data")
+        if not isinstance(raw_policy, dict) or raw_policy.get("governance_version") != 1:
+            return False, "governance policy evidence is malformed"
+
+        try:
+            members = raw_policy["members"]
+            required_roles = raw_policy.get("required_roles", {})
+            allowed_actions = raw_policy.get("allowed_actions", ["AUTHORITY_RESET"])
+            policy = {
+                "governance_version": 1,
+                "policy_id": raw_policy["policy_id"],
+                "version": int(raw_policy.get("version", 1)),
+                "threshold": int(raw_policy["threshold"]),
+                "members": [],
+                "required_roles": {
+                    str(role): int(count) for role, count in required_roles.items()
+                },
+                "max_approval_lifetime_seconds": int(
+                    raw_policy.get("max_approval_lifetime_seconds", 300)
+                ),
+                "allowed_actions": list(allowed_actions),
+            }
+            if not isinstance(members, list) or not isinstance(required_roles, dict):
+                return False, "governance policy members or role requirements are malformed"
+            if not isinstance(allowed_actions, (list, tuple)):
+                return False, "governance policy allowed actions are malformed"
+            member_map = {}
+            member_keys = set()
+            for member in members:
+                if not isinstance(member, dict):
+                    return False, "governance policy member is malformed"
+                governor = member.get("governor_id")
+                role = member.get("role")
+                public_key_b64 = member.get("public_key_b64")
+                raw_key = b64(public_key_b64)
+                if len(raw_key) != 32 or hashlib.sha256(raw_key).hexdigest() != governor:
+                    return False, "governance member public-key fingerprint mismatch"
+                if not isinstance(role, str) or not role or governor in member_map or raw_key in member_keys:
+                    return False, "governance policy has duplicate or invalid members"
+                policy["members"].append({
+                    "governor_id": governor,
+                    "role": role,
+                    "public_key_b64": public_key_b64,
+                })
+                member_map[governor] = (role, Ed25519PublicKey.from_public_bytes(raw_key))
+                member_keys.add(raw_key)
+            threshold = policy["threshold"]
+            lifetime = policy["max_approval_lifetime_seconds"]
+            if (
+                threshold < 1
+                or threshold > len(member_map)
+                or lifetime <= 0
+                or policy["version"] < 1
+                or not policy["policy_id"]
+                or not policy["allowed_actions"]
+                or any(not isinstance(item, str) or not item for item in policy["allowed_actions"])
+            ):
+                return False, "governance policy thresholds or metadata are invalid"
+            if any(not role or count < 1 for role, count in policy["required_roles"].items()):
+                return False, "governance policy required roles are invalid"
+            if any(
+                count > sum(1 for role, _key in member_map.values() if role == required_role)
+                for required_role, count in policy["required_roles"].items()
+            ):
+                return False, "governance policy requires unavailable roles"
+            if sha(policy) != action.get("governance_policy_sha256"):
+                return False, "governance action policy fingerprint mismatch"
+        except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
+            return False, "governance policy evidence is malformed"
+
+        if action.get("attestor_id") != attestor_id or action.get("action") not in policy["allowed_actions"]:
+            return False, "governance action is not allowed for this attestor"
+        if action.get("governance_version") != 1:
+            return False, "unsupported governance action version"
+        for field in ("action_id", "reason", "nonce"):
+            if not isinstance(action.get(field), str) or not action[field]:
+                return False, "governance action fields are invalid"
+        action_issued = action.get("issued_at")
+        action_expires = action.get("expires_at")
+        if (
+            isinstance(action_issued, bool)
+            or not isinstance(action_issued, (int, float))
+            or isinstance(action_expires, bool)
+            or not isinstance(action_expires, (int, float))
+            or _finite_timestamp(action_issued) is None
+            or _finite_timestamp(action_expires) is None
+            or action_expires <= action_issued
+            or action_expires - action_issued > lifetime
+        ):
+            return False, "governance action timestamps are invalid"
+
+        approval_edges = [
+            item for item in p.get("edges", [])
+            if item.get("relation") == "APPROVES"
+            and item.get("to") == action_ref
+        ]
+        if not approval_edges:
+            return False, "governance action has no approvals"
+
+        approvals = []
+        issue_times = [float(action_issued)]
+        seen_governors = set()
+        seen_nonces = set()
+        role_counts = {}
+        for item in approval_edges:
+            approval_node = nodes.get(item.get("from"))
+            if approval_node is None or approval_node.get("type") != "governance_approval":
+                return False, "governance approval evidence is missing"
+            signed = approval_node.get("data")
+            approval = signed.get("payload") if isinstance(signed, dict) else None
+            if not isinstance(approval, dict) or approval.get("approval_id") != approval_node.get("id"):
+                return False, "governance approval identity is inconsistent"
+            if signed.get("algorithm") != "Ed25519" or approval.get("governance_version") != 1:
+                return False, "unsupported governance approval format"
+            if approval.get("action_digest") != sha(signed_action):
+                return False, "governance approval targets a different action"
+            governor = approval.get("governor_id")
+            member = member_map.get(governor)
+            if member is None or member[0] != approval.get("role"):
+                return False, "governance signer is not authorized for this role"
+            if governor in seen_governors:
+                return False, "duplicate governance signer"
+            nonce = approval.get("nonce")
+            if not isinstance(nonce, str) or not nonce or nonce in seen_nonces:
+                return False, "duplicate or invalid governance approval nonce"
+            issued = approval.get("issued_at")
+            expires = approval.get("expires_at")
+            if (
+                isinstance(issued, bool)
+                or not isinstance(issued, (int, float))
+                or isinstance(expires, bool)
+                or not isinstance(expires, (int, float))
+                or _finite_timestamp(issued) is None
+                or _finite_timestamp(expires) is None
+                or expires <= issued
+                or expires - issued > lifetime
+            ):
+                return False, "governance approval timestamps are invalid"
+            try:
+                member[1].verify(b64(signed.get("signature")), canon(approval))
+            except (InvalidSignature, ValueError, TypeError):
+                return False, "governance approval signature is invalid"
+            issue_times.append(float(issued))
+            seen_governors.add(governor)
+            seen_nonces.add(nonce)
+            role_counts[approval["role"]] = role_counts.get(approval["role"], 0) + 1
+            approvals.append(signed)
+
+        # The quorum is checked at the first instant all collected signatures
+        # existed, rather than today's clock. Historical proofs therefore remain
+        # verifiable after the short-lived approvals have naturally expired.
+        verification_time = max(issue_times)
+        if action_expires <= verification_time:
+            return False, "governance action expired before the complete quorum existed"
+        recorded_at = action.get("effective_at")
+        effective_at = (
+            verification_time
+            if recorded_at is None
+            else _finite_timestamp(recorded_at)
+        )
+        if (
+            effective_at is None
+            or effective_at < verification_time
+            or effective_at >= action_expires
+        ):
+            return False, "governance action application timestamp is invalid"
+        if previous_effective_at is not None and effective_at < previous_effective_at:
+            return False, "governance action application times are not chronological"
+        previous_effective_at = effective_at
+        if len(approvals) < threshold:
+            return False, "governance approval threshold was not reached"
+        for role, count in policy["required_roles"].items():
+            if role_counts.get(role, 0) < count:
+                return False, f"governance required role missing: {role}"
+        if any(
+            signed["payload"]["expires_at"] <= verification_time
+            or signed["payload"]["issued_at"] > verification_time + 60
+            for signed in approvals
+        ):
+            return False, "governance approval was not valid when the complete quorum existed"
+        if action_issued > verification_time + 60:
+            return False, "governance action issue time is invalid"
+
+    return True, "governance policy, signatures and quorum verified"
+
+
+def resolve_attestor_authority_at(p, attestor_id, attestor_data, attested_at):
+    """Reconstruct the attestor authority effective at the signed attestation time."""
+    timestamp = _finite_timestamp(attested_at)
+    created_at = _finite_timestamp(attestor_data.get("created_at"))
+    if timestamp is None or created_at is None or timestamp < created_at:
+        return None, "outcome attestation time is invalid for registered attestor authority"
+
+    nodes = {ref(item): item for item in p.get("nodes", [])}
+    actions = [
+        item for item in p.get("nodes", [])
+        if item.get("type") == "governance_action"
+        and isinstance(item.get("data"), dict)
+        and item["data"].get("attestor_id") == attestor_id
+        and edge(p, f"attestor_authority:{attestor_id}", "DERIVED_FROM", ref(item))
+    ]
+    effective_actions = []
+    for action_node in actions:
+        action = action_node["data"]
+        action_ref = ref(action_node)
+        approval_edges = [
+            item for item in p.get("edges", [])
+            if item.get("relation") == "APPROVES" and item.get("to") == action_ref
+        ]
+        issue_times = [_finite_timestamp(action.get("issued_at"))]
+        for item in approval_edges:
+            approval_node = nodes.get(item.get("from"))
+            signed = approval_node.get("data") if isinstance(approval_node, dict) else None
+            approval = signed.get("payload") if isinstance(signed, dict) else None
+            issue_times.append(
+                _finite_timestamp(approval.get("issued_at"))
+                if isinstance(approval, dict) else None
+            )
+        if not issue_times or any(value is None for value in issue_times):
+            return None, "governance action or approval timestamps are invalid"
+        verification_time = max(float(value) for value in issue_times)
+        action_expiry = _finite_timestamp(action.get("expires_at"))
+        recorded_at = action.get("effective_at")
+        effective_at = (
+            verification_time
+            if recorded_at is None
+            else _finite_timestamp(recorded_at)
+        )
+        if (
+            action_expiry is None
+            or effective_at is None
+            or effective_at < verification_time
+            or effective_at >= action_expiry
+        ):
+            return None, "governance action application timestamp is invalid"
+        effective_actions.append((effective_at, action))
+
+    state = None
+    previous_effective_at = None
+    for effective_at, action in effective_actions:
+        if previous_effective_at is not None and effective_at < previous_effective_at:
+            return None, "attestor governance history is not chronologically ordered"
+        previous_effective_at = effective_at
+        if effective_at > timestamp:
+            continue
+        operation = action.get("action")
+        if operation == "ATTESTOR_REGISTER":
+            if state is not None:
+                return None, "attestor governance lineage contains duplicate registration"
+            state = {"status": "ACTIVE"}
+        elif state is None:
+            return None, "attestor governance lineage changes an unregistered authority"
+
+        if operation in ("ATTESTOR_REGISTER", "ATTESTOR_ROTATE"):
+            try:
+                raw_key = b64(action.get("public_key_b64"))
+                if len(raw_key) != 32:
+                    return None, "governance action contains an invalid attestor public key"
+                Ed25519PublicKey.from_public_bytes(raw_key)
+            except (TypeError, ValueError):
+                return None, "governance action contains an invalid attestor public key"
+            attestor_type = action.get("attestor_type")
+            if attestor_type not in ("EXECUTOR", "EXTERNAL_VERIFIER", "CHAIN_VERIFIER"):
+                return None, "governance action contains an invalid attestor type"
+            state.update({
+                "public_key_b64": action["public_key_b64"],
+                "key_id": hashlib.sha256(raw_key).hexdigest(),
+                "attestor_type": attestor_type,
+                "expires_at": action.get("attestor_expires_at"),
+            })
+            if operation == "ATTESTOR_REGISTER":
+                state.update({"status": "ACTIVE", "revoked_at": None})
+        elif operation == "ATTESTOR_ACTIVATE":
+            state["status"] = "ACTIVE"
+            state["revoked_at"] = None
+        elif operation == "ATTESTOR_REVOKE":
+            state["status"] = "REVOKED"
+            state["revoked_at"] = effective_at
+        elif operation == "ATTESTOR_EXPIRE":
+            state["status"] = "EXPIRED"
+        else:
+            return None, "unsupported attestor governance action"
+
+    if state is None or state.get("status") != "ACTIVE":
+        return None, "attestor authority was not active at outcome attestation time"
+    expiry = state.get("expires_at")
+    if expiry is not None and (
+        _finite_timestamp(expiry) is None or timestamp >= float(expiry)
+    ):
+        return None, "attestor authority had expired before outcome attestation"
+    return {**attestor_data, **state, "status": "ACTIVE", "revoked_at": None}, ""
+
+
+def verify_outcome_attestation(attestation, attestor):
+    """Verify the independent attestor signature and authority at attestation time."""
+    if not isinstance(attestation, dict) or attestation.get("algorithm") != "Ed25519":
+        return False, "unsupported outcome attestation signature algorithm"
+    payload = attestation.get("payload")
+    if not isinstance(payload, dict):
+        return False, "outcome attestation payload is malformed"
+    if payload.get("attestor_id") != attestor.get("attestor_id"):
+        return False, "outcome attestation signer identity mismatch"
+
+    registered_type = attestor.get("attestor_type")
+    expected_type = "EXECUTOR_SELF_REPORT" if registered_type == "EXECUTOR" else registered_type
+    if expected_type not in ("EXECUTOR_SELF_REPORT", "EXTERNAL_VERIFIER", "CHAIN_VERIFIER"):
+        return False, "registered outcome attestor type is invalid"
+    if payload.get("attestor_type") != expected_type:
+        return False, "outcome attestation type does not match registered attestor"
+
+    attested_at = payload.get("attested_at")
+    created_at = attestor.get("created_at")
+    if (
+        isinstance(attested_at, bool)
+        or not isinstance(attested_at, (int, float))
+        or _finite_timestamp(attested_at) is None
+        or isinstance(created_at, bool)
+        or not isinstance(created_at, (int, float))
+        or _finite_timestamp(created_at) is None
+        or float(attested_at) < float(created_at)
+    ):
+        return False, "outcome attestation time is invalid for registered attestor authority"
+
+    for field, label in (("expires_at", "expiry"), ("revoked_at", "revocation")):
+        boundary = attestor.get(field)
+        if boundary is not None:
+            if (
+                isinstance(boundary, bool)
+                or not isinstance(boundary, (int, float))
+                or _finite_timestamp(boundary) is None
+            ):
+                return False, f"registered attestor {label} time is invalid"
+            if float(attested_at) >= float(boundary):
+                return False, f"outcome attestor authority had {label} before attestation"
+
+    try:
+        raw_key = b64(attestor.get("public_key_b64"))
+        if len(raw_key) != 32:
+            return False, "registered attestor Ed25519 public key must be 32 bytes"
+        if hashlib.sha256(raw_key).hexdigest() != attestor.get("key_id"):
+            return False, "registered attestor public-key fingerprint mismatch"
+        public_key = Ed25519PublicKey.from_public_bytes(raw_key)
+        public_key.verify(b64(attestation.get("signature")), canon(payload))
+    except (InvalidSignature, TypeError, ValueError):
+        return False, "outcome attestation signature verification failed"
+    return True, "outcome attestation signature and historical authority verified"
+
 def verify(proof,key):
  c={}; d=json.loads(Path(proof).read_text(encoding='utf-8')); trusted=load_trusted_key(key); pkg=d.get('package'); ph=d.get('package_sha256')
  c['package_integrity']={'valid':isinstance(pkg,dict) and sha(pkg)==ph}
@@ -165,6 +564,18 @@ def verify(proof,key):
  if not good:return bad('graph integrity mismatch',c)
  ok,why=assertions(m); c['authority_protocol']={'valid':ok}
  if not ok:return bad(why,c)
+ attestor_node=node(p,'attestor_authority')
+ if attestor_node is None:return bad('attestor authority evidence is missing',c)
+ governance_ok,governance_reason=verify_governance(p,attestor_node['id'],attestor_node['data'])
+ c['governance_quorum']={'valid':governance_ok,'reason':governance_reason}
+ if not governance_ok:return bad(governance_reason,c)
+ attestation_node=node(p,'outcome_attestation')
+ if attestation_node is None:return bad('outcome attestation evidence is missing',c)
+ historical_attestor,historical_reason=resolve_attestor_authority_at(
+  p,attestor_node['id'],attestor_node['data'],
+  attestation_node['data'].get('payload',{}).get('attested_at'))
+ c['historical_attestor_authority']={'valid':historical_attestor is not None,'reason':historical_reason}
+ if historical_attestor is None:return bad(historical_reason,c)
  a=node(p,'execution_authorization'); r=node(p,'execution_receipt'); ap=a['data']['payload']; rp=r['data']['payload']; t=rp.get('executed_at')
  identity_node=node(p,'identity'); capability_node=node(p,'capability'); intent_node=node(p,'action_intent'); authority_node=node(p,'authority_state'); genesis_node=node(p,'genesis_authority')
  if any(x is None for x in (identity_node,capability_node,intent_node,authority_node,genesis_node)): return bad('authority binding evidence incomplete',c)
@@ -226,7 +637,9 @@ def verify(proof,key):
  if not c['historical_authority']['valid']:return bad('historical authority binding failed',c)
  h_ok,h_reason=verify_historical(authority_data,l,ap.get('authority_policy') or {},head); c['historical_authority_semantics']={'valid':h_ok,'reason':h_reason}
  if not h_ok:return bad('historical authority semantics failed',c)
- cl=node(p,'outcome_claim'); oe=node(p,'observed_effect'); at=node(p,'outcome_attestation'); ev=node(p,'authority_event'); af=node(p,'authority_state_after'); claim_data=cl['data']; observed_data=oe['data']; att_payload=at['data'].get('payload',{}); out=edge(p,ref(r),'OBSERVED_BY',ref(cl)) and edge(p,ref(cl),'SUPPORTED_BY',ref(oe)) and claim_data.get('execution_receipt_sha256')==sha(r['data']) and claim_data.get('observed_effect_sha256')==sha(observed_data) and oe['id']==claim_data.get('observed_effect_sha256') and observed_data.get('authorization_id')==ap.get('authorization_id') and observed_data.get('action_sha256')==claim_data.get('action_sha256') and observed_data.get('evidence_ref')==claim_data.get('evidence_ref') and observed_data.get('result_sha256')==claim_data.get('result_sha256') and observed_data.get('observation_sha256')==sha({'verifier_type':observed_data.get('verifier_type'),'evidence_kind':observed_data.get('evidence_kind'),'effect_status':observed_data.get('effect_status'),'authorization_id':observed_data.get('authorization_id'),'action_sha256':observed_data.get('action_sha256'),'observed_at':observed_data.get('observed_at'),'evidence_ref':observed_data.get('evidence_ref'),'result_sha256':observed_data.get('result_sha256'),'observation':observed_data.get('observation')}) and edge(p,ref(at),'ATTESTS',ref(cl)) and att_payload.get('claim_sha256')==sha(claim_data) and att_payload.get('claim',{}).get('claim_id')==claim_data.get('claim_id'); c['outcome']={'valid':out}; learn_ok,learn_reason=verify_learning(claim_data,att_payload,ev['data'],authority_node['data'],af['data'],l,ap.get('authority_policy') or {},ap.get('authority_ledger_head_hash','')); learn=learn_ok; c['learning']={'valid':learn,'reason':learn_reason}
+ cl=node(p,'outcome_claim'); oe=node(p,'observed_effect'); at=node(p,'outcome_attestation'); ev=node(p,'authority_event'); af=node(p,'authority_state_after'); claim_data=cl['data']; observed_data=oe['data']; att_payload=at['data'].get('payload',{});  attestor_data=historical_attestor; attestor_signature_ok,attestor_signature_reason=verify_outcome_attestation(at['data'],attestor_data); c['outcome_attestation_signature']={'valid':attestor_signature_ok,'reason':attestor_signature_reason}; 
+ if not attestor_signature_ok:return bad(attestor_signature_reason,c)
+ out=edge(p,ref(r),'OBSERVED_BY',ref(cl)) and edge(p,ref(cl),'SUPPORTED_BY',ref(oe)) and claim_data.get('execution_receipt_sha256')==sha(r['data']) and claim_data.get('observed_effect_sha256')==sha(observed_data) and oe['id']==claim_data.get('observed_effect_sha256') and observed_data.get('authorization_id')==ap.get('authorization_id') and observed_data.get('action_sha256')==claim_data.get('action_sha256') and observed_data.get('evidence_ref')==claim_data.get('evidence_ref') and observed_data.get('result_sha256')==claim_data.get('result_sha256') and observed_data.get('observation_sha256')==sha({'verifier_type':observed_data.get('verifier_type'),'evidence_kind':observed_data.get('evidence_kind'),'effect_status':observed_data.get('effect_status'),'authorization_id':observed_data.get('authorization_id'),'action_sha256':observed_data.get('action_sha256'),'observed_at':observed_data.get('observed_at'),'evidence_ref':observed_data.get('evidence_ref'),'result_sha256':observed_data.get('result_sha256'),'observation':observed_data.get('observation')}) and edge(p,ref(at),'ATTESTS',ref(cl)) and att_payload.get('claim_sha256')==sha(claim_data) and att_payload.get('claim')==claim_data; c['outcome']={'valid':out}; learn_ok,learn_reason=verify_learning(claim_data,att_payload,ev['data'],authority_node['data'],af['data'],l,ap.get('authority_policy') or {},ap.get('authority_ledger_head_hash','')); learn=learn_ok; c['learning']={'valid':learn,'reason':learn_reason}
  if not out or not learn:return bad('outcome or learning binding failed',c)
  eh=next((x.get('event_hash') for x in l if x.get('event_id')==ev['data'].get('event_id')),None); c['post_learning_authority']={'valid':eh is not None and af['data'].get('ledger_head_hash')==eh}
  if not c['post_learning_authority']['valid']:return bad('post-learning authority is not ledger-bound',c)

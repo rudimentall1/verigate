@@ -3,6 +3,8 @@ import hashlib
 import json
 import time
 import tempfile
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -18,6 +20,7 @@ from core.evidence import EvidenceGraph
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
 from core.evidence_manifest import build_manifest, verify_manifest, canonical, graph_root
 from core.offline_verifier import verify_proof
+from core.proof_package import build_proof_package, serialize_proof_package
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.outcome import OutcomeAttestationService, build_outcome_attestation, build_outcome_claim
 from core.identity import sign_action_intent
@@ -71,7 +74,13 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
                     self.governance_key.public_key(), "governor"
                 ),
             ),
-            allowed_actions=("ATTESTOR_REGISTER",),
+            allowed_actions=(
+                "ATTESTOR_REGISTER",
+                "ATTESTOR_ACTIVATE",
+                "ATTESTOR_ROTATE",
+                "ATTESTOR_REVOKE",
+                "ATTESTOR_EXPIRE",
+            ),
         )
 
     def tearDown(self):
@@ -467,6 +476,610 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
                 result = verify_manifest(manifest, manifest["issuer_public_key_b64"])
                 self.assertFalse(result["valid"])
                 self.assertIn("all signed artifacts", result["reason"])
+
+
+    def test_authority_lifecycle_rejects_forged_governance_approval_signature(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        approval = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "governance_approval"
+        )
+        approval["data"]["signature"] = base64.b64encode(b"forged-signature").decode()
+        self._resign_mutated_manifest(forged)
+
+        result = verify_proof(
+            forged,
+            trusted_public_key_b64=forged["issuer_public_key_b64"],
+        )
+
+        self.assertFalse(result["valid"], result)
+        self.assertIn("governance", result["reason"].lower())
+
+
+    def test_standalone_authority_proof_rejects_forged_governance_approval_signature(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        approval = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "governance_approval"
+        )
+        approval["data"]["signature"] = base64.b64encode(b"forged-signature").decode()
+        self._resign_mutated_manifest(forged)
+
+        proof_path = Path(self.tmp.name) / "forged-governance-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("governance", result.stdout.lower())
+
+    def test_standalone_verifier_accepts_historical_expired_governance_approval(self):
+        root = Path(__file__).resolve().parents[1]
+        proof = root / "examples" / "authority-proof" / "authority-proof.json"
+        public_key = root / "examples" / "authority-proof" / "issuer.pub"
+        verifier = root / "tools" / "verigate_proof_verifier.py"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof),
+                "--public-key",
+                str(public_key),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("RESULT: VALID", result.stdout)
+
+
+    def test_authority_lifecycle_rejects_forged_outcome_attestor_signature(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        attestation = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        attestation["data"]["signature"] = base64.b64encode(b"forged-attestor-signature").decode()
+        self._resign_mutated_manifest(forged)
+
+        result = verify_proof(
+            forged,
+            trusted_public_key_b64=forged["issuer_public_key_b64"],
+        )
+
+        self.assertFalse(result["valid"], result)
+        self.assertIn("attestation", result["reason"].lower())
+
+
+    def test_standalone_verifier_rejects_forged_outcome_attestor_signature(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        attestation = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        attestation["data"]["signature"] = base64.b64encode(b"forged-attestor-signature").decode()
+        self._resign_mutated_manifest(forged)
+
+        proof_path = Path(self.tmp.name) / "forged-outcome-attestation-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("attestation", result.stdout.lower())
+
+
+    def test_authority_lifecycle_rejects_unapproved_attestor_key_substitution(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        attestor = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "attestor_authority"
+        )
+        attestation = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        rogue_key = Ed25519PrivateKey.generate()
+        rogue_raw = rogue_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+        attestor["data"]["public_key_b64"] = base64.b64encode(rogue_raw).decode()
+        attestor["data"]["key_id"] = hashlib.sha256(rogue_raw).hexdigest()
+        attestation["data"]["signature"] = base64.b64encode(
+            rogue_key.sign(canonical(attestation["data"]["payload"]))
+        ).decode()
+        self._resign_mutated_manifest(forged)
+
+        result = verify_proof(
+            forged,
+            trusted_public_key_b64=forged["issuer_public_key_b64"],
+        )
+
+        self.assertFalse(result["valid"], result)
+        self.assertIn("attestor", result["reason"].lower())
+
+        proof_path = Path(self.tmp.name) / "unapproved-attestor-key-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
+        self.assertIn("attestor", standalone.stdout.lower())
+
+
+    def test_authority_lifecycle_rejects_overflowing_governance_policy_without_exception(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        policy_node = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "governance_policy"
+        )
+        policy_node["data"]["version"] = float("inf")
+        self._resign_mutated_manifest(forged)
+
+        result = verify_manifest(
+            forged,
+            forged["issuer_public_key_b64"],
+        )
+        self.assertFalse(result["valid"], result)
+        self.assertIn("governance", result["reason"].lower())
+
+        proof_path = Path(self.tmp.name) / "overflowing-governance-policy-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
+        self.assertIn("governance", standalone.stdout.lower())
+
+    def test_authority_lifecycle_rejects_oversized_timestamps_without_overflow(self):
+        timestamp_mutations = (
+            ("governance action issued_at", "governance_action", ("issued_at",)),
+            ("governance action expires_at", "governance_action", ("expires_at",)),
+            ("governance approval issued_at", "governance_approval", ("payload", "issued_at")),
+            ("governance approval expires_at", "governance_approval", ("payload", "expires_at")),
+            ("outcome attestation attested_at", "outcome_attestation", ("payload", "attested_at")),
+        )
+        valid_manifest = self._valid_manifest()
+
+        for label, node_type, path in timestamp_mutations:
+            for oversized in (10**400, -(10**400)):
+                with self.subTest(field=label, value_sign="negative" if oversized < 0 else "positive"):
+                    manifest = json.loads(json.dumps(valid_manifest))
+                    node = next(
+                        item for item in manifest["payload"]["nodes"]
+                        if item["type"] == node_type
+                    )
+                    target = node["data"]
+                    for key in path[:-1]:
+                        target = target[key]
+                    target[path[-1]] = oversized
+                    self._resign_mutated_manifest(manifest)
+
+                    result = verify_proof(
+                        manifest,
+                        trusted_public_key_b64=manifest["issuer_public_key_b64"],
+                    )
+                    self.assertFalse(result["valid"], result)
+
+                    proof_path = Path(self.tmp.name) / "oversized-timestamp-proof.json"
+                    proof_path.write_bytes(
+                        serialize_proof_package(build_proof_package(manifest))
+                    )
+                    verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+                    standalone = subprocess.run(
+                        [
+                            sys.executable,
+                            str(verifier),
+                            str(proof_path),
+                            "--public-key",
+                            str(self.public_path),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
+                    self.assertNotIn("Traceback", standalone.stderr)
+
+
+    def test_authority_lifecycle_rejects_out_of_order_attestor_governance_history(self):
+        original_manifest = self._valid_manifest()
+        self._apply_attestor_lifecycle_action(
+            "ATTESTOR_ROTATE",
+            new_key=Ed25519PrivateKey.generate(),
+        )
+        authority_snapshot_after = next(
+            node["data"] for node in original_manifest["payload"]["nodes"]
+            if node["type"] == "authority_state_after"
+        )
+        graph = EvidenceGraph(self.storage, self.public_key).build(
+            original_manifest["payload"]["authorization_id"],
+            authority_snapshot_after=authority_snapshot_after,
+        )
+        manifest = build_manifest(
+            graph,
+            self.private_key,
+            proof_profile="authority_lifecycle",
+        )
+        forged = json.loads(json.dumps(manifest))
+        nodes = forged["payload"]["nodes"]
+        action_indices = [
+            index for index, node in enumerate(nodes)
+            if node["type"] == "governance_action"
+            and node["data"].get("attestor_id") == "external-reference"
+        ]
+        self.assertEqual(len(action_indices), 2)
+        first, second = action_indices
+        nodes[first], nodes[second] = nodes[second], nodes[first]
+        self._resign_mutated_manifest(forged)
+
+        result = verify_proof(
+            forged,
+            trusted_public_key_b64=forged["issuer_public_key_b64"],
+        )
+        self.assertFalse(result["valid"], result)
+        self.assertIn("chronological", result["reason"].lower())
+
+        proof_path = Path(self.tmp.name) / "out-of-order-attestor-history.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
+        self.assertIn("chronological", standalone.stdout.lower())
+
+    def test_authority_lifecycle_rejects_governance_action_effective_before_quorum(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        action_node = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "governance_action"
+        )
+        action_ref = f"governance_action:{action_node['id']}"
+        approval_nodes = [
+            next(
+                node for node in forged["payload"]["nodes"]
+                if f"{node['type']}:{node['id']}" == edge["from"]
+            )
+            for edge in forged["payload"]["edges"]
+            if edge.get("relation") == "APPROVES" and edge.get("to") == action_ref
+        ]
+        quorum_time = max(
+            [
+                float(action_node["data"]["issued_at"]),
+                *[
+                    float(node["data"]["payload"]["issued_at"])
+                    for node in approval_nodes
+                ],
+            ]
+        )
+        action_node["data"]["effective_at"] = quorum_time - 1.0
+        self._resign_mutated_manifest(forged)
+
+        result = verify_proof(
+            forged,
+            trusted_public_key_b64=forged["issuer_public_key_b64"],
+        )
+        self.assertFalse(result["valid"], result)
+        self.assertIn("application timestamp", result["reason"].lower())
+
+        proof_path = Path(self.tmp.name) / "pre-quorum-effective-at-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
+        self.assertIn("application timestamp", standalone.stdout.lower())
+
+    def _assert_standalone_proof_valid(self, manifest, filename):
+        proof_path = Path(self.tmp.name) / filename
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(manifest))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def _apply_attestor_lifecycle_action(self, action_name, *, new_key=None):
+        service = AttestorAuthorityService(self.storage)
+        action = service.build_action(
+            action=action_name,
+            attestor_id="external-reference",
+            reason="historical attestation regression",
+            governance_policy_sha256=self.governance_policy.digest,
+            public_key_b64=(
+                base64.b64encode(
+                    new_key.public_key().public_bytes(
+                        serialization.Encoding.Raw,
+                        serialization.PublicFormat.Raw,
+                    )
+                ).decode()
+                if new_key is not None else None
+            ),
+            attestor_type="EXTERNAL_VERIFIER" if new_key is not None else None,
+        )
+        service.apply(
+            action,
+            [_governance_approval(action, self.governance_key)],
+            self.governance_policy,
+        )
+
+    def test_attestor_rotation_does_not_reactivate_revoked_authority(self):
+        original_manifest = self._valid_manifest()
+        service = AttestorAuthorityService(self.storage)
+
+        revoke = service.build_action(
+            action="ATTESTOR_REVOKE",
+            attestor_id="external-reference",
+            reason="revoke before key replacement",
+            governance_policy_sha256=self.governance_policy.digest,
+        )
+        service.apply(
+            revoke,
+            [_governance_approval(revoke, self.governance_key)],
+            self.governance_policy,
+        )
+
+        rotated_key = Ed25519PrivateKey.generate()
+        raw_key = rotated_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+        rotate = service.build_action(
+            action="ATTESTOR_ROTATE",
+            attestor_id="external-reference",
+            reason="replace key without restoring authority",
+            governance_policy_sha256=self.governance_policy.digest,
+            public_key_b64=base64.b64encode(raw_key).decode(),
+            attestor_type="EXTERNAL_VERIFIER",
+        )
+        service.apply(
+            rotate,
+            [_governance_approval(rotate, self.governance_key)],
+            self.governance_policy,
+        )
+
+        authority_snapshot_after = next(
+            node["data"] for node in original_manifest["payload"]["nodes"]
+            if node["type"] == "authority_state_after"
+        )
+        graph = EvidenceGraph(self.storage, self.public_key).build(
+            original_manifest["payload"]["authorization_id"],
+            authority_snapshot_after=authority_snapshot_after,
+        )
+        self.assertTrue(
+            graph["verification"]["all_signed_artifacts_valid"],
+            graph["verification"],
+        )
+        forged = build_manifest(
+            graph,
+            self.private_key,
+            proof_profile="authority_lifecycle",
+        )
+        attestation_node = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        attestation_payload = attestation_node["data"]["payload"]
+        attestation_payload["attested_at"] = time.time()
+        attestation_node["data"]["signature"] = base64.b64encode(
+            rotated_key.sign(canonical(attestation_payload))
+        ).decode()
+        self._resign_mutated_manifest(forged)
+
+        core_result = verify_manifest(forged, forged["issuer_public_key_b64"])
+        self.assertFalse(core_result["valid"], core_result)
+        self.assertIn("not active", core_result["reason"].lower())
+
+        proof_path = Path(self.tmp.name) / "revoked-attestor-rotation-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
+        self.assertIn("not active", standalone.stdout.lower())
+
+        receipt_data = next(
+            node["data"] for node in original_manifest["payload"]["nodes"]
+            if node["type"] == "execution_receipt"
+        )
+        observed_data = next(
+            node["data"] for node in original_manifest["payload"]["nodes"]
+            if node["type"] == "observed_effect"
+        )
+        claim = build_outcome_claim(
+            receipt_data,
+            status="SUCCEEDED",
+            executor_id="executor-reference",
+            evidence_kind=observed_data["evidence_kind"],
+            evidence_ref=observed_data["evidence_ref"],
+            result_sha256=observed_data["result_sha256"],
+            observed_effect=observed_data,
+        )
+        attestation = build_outcome_attestation(
+            claim,
+            attestor_id="external-reference",
+            attestor_type="EXTERNAL_VERIFIER",
+            private_key=rotated_key,
+        )
+        with self.assertRaisesRegex(PermissionError, "active"):
+            OutcomeAttestationService(self.storage, self.public_key).verify_and_record(
+                attestation
+            )
+
+    def test_historical_attestation_survives_attestor_key_rotation(self):
+        original_manifest = self._valid_manifest()
+        self._apply_attestor_lifecycle_action(
+            "ATTESTOR_ROTATE",
+            new_key=Ed25519PrivateKey.generate(),
+        )
+
+        authority_snapshot_after = next(
+            node["data"] for node in original_manifest["payload"]["nodes"]
+            if node["type"] == "authority_state_after"
+        )
+        graph = EvidenceGraph(self.storage, self.public_key).build(
+            original_manifest["payload"]["authorization_id"],
+            authority_snapshot_after=authority_snapshot_after,
+        )
+        self.assertTrue(
+            graph["verification"]["all_signed_artifacts_valid"],
+            graph["verification"],
+        )
+        rebuilt = build_manifest(
+            graph,
+            self.private_key,
+            proof_profile="authority_lifecycle",
+        )
+        result = verify_manifest(
+            rebuilt,
+            rebuilt["issuer_public_key_b64"],
+        )
+
+        self.assertTrue(result["valid"], result)
+        self._assert_standalone_proof_valid(
+            rebuilt,
+            "historical-attestation-after-rotation.json",
+        )
+
+    def test_historical_attestation_survives_later_attestor_revocation(self):
+        original_manifest = self._valid_manifest()
+        self._apply_attestor_lifecycle_action("ATTESTOR_REVOKE")
+
+        authority_snapshot_after = next(
+            node["data"] for node in original_manifest["payload"]["nodes"]
+            if node["type"] == "authority_state_after"
+        )
+        graph = EvidenceGraph(self.storage, self.public_key).build(
+            original_manifest["payload"]["authorization_id"],
+            authority_snapshot_after=authority_snapshot_after,
+        )
+        self.assertTrue(
+            graph["verification"]["all_signed_artifacts_valid"],
+            graph["verification"],
+        )
+        rebuilt = build_manifest(
+            graph,
+            self.private_key,
+            proof_profile="authority_lifecycle",
+        )
+        result = verify_manifest(
+            rebuilt,
+            rebuilt["issuer_public_key_b64"],
+        )
+
+        self.assertTrue(result["valid"], result)
+        self._assert_standalone_proof_valid(
+            rebuilt,
+            "historical-attestation-after-revocation.json",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

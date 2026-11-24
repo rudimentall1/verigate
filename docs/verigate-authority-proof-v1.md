@@ -10,6 +10,8 @@ A conforming verifier MUST be able to verify a portable proof from the supplied 
 
 The issuer public key is the trust anchor. A verifier MUST obtain it from an independent trusted channel. The public key embedded in the signed manifest identifies the issuer but is not, by itself, a trust decision.
 
+The authority-lifecycle package also carries the governance policy and member public keys used for attestor registration. A verifier MUST cryptographically verify the policy fingerprint, every approval signature, member role, signer uniqueness, required roles, threshold, and historical validity window. This establishes that the action was approved by a quorum of the keys declared in that policy. It does **not** independently establish that those keys were the organisation's authorised governors. The current CLI has no separate governance-policy pin input; deployments that require this stronger guarantee must compare the expected policy digest or member set through a separate trusted channel before accepting the proof. An issuer-signed policy node is evidence of which policy was presented, not an independent governance root of trust.
+
 ## Verification layers
 
 A verifier MUST fail closed and perform these checks:
@@ -20,13 +22,14 @@ A verifier MUST fail closed and perform these checks:
 4. **Trust anchor** — when a trusted public key is supplied, it equals the manifest issuer key.
 5. **Graph integrity** — every node data hash, edge reference, node inventory, graph counts, and Merkle root match the signed manifest.
 6. **Authority protocol** — authority-lifecycle proofs contain exactly the signed `verigate-authority-proof-v1` assertions and their assertion-set digest.
-7. **Authorization** — the execution authorization signature, identity, capability, action, authority snapshot, policy bindings, timing, and execution graph bindings are valid.
-8. **Historical authority** — the authorization's committed ledger head resolves to a valid historical ledger prefix; later ledger events MUST NOT invalidate the historical proof.
-9. **Execution** — the execution receipt is cryptographically bound to the authorization.
-10. **Outcome** — the outcome claim is bound to an independently generated `observed_effect` artifact, its exact observation digest/evidence reference/result digest, the execution receipt, and an independent attestation. The `observed_effect` artifact MUST be carried as a first-class proof node.
-11. **Learning** — the authority event MUST be deterministic from the terminal outcome: `SUCCEEDED → EXECUTION_CONFIRMED` and `FAILED → EXECUTION_FAILED`; its identity, claim reference, event id, attestation metadata, and exact ledger entry MUST agree.
-12. **Historical authority** — the pre-execution authority snapshot MUST be reproducible from the signed authority policy and the committed historical ledger prefix; counters, state, multiplier, reason, and policy window MUST recompute exactly.
-13. **Post-learning authority** — the resulting authority state MUST be reproducible from the complete ledger at its evaluation time and the same signed authority policy, including counters, state, multiplier, reason, timestamps, and learning-event ledger head.
+7. **Governance quorum** — for governed attestor lineage, the governance policy fingerprint and member-key fingerprints are valid; each Ed25519 approval signs the exact action; member roles, unique signers/nonces, required roles, and quorum threshold pass. Historical validity is evaluated at the latest issue time among the action and its approvals, when the complete quorum first existed, rather than against the verifier's current clock.
+8. **Authorization** — the execution authorization signature, identity, capability, action, authority snapshot, policy bindings, timing, and execution graph bindings are valid.
+9. **Historical authority** — the authorization's committed ledger head resolves to a valid historical ledger prefix; later ledger events MUST NOT invalidate the historical proof.
+10. **Execution** — the execution receipt is cryptographically bound to the authorization.
+11. **Outcome** — the outcome claim is bound to an independently generated `observed_effect` artifact, its exact observation digest/evidence reference/result digest, the execution receipt, and an independent attestation. The `observed_effect` artifact MUST be carried as a first-class proof node. The Ed25519 attestation signature MUST verify against the registered attestor key; its key fingerprint, type, and expiry scope MUST match the latest governance-approved registration or rotation, and expiry/revocation MUST be evaluated at `attested_at`.
+12. **Learning** — the authority event MUST be deterministic from the terminal outcome: `SUCCEEDED → EXECUTION_CONFIRMED` and `FAILED → EXECUTION_FAILED`; its identity, claim reference, event id, attestation metadata, and exact ledger entry MUST agree.
+13. **Historical authority** — the pre-execution authority snapshot MUST be reproducible from the signed authority policy and the committed historical ledger prefix; counters, state, multiplier, reason, and policy window MUST recompute exactly.
+14. **Post-learning authority** — the resulting authority state MUST be reproducible from the complete ledger at its evaluation time and the same signed authority policy, including counters, state, multiplier, reason, timestamps, and learning-event ledger head.
 
 For `verigate-authority-proof-v1`, an authority-reset boundary that changes `history_start_at` must not be silently inferred from runtime state. Without a portable reset artifact and independently verifiable reset governance, the proof MUST fail closed rather than treating the reset boundary as trusted input.
 
