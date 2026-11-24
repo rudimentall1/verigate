@@ -165,6 +165,7 @@ def verify_governance(p, attestor_id, attestor_data):
     if not actions:
         return False, "attestor governance lineage is missing"
 
+    previous_effective_at = None
     for action_node in actions:
         action = action_node["data"]
         signed_action = {
@@ -352,6 +353,9 @@ def verify_governance(p, attestor_id, attestor_data):
             or effective_at >= action_expires
         ):
             return False, "governance action application timestamp is invalid"
+        if previous_effective_at is not None and effective_at < previous_effective_at:
+            return False, "governance action application times are not chronological"
+        previous_effective_at = effective_at
         if len(approvals) < threshold:
             return False, "governance approval threshold was not reached"
         for role, count in policy["required_roles"].items():
@@ -422,7 +426,7 @@ def resolve_attestor_authority_at(p, attestor_id, attestor_data, attested_at):
 
     state = None
     previous_effective_at = None
-    for effective_at, action in sorted(effective_actions, key=lambda item: item[0]):
+    for effective_at, action in effective_actions:
         if previous_effective_at is not None and effective_at < previous_effective_at:
             return None, "attestor governance history is not chronologically ordered"
         previous_effective_at = effective_at
