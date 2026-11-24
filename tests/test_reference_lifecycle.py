@@ -948,22 +948,22 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
         self.assertIn("not active", standalone.stdout.lower())
 
-        authorization, receipt = self._authorized_execution()
-        observed = MCPToolVerifier().verify_result(
-            authorization,
-            tool_name="orders.create",
-            result={"order_id": "order-after-revocation", "status": "created"},
-            evidence_ref="mcp://orders.create/order-after-revocation",
-            target_identity="orders-service",
+        receipt_data = next(
+            node["data"] for node in original_manifest["payload"]["nodes"]
+            if node["type"] == "execution_receipt"
+        )
+        observed_data = next(
+            node["data"] for node in original_manifest["payload"]["nodes"]
+            if node["type"] == "observed_effect"
         )
         claim = build_outcome_claim(
-            receipt.as_dict(),
+            receipt_data,
             status="SUCCEEDED",
             executor_id="executor-reference",
-            evidence_kind=observed.evidence_kind,
-            evidence_ref=observed.evidence_ref,
-            result_sha256=observed.result_sha256,
-            observed_effect=observed.as_dict(),
+            evidence_kind=observed_data["evidence_kind"],
+            evidence_ref=observed_data["evidence_ref"],
+            result_sha256=observed_data["result_sha256"],
+            observed_effect=observed_data,
         )
         attestation = build_outcome_attestation(
             claim,
