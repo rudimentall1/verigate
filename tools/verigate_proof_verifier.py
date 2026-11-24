@@ -464,6 +464,8 @@ def resolve_attestor_authority_at(p, attestor_id, attestor_data, attested_at):
             state["status"] = "ACTIVE"
             # Keep revoked_at as an audit marker in the current registry snapshot.
         elif operation == "ATTESTOR_REVOKE":
+            if state.get("status") != "ACTIVE":
+                return None, "attestor revocation does not follow an active registration"
             state["status"] = "REVOKED"
             state["revoked_at"] = effective_at
         elif operation == "ATTESTOR_EXPIRE":
