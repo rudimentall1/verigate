@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
 from core.evidence import EvidenceGraph
 from core.wallet_enrollment_history import resolve_portable_wallet_enrollment_history
+from core.wallet_governance_transparency import WalletGovernanceTransparencyLog, verify_wallet_governance_transparency_bundle
 from core.storage import Storage
 from core.wallet_enrollment import WalletEnrollmentService
 
@@ -245,6 +246,97 @@ class PortableWalletGovernanceProofTests(unittest.TestCase):
         self.assertTrue(ok, reason)
         self.assertEqual(enrollment["status"], "ACTIVE")
         self.assertTrue(checks["wallet_enrollment_history_anchor"]["pinned"])
+
+    def test_evidence_graph_builder_embeds_independent_wallet_transparency_checkpoint(self):
+        enroll = self.service.build_action(
+            action="WALLET_ENROLL",
+            reason="operator verified wallet ownership",
+            governance_policy_sha256=self.policy.digest,
+            issuer_public_key_b64=self.issuer_b64,
+            chain_id=8453,
+            network="base",
+            wallet_address=self.wallet,
+            min_confirmations=12,
+        )
+        self.service.apply(
+            enroll,
+            [
+                governance_approval(enroll, self.gov1, "anchor-one"),
+                governance_approval(enroll, self.gov2, "anchor-two"),
+            ],
+            self.policy,
+        )
+        envelopes = self.storage.wallet_enrollment_governance_actions(self.principal)
+        log_key = Ed25519PrivateKey.generate()
+        log = WalletGovernanceTransparencyLog(
+            Path(self.tmp.name) / "external-log.db",
+            log_id="independent-wallet-log",
+            signing_key=log_key,
+        )
+        try:
+            bundle = log.checkpoint_history(self.principal, envelopes)
+            graph = EvidenceGraph(
+                self.storage,
+                self.issuer.public_key(),
+                wallet_governance_anchors={self.principal: bundle},
+            )
+            receipt = {
+                "payload": {
+                    "receipt_id": "anchored-chain-receipt",
+                    "submission_data": {
+                        "chain_id": 8453,
+                        "sender": self.wallet,
+                        "network": "base",
+                    },
+                }
+            }
+            nodes, edges, verification = [], [], {}
+            graph._add_wallet_enrollment_evidence(
+                principal=self.principal,
+                receipt=receipt,
+                nodes=nodes,
+                edges=edges,
+                verification=verification,
+            )
+            anchor_node = next(
+                item for item in nodes
+                if item["type"] == "wallet_governance_transparency_log"
+            )
+            history_node = next(
+                item for item in nodes
+                if item["type"] == "wallet_enrollment_governance_history"
+            )
+            self.assertEqual(
+                anchor_node["id"],
+                bundle["checkpoint"]["checkpoint_sha256"],
+            )
+            self.assertIn(
+                {
+                    "from": f"wallet_enrollment_governance_history:{self.principal}",
+                    "relation": "ANCHORED_BY",
+                    "to": f"wallet_governance_transparency_log:{anchor_node['id']}",
+                },
+                edges,
+            )
+            ok, reason, checks = verify_wallet_governance_transparency_bundle(
+                anchor_node["data"],
+                history_envelopes=history_node["data"]["envelopes"],
+                installation_principal=self.principal,
+                trusted_log_public_key_b64=base64.b64encode(
+                    log_key.public_key().public_bytes(
+                        serialization.Encoding.Raw,
+                        serialization.PublicFormat.Raw,
+                    )
+                ).decode(),
+                trusted_checkpoint_sha256=bundle["checkpoint"]["checkpoint_sha256"],
+            )
+            self.assertTrue(ok, reason)
+            self.assertTrue(checks["wallet_governance_transparency_anchor"]["pinned"])
+            self.assertTrue(
+                verification[f"wallet_governance_transparency:{self.principal}"]["valid"]
+            )
+        finally:
+            log.close()
 
     def test_evidence_graph_builder_exports_complete_wallet_history_and_receipt_binding(self):
         enroll = self.service.build_action(

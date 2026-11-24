@@ -29,6 +29,16 @@ verigate-verify proof.json --public-key issuer.pub \
   --trusted-wallet-enrollment-history-sha256 <wallet-history-sha256>
 ```
 
+To add external rollback protection for Anna wallet governance, also provide the transparency log's public key and the latest checkpoint digest obtained independently from the log operator:
+
+```bash
+verigate-verify proof.json --public-key issuer.pub \
+  --wallet-governance-log-public-key wallet-governance-log.pub.pem \
+  --trusted-wallet-governance-checkpoint-sha256 <latest-checkpoint-sha256>
+```
+
+Both flags are required together. The verifier rejects a proof containing an older signed checkpoint when its digest differs from the independently trusted latest checkpoint. Without both out-of-band values, the log signature may still be checked, but the transparency anchor is reported as `NOT PINNED` and no rollback-resistance claim is made. The log writer is a reference component: production deployments must operate it separately from Verigate, with separate storage and key custody, and must deliver every governance action to it when accepted. See the [transparency log protocol](https://github.com/rudimentall1/verigate/blob/main/docs/wallet-governance-transparency-log-v1.md).
+
 Repeat each digest flag for every explicitly trusted policy or history version. Obtain these values through a separate trusted channel. Without wallet pins, the verifier still checks the signed governance envelopes, quorum and registry snapshots, but reports the wallet trust anchors as `NOT PINNED`; it does not independently establish the governor roster or completeness of the supplied history.
 ```
 

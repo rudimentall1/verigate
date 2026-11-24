@@ -1013,12 +1013,249 @@ def verify_wallet_enrollment_history(
     return True, "wallet enrollment governance state verified at attestation time", historical_matches[0], checks
 
 
+
+def verify_wallet_governance_transparency_bundle(
+    bundle,
+    *,
+    history_envelopes,
+    installation_principal,
+    trusted_log_public_key_b64=None,
+    trusted_checkpoint_sha256=None,
+):
+    checks = {}
+
+    def failure(reason):
+        return False, reason, checks
+
+    if (trusted_log_public_key_b64 is None) != (trusted_checkpoint_sha256 is None):
+        return failure(
+            "trusted wallet governance log public key and checkpoint digest must be supplied together"
+        )
+    if not isinstance(installation_principal, str) or not re.fullmatch(
+        r"anna-installation:[0-9a-f]{64}", installation_principal
+    ):
+        return failure("wallet transparency log installation principal is invalid")
+    if not isinstance(history_envelopes, list) or not history_envelopes:
+        return failure("wallet transparency log history must be a non-empty list")
+    history_by_action = {}
+    for envelope in history_envelopes:
+        if not isinstance(envelope, dict) or not isinstance(envelope.get("action"), dict):
+            return failure("wallet transparency log envelope is malformed")
+        action = envelope["action"]
+        action_id = action.get("action_id")
+        if (
+            not isinstance(action_id, str) or not action_id
+            or action_id in history_by_action
+            or action.get("action") not in ("WALLET_ENROLL", "WALLET_REVOKE")
+        ):
+            return failure("wallet transparency log action identity is invalid or duplicated")
+        if (
+            action.get("action") == "WALLET_ENROLL"
+            and action.get("installation_principal") != installation_principal
+        ):
+            return failure("wallet transparency log enrollment action has another installation principal")
+        history_by_action[action_id] = envelope
+
+    enrollment_ids = set()
+    revoked_enrollment_ids = set()
+    for envelope in history_envelopes:
+        action = envelope["action"]
+        operation = action["action"]
+        enrollment_id = action.get("enrollment_id")
+        if not isinstance(enrollment_id, str) or not enrollment_id:
+            return failure("wallet transparency log enrollment ID is missing")
+        if operation == "WALLET_ENROLL":
+            if enrollment_id in enrollment_ids:
+                return failure("wallet transparency log contains a duplicate enrollment ID")
+            enrollment_ids.add(enrollment_id)
+        else:
+            if enrollment_id in revoked_enrollment_ids:
+                return failure("wallet transparency log contains a duplicate wallet revocation")
+            revoked_enrollment_ids.add(enrollment_id)
+
+    unknown_revocations = sorted(revoked_enrollment_ids - enrollment_ids)
+    if unknown_revocations:
+        return failure(
+            "wallet transparency log revocation references an enrollment outside this installation: "
+            + ", ".join(unknown_revocations)
+        )
+
+    ordered_history = sorted(history_envelopes, key=lambda item: item["action"]["action_id"])
+    expected_history_sha256 = sha(ordered_history)
+
+    if (
+        not isinstance(bundle, dict)
+        or bundle.get("protocol") != "verigate-wallet-governance-log-v1"
+        or bundle.get("installation_principal") != installation_principal
+        or not isinstance(bundle.get("log_id"), str)
+        or not bundle["log_id"]
+        or not isinstance(bundle.get("entries"), list)
+        or not bundle.get("entries")
+    ):
+        return failure("wallet governance transparency bundle is malformed or scoped to another principal")
+
+    entries = bundle["entries"]
+    previous_entry_sha256 = "0" * 64
+    logged_actions = {}
+    for sequence, entry in enumerate(entries, 1):
+        if not isinstance(entry, dict) or not isinstance(entry.get("payload"), dict):
+            return failure("wallet governance transparency entry is malformed")
+        payload = entry["payload"]
+        envelope = payload.get("envelope")
+        action_id = payload.get("action_id")
+        if (
+            payload.get("protocol") != "verigate-wallet-governance-log-v1"
+            or payload.get("log_id") != bundle["log_id"]
+            or payload.get("installation_principal") != installation_principal
+            or isinstance(payload.get("sequence"), bool)
+            or not isinstance(payload.get("sequence"), int)
+            or payload.get("sequence") != sequence
+            or payload.get("previous_entry_sha256") != previous_entry_sha256
+        ):
+            return failure("wallet governance transparency entry sequence or hash chain mismatch")
+        envelope_action = envelope.get("action") if isinstance(envelope, dict) else None
+        if (
+            not isinstance(envelope, dict)
+            or not isinstance(envelope_action, dict)
+            or not isinstance(action_id, str)
+            or not action_id
+        ):
+            return failure("wallet governance transparency entry action is malformed")
+        if envelope_action.get("action_id") != action_id:
+            return failure("wallet governance transparency entry action identity mismatch")
+        if action_id in logged_actions:
+            return failure("wallet governance transparency log contains a duplicate action")
+        envelope_sha256 = sha(envelope)
+        if payload.get("envelope_sha256") != envelope_sha256:
+            return failure("wallet governance transparency envelope digest mismatch")
+        entry_sha256 = sha(payload)
+        if entry.get("entry_sha256") != entry_sha256:
+            return failure("wallet governance transparency entry digest mismatch")
+        logged_actions[action_id] = envelope_sha256
+        previous_entry_sha256 = entry_sha256
+
+    expected_actions = {
+        action_id: sha(envelope)
+        for action_id, envelope in history_by_action.items()
+    }
+    if logged_actions != expected_actions:
+        return failure(
+            "wallet governance transparency entry chain does not contain the complete exact history"
+        )
+
+    checkpoint = bundle.get("checkpoint")
+    if not isinstance(checkpoint, dict) or not isinstance(checkpoint.get("payload"), dict):
+        return failure("wallet governance transparency checkpoint is missing")
+    cp = checkpoint["payload"]
+    checkpoint_sha256 = sha(cp)
+    issued_at = cp.get("issued_at")
+    if (
+        checkpoint.get("algorithm") != "Ed25519"
+        or checkpoint.get("checkpoint_sha256") != checkpoint_sha256
+        or cp.get("protocol") != "verigate-wallet-governance-log-v1"
+        or cp.get("log_id") != bundle["log_id"]
+        or cp.get("installation_principal") != installation_principal
+        or isinstance(cp.get("entry_count"), bool)
+        or not isinstance(cp.get("entry_count"), int)
+        or cp.get("entry_count") != len(entries)
+        or cp.get("head_entry_sha256") != previous_entry_sha256
+        or cp.get("history_sha256") != expected_history_sha256
+        or isinstance(cp.get("checkpoint_sequence"), bool)
+        or not isinstance(cp.get("checkpoint_sequence"), int)
+        or cp["checkpoint_sequence"] < 1
+        or not isinstance(cp.get("previous_checkpoint_sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", cp["previous_checkpoint_sha256"])
+        or (
+            cp.get("checkpoint_sequence") == 1
+            and cp["previous_checkpoint_sha256"] != "0" * 64
+        )
+        or (
+            cp.get("checkpoint_sequence") > 1
+            and cp["previous_checkpoint_sha256"] == "0" * 64
+        )
+        or not _finite_wallet_time(issued_at)
+        or not isinstance(cp.get("signer_key_id"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", cp["signer_key_id"])
+    ):
+        return failure("wallet governance transparency checkpoint does not bind the complete log head")
+
+    try:
+        embedded_key = b64(checkpoint.get("signer_public_key_b64"))
+        signature = b64(checkpoint.get("signature"))
+    except (TypeError, ValueError):
+        return failure("wallet governance transparency checkpoint key or signature is malformed")
+    if len(embedded_key) != 32:
+        return failure("wallet governance transparency checkpoint signer key must be Ed25519")
+    signer_key_id = hashlib.sha256(embedded_key).hexdigest()
+    if cp.get("signer_key_id") != signer_key_id:
+        return failure("wallet governance transparency checkpoint signer key fingerprint mismatch")
+
+    if trusted_log_public_key_b64 is not None:
+        try:
+            trusted_key = b64(trusted_log_public_key_b64)
+        except (TypeError, ValueError):
+            return failure("trusted wallet governance transparency public key is malformed")
+        if len(trusted_key) != 32 or trusted_key != embedded_key:
+            return failure("wallet governance transparency log public key does not match the trusted key")
+        if (
+            not isinstance(trusted_checkpoint_sha256, str)
+            or not re.fullmatch(r"[0-9a-fA-F]{64}", trusted_checkpoint_sha256)
+            or checkpoint_sha256 != trusted_checkpoint_sha256.lower()
+        ):
+            checks["wallet_governance_transparency_anchor"] = {
+                "valid": False,
+                "pinned": True,
+                "checkpoint_sha256": checkpoint_sha256,
+                "trusted_checkpoint_sha256": trusted_checkpoint_sha256,
+                "reason": "wallet governance transparency checkpoint does not match the trusted latest checkpoint",
+            }
+            return failure("wallet governance transparency checkpoint digest mismatch")
+        verification_key = trusted_key
+    else:
+        verification_key = embedded_key
+
+    try:
+        Ed25519PublicKey.from_public_bytes(verification_key).verify(
+            signature, canon(cp),
+        )
+    except (InvalidSignature, TypeError, ValueError):
+        return failure("wallet governance transparency checkpoint signature verification failed")
+
+    pinned = trusted_log_public_key_b64 is not None
+    checks["wallet_governance_transparency_log_integrity"] = {
+        "valid": True,
+        "entry_count": len(entries),
+        "head_entry_sha256": previous_entry_sha256,
+        "history_sha256": expected_history_sha256,
+    }
+    checks["wallet_governance_transparency_signature"] = {
+        "valid": True,
+        "log_id": bundle["log_id"],
+        "signer_key_id": signer_key_id,
+    }
+    checks["wallet_governance_transparency_anchor"] = {
+        "valid": True,
+        "pinned": pinned,
+        "checkpoint_sequence": cp["checkpoint_sequence"],
+        "checkpoint_sha256": checkpoint_sha256,
+        "trusted_checkpoint_sha256": trusted_checkpoint_sha256,
+        "reason": (
+            "latest wallet governance checkpoint is independently pinned"
+            if pinned
+            else "checkpoint signature is valid but no independent log key/checkpoint pin was supplied"
+        ),
+    }
+    return True, "wallet governance transparency log verified", checks
+
+
 def verify(
  proof,
  key,
  trusted_governance_policy_sha256=None,
  trusted_wallet_governance_policy_sha256=None,
  trusted_wallet_enrollment_history_sha256=None,
+ trusted_wallet_governance_log_public_key=None,
+ trusted_wallet_governance_checkpoint_sha256=None,
 ):
  try:
   trusted_policy_digests = normalize_trusted_governance_policy_digests(
@@ -1029,6 +1266,14 @@ def verify(
   )
   trusted_wallet_history_digests = normalize_trusted_governance_policy_digests(
    trusted_wallet_enrollment_history_sha256
+  )
+  if (trusted_wallet_governance_log_public_key is None) != (trusted_wallet_governance_checkpoint_sha256 is None):
+   raise ValueError(
+    'wallet governance log public key and checkpoint digest must be supplied together'
+   )
+  trusted_wallet_log_public_key_b64 = (
+   load_trusted_key(trusted_wallet_governance_log_public_key)
+   if trusted_wallet_governance_log_public_key is not None else None
   )
  except ValueError as exc:
   return bad(str(exc),{})
@@ -1144,6 +1389,56 @@ def verify(
   c['wallet_enrollment']={'valid':wallet_ok,'reason':wallet_reason}
   if not wallet_ok or historical_enrollment is None:
    return bad(wallet_reason,c)
+  transparency_nodes = [
+   item for item in p.get('nodes',[])
+   if item.get('type') == 'wallet_governance_transparency_log'
+   and isinstance(item.get('data'),dict)
+   and item['data'].get('installation_principal') == ap['agent_id']
+  ]
+  if len(transparency_nodes) > 1:
+   return bad('wallet governance transparency evidence is ambiguous',c)
+  if not transparency_nodes:
+   pinned_requested = (
+    trusted_wallet_log_public_key_b64 is not None
+    or trusted_wallet_governance_checkpoint_sha256 is not None
+   )
+   c['wallet_governance_transparency_anchor']={
+    'valid':not pinned_requested,
+    'pinned':False,
+    'reason':(
+     'trusted transparency anchor was required but the proof contains no log checkpoint'
+     if pinned_requested
+     else 'no external wallet governance transparency log was supplied'
+    )
+   }
+   if pinned_requested:
+    return bad(c['wallet_governance_transparency_anchor']['reason'],c)
+  else:
+   transparency_node=transparency_nodes[0]
+   transparency_ref=ref(transparency_node)
+   if (
+    not edge(
+     p,
+     f"wallet_enrollment_governance_history:{ap['agent_id']}",
+     'ANCHORED_BY',
+     transparency_ref,
+    )
+    or transparency_node['id'] != transparency_node['data'].get('checkpoint',{}).get('checkpoint_sha256')
+   ):
+    return bad('wallet governance history is not linked to its external checkpoint',c)
+   history_node = node(p,'wallet_enrollment_governance_history')
+   if history_node is None:
+    return bad('wallet enrollment history node is missing',c)
+   log_ok,log_reason,log_checks=verify_wallet_governance_transparency_bundle(
+    transparency_node['data'],
+    history_envelopes=history_node['data'].get('envelopes',[]),
+    installation_principal=ap['agent_id'],
+    trusted_log_public_key_b64=trusted_wallet_log_public_key_b64,
+    trusted_checkpoint_sha256=trusted_wallet_governance_checkpoint_sha256,
+   )
+   c.update(log_checks)
+   if not log_ok:
+    return bad(log_reason,c)
   wallet_node_id = historical_enrollment['enrollment_id']
   if (
    not edge(p,f"wallet_enrollment_governance_history:{ap['agent_id']}",'COVERS',f"wallet_enrollment:{wallet_node_id}")
@@ -1212,6 +1507,19 @@ def main():
   metavar='SHA256',
   help='independently trusted wallet enrollment history digest (repeat for each trusted history version)',
  )
+ x.add_argument(
+  '--wallet-governance-log-public-key',
+  default=None,
+  metavar='PEM',
+  help='independently trusted Ed25519 public key of the wallet governance transparency log',
+ )
+ x.add_argument(
+  '--trusted-wallet-governance-checkpoint-sha256',
+  type=trusted_policy_digest_argument,
+  default=None,
+  metavar='SHA256',
+  help='out-of-band digest of the latest signed wallet governance checkpoint',
+ )
  x.add_argument('--format',choices=['text','json'],default='text')
  a=x.parse_args()
  try:
@@ -1221,6 +1529,8 @@ def main():
    a.trusted_governance_policy_sha256,
    a.trusted_wallet_governance_policy_sha256,
    a.trusted_wallet_enrollment_history_sha256,
+   a.wallet_governance_log_public_key,
+   a.trusted_wallet_governance_checkpoint_sha256,
   )
  except Exception as exc:
   r=bad('verification failed closed: '+str(exc),{})
@@ -1234,6 +1544,7 @@ def main():
     'governance_policy_trust_anchor',
     'wallet_governance_policy_trust_anchor',
     'wallet_enrollment_history_anchor',
+    'wallet_governance_transparency_anchor',
    } and not v.get('pinned'):
     status='NOT PINNED'
    else:

@@ -20,6 +20,7 @@ from core.models import ActionIntent
 from core.outcome import OutcomeAttestationService, digest as outcome_digest
 from core.policy_version import verify_policy_version
 from core.storage import Storage
+from core.wallet_governance_transparency import verify_wallet_governance_transparency_bundle
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 
@@ -47,10 +48,12 @@ class EvidenceGraph:
         storage: Storage,
         public_key: Ed25519PublicKey,
         governance_public_key: Ed25519PublicKey | None = None,
+        wallet_governance_anchors: dict[str, dict[str, Any]] | None = None,
     ):
         self.storage = storage
         self.public_key = public_key
         self.governance_public_key = governance_public_key
+        self.wallet_governance_anchors = dict(wallet_governance_anchors or {})
 
     def _add_governance_envelope(
         self,
@@ -303,6 +306,47 @@ class EvidenceGraph:
             "governance_action_count": len(history),
             "history_sha256": history_data["history_sha256"],
         }
+
+        transparency_bundle = self.wallet_governance_anchors.get(principal)
+        if transparency_bundle is not None:
+            if (
+                not isinstance(transparency_bundle, dict)
+                or transparency_bundle.get("installation_principal") != principal
+                or not isinstance(transparency_bundle.get("checkpoint"), dict)
+            ):
+                verification[f"wallet_governance_transparency:{principal}"] = {
+                    "valid": False,
+                    "reason": "external wallet governance transparency bundle is malformed or scoped to another principal",
+                }
+                return
+            checkpoint_sha256 = transparency_bundle["checkpoint"].get("checkpoint_sha256")
+            if not isinstance(checkpoint_sha256, str) or not checkpoint_sha256:
+                verification[f"wallet_governance_transparency:{principal}"] = {
+                    "valid": False,
+                    "reason": "external wallet governance checkpoint digest is missing",
+                }
+                return
+            nodes.append(_node(
+                "wallet_governance_transparency_log",
+                checkpoint_sha256,
+                transparency_bundle,
+            ))
+            edges.append({
+                "from": history_id,
+                "relation": "ANCHORED_BY",
+                "to": f"wallet_governance_transparency_log:{checkpoint_sha256}",
+            })
+            log_ok, log_reason, log_checks = verify_wallet_governance_transparency_bundle(
+                transparency_bundle,
+                history_envelopes=history,
+                installation_principal=principal,
+            )
+            verification[f"wallet_governance_transparency:{principal}"] = {
+                "valid": log_ok,
+                "reason": log_reason,
+                "checkpoint_sha256": checkpoint_sha256,
+                **log_checks,
+            }
 
     def build_by_intent(self, intent_id: str) -> dict[str, Any]:
         artifacts = self.storage.authorization_by_intent(intent_id)
