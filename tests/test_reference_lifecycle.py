@@ -862,7 +862,7 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         )
 
     def test_attestor_rotation_does_not_reactivate_revoked_authority(self):
-        self._attestor()
+        original_manifest = self._valid_manifest()
         service = AttestorAuthorityService(self.storage)
 
         revoke = service.build_action(
@@ -896,6 +896,58 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             self.governance_policy,
         )
 
+        authority_snapshot_after = next(
+            node["data"] for node in original_manifest["payload"]["nodes"]
+            if node["type"] == "authority_state_after"
+        )
+        graph = EvidenceGraph(self.storage, self.public_key).build(
+            original_manifest["payload"]["authorization_id"],
+            authority_snapshot_after=authority_snapshot_after,
+        )
+        self.assertTrue(
+            graph["verification"]["all_signed_artifacts_valid"],
+            graph["verification"],
+        )
+        forged = build_manifest(
+            graph,
+            self.private_key,
+            proof_profile="authority_lifecycle",
+        )
+        attestation_node = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        attestation_payload = attestation_node["data"]["payload"]
+        attestation_payload["attested_at"] = time.time()
+        attestation_node["data"]["signature"] = base64.b64encode(
+            rotated_key.sign(canonical(attestation_payload))
+        ).decode()
+        self._resign_mutated_manifest(forged)
+
+        core_result = verify_manifest(forged, forged["issuer_public_key_b64"])
+        self.assertFalse(core_result["valid"], core_result)
+        self.assertIn("not active", core_result["reason"].lower())
+
+        proof_path = Path(self.tmp.name) / "revoked-attestor-rotation-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
+        self.assertIn("not active", standalone.stdout.lower())
+
         authorization, receipt = self._authorized_execution()
         observed = MCPToolVerifier().verify_result(
             authorization,
@@ -919,7 +971,6 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             attestor_type="EXTERNAL_VERIFIER",
             private_key=rotated_key,
         )
-
         with self.assertRaisesRegex(PermissionError, "not active"):
             OutcomeAttestationService(self.storage, self.public_key).verify_and_record(
                 attestation
