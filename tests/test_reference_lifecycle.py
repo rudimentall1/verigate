@@ -704,6 +704,61 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
                     self.assertNotIn("Traceback", standalone.stderr)
 
 
+    def test_authority_lifecycle_rejects_governance_action_effective_before_quorum(self):
+        manifest = self._valid_manifest()
+        forged = json.loads(json.dumps(manifest))
+        action_node = next(
+            node for node in forged["payload"]["nodes"]
+            if node["type"] == "governance_action"
+        )
+        action_ref = f"governance_action:{action_node['id']}"
+        approval_nodes = [
+            next(
+                node for node in forged["payload"]["nodes"]
+                if f"{node['type']}:{node['id']}" == edge["from"]
+            )
+            for edge in forged["payload"]["edges"]
+            if edge.get("relation") == "APPROVES" and edge.get("to") == action_ref
+        ]
+        quorum_time = max(
+            [
+                float(action_node["data"]["issued_at"]),
+                *[
+                    float(node["data"]["payload"]["issued_at"])
+                    for node in approval_nodes
+                ],
+            ]
+        )
+        action_node["data"]["effective_at"] = quorum_time - 1.0
+        self._resign_mutated_manifest(forged)
+
+        result = verify_proof(
+            forged,
+            trusted_public_key_b64=forged["issuer_public_key_b64"],
+        )
+        self.assertFalse(result["valid"], result)
+        self.assertIn("application timestamp", result["reason"].lower())
+
+        proof_path = Path(self.tmp.name) / "pre-quorum-effective-at-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
+        self.assertIn("application timestamp", standalone.stdout.lower())
+
     def _assert_standalone_proof_valid(self, manifest, filename):
         proof_path = Path(self.tmp.name) / filename
         proof_path.write_bytes(
