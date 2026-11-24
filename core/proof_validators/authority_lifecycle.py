@@ -518,7 +518,7 @@ def validate(payload: dict[str, Any], profile: str = "authority_lifecycle") -> t
                 policy,
                 now=verification_time,
             )
-        except (TypeError, ValueError, KeyError) as exc:
+        except (TypeError, ValueError, KeyError, OverflowError) as exc:
             return False, f"invalid governance quorum evidence: {exc}"
         if not valid_quorum:
             return False, f"governance quorum verification failed: {quorum_reason}"
