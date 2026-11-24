@@ -14,6 +14,16 @@ from core.governance import GovernancePolicy, verify_governance_quorum
 from core.proof_engine import canonical, digest
 
 
+def _finite_number(value: Any) -> bool:
+    """Return whether value is a finite int/float without leaking overflow."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except (OverflowError, TypeError, ValueError):
+        return False
+
+
 def verify_outcome_attestation_signature(
     attestation_data: dict[str, Any],
     attestor_data: dict[str, Any],
@@ -49,10 +59,10 @@ def verify_outcome_attestation_signature(
     if (
         isinstance(attested_at, bool)
         or not isinstance(attested_at, (int, float))
-        or not math.isfinite(float(attested_at))
+        or not _finite_number(attested_at)
         or isinstance(created_at, bool)
         or not isinstance(created_at, (int, float))
-        or not math.isfinite(float(created_at))
+        or not _finite_number(created_at)
         or float(attested_at) < float(created_at)
     ):
         return False, "outcome attestation time is invalid for registered attestor authority"
@@ -63,7 +73,7 @@ def verify_outcome_attestation_signature(
             if (
                 isinstance(boundary, bool)
                 or not isinstance(boundary, (int, float))
-                or not math.isfinite(float(boundary))
+                or not _finite_number(boundary)
             ):
                 return False, f"registered attestor {comparison} time is invalid"
             if float(attested_at) >= float(boundary):
@@ -131,7 +141,7 @@ def replay_attestor_governance_state(
                 if next_expiry is not None and (
                     isinstance(next_expiry, bool)
                     or not isinstance(next_expiry, (int, float))
-                    or not math.isfinite(float(next_expiry))
+                    or not _finite_number(next_expiry)
                 ):
                     raise ValueError("invalid attestor expiry")
             except (TypeError, ValueError):
@@ -164,7 +174,7 @@ def replay_attestor_governance_state(
                 if next_expiry is not None and (
                     isinstance(next_expiry, bool)
                     or not isinstance(next_expiry, (int, float))
-                    or not math.isfinite(float(next_expiry))
+                    or not _finite_number(next_expiry)
                 ):
                     raise ValueError("invalid attestor expiry")
             except (TypeError, ValueError):
@@ -243,7 +253,7 @@ def resolve_historical_attestor(
     if (
         isinstance(attested_at, bool)
         or not isinstance(attested_at, (int, float))
-        or not math.isfinite(float(attested_at))
+        or not _finite_number(attested_at)
     ):
         return False, "outcome attestation timestamp is invalid", None
 
@@ -287,7 +297,7 @@ def resolve_historical_attestor(
         if (
             isinstance(action_issued_at, bool)
             or not isinstance(action_issued_at, (int, float))
-            or not math.isfinite(float(action_issued_at))
+            or not _finite_number(action_issued_at)
         ):
             return False, "attestor governance action issue time is invalid", None
 
@@ -314,7 +324,7 @@ def resolve_historical_attestor(
             if (
                 isinstance(issued_at, bool)
                 or not isinstance(issued_at, (int, float))
-                or not math.isfinite(float(issued_at))
+                or not _finite_number(issued_at)
             ):
                 return False, "governance approval issue time is invalid", None
             approval_ids.add(approval_id)
