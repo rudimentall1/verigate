@@ -478,6 +478,118 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
                 self.assertIn("all signed artifacts", result["reason"])
 
 
+    def _run_standalone_verifier(self, manifest, *arguments):
+        proof_path = Path(self.tmp.name) / "governance-policy-pin-proof.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(manifest))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        return subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                *arguments,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_standalone_verifier_accepts_matching_trusted_governance_policy_digest(self):
+        manifest = self._valid_manifest()
+        policy_digest = next(
+            node["data"]["governance_policy_sha256"]
+            for node in manifest["payload"]["nodes"]
+            if node["type"] == "governance_action"
+        )
+
+        result = self._run_standalone_verifier(
+            manifest,
+            "--public-key",
+            str(self.public_path),
+            "--trusted-governance-policy-sha256",
+            policy_digest.upper(),
+            "--trusted-governance-policy-sha256",
+            "0" * 64,
+            "--format",
+            "json",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        trust = report["checks"]["governance_policy_trust_anchor"]
+        self.assertTrue(trust["valid"], report)
+        self.assertTrue(trust["pinned"], report)
+        self.assertEqual(trust["policy_sha256"], [policy_digest])
+        self.assertEqual(
+            trust["trusted_policy_sha256"],
+            sorted([policy_digest, "0" * 64]),
+        )
+
+    def test_standalone_verifier_rejects_malformed_governance_policy_digest(self):
+        manifest = self._valid_manifest()
+
+        result = self._run_standalone_verifier(
+            manifest,
+            "--public-key",
+            str(self.public_path),
+            "--trusted-governance-policy-sha256",
+            "not-a-sha256-digest",
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("64 hexadecimal characters", result.stderr)
+
+    def test_standalone_verifier_prints_unpinned_governance_policy_status(self):
+        manifest = self._valid_manifest()
+
+        result = self._run_standalone_verifier(
+            manifest,
+            "--public-key",
+            str(self.public_path),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("GOVERNANCE_POLICY_TRUST_ANCHOR NOT PINNED", result.stdout)
+        self.assertIn("RESULT: VALID", result.stdout)
+
+    def test_standalone_verifier_rejects_untrusted_governance_policy_digest(self):
+        manifest = self._valid_manifest()
+
+        result = self._run_standalone_verifier(
+            manifest,
+            "--public-key",
+            str(self.public_path),
+            "--trusted-governance-policy-sha256",
+            "0" * 64,
+            "--format",
+            "json",
+        )
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        trust = report["checks"]["governance_policy_trust_anchor"]
+        self.assertFalse(trust["valid"], report)
+        self.assertIn("governance policy", report["reason"].lower())
+
+    def test_standalone_verifier_discloses_unpinned_governance_policy(self):
+        manifest = self._valid_manifest()
+
+        result = self._run_standalone_verifier(
+            manifest,
+            "--public-key",
+            str(self.public_path),
+            "--format",
+            "json",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = json.loads(result.stdout)
+        trust = report["checks"]["governance_policy_trust_anchor"]
+        self.assertTrue(trust["valid"], report)
+        self.assertFalse(trust["pinned"], report)
+
     def test_authority_lifecycle_rejects_forged_governance_approval_signature(self):
         manifest = self._valid_manifest()
         forged = json.loads(json.dumps(manifest))
