@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import json
+import math
 import time
 import uuid
 from typing import Any
@@ -16,6 +17,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from attest.receipt import verify_execution_receipt
 from core.authority_state import DynamicAuthorityService
 from core.storage import Storage
+from core.governance import GovernancePolicy, verify_governance_quorum
 
 
 OUTCOME_STATUSES = frozenset({"SUCCEEDED", "FAILED", "UNKNOWN"})
@@ -69,6 +71,145 @@ def verify_payload_signature(
         return True, "valid signature"
     except (InvalidSignature, ValueError, TypeError):
         return False, "invalid outcome attestation signature"
+
+
+def _finite_timestamp(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        timestamp = float(value)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    return timestamp if math.isfinite(timestamp) else None
+
+
+def _attestor_authority_at(
+    storage: Storage,
+    attestor_id: str,
+    attested_at: Any,
+    current: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve the governance-controlled attestor state effective at attested_at."""
+    timestamp = _finite_timestamp(attested_at)
+    created_at = _finite_timestamp(current.get("created_at"))
+    if timestamp is None or created_at is None or timestamp < created_at:
+        raise PermissionError("outcome attestation time is invalid for registered attestor authority")
+
+    history = storage.attestor_governance_actions(attestor_id)
+    if not history:
+        revoked_at = current.get("revoked_at")
+        expires_at = current.get("expires_at")
+        if current.get("status") != "ACTIVE":
+            raise PermissionError("bootstrap outcome attestor is not active")
+        if revoked_at is not None and (
+            _finite_timestamp(revoked_at) is None or timestamp >= float(revoked_at)
+        ):
+            raise PermissionError("bootstrap outcome attestor was revoked before attestation")
+        if expires_at is not None and (
+            _finite_timestamp(expires_at) is None or timestamp >= float(expires_at)
+        ):
+            raise PermissionError("bootstrap outcome attestor had expired before attestation")
+        return current
+
+    state: dict[str, Any] | None = None
+    previous_issued_at: float | None = None
+    for envelope in history:
+        if not isinstance(envelope, dict):
+            raise ValueError("attestor governance history contains a malformed envelope")
+        action = envelope.get("action")
+        policy_data = envelope.get("governance_policy")
+        approvals = envelope.get("approvals")
+        if (
+            not isinstance(action, dict)
+            or action.get("attestor_id") != attestor_id
+            or not isinstance(policy_data, dict)
+            or not isinstance(approvals, list)
+        ):
+            raise ValueError("attestor governance history is incomplete or targets another attestor")
+        issued_at = _finite_timestamp(action.get("issued_at"))
+        expires_at = _finite_timestamp(action.get("expires_at"))
+        if issued_at is None or expires_at is None or expires_at <= issued_at:
+            raise ValueError("attestor governance action timestamps are invalid")
+        if previous_issued_at is not None and issued_at < previous_issued_at:
+            raise ValueError("attestor governance history is not chronologically ordered")
+        previous_issued_at = issued_at
+
+        approval_times = [
+            _finite_timestamp(item.get("payload", {}).get("issued_at"))
+            for item in approvals
+            if isinstance(item, dict) and isinstance(item.get("payload"), dict)
+        ]
+        if len(approval_times) != len(approvals) or any(item is None for item in approval_times):
+            raise ValueError("attestor governance approval timestamps are invalid")
+        verification_time = max([issued_at, *(float(item) for item in approval_times)])
+        policy = GovernancePolicy.from_dict(policy_data)
+        if (
+            policy.digest != action.get("governance_policy_sha256")
+            or policy.digest != envelope.get("governance_policy_sha256")
+        ):
+            raise PermissionError("attestor governance policy fingerprint mismatch")
+        quorum_ok, quorum_reason = verify_governance_quorum(
+            action,
+            approvals,
+            policy,
+            now=verification_time,
+        )
+        if not quorum_ok:
+            raise PermissionError(f"attestor governance quorum verification failed: {quorum_reason}")
+
+        operation = action.get("action")
+        if operation not in {
+            "ATTESTOR_REGISTER",
+            "ATTESTOR_ACTIVATE",
+            "ATTESTOR_ROTATE",
+            "ATTESTOR_REVOKE",
+            "ATTESTOR_EXPIRE",
+        }:
+            raise ValueError("unsupported attestor governance action")
+        if issued_at > timestamp:
+            continue
+        if operation == "ATTESTOR_REGISTER":
+            if state is not None:
+                raise ValueError("attestor governance history contains a duplicate registration")
+            state = {"status": "ACTIVE"}
+        elif state is None:
+            raise ValueError("attestor governance history changes an unregistered attestor")
+        if operation in {"ATTESTOR_REGISTER", "ATTESTOR_ROTATE"}:
+            public_key_b64 = action.get("public_key_b64")
+            try:
+                raw_key = base64.b64decode(public_key_b64, validate=True)
+                if len(raw_key) != 32:
+                    raise ValueError("invalid Ed25519 public key length")
+                Ed25519PublicKey.from_public_bytes(raw_key)
+            except (TypeError, ValueError):
+                raise ValueError("attestor governance action contains an invalid public key") from None
+            if action.get("attestor_type") not in ATTESTOR_TYPES:
+                raise ValueError("attestor governance action contains an invalid attestor type")
+            state.update({
+                "public_key_b64": public_key_b64,
+                "key_id": hashlib.sha256(raw_key).hexdigest(),
+                "attestor_type": action["attestor_type"],
+                "expires_at": action.get("attestor_expires_at"),
+                "status": "ACTIVE",
+                "revoked_at": None,
+            })
+        elif operation == "ATTESTOR_ACTIVATE":
+            state["status"] = "ACTIVE"
+            state["revoked_at"] = None
+        elif operation == "ATTESTOR_REVOKE":
+            state["status"] = "REVOKED"
+            state["revoked_at"] = issued_at
+        elif operation == "ATTESTOR_EXPIRE":
+            state["status"] = "EXPIRED"
+
+    if state is None or state.get("status") != "ACTIVE":
+        raise PermissionError("attestor authority was not active at outcome attestation time")
+    expiry = state.get("expires_at")
+    if expiry is not None and (
+        _finite_timestamp(expiry) is None or timestamp >= float(expiry)
+    ):
+        raise PermissionError("attestor authority had expired before outcome attestation")
+    return {**current, **state, "status": "ACTIVE", "revoked_at": None}
 
 
 def build_outcome_claim(
@@ -280,8 +421,14 @@ class OutcomeAttestationService:
         payload = attestation["payload"]
         claim = payload["claim"]
         registered = self.storage.outcome_attestor(payload["attestor_id"])
-        if registered is None or registered["status"] != "ACTIVE":
-            raise PermissionError("outcome attestor is not registered and active")
+        if registered is None:
+            raise PermissionError("outcome attestor is not registered")
+        registered = _attestor_authority_at(
+            self.storage,
+            payload["attestor_id"],
+            payload.get("attested_at"),
+            registered,
+        )
         if payload.get("outcome_attestation_version") != 1:
             raise ValueError("unsupported outcome attestation version")
         if payload.get("claim_sha256") != digest(claim):
