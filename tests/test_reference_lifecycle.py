@@ -1332,5 +1332,38 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
         )
 
 
+class HistoricalAttestorNumericBoundaryTest(unittest.TestCase):
+    def test_out_of_range_attestation_timestamp_fails_closed_without_overflow(self):
+        from core.attestor_history import resolve_historical_attestor
+
+        ok, reason, historical = resolve_historical_attestor([], {}, 10 ** 400)
+
+        self.assertFalse(ok)
+        self.assertIn("timestamp", reason)
+        self.assertIsNone(historical)
+
+    def test_out_of_range_signed_attestation_timestamp_fails_closed_without_overflow(self):
+        from core.attestor_history import verify_outcome_attestation_signature
+
+        attestation = {
+            "algorithm": "Ed25519",
+            "payload": {
+                "attestor_id": "attestor-1",
+                "attestor_type": "EXTERNAL_VERIFIER",
+                "attested_at": 10 ** 400,
+            },
+        }
+        attestor = {
+            "attestor_id": "attestor-1",
+            "attestor_type": "EXTERNAL_VERIFIER",
+            "created_at": 1,
+        }
+
+        ok, reason = verify_outcome_attestation_signature(attestation, attestor)
+
+        self.assertFalse(ok)
+        self.assertIn("time", reason)
+
+
 if __name__ == "__main__":
     unittest.main()
