@@ -704,6 +704,64 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
                     self.assertNotIn("Traceback", standalone.stderr)
 
 
+    def test_authority_lifecycle_rejects_out_of_order_attestor_governance_history(self):
+        original_manifest = self._valid_manifest()
+        self._apply_attestor_lifecycle_action(
+            "ATTESTOR_ROTATE",
+            new_key=Ed25519PrivateKey.generate(),
+        )
+        authority_snapshot_after = next(
+            node["data"] for node in original_manifest["payload"]["nodes"]
+            if node["type"] == "authority_state_after"
+        )
+        graph = EvidenceGraph(self.storage, self.public_key).build(
+            original_manifest["payload"]["authorization_id"],
+            authority_snapshot_after=authority_snapshot_after,
+        )
+        manifest = build_manifest(
+            graph,
+            self.private_key,
+            proof_profile="authority_lifecycle",
+        )
+        forged = json.loads(json.dumps(manifest))
+        nodes = forged["payload"]["nodes"]
+        action_indices = [
+            index for index, node in enumerate(nodes)
+            if node["type"] == "governance_action"
+            and node["data"].get("attestor_id") == "external-reference"
+        ]
+        self.assertEqual(len(action_indices), 2)
+        first, second = action_indices
+        nodes[first], nodes[second] = nodes[second], nodes[first]
+        self._resign_mutated_manifest(forged)
+
+        result = verify_proof(
+            forged,
+            trusted_public_key_b64=forged["issuer_public_key_b64"],
+        )
+        self.assertFalse(result["valid"], result)
+        self.assertIn("chronological", result["reason"].lower())
+
+        proof_path = Path(self.tmp.name) / "out-of-order-attestor-history.json"
+        proof_path.write_bytes(
+            serialize_proof_package(build_proof_package(forged))
+        )
+        verifier = Path(__file__).resolve().parents[1] / "tools" / "verigate_proof_verifier.py"
+        standalone = subprocess.run(
+            [
+                sys.executable,
+                str(verifier),
+                str(proof_path),
+                "--public-key",
+                str(self.public_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertNotEqual(standalone.returncode, 0, standalone.stdout)
+        self.assertIn("chronological", standalone.stdout.lower())
+
     def test_authority_lifecycle_rejects_governance_action_effective_before_quorum(self):
         manifest = self._valid_manifest()
         forged = json.loads(json.dumps(manifest))
