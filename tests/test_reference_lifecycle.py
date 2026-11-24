@@ -870,6 +870,51 @@ class VerigateReferenceLifecycleTest(unittest.TestCase):
             standalone_result.stdout + standalone_result.stderr,
         )
 
+    def test_authority_lifecycle_rejects_repeated_attestor_revocation(self):
+        manifest = self._valid_manifest()
+        attested_at = next(
+            node["data"]["payload"]["attested_at"]
+            for node in manifest["payload"]["nodes"]
+            if node["type"] == "outcome_attestation"
+        )
+        first_revoke_at = attested_at + 600
+        second_revoke_at = first_revoke_at + 600
+        self._append_attestor_governance_action(
+            manifest,
+            operation="ATTESTOR_REVOKE",
+            issued_at=first_revoke_at,
+            action_id="first-attestor-revocation",
+        )
+        self._append_attestor_governance_action(
+            manifest,
+            operation="ATTESTOR_REVOKE",
+            issued_at=second_revoke_at,
+            action_id="duplicate-attestor-revocation",
+        )
+        attestor = next(
+            node for node in manifest["payload"]["nodes"]
+            if node["type"] == "attestor_authority"
+        )
+        attestor["data"]["status"] = "REVOKED"
+        attestor["data"]["revoked_at"] = second_revoke_at + 20
+        self._resign_mutated_manifest(manifest)
+
+        core_result = verify_proof(
+            manifest,
+            trusted_public_key_b64=manifest["issuer_public_key_b64"],
+        )
+        standalone_result = self._run_standalone_verifier(
+            manifest,
+            "--public-key",
+            str(self.public_path),
+        )
+        self.assertFalse(core_result["valid"], core_result)
+        self.assertNotEqual(
+            standalone_result.returncode,
+            0,
+            standalone_result.stdout + standalone_result.stderr,
+        )
+
     def test_authority_lifecycle_rejects_forged_governance_approval_signature(self):
         manifest = self._valid_manifest()
         forged = json.loads(json.dumps(manifest))
