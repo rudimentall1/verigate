@@ -271,7 +271,7 @@ def resolve_portable_wallet_enrollment_history(
         or not re.fullmatch(r"0x[0-9a-fA-F]{40}", wallet_address)
         or isinstance(attested_at, bool)
         or not isinstance(attested_at, (int, float))
-        or not math.isfinite(float(attested_at))
+        or not _finite_timestamp(attested_at)
     ):
         return failure("portable wallet enrollment verification request is malformed")
 
@@ -393,7 +393,7 @@ def resolve_portable_wallet_enrollment_history(
         if (
             isinstance(action_issued_at, bool)
             or not isinstance(action_issued_at, (int, float))
-            or not math.isfinite(float(action_issued_at))
+            or not _finite_timestamp(action_issued_at)
         ):
             return failure("wallet enrollment governance action timestamp is invalid")
         approval_ids: set[str] = set()
@@ -414,7 +414,7 @@ def resolve_portable_wallet_enrollment_history(
                 or approval_id in approval_ids
                 or isinstance(issued_at, bool)
                 or not isinstance(issued_at, (int, float))
-                or not math.isfinite(float(issued_at))
+                or not _finite_timestamp(issued_at)
             ):
                 return failure("wallet enrollment governance approval identity or timestamp is invalid")
             approval_ids.add(approval_id)
