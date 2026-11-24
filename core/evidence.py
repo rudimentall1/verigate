@@ -81,7 +81,11 @@ class EvidenceGraph:
             "reason": reason,
         }
         governance_policy_id = envelope.get("governance_policy_sha256") or policy.digest
-        nodes.append(_node("governance_policy", governance_policy_id, policy_data))
+        if not any(
+            node["type"] == "governance_policy" and node["id"] == governance_policy_id
+            for node in nodes
+        ):
+            nodes.append(_node("governance_policy", governance_policy_id, policy_data))
         action_id = action.get("action_id", subject_id)
         nodes.append(_node("governance_action", action_id, action))
         edges.append({
