@@ -89,7 +89,7 @@ def main() -> int:
         "--allowed-target",
         action="append",
         default=[],
-        help="Optional exact recipient allowlist; omit to allow any recipient up to the capability limit",
+        help="Required exact recipient allowlist; repeat to allow multiple recipients",
     )
     args = parser.parse_args()
 
