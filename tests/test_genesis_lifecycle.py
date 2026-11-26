@@ -30,7 +30,7 @@ from core.proof_package import serialize_proof_package, verify_proof_package
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
-from enforcement.tool import ToolExecutionAdapter
+from enforcement.tool import ToolExecutionAdapter, handler_fingerprint
 
 
 def _governance_approval(action, private_key):
@@ -112,18 +112,31 @@ class GenesisLifecycleTest(unittest.TestCase):
             authority_service=authority_service,
         )
 
+        def tool_handler(_action):
+            return {"order_id": "order-1", "transaction_hash": "mcp-effect-1"}
+
         action = ActionIntent(
             agent_id="genesis-agent",
             action_type="mcp.tool.call",
             target="orders.create",
             asset="USDC",
             amount=5.0,
-            metadata={"arguments": {"sku": "VERIGATE", "quantity": 1}},
+            metadata={
+                "arguments": {"sku": "VERIGATE", "quantity": 1},
+                "execution_graph": {
+                    "module": "enforcement.tool",
+                    "hook": "ToolExecutionAdapter",
+                    "router": "ExecutionRouter",
+                    "target": "orders.create",
+                    "enforcement_scope": "direct",
+                    "handler_sha256": handler_fingerprint(tool_handler),
+                },
+            },
         )
         adapter = ToolExecutionAdapter(
             self.storage,
             self.public,
-            {"orders.create": lambda _action: {"order_id": "order-1"}},
+            {"orders.create": tool_handler},
         )
         router = ExecutionRouter(
             NetworkRegistry(),
@@ -168,7 +181,7 @@ class GenesisLifecycleTest(unittest.TestCase):
         )
         self.assertEqual(lifecycle.stage.value, "AUTHORIZE")
         receipt = lifecycle.execute(
-            lambda _action: {"transaction_hash": "mcp-effect-1"},
+            lambda _action: self.fail("unbound router callback must not execute"),
             executor="executor-1",
         )
         self.assertEqual(

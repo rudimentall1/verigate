@@ -9,6 +9,7 @@ from core.storage import Storage
 from core.authority_state import DynamicAuthorityService
 from core.policy import Policy
 from enforcement.http import HTTPExecutionAdapter
+from enforcement.local import ExecutionGate
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
 from enforcement.tool import ToolExecutionAdapter, _handler_fingerprint
@@ -57,19 +58,33 @@ class ExecutionFabricTest(unittest.TestCase):
         )["execution_authorization"]
 
     def test_tool_execution_uses_signed_action_arguments(self):
+        calls = []
+        def handler(signed_action):
+            calls.append(signed_action)
+            return "ok"
+
         action = ActionIntent(
             agent_id="tool-agent",
             action_type="mcp.tool.call",
             target="github.create_issue",
             resource="repo:verigate",
-            metadata={"arguments": {"title": "signed-title"}},
+            metadata={
+                "arguments": {"title": "signed-title"},
+                "execution_graph": {
+                    "module": "enforcement.tool",
+                    "hook": "ToolExecutionAdapter",
+                    "router": "ExecutionRouter",
+                    "target": "github.create_issue",
+                    "enforcement_scope": "direct",
+                    "handler_sha256": _handler_fingerprint(handler),
+                },
+            },
         )
         auth = self._auth(action)
-        calls = []
         adapter = ToolExecutionAdapter(
             self.storage,
             self.public_key,
-            {"github.create_issue": lambda signed_action: calls.append(signed_action) or "ok"},
+            {"github.create_issue": handler},
         )
         self.assertEqual(adapter.execute_registered(auth), "ok")
         self.assertEqual(calls[0]["metadata"]["arguments"]["title"], "signed-title")
@@ -114,9 +129,8 @@ class ExecutionFabricTest(unittest.TestCase):
         adapter = ToolExecutionAdapter(
             self.storage,
             self.public_key,
-            {target: trusted_handler},
+            {target: malicious_handler},
         )
-        adapter.handlers[target] = malicious_handler
 
         router = ExecutionRouter(
             NetworkRegistry(),
@@ -214,6 +228,9 @@ class ExecutionFabricTest(unittest.TestCase):
 
     def test_direct_execution_scope_remains_compatible(self):
         target = "github.create_issue"
+        def handler(_signed_action):
+            return "registered"
+
         action = ActionIntent(
             agent_id="tool-agent",
             action_type="mcp.tool.call",
@@ -226,6 +243,7 @@ class ExecutionFabricTest(unittest.TestCase):
                     "router": "ExecutionRouter",
                     "target": target,
                     "enforcement_scope": "direct",
+                    "handler_sha256": _handler_fingerprint(handler),
                 },
             },
         )
@@ -233,7 +251,7 @@ class ExecutionFabricTest(unittest.TestCase):
         adapter = ToolExecutionAdapter(
             self.storage,
             self.public_key,
-            {target: lambda _signed_action: "registered"},
+            {target: handler},
         )
         router = ExecutionRouter(
             NetworkRegistry(),
@@ -241,7 +259,42 @@ class ExecutionFabricTest(unittest.TestCase):
             self.public_key,
             generic_adapters={"mcp.tool.call": adapter},
         )
-        self.assertEqual(router.execute(auth, lambda _signed_action: "sent"), "sent")
+        self.assertEqual(router.execute(auth, lambda _signed_action: self.fail("unbound callback must not execute")), "registered")
+
+    def test_router_generic_adapter_registry_is_immutable(self):
+        adapter = ExecutionGate(self.storage, self.public_key)
+        router = ExecutionRouter(
+            NetworkRegistry(),
+            self.storage,
+            self.public_key,
+            generic_adapters={"custom.action": adapter},
+        )
+        with self.assertRaises(TypeError):
+            router.generic_adapters["custom.action"] = ExecutionGate(
+                self.storage, self.public_key
+            )
+
+    def test_router_executes_from_its_authorization_snapshot(self):
+        action = ActionIntent(
+            agent_id="snapshot-agent",
+            action_type="custom.action",
+            target="orders.create",
+        )
+        auth = self._auth(action)
+        adapter = ExecutionGate(self.storage, self.public_key)
+        router = ExecutionRouter(
+            NetworkRegistry(),
+            self.storage,
+            self.public_key,
+            generic_adapters={"custom.action": adapter},
+        )
+
+        def side_effect(signed_action):
+            auth["payload"]["action"]["target"] = "attacker.target"
+            return signed_action["target"]
+
+        self.assertEqual(router.execute(auth, side_effect), "orders.create")
+        self.assertEqual(auth["payload"]["action"]["target"], "attacker.target")
 
     def test_http_execution_uses_exact_signed_url_and_method(self):
         action = ActionIntent(
@@ -265,18 +318,32 @@ class ExecutionFabricTest(unittest.TestCase):
         self.assertEqual(requests[0]["body"], {"name": "signed"})
 
     def test_router_dispatches_generic_tool_action_to_fabric(self):
+        calls = []
+        def handler(signed_action):
+            calls.append(signed_action)
+            return "registered"
+
         action = ActionIntent(
             agent_id="router-agent",
             action_type="mcp.tool.call",
             target="github.create_issue",
-            metadata={"arguments": {"title": "via-router"}},
+            metadata={
+                "arguments": {"title": "via-router"},
+                "execution_graph": {
+                    "module": "enforcement.tool",
+                    "hook": "ToolExecutionAdapter",
+                    "router": "ExecutionRouter",
+                    "target": "github.create_issue",
+                    "enforcement_scope": "direct",
+                    "handler_sha256": _handler_fingerprint(handler),
+                },
+            },
         )
         auth = self._auth(action)
-        calls = []
         adapter = ToolExecutionAdapter(
             self.storage,
             self.public_key,
-            {"github.create_issue": lambda _signed_action: "registered"},
+            {"github.create_issue": handler},
         )
         router = ExecutionRouter(
             NetworkRegistry(),
@@ -286,10 +353,42 @@ class ExecutionFabricTest(unittest.TestCase):
         )
         self.assertIs(router._adapter(auth), adapter)
         self.assertEqual(
-            router.execute(auth, lambda signed_action: calls.append(signed_action) or "routed"),
-            "routed",
+            router.execute(auth, lambda signed_action: self.fail("unbound callback must not execute")),
+            "registered",
         )
         self.assertEqual(calls[0]["metadata"]["arguments"]["title"], "via-router")
+
+    def test_router_dispatches_http_through_bound_request_adapter(self):
+        action = ActionIntent(
+            agent_id="router-http-agent",
+            action_type="api.request",
+            target="https://api.example.test/v1/orders",
+            metadata={
+                "method": "post",
+                "url": "https://api.example.test/v1/orders",
+                "headers": {"x-request-id": "signed"},
+                "body": {"sku": "VERIGATE"},
+            },
+        )
+        auth = self._auth(action)
+        adapter = HTTPExecutionAdapter(self.storage, self.public_key)
+        router = ExecutionRouter(
+            NetworkRegistry(),
+            self.storage,
+            self.public_key,
+            generic_adapters={"api.request": adapter},
+        )
+        requests = []
+        result = router.execute(
+            auth,
+            lambda request: requests.append(request) or {"status": 202},
+        )
+        self.assertEqual(result, {"status": 202})
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0]["method"], "POST")
+        self.assertEqual(requests[0]["url"], action.target)
+        self.assertEqual(requests[0]["headers"], {"x-request-id": "signed"})
+        self.assertEqual(requests[0]["body"], {"sku": "VERIGATE"})
 
     def test_http_target_url_drift_fails_before_consumption(self):
         action = ActionIntent(

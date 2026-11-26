@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 import json
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -112,6 +113,42 @@ class RwaPurchaseEvaluator:
         purchase_usd: float,
     ) -> GuardrailDecision:
         matches: list[RuleMatch] = []
+
+        # The signed intent, evaluated quote, and policy amount must describe
+        # one identical purchase. Never issue an ALLOW from mixed inputs.
+        try:
+            requested_amount = Decimal(str(purchase_usd))
+            authorized_amount = action.exact_amount
+            metadata = action.metadata if isinstance(action.metadata, dict) else {}
+            binding_matches = (
+                requested_amount.is_finite()
+                and requested_amount > 0
+                and authorized_amount is not None
+                and authorized_amount == requested_amount
+                and action.action_type == "rwa.purchase"
+                and action.target == quote.symbol
+                and action.resource == f"cmc:rwa:{quote.rwa_id}"
+                and action.asset == "USD"
+                and metadata.get("source") == "coinmarketcap.rwa.v5"
+                and metadata.get("rwa_id") == quote.rwa_id
+                and metadata.get("asset_type") == quote.asset_type
+                and metadata.get("cmc_evidence") == quote.as_evidence()
+            )
+        except (InvalidOperation, TypeError, ValueError):
+            binding_matches = False
+        if not binding_matches:
+            return GuardrailDecision(
+                intent_id=action.intent_id,
+                agent_id=action.agent_id,
+                decision=Decision.BLOCK,
+                matched_rules=(
+                    RuleMatch(
+                        "rwa_action_quote_mismatch",
+                        Severity.BLOCK,
+                        "signed action, CMC quote, and purchase amount do not describe the same purchase",
+                    ),
+                ),
+            )
 
         if quote.asset_type not in {item.lower() for item in self.policy.allowed_asset_types}:
             matches.append(
