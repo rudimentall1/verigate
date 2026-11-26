@@ -34,7 +34,10 @@ requireCondition(
   "Archived runtime byte length does not match deployment manifest",
 );
 
-const RPC_URL = process.env.VERIGATE_ARC_RPC_URL || "https://rpc.mainnet.arc.io";
+const RPC_URLS = [...new Set([
+  process.env.VERIGATE_ARC_RPC_URL || "https://rpc.mainnet.arc.io",
+  process.env.VERIGATE_ARC_RPC_FALLBACK_URL || "https://rpc.drpc.mainnet.arc.io",
+])];
 const CONTRACT = (process.env.VERIGATE_ARC_REGISTRY_ADDRESS || manifest.contract_address).toLowerCase();
 const EXPECTED_OWNER = (process.env.VERIGATE_ARC_EXECUTOR_ADDRESS || manifest.expected_owner_and_issuer).toLowerCase();
 const EXPECTED_CODE_HASH = (process.env.VERIGATE_ARC_REGISTRY_CODE_HASH || manifest.runtime.keccak256).toLowerCase();
@@ -43,19 +46,41 @@ requireCondition(CONTRACT === manifest.contract_address.toLowerCase(), "Configur
 requireCondition(EXPECTED_OWNER === manifest.expected_owner_and_issuer.toLowerCase(), "Configured executor differs from reviewed deployment manifest");
 requireCondition(EXPECTED_CODE_HASH === artifactHash.toLowerCase(), "Configured Registry code hash differs from reviewed deployment artifact");
 
-const provider = new JsonRpcProvider(RPC_URL);
+let provider;
+let deploymentTx;
+let deploymentReceipt;
 try {
-  const network = await provider.getNetwork();
-  requireCondition(network.chainId === 5042n, `Expected Arc chain 5042, received ${network.chainId}`);
+  let lastRpcFailure = "no RPC endpoint was configured";
+  for (const [index, url] of RPC_URLS.entries()) {
+    const candidate = new JsonRpcProvider(url);
+    try {
+      const candidateNetwork = await candidate.getNetwork();
+      requireCondition(
+        candidateNetwork.chainId === 5042n,
+        `RPC endpoint ${index + 1} is not Arc Mainnet (chain ID 5042)`,
+      );
+      const candidateTx = await candidate.getTransaction(manifest.deployment_transaction);
+      const candidateReceipt = await candidate.getTransactionReceipt(manifest.deployment_transaction);
+      if (!candidateTx || !candidateReceipt) {
+        throw new Error("deployment transaction or receipt is not available");
+      }
+      provider = candidate;
+      deploymentTx = candidateTx;
+      deploymentReceipt = candidateReceipt;
+      break;
+    } catch {
+      lastRpcFailure = `RPC endpoint ${index + 1} failed chain/deployment lookup`;
+      await candidate.destroy();
+    }
+  }
+  requireCondition(
+    provider && deploymentTx && deploymentReceipt,
+    `No configured Arc RPC could verify the Registry deployment: ${lastRpcFailure}`,
+  );
 
-  const deploymentTx = await provider.getTransaction(manifest.deployment_transaction);
-  requireCondition(deploymentTx, "Registry deployment transaction was not found");
   requireCondition(deploymentTx.to === null, "Recorded Registry transaction is not a contract creation");
   requireCondition(deploymentTx.from.toLowerCase() === EXPECTED_OWNER, "Registry deployment sender does not match expected owner");
   requireCondition(deploymentTx.chainId === 5042n, "Registry deployment transaction has an unexpected chain ID");
-
-  const deploymentReceipt = await provider.getTransactionReceipt(manifest.deployment_transaction);
-  requireCondition(deploymentReceipt, "Registry deployment receipt was not found");
   requireCondition(deploymentReceipt.status === 1, "Registry deployment transaction failed");
   requireCondition(
     deploymentReceipt.contractAddress?.toLowerCase() === CONTRACT,
