@@ -1965,7 +1965,7 @@ class Storage:
             try:
                 cursor = self._conn.execute(
                     "UPDATE outcome_attestors SET key_id = ?, public_key_b64 = ?, attestor_type = ?, "
-                    "status = 'ACTIVE', revoked_at = NULL, expires_at = ? WHERE attestor_id = ?",
+                    "expires_at = ? WHERE attestor_id = ?",
                     (key_id, public_key_b64, attestor_type, expires_at, attestor_id),
                 )
                 if cursor.rowcount != 1:
