@@ -1197,3 +1197,30 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 - Therefore no Gensyn2 command or host inspection has been executed; host inventory remains pending reconnection.
 - Arc PR #58 current head is `7579bfb2d089d3667307349acd6f2b966c3852c4`, Open/Draft and unmerged. Current-head CI run [#43383994959](https://github.com/rudimentall1/verigate/actions/runs/43383994959) completed 4/4 PASS (test, anna-ui, container, contracts).
 - No changes to Gensyn2, production keys, signer services, or live Arc transactions were made.
+
+
+## 42. Arc branch consolidation — 2026-11-26
+
+### Unified branch
+
+- Consolidation branch: `integration/arc-unified-2026-11-26`.
+- Current implementation is based on the Arc signer-service branch `feat/arc-agent-signer-service-2026-11-12` (head at consolidation start: `42061acc511c188e55b6823a575615dea4e98b3c`), which is stacked on the Arc payment-settlement implementation from PR #57.
+- The branch includes the payment-settlement API/client, headless Arc executor, role-separated signer service, Unix socket protocol, append-only journals, systemd deployment templates, and associated Python/Node/shell tests from PR #57/#58.
+- Added the reviewed historical Arc Registry source/runtime snapshot, deployment manifest, provenance document, read-only verifier and Arc deployment workflow from PR #56. The workflow is scoped to this consolidation branch and PRs targeting main.
+- Added Guardian bootstrap utility from PR #25 with extra guards: finite positive amount limit, strict 20-byte EVM target validation, refusal of symlink/non-regular or group/other-readable private-key files, and refusal to reuse inactive/revoked identity/capability records. Added regression tests in `tests/test_bootstrap_guardian_arc.py`.
+- Added root engineering documents: `PROJECT_CONTEXT.md`, `TASKS.md`, `DECISIONS.md`; updated `AGENTS.md`, README, documentation index and Arc integration guide.
+
+### CI and verification
+
+- Current branch head at checkpoint: `1760e08daddfec745a71845b5e7641d7fda38803`.
+- Read-only Arc Registry deployment workflow [#45786466780](https://github.com/rudimentall1/verigate/actions/runs/45786466780) completed successfully on the deployment-verifier/workflow commit.
+- Full CI run [#45786639060](https://github.com/rudimentall1/verigate/actions/runs/45786639060) is still in progress at checkpoint time; do not claim the Python, Node, contract, container or Anna UI jobs have passed until this exact run completes.
+- No local test suite was run in this session.
+- Mainline CI was independently checked: run [#45363801097](https://github.com/rudimentall1/verigate/actions/runs/45363801097) completed successfully across test, contracts, container and anna-ui on main SHA `d03d1389b9c32ee6014a8165645ff553709abf46`.
+
+### Known consolidation limitation
+
+- The Arc implementation stack is from 2026-11-12 and is 14 commits behind current main. An attempted mainline-sync PR (#85) was unmergeable because of conflicts across application, Anna and documentation files; it was closed without merging.
+- Do not merge this branch to main yet. Resolve the 14-commit mainline delta selectively, preserving the Arc security boundaries and newer mainline fixes, then rerun the full CI.
+- The old `integration/arc` and `integration/arc-authority` refs are historical/superseded implementation lines with substantial divergence. Do not merge their full trees or backup/generated files mechanically. Reconcile any unique behavior only after a file-level review.
+- Production keys, host installation, service restart and live Arc transaction broadcast were not performed. No Verigate-authorized live USDC payment is claimed.
