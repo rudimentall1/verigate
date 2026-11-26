@@ -59,3 +59,12 @@ The deployment verifier initially failed on subsequent CI runs because the Arc-o
 To avoid depending on a single RPC's historical transaction availability, the verifier now tries the Arc-operated endpoint first and the independent dRPC Arc Mainnet endpoint second. It requires chain ID 5042 from whichever endpoint is selected, then performs the same deployment transaction/receipt, canonical block, runtime hash, owner, issuer, finalized-head and historical Registry activity checks. If neither endpoint provides complete data, verification still fails.
 
 The dRPC Arc endpoint is listed among Arc Mainnet RPC endpoints by the independent provider directory: https://www.diadata.org/map/web3-builder-hub/arc-rpcs/. The verifier does not submit transactions.
+
+
+## Final review notes and current checks
+
+- Arc Registry read-only verification passed on the current verifier implementation at commit d6af57d386b5234510d92e8423d76278d4aa0055: workflow run 45787866972. The run used the Arc-operated RPC with the configured independent dRPC fallback and completed successfully.
+- Full CI run 45787642323 passed all four jobs on commit 6811972138d189fa19c3d76650c6d0eaeb610d2d. This was before the final mandatory-recipient-allowlist regression test was added.
+- The allowlist change exposed a test setup issue: the private-key permission test omitted the now-required valid target, so the CLI correctly stopped earlier. The test now supplies a valid allowlist before asserting the permission rejection.
+- Full CI for the corrected latest code head 6885af76a7558d5fe0a59e9fbff69b3d1ad27ff7 is queued as run 45788098288. Do not mark the latest head fully verified until it completes.
+- Dependency audit note from the successful contracts job: npm audit reported 36 total advisories and npm audit --omit=dev reported 27, including 4 critical. The affected packages were found nested under Ganache in package-lock.json; the separate production install/tree check passed and confirmed Ganache plus its 27 audit-only packages are absent from npm ls --omit=dev. This is an audit/lockfile classification discrepancy that needs reconciliation; do not describe it as a confirmed production runtime exposure, and do not ignore the audit output.
