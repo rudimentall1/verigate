@@ -171,12 +171,12 @@ primary autonomous-agent architecture.
   an arbitrary confirmation-depth delay.
 - RPC-based verification depends on the configured Arc RPC returning honest,
   consistent chain data. The API also requires VERIGATE_ARC_REGISTRY_CODE_HASH
-  and rejects a runtime bytecode hash mismatch. Obtain the reviewed hash with
-  `npm run verify:arc-deployment`; do not configure it until the script's
-  compiled/deployed bytecode comparison and owner/issuer checks have been
-  independently reviewed. Independent evidence should retain transaction
-  hashes, block references, contract address and deployed bytecode/source
-  identity.
+  and rejects a runtime bytecode hash mismatch. The read-only
+  `npm run verify:arc-deployment` command validates the archived historical
+  source/runtime artifact, deployment transaction and receipt, canonical
+  deployment block, live runtime hash, owner, enabled issuer and finalized
+  head. See [deployment artifact provenance](evidence/arc-registry-deployment-artifact.md).
+  Do not change the reviewed manifest or pin from an unverified RPC response.
 
 ## Tests and evidence
 
@@ -210,3 +210,42 @@ the tested software paths, not a live Verigate-authorized mainnet payment.
 For grant submissions, distinguish the team's earlier live Arc transaction
 from the separate Verigate Registry deployment and from a Verigate-authorized
 payment. Record each transaction hash and its project attribution accurately.
+
+
+## Reviewed deployment artifact
+
+The Registry was deployed from a historical Solidity 0.8.24/Cancun build. The
+current source tree is not byte-for-byte the deployed source, so the verifier
+uses the archived source/runtime and manifest under
+`contracts/arc-authority/deployments/arc-mainnet/`. Run:
+
+```bash
+npm ci
+npm run verify:arc-deployment
+```
+
+The command performs read-only RPC checks. It does not sign, submit, or deploy
+transactions. CI runs the same verification in
+`.github/workflows/arc-deployment-readonly.yml`.
+
+## Guardian Arc demo bootstrap
+
+The optional Guardian provisioning helper is
+`scripts/bootstrap_guardian_arc.py`. It creates/reuses a dedicated Ed25519
+agent identity and a narrowly scoped Arc/USDC payment capability in the same
+database used by the API service. Run it only in the intended demo environment:
+
+```bash
+VERIGATE_DB=/path/to/verigate.db PYTHONPATH=. \
+  python scripts/bootstrap_guardian_arc.py \
+  --private-key-path /secure/path/guardian-arc-agent.pem \
+  --max-usdc 5 \
+  --allowed-target 0x2222222222222222222222222222222222222222
+```
+
+The private key is written with owner-only permissions; existing key files
+with group/other access or symlink paths are refused. The helper rejects
+non-finite limits, malformed EVM recipients, inactive existing identities and
+inactive existing capabilities. Omit `--allowed-target` only when an
+unrestricted recipient set within the per-action amount ceiling is intended.
+The helper does not install services or broadcast transactions.
