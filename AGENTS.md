@@ -17,6 +17,18 @@ Core principle: AI can propose an action; only Verigate decides whether the agen
 - Core authorization/policy logic remains protocol-agnostic. Integrations belong in adapters/hackathon packs.
 - Do not fork Verigate for individual hackathons.
 
+## Mandatory documentation and repository discovery rules
+
+These rules are mandatory for every contributor and agent, including documentation-only and code changes:
+
+1. **Inspect before starting.** Before planning or changing anything, inspect the repository structure, the relevant source files, existing tests, dependencies, and applicable documentation. Read `AGENTS.md`, `PROJECT_CONTEXT.md` (if present), relevant architecture/decision records, and the documentation closest to the affected area. Do not assume a generic project layout; verify the actual repository.
+2. **Keep documentation in sync.** After every significant change, update the relevant documentation, including architecture/context, task status, decisions, setup, operational guidance, and examples where affected. Do not create duplicate context files when an authoritative equivalent already exists; record the actual documentation layout.
+3. **Separate facts from assumptions.** Never present an unverified assumption, inferred state, planned work, or untested behavior as an established fact. Label uncertainty explicitly and support factual claims with code, test output, CI results, or reproducible evidence.
+4. **Validate docs before finishing.** Before declaring a task complete, re-read the affected documentation and verify that it matches the resulting code, configuration, tests, commands, and current repository state. Check links, paths, version numbers, status statements, and examples where practical.
+5. **Commit docs with the change.** Commit documentation updates in the same commit/PR as the code or configuration change they describe. Do not leave required documentation updates in a separate follow-up commit/PR. For a documentation-only task, commit the complete documentation change as its own focused change.
+
+If a requested documentation file does not exist, first inspect the repository for its authoritative equivalent. Create a new file only when it adds distinct, maintainable value and does not duplicate existing documentation.
+
 ## Development workflow
 
 For a small change: inspect → implement → test → review.
