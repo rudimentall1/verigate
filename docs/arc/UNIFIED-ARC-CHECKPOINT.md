@@ -50,3 +50,12 @@ Root files:
 3. Keep PR #86 Draft until those gates pass.
 4. Merge into main only after review/approval.
 5. Treat production host deployment, key provisioning and live payment as separate approvals.
+
+
+## Read-only RPC availability correction
+
+The deployment verifier initially failed on subsequent CI runs because the Arc-operated RPC returned no deployment receipt for a historical transaction, although an earlier run on the same artifact passed. The verifier remains fail-closed; it does not treat a missing receipt as success.
+
+To avoid depending on a single RPC's historical transaction availability, the verifier now tries the Arc-operated endpoint first and the independent dRPC Arc Mainnet endpoint second. It requires chain ID 5042 from whichever endpoint is selected, then performs the same deployment transaction/receipt, canonical block, runtime hash, owner, issuer, finalized-head and historical Registry activity checks. If neither endpoint provides complete data, verification still fails.
+
+The dRPC Arc endpoint is listed among Arc Mainnet RPC endpoints by the independent provider directory: https://www.diadata.org/map/web3-builder-hub/arc-rpcs/. The verifier does not submit transactions.
