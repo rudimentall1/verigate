@@ -5,7 +5,9 @@ This directory contains product, protocol, security, integration and operational
 ## Product and architecture
 
 - [Project overview and Quickstart](../README.md)
-- [Project context](../_docs/project.md)
+- [Project context](../PROJECT_CONTEXT.md) and [engineering decisions](../DECISIONS.md)
+- [Task tracking](../TASKS.md)
+- [Historical project context](../_docs/project.md)
 - [Technology stack](../_docs/stack.md)
 - [Authority protocol v0.1](authority-protocol-v0.1.md)
 - [Portable authority proof v1](verigate-authority-proof-v1.md)
@@ -19,7 +21,7 @@ This directory contains product, protocol, security, integration and operational
 ## Integrations
 
 - **Anna:** [implementation and user flow](../anna/README.md), [current release status](../anna/docs/RELEASE-STATUS.md), [Anna docs index](../anna/docs/README.md).
-- [Arc Mainnet integration](arc-mainnet-integration.md) and [Arc evidence](evidence/arc-mainnet.md).
+- [Arc Mainnet integration](arc-mainnet-integration.md), [signer service](ARC_AGENT_SIGNER_SERVICE.md), [deployment artifact provenance](evidence/arc-registry-deployment-artifact.md), and [Arc evidence](evidence/arc-mainnet.md).
 - [Wallet enrollment and chain outcome ingestion](WALLET-ENROLLMENT-AND-CHAIN-INGEST.md)
 
 ## Partnerships and pilots

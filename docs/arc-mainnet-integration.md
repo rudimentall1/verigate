@@ -2,7 +2,7 @@
 
 Verigate's Arc integration combines a signed agent payment intent, identity and
 capability checks, deterministic policy evaluation, an on-chain one-time
-authority registry, and an explicit non-custodial wallet handoff.
+authority registry, and non-custodial execution by the agent's own signer.
 
 This guide describes the **Arc Authority Registry flow**. The older generic
 `POST /v1/execution/consume` flow is not valid for Arc authorizations: the API
@@ -89,6 +89,28 @@ verified Arc block timestamp.
 Only when all checks succeed does the API return the exact wallet payment
 transaction and Arc authority evidence.
 
+### Payment settlement confirmation
+
+`POST /v1/integrations/arc/payment/confirm`
+
+After the user separately signs and broadcasts the returned USDC transaction,
+the client submits its transaction hash together with the original signed
+authorization and the registration/consumption transaction hashes. Verigate
+re-verifies the Registry sequence and then checks the payment transaction
+against the exact signed EVM envelope.
+
+The verifier requires:
+- Arc Mainnet chain ID, canonical USDC token address and zero native value.
+- Exact sender, token destination and transfer calldata from the signed intent.
+- Successful payment receipt whose transaction and receipt inclusion coordinates agree.
+- Exactly one matching `Transfer(address,address,uint256)` event emitted by canonical USDC, with the signed sender, recipient and amount.
+- Payment transaction ordering after Registry consumption (including transaction index when both are in the same block).
+- Receipt block hash matching the canonical block and inclusion at or below Arc's finalized head.
+
+The response returns `settled=true` and structured settlement evidence only
+after all checks pass. This endpoint verifies a payment already broadcast by
+the user's wallet; Verigate does not custody keys or broadcast the payment.
+
 ### Generic consume route
 
 `POST /v1/execution/consume`
@@ -96,26 +118,37 @@ transaction and Arc authority evidence.
 Arc authorizations are explicitly rejected with HTTP 409. This route cannot
 be used to skip Registry registration and consumption.
 
-## Wallet client transaction sequence
+## Autonomous agent execution sequence
 
-The EIP-1193 helper is documented in
+The optional EIP-1193/browser adapter is documented in
 [`docs/ARC_WALLET_CLIENT.md`](ARC_WALLET_CLIENT.md).
 
-1. Check the connected wallet is on Arc Mainnet.
-2. Request authorization from Verigate.
-3. Check that the connected wallet exposes the configured Registry executor
-   account, then sign and broadcast the registration transaction.
-4. Wait for a successful receipt and ask Verigate to confirm registration.
-5. Sign and broadcast the returned Registry consumption transaction.
-6. Wait for a successful receipt and ask Verigate to confirm consumption.
-7. Receive the exact authorized payment transaction only after
-   `execute === true`.
-8. Present the payment details and call
-   `broadcastAuthorizedArcPayment` only as a separate, explicit wallet
-   action.
+The primary autonomous-agent path is implemented by
+`integrations/arc-agent-executor.mjs`:
 
-The Registry executor and payment sender may be different accounts. The
-client checks the account required by each transaction.
+1. The agent creates and signs the exact Arc USDC intent with its Ed25519
+   identity key.
+2. Verigate verifies identity, capability, policy and the signed payment
+   envelope, then returns a signed Execution Authorization and a Registry
+   registration transaction.
+3. An operator-controlled issuer signer (preferably a restricted KMS/HSM
+   adapter) submits the registration transaction.
+4. Verigate confirms the registration receipt and on-chain state.
+5. The agent's own EVM signer submits the one-time consumption transaction.
+6. Verigate confirms consumption and returns the exact authorized payment.
+7. The agent signer broadcasts that exact USDC transaction.
+8. Verigate verifies the payment receipt, matching USDC Transfer event and
+   finalized canonical block, then returns settlement evidence.
+
+The issuer signer and agent signer are separate. The issuer must be the
+Registry owner or an enabled issuer. The per-authorization executor is bound
+to the agent's signed EVM payment sender. Registration is submitted by the
+issuer; consumption and payment are submitted by that agent executor. The
+issuer private key is not distributed to agents and neither key is stored by
+Verigate.
+
+The optional browser adapter is for interactive wallet sessions, not the
+primary autonomous-agent architecture.
 
 ## Security boundary and limitations
 
@@ -138,12 +171,15 @@ client checks the account required by each transaction.
   an arbitrary confirmation-depth delay.
 - RPC-based verification depends on the configured Arc RPC returning honest,
   consistent chain data. The API also requires VERIGATE_ARC_REGISTRY_CODE_HASH
-  and rejects a runtime bytecode hash mismatch. Obtain the reviewed hash with
-  `npm run verify:arc-deployment`; do not configure it until the script's
-  compiled/deployed bytecode comparison and owner/issuer checks have been
-  independently reviewed. Independent evidence should retain transaction
-  hashes, block references, contract address and deployed bytecode/source
-  identity.
+  and rejects a runtime bytecode hash mismatch. The read-only
+  `npm run verify:arc-deployment` command tries the Arc-operated RPC first and
+  an independent dRPC Arc Mainnet endpoint if the first endpoint cannot return
+  the deployment transaction/receipt. Every selected endpoint must report
+  chain ID 5042; the verifier then validates the archived historical
+  source/runtime artifact, deployment transaction and receipt, canonical
+  deployment block, live runtime hash, owner, enabled issuer and finalized
+  head. See [deployment artifact provenance](evidence/arc-registry-deployment-artifact.md).
+  Do not change the reviewed manifest or pin from an unverified RPC response.
 
 ## Tests and evidence
 
@@ -177,3 +213,43 @@ the tested software paths, not a live Verigate-authorized mainnet payment.
 For grant submissions, distinguish the team's earlier live Arc transaction
 from the separate Verigate Registry deployment and from a Verigate-authorized
 payment. Record each transaction hash and its project attribution accurately.
+
+
+## Reviewed deployment artifact
+
+The Registry was deployed from a historical Solidity 0.8.24/Cancun build. The
+current source tree is not byte-for-byte the deployed source, so the verifier
+uses the archived source/runtime and manifest under
+`contracts/arc-authority/deployments/arc-mainnet/`. Run:
+
+```bash
+npm ci
+npm run verify:arc-deployment
+```
+
+The command performs read-only RPC checks. It does not sign, submit, or deploy
+transactions. CI runs the same verification in
+`.github/workflows/arc-deployment-readonly.yml`.
+
+## Guardian Arc demo bootstrap
+
+The optional Guardian provisioning helper is
+`scripts/bootstrap_guardian_arc.py`. It creates/reuses a dedicated Ed25519
+agent identity and a narrowly scoped Arc/USDC payment capability in the same
+database used by the API service. Run it only in the intended demo environment:
+
+```bash
+VERIGATE_DB=/path/to/verigate.db PYTHONPATH=. \
+  python scripts/bootstrap_guardian_arc.py \
+  --private-key-path /secure/path/guardian-arc-agent.pem \
+  --max-usdc 5 \
+  --allowed-target 0x2222222222222222222222222222222222222222
+```
+
+The private key is written with owner-only permissions; existing key files
+with group/other access or symlink paths are refused. The helper rejects
+non-finite limits, missing/malformed EVM recipient allowlists, inactive existing
+identities and inactive existing capabilities. At least one explicit
+`--allowed-target` is required for Arc Mainnet so the capability cannot silently
+expand to arbitrary recipients. The helper does not install services or
+broadcast transactions.

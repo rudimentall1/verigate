@@ -1,13 +1,12 @@
-"""Client-side transaction preparation and on-chain verification for Verigate Arc Authority Registry.
+"""Transaction preparation and on-chain verification for Verigate Arc Authority Registry.
 
-The user's wallet signs both registry transactions. The API never receives or stores
-the EVM private key. A payment transaction is released only after both on-chain
-receipts and the registry state have been verified.
+The operator-controlled issuer signer submits registration. The agent-controlled
+EVM executor submits one-time consumption and the payment. The API never receives
+or stores either EVM private key.
 """
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
 import time
@@ -79,6 +78,7 @@ class ArcAuthorityRegistry:
         rpc: EvmRpcClient | None = None,
         *,
         contract_address: str | None = None,
+        issuer_address: str | None = None,
         executor_address: str | None = None,
         expected_code_hash: str | None = None,
     ):
@@ -87,11 +87,18 @@ class ArcAuthorityRegistry:
             or os.environ.get("VERIGATE_ARC_REGISTRY_ADDRESS", DEFAULT_REGISTRY),
             "registry address",
         )
-        self.executor_address = _address(
-            executor_address
+        # The issuer is the operator-controlled account allowed to register
+        # authorizations. The executor is taken from each signed payment
+        # intent and is the agent-controlled account allowed to consume it.
+        self.issuer_address = _address(
+            issuer_address
+            or os.environ.get("VERIGATE_ARC_ISSUER_ADDRESS")
+            or executor_address
             or os.environ.get("VERIGATE_ARC_EXECUTOR_ADDRESS", DEFAULT_EXECUTOR),
-            "executor address",
+            "issuer address",
         )
+        # Compatibility alias for older callers and deployment configuration.
+        self.executor_address = self.issuer_address
         self.expected_code_hash = (
             expected_code_hash or os.environ.get("VERIGATE_ARC_REGISTRY_CODE_HASH", "")
         ).lower()
@@ -117,19 +124,21 @@ class ArcAuthorityRegistry:
             raise ArcAuthorityRegistryError("authorization expiry is outside uint64 range")
         if require_unexpired and valid_until <= int(time.time()):
             raise ArcAuthorityRegistryError("execution authorization has expired")
-        canonical = json.dumps(
-            {
-                "domain": "verigate.arc.authority.registry",
-                "version": 1,
-                "chain_id": ARC_CHAIN_ID,
-                "contract": self.contract_address.lower(),
-                "authorization": authorization,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-        intent_hash = hashlib.sha256(canonical).hexdigest()
+        signature = authorization.get("signature")
+        algorithm = authorization.get("algorithm")
+        if algorithm != "Ed25519" or not isinstance(signature, str) or not signature:
+            raise ArcAuthorityRegistryError(
+                "execution authorization must carry an Ed25519 signature"
+            )
+        # Hash the signed envelope by its signature bytes rather than re-serializing
+        # JSON across languages. Python and JavaScript stringify integral floats
+        # differently (e.g. 1.0 vs 1), which would otherwise produce divergent
+        # Registry intent hashes for the same valid authorization.
+        hash_input = (
+            f"verigate.arc.authority.registry:v2:{ARC_CHAIN_ID}:"
+            f"{self.contract_address.lower()}:{algorithm}:{signature}"
+        ).encode("ascii")
+        intent_hash = hashlib.sha256(hash_input).hexdigest()
         return authorization_id, intent_hash, valid_until
 
     def verify_deployment(self) -> dict:
@@ -163,20 +172,18 @@ class ArcAuthorityRegistry:
                 raise ArcAuthorityRegistryError("registry owner() returned invalid data")
 
             owner = _address("0x" + owner_result[-40:], "on-chain owner")
-            if owner != self.executor_address:
-                raise ArcAuthorityRegistryError(
-                    f"registry owner mismatch: expected {self.executor_address}, received {owner}"
-                )
 
+            # The registration signer may be the owner or a separately
+            # enabled issuer installed by the owner. Do not conflate the two.
             issuer_result = self.rpc.eth_call(
                 self.contract_address,
-                ISSUER_SELECTOR + _address_word(self.executor_address),
+                ISSUER_SELECTOR + _address_word(self.issuer_address),
             )
             if not isinstance(issuer_result, str) or not re.fullmatch(r"0x[0-9a-fA-F]{64}", issuer_result):
                 raise ArcAuthorityRegistryError("Registry issuers() returned invalid data")
             if int(issuer_result, 16) != 1:
                 raise ArcAuthorityRegistryError(
-                    "configured Arc executor is not an enabled Registry issuer"
+                    "configured Arc issuer is not an enabled Registry issuer"
                 )
 
             return {
@@ -184,17 +191,28 @@ class ArcAuthorityRegistry:
                 "chain_id": chain_id,
                 "contract_address": self.contract_address,
                 "owner": owner,
-                "executor": self.executor_address,
+                "issuer": self.issuer_address,
                 "issuer_enabled": True,
                 "runtime_code_hash": actual_code_hash,
             }
         except EvmRpcError as exc:
             raise ArcAuthorityRegistryError(f"Arc registry RPC verification failed: {exc}") from exc
 
-    def _transaction(self, data: str) -> dict:
+    def _authorization_executor(self, authorization: dict) -> str:
+        """Resolve the agent EVM executor from the signed payment envelope."""
+        try:
+            transaction = authorization["payload"]["action"]["metadata"]["evm_transaction"]
+            sender = transaction["from"]
+        except (KeyError, TypeError) as exc:
+            raise ArcAuthorityRegistryError(
+                "signed Arc authorization is missing its EVM executor address"
+            ) from exc
+        return _address(sender, "signed Arc executor")
+
+    def _transaction(self, data: str, *, from_address: str | None = None) -> dict:
         return {
             "chainId": hex(ARC_CHAIN_ID),
-            "from": self.executor_address,
+            "from": _address(from_address or self.issuer_address, "transaction sender"),
             "to": self.contract_address,
             "data": data,
             "value": "0x0",
@@ -202,20 +220,22 @@ class ArcAuthorityRegistry:
 
     def prepare_registration_transaction(self, authorization: dict) -> dict:
         authorization_id, intent_hash, valid_until = self._authorization_values(authorization)
+        executor = self._authorization_executor(authorization)
         data = (
             REGISTER_SELECTOR
             + authorization_id
             + intent_hash
-            + _address_word(self.executor_address)
+            + _address_word(executor)
             + _word(valid_until)
         )
         return {
             "contract_address": self.contract_address,
-            "executor": self.executor_address,
+            "issuer": self.issuer_address,
+            "executor": executor,
             "authorization_id": "0x" + authorization_id,
             "intent_hash": "0x" + intent_hash,
             "valid_until": valid_until,
-            "registration_transaction": self._transaction(data),
+            "registration_transaction": self._transaction(data, from_address=self.issuer_address),
         }
 
     def _authorization_state(self, authorization_id: str) -> dict:
@@ -241,7 +261,13 @@ class ArcAuthorityRegistry:
             "revoked": bool(int(words[5], 16)),
         }
 
-    def _confirmed_receipt(self, transaction_hash: str, expected_calldata: str) -> dict:
+    def _confirmed_receipt(
+        self,
+        transaction_hash: str,
+        expected_calldata: str,
+        *,
+        expected_sender: str | None = None,
+    ) -> dict:
         if not isinstance(transaction_hash, str) or not _TX_RE.fullmatch(transaction_hash):
             raise ArcAuthorityRegistryError("transaction hash must be a 32-byte 0x-prefixed hash")
 
@@ -278,8 +304,9 @@ class ArcAuthorityRegistry:
             raise ArcAuthorityRegistryError("transaction was not sent on Arc Mainnet")
         if _address(transaction.get("to", ""), "transaction destination") != self.contract_address:
             raise ArcAuthorityRegistryError("transaction destination is not the configured registry")
-        if _address(transaction.get("from", ""), "transaction sender") != self.executor_address:
-            raise ArcAuthorityRegistryError("transaction sender is not the configured executor")
+        sender = _address(expected_sender or self.issuer_address, "expected transaction sender")
+        if _address(transaction.get("from", ""), "transaction sender") != sender:
+            raise ArcAuthorityRegistryError("transaction sender does not match the expected issuer or executor")
         if not isinstance(tx_input, str) or tx_input.lower() != expected_calldata.lower():
             raise ArcAuthorityRegistryError("transaction calldata does not match the expected registry operation")
         if tx_value != 0:
@@ -296,8 +323,8 @@ class ArcAuthorityRegistry:
         if _address(receipt.get("to", ""), "receipt destination") != self.contract_address:
             raise ArcAuthorityRegistryError("transaction was not sent to the Verigate registry")
 
-        if _address(receipt.get("from", ""), "receipt sender") != self.executor_address:
-            raise ArcAuthorityRegistryError("transaction sender is not the configured Verigate executor")
+        if _address(receipt.get("from", ""), "receipt sender") != sender:
+            raise ArcAuthorityRegistryError("receipt sender does not match the expected issuer or executor")
 
         if not receipt.get("blockNumber"):
             raise ArcAuthorityRegistryError("confirmed transaction has no block number")
@@ -437,14 +464,17 @@ class ArcAuthorityRegistry:
                 "authorization issuance time is invalid"
             )
 
+        executor = self._authorization_executor(authorization)
         registration_data = (
             REGISTER_SELECTOR
             + authorization_id
             + intent_hash
-            + _address_word(self.executor_address)
+            + _address_word(executor)
             + _word(valid_until)
         )
-        receipt = self._confirmed_receipt(transaction_hash, registration_data)
+        receipt = self._confirmed_receipt(
+            transaction_hash, registration_data, expected_sender=self.issuer_address
+        )
 
         return self._verify_inclusion_before_expiry(
             receipt,
@@ -458,12 +488,13 @@ class ArcAuthorityRegistry:
         event_signature: str,
         authorization_id: str,
         intent_hash: str,
+        executor_address: str,
     ) -> dict:
         expected = [
             event_signature.lower(),
             "0x" + authorization_id,
             "0x" + intent_hash,
-            _topic_address(self.executor_address),
+            _topic_address(executor_address),
         ]
 
         for log in receipt.get("logs", []):
@@ -484,8 +515,11 @@ class ArcAuthorityRegistry:
         authorization_id, intent_hash, valid_until = self._authorization_values(
             authorization, require_unexpired=False
         )
-        registration_data = REGISTER_SELECTOR + authorization_id + intent_hash + _address_word(self.executor_address) + _word(valid_until)
-        receipt = self._confirmed_receipt(transaction_hash, registration_data)
+        executor = self._authorization_executor(authorization)
+        registration_data = REGISTER_SELECTOR + authorization_id + intent_hash + _address_word(executor) + _word(valid_until)
+        receipt = self._confirmed_receipt(
+            transaction_hash, registration_data, expected_sender=self.issuer_address
+        )
         issued_at = authorization["payload"].get("issued_at")
         if isinstance(issued_at, bool) or not isinstance(issued_at, int):
             raise ArcAuthorityRegistryError(
@@ -494,7 +528,9 @@ class ArcAuthorityRegistry:
         self._verify_inclusion_before_expiry(
             receipt, valid_until, valid_from=issued_at
         )
-        log = self._find_event(receipt, REGISTERED_EVENT, authorization_id, intent_hash)
+        log = self._find_event(
+            receipt, REGISTERED_EVENT, authorization_id, intent_hash, executor
+        )
 
         event_data = log.get("data", "0x")[2:]
         if len(event_data) < 128:
@@ -502,13 +538,13 @@ class ArcAuthorityRegistry:
 
         event_expiry = int(event_data[:64], 16)
         event_issuer = _address("0x" + event_data[64:128][-40:], "event issuer")
-        if event_expiry != valid_until or event_issuer != self.executor_address:
+        if event_expiry != valid_until or event_issuer != self.issuer_address:
             raise ArcAuthorityRegistryError("registration event does not match the signed authorization")
 
         state = self._authorization_state(authorization_id)
         if (
             state["intent_hash"] != "0x" + intent_hash
-            or state["executor"] != self.executor_address
+            or state["executor"] != executor
             or state["valid_until"] != valid_until
             or state["registered_at"] == 0
             or state["revoked"]
@@ -519,12 +555,13 @@ class ArcAuthorityRegistry:
         return {
             "registered": True,
             "contract_address": self.contract_address,
-            "executor": self.executor_address,
+            "issuer": self.issuer_address,
+            "executor": executor,
             "authorization_id": "0x" + authorization_id,
             "intent_hash": "0x" + intent_hash,
             "transaction_ref": transaction_hash,
             "block_ref": receipt["blockNumber"],
-            "consume_transaction": self._transaction(consume_data),
+            "consume_transaction": self._transaction(consume_data, from_address=executor),
         }
 
     def confirm_consumption(self, authorization: dict, transaction_hash: str) -> dict:
@@ -532,8 +569,11 @@ class ArcAuthorityRegistry:
         authorization_id, intent_hash, valid_until = self._authorization_values(
             authorization, require_unexpired=False
         )
+        executor = self._authorization_executor(authorization)
         consume_data = CONSUME_SELECTOR + authorization_id + intent_hash
-        receipt = self._confirmed_receipt(transaction_hash, consume_data)
+        receipt = self._confirmed_receipt(
+            transaction_hash, consume_data, expected_sender=executor
+        )
         issued_at = authorization["payload"].get("issued_at")
         if isinstance(issued_at, bool) or not isinstance(issued_at, int):
             raise ArcAuthorityRegistryError(
@@ -542,12 +582,14 @@ class ArcAuthorityRegistry:
         block_timestamp = self._verify_inclusion_before_expiry(
             receipt, valid_until, valid_from=issued_at
         )
-        self._find_event(receipt, CONSUMED_EVENT, authorization_id, intent_hash)
+        self._find_event(
+            receipt, CONSUMED_EVENT, authorization_id, intent_hash, executor
+        )
 
         state = self._authorization_state(authorization_id)
         if (
             state["intent_hash"] != "0x" + intent_hash
-            or state["executor"] != self.executor_address
+            or state["executor"] != executor
             or state["valid_until"] != valid_until
             or not state["consumed"]
             or state["revoked"]
@@ -557,7 +599,7 @@ class ArcAuthorityRegistry:
         return {
             "consumed": True,
             "contract_address": self.contract_address,
-            "executor": self.executor_address,
+            "executor": executor,
             "authorization_id": "0x" + authorization_id,
             "intent_hash": "0x" + intent_hash,
             "transaction_ref": transaction_hash,

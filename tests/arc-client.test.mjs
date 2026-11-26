@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   authorizeArcPayment,
   broadcastAuthorizedArcPayment,
+  confirmArcPayment,
   ARC_CHAIN_HEX,
 } from "../integrations/arc-client.mjs";
 
@@ -33,6 +34,11 @@ function fixture({ execute = true } = {}) {
       payload = { execution_authorization: authorization, arc_authority: { registration_transaction: registrationTx } };
     } else if (url.endsWith("/registration/confirm")) {
       payload = { registered: true, consume_transaction: consumeTx };
+    } else if (url.endsWith("/payment/confirm")) {
+      payload = {
+        settled: true,
+        payment_settlement: { verified: true, payment_transaction_hash: "0xpayment" },
+      };
     } else {
       payload = {
         execute,
@@ -145,4 +151,28 @@ test("rejects mined registry transactions with failed receipts before calling co
     /transaction was mined but reverted/,
   );
   assert.equal(f.calls.some(x => x.url?.endsWith("/registration/confirm")), false);
+});
+
+
+test("payment confirmation submits the original authorization and all three transaction hashes", async () => {
+  const f = fixture();
+  const result = await confirmArcPayment({
+    provider: f.provider,
+    apiBaseUrl: "https://verigate.example/",
+    authorization,
+    registration_tx_hash: "0xregistration",
+    consume_tx_hash: "0xconsumption",
+    payment_tx_hash: "0xpayment",
+    fetchImpl: f.fetchImpl,
+    receiptWait: { timeoutMs: 50, pollIntervalMs: 1 },
+  });
+  assert.equal(result.settled, true);
+  assert.equal(result.payment_settlement.verified, true);
+  const call = f.calls.find(x => x.url?.endsWith("/payment/confirm"));
+  assert.deepEqual(call.body, {
+    authorization,
+    registration_tx_hash: "0xregistration",
+    consume_tx_hash: "0xconsumption",
+    payment_tx_hash: "0xpayment",
+  });
 });

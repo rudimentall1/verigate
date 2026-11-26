@@ -97,6 +97,8 @@ from integrations.arc import (
     ARC_USDC_ADDRESS,
     ArcIntegrationError,
     ArcMainnetIntegration,
+    ArcPaymentSettlementVerifier,
+    ArcPaymentVerificationError,
     validate_arc_usdc_transfer,
 )
 from x402.parser import X402ParseError, offer_to_intent, parse_payment_required_header
@@ -506,11 +508,11 @@ def authorize_arc_payment(req: ActionAuthorizationRequest) -> dict:
         "arc_authority": arc_authority,
         "wallet_transaction": None,
         "execution_order": [
-            "sign and broadcast arc_authority.registration_transaction with the configured executor wallet",
+            "submit arc_authority.registration_transaction with the configured Registry issuer signer",
             "confirm its transaction hash at /v1/integrations/arc/registration/confirm",
-            "sign and broadcast the returned consume_transaction with the same wallet",
+            "sign and broadcast the returned consume_transaction with the agent executor signer",
             "confirm its transaction hash at /v1/integrations/arc/consume/confirm",
-            "only after execute=true, sign and broadcast the returned wallet_transaction payment on Arc",
+            "only after execute=true, sign and broadcast the returned wallet_transaction payment with the agent executor signer",
         ],
     }
 
@@ -531,14 +533,48 @@ def _verified_arc_execution_authorization(
     if not valid:
         raise HTTPException(status_code=403, detail=f"invalid Verigate execution authorization: {reason}")
 
-    payload = authorization.get("payload", {})
-    action = payload.get("action", {})
-    if action.get("network") != ARC_CHAIN or action.get("action_type") != "payment":
-        raise HTTPException(status_code=400, detail="Arc registry flow requires an Arc payment authorization")
+    payload = authorization.get("payload")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=403, detail="invalid Verigate execution authorization: invalid payload")
+    action = payload.get("action")
+    if not isinstance(action, dict):
+        raise HTTPException(status_code=403, detail="invalid Verigate execution authorization: invalid action")
+    if (
+        action.get("network") != ARC_CHAIN
+        or action.get("action_type") != "payment"
+        or action.get("asset") != "USDC"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Arc registry flow requires an Arc Mainnet USDC payment authorization",
+        )
 
     metadata = action.get("metadata", {})
-    if not isinstance(metadata.get("evm_transaction"), dict):
+    if not isinstance(metadata, dict) or metadata.get("network_family") != "evm":
+        raise HTTPException(status_code=400, detail="signed Arc EVM payment metadata is missing")
+    arc_metadata = metadata.get("arc")
+    if not isinstance(arc_metadata, dict) or (
+        arc_metadata.get("chain_id") != ARC_CHAIN_ID
+        or arc_metadata.get("asset") != "USDC"
+        or str(arc_metadata.get("token_address", "")).lower() != ARC_USDC_ADDRESS.lower()
+        or arc_metadata.get("token_decimals") != 6
+    ):
+        raise HTTPException(status_code=400, detail="signed Arc token binding does not match canonical USDC")
+    transaction = metadata.get("evm_transaction")
+    if not isinstance(transaction, dict):
         raise HTTPException(status_code=400, detail="signed Arc payment transaction is missing")
+    amount = action.get("amount_exact")
+    if amount is None:
+        amount = action.get("amount")
+    try:
+        validate_arc_usdc_transfer(
+            transaction,
+            sender=transaction.get("from"),
+            recipient=action.get("target"),
+            amount=amount,
+        )
+    except (ArcIntegrationError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"signed Arc payment envelope is invalid: {exc}") from exc
 
     return payload
 
@@ -617,7 +653,7 @@ def confirm_arc_consumption(req: dict) -> dict:
     evidence = {
         "chain_id": ARC_CHAIN_ID,
         "contract_address": registry.contract_address,
-        "executor": registry.executor_address,
+        "executor": consumption["executor"],
         "authorization_id": registration["authorization_id"],
         "intent_hash": registration["intent_hash"],
         "registration": {
@@ -657,8 +693,57 @@ def confirm_arc_consumption(req: dict) -> dict:
             "Arc registry registration confirmed",
             "Arc registry consumption confirmed",
             "Verigate local one-time authorization consumed",
-            "connected wallet may now sign and broadcast wallet_transaction",
+            "agent executor signer may now sign and broadcast the exact wallet_transaction payment",
         ],
+    }
+
+
+@app.post("/v1/integrations/arc/payment/confirm")
+def confirm_arc_payment(req: dict) -> dict:
+    """Verify that the exact authorized Arc USDC transfer settled on finalized chain state."""
+    authorization = req.get("authorization")
+    registration_tx_hash = req.get("registration_tx_hash")
+    consumption_tx_hash = req.get("consume_tx_hash")
+    payment_tx_hash = req.get("payment_tx_hash")
+
+    try:
+        _preverify_arc_execution_authorization(authorization)
+        registry = ArcAuthorityRegistry()
+        verification_time = registry.registration_verification_time(
+            authorization, registration_tx_hash
+        )
+        payload = _verified_arc_execution_authorization(
+            authorization,
+            verification_time=verification_time,
+        )
+        registry.confirm_registration(authorization, registration_tx_hash)
+        consumption = registry.confirm_consumption(authorization, consumption_tx_hash)
+        ArcMainnetIntegration(rpc=registry.rpc).status()
+        settlement = ArcPaymentSettlementVerifier(registry.rpc).confirm_payment(
+            expected_transaction=payload["action"]["metadata"]["evm_transaction"],
+            payment_transaction_hash=payment_tx_hash,
+            consumption_transaction_hash=consumption_tx_hash,
+            authorization_issued_at=payload["issued_at"],
+            authorization_expires_at=payload["expires_at"],
+        )
+    except (ArcAuthorityRegistryError, ArcPaymentVerificationError, ArcIntegrationError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except EvmRpcError as exc:
+        raise HTTPException(status_code=503, detail=f"Arc mainnet verification failed: {exc}") from exc
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=400, detail="malformed Arc payment confirmation request") from exc
+
+    return {
+        "settled": True,
+        "reason": "Exact Verigate-authorized Arc USDC transfer is confirmed in a finalized block",
+        "arc_authority_evidence": {
+            "registration_transaction_hash": registration_tx_hash,
+            "consumption_transaction_hash": consumption_tx_hash,
+            "authorization_id": consumption["authorization_id"],
+            "intent_hash": consumption["intent_hash"],
+            "consumption_block_number": consumption["block_ref"],
+        },
+        "payment_settlement": settlement,
     }
 
 

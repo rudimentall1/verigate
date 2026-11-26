@@ -17,6 +17,18 @@ Core principle: AI can propose an action; only Verigate decides whether the agen
 - Core authorization/policy logic remains protocol-agnostic. Integrations belong in adapters/hackathon packs.
 - Do not fork Verigate for individual hackathons.
 
+## Mandatory repository and documentation workflow
+
+Before starting work, inspect the repository structure, relevant source files, tests, dependencies, Git state, and the documentation that governs the affected area. Read this file and the applicable project context/architecture documents first; verify paths and current implementation instead of relying on memory.
+
+After significant code, architecture, configuration, security, or workflow changes, update the relevant documentation in the same work. Keep project context, task status, and decision records aligned with the implementation.
+
+Do not record unverified assumptions, inferred behavior, planned work, or stale CI results as facts. Clearly label assumptions and pending verification; support factual claims with current code, tests, CI output, or independently checkable evidence.
+
+Before declaring a task complete, re-read the affected documentation and compare it with the final code, configuration, tests, commands, branch/PR state, and evidence. Correct stale paths, versions, statuses, examples, and links.
+
+Commit documentation changes together with the corresponding code/configuration changes in the same commit and pull request. Documentation-only work may use a focused standalone commit/PR when there is no corresponding implementation change.
+
 ## Development workflow
 
 For a small change: inspect → implement → test → review.

@@ -125,6 +125,7 @@ class AgentSdkArcApiIntegrationTest(unittest.TestCase):
             "confirm_consumption",
             side_effect=lambda auth, tx_hash: {
                 "consumed": True,
+                "executor": EXECUTOR.lower(),
                 "authorization_id": "0x" + auth["payload"]["authorization_id"],
                 "intent_hash": "0x" + "ab" * 32,
                 "transaction_ref": tx_hash,
