@@ -9,7 +9,7 @@
 - [ ] Verify focused Python, Node, Solidity and signer deployment tests on the consolidated branch (GitHub CI currently running).
 - [ ] Run the complete CI matrix and record exact run IDs/commit SHA.
 - [ ] Review the final diff for secrets, generated artifacts, stale snapshots and unrelated Anna changes.
-- [ ] Update this file and SESSION-CHECKPOINT.md with verified final state.
+- [ ] Update this file, docs/SESSION-CHECKPOINT.md and docs/arc/UNIFIED-ARC-CHECKPOINT.md with the verified final state.
 
 ### Release gates (not authorized by this source consolidation)
 - [ ] Independently review production host account/group/socket ACL mapping.
