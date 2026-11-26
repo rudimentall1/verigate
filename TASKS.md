@@ -8,6 +8,7 @@
 - [x] Integrate the Guardian Arc agent bootstrap utility; add finite-limit, EVM-target, key-permission/symlink and active-record guards plus regression tests.
 - [ ] Verify focused Python, Node, Solidity and signer deployment tests on the consolidated branch (GitHub CI currently running).
 - [ ] Run the complete CI matrix and record exact run IDs/commit SHA.
+- [ ] Reconcile npm audit --omit=dev advisories with the production dependency tree (27 reported; Ganache and its 27 audit-only packages are absent from npm ls --omit=dev).
 - [ ] Review the final diff for secrets, generated artifacts, stale snapshots and unrelated Anna changes.
 - [ ] Update this file, docs/SESSION-CHECKPOINT.md and docs/arc/UNIFIED-ARC-CHECKPOINT.md with the verified final state.
 
