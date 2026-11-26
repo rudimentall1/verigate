@@ -257,5 +257,5 @@ try {
     process.stdout.write(`historical_registry_call=${JSON.stringify(call)}\n`);
   }
 } finally {
-  await provider.destroy();
+  if (provider) await provider.destroy();
 }
