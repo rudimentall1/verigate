@@ -24,6 +24,8 @@ AI agents can propose consequential actions. Verigate decides whether the agent 
 
 ### For developers
 
+- **Engineering handoff.** See [project context](PROJECT_CONTEXT.md), [tasks](TASKS.md), [architecture decisions](DECISIONS.md), and [agent workflow rules](AGENTS.md).
+
 - **Connect an external agent.** Start with [External Agent Quickstart](docs/EXTERNAL_AGENT_QUICKSTART.md) and the runnable [Python example](examples/external-agent/agent.py); the client fails closed on API and transport errors.
 - **Try it in 60 seconds.** `python examples/genesis_demo.py` runs the full lifecycle, verifies the proof, then tampers with it and shows INVALID.
 - **Verify a proof without Verigate.** `pip install verigate-verify`, then `verigate-verify proof.json --public-key issuer.pub` ([PyPI](https://pypi.org/project/verigate-verify/), source in `packaging/verigate-verify`).
@@ -31,7 +33,7 @@ AI agents can propose consequential actions. Verigate decides whether the agent 
 
 [View the technical demo](docs/media/verigate-demo.mp4)
 
-- **Status.** Working open-source authorization protocol (MIT). Exact-source main CI passed all three jobs: **613 Python tests**, **64/64 Anna UI E2E tests**, contract tests, strict Anna schema-4 validation and Linux Executa 0.1.17 build/smoke ([CI run](https://github.com/rudimentall1/verigate/actions/runs/42874904974)). Four-platform Executa 0.1.17 reproducible builds and extracted-package smoke tests also passed ([build run](https://github.com/rudimentall1/verigate/actions/runs/42959224224)). Anna App **0.1.30** with bundled Executa **0.1.17** is cut as an immutable Draft, not Marketplace-published. Live Cloud Agent invocation is verified; one 0.000001 USDC Base transfer was independently checked on-chain. See [current Anna release status](anna/docs/RELEASE-STATUS.md) for evidence boundaries. The generic Verigate API is not a hosted multi-tenant service: see [Current state](#current-state), [docs/security-configuration.md](docs/security-configuration.md) and [docs/threat-model.md](docs/threat-model.md).
+- **Status.** Working open-source authorization protocol (MIT). The latest verified `main` CI run completed all four jobs (`test`, `contracts`, `container`, `anna-ui`) successfully on commit `d03d1389b9c32ee6014a8165645ff553709abf46` ([CI run](https://github.com/rudimentall1/verigate/actions/runs/45363801097)). The Anna App 0.1.31 / Executa 0.1.18 Console cut remains an immutable Draft, not Marketplace-published; 0.1.32 is an unreleased candidate. The previously verified live Cloud Agent invocation and Base micro-transfer belong to earlier release evidence; do not infer a fresh 0.1.18 live invocation or a live Arc payment from CI. See [current Anna release status](anna/docs/RELEASE-STATUS.md), [Arc integration evidence](docs/arc-mainnet-integration.md), and [project checkpoint](SESSION-CHECKPOINT.md). The generic Verigate API is not a hosted multi-tenant service: see [security configuration](docs/security-configuration.md) and [threat model](docs/threat-model.md).
 
 ## Human delegation and agent authority
 
