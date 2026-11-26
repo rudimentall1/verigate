@@ -96,6 +96,9 @@ def main() -> int:
     if not math.isfinite(args.max_usdc) or args.max_usdc <= 0:
         parser.error("--max-usdc must be finite positive")
 
+    if not args.allowed_target:
+        parser.error("at least one --allowed-target is required for Arc Mainnet")
+
     invalid_targets = [
         value for value in args.allowed_target
         if not re.fullmatch(r"0x[0-9a-fA-F]{40}", value)
