@@ -248,7 +248,8 @@ VERIGATE_DB=/path/to/verigate.db PYTHONPATH=. \
 
 The private key is written with owner-only permissions; existing key files
 with group/other access or symlink paths are refused. The helper rejects
-non-finite limits, malformed EVM recipients, inactive existing identities and
-inactive existing capabilities. Omit `--allowed-target` only when an
-unrestricted recipient set within the per-action amount ceiling is intended.
-The helper does not install services or broadcast transactions.
+non-finite limits, missing/malformed EVM recipient allowlists, inactive existing
+identities and inactive existing capabilities. At least one explicit
+`--allowed-target` is required for Arc Mainnet so the capability cannot silently
+expand to arbitrary recipients. The helper does not install services or
+broadcast transactions.
