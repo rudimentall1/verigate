@@ -73,6 +73,11 @@ class GuardianArcBootstrapTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("finite positive", result.stderr)
 
+    def test_requires_explicit_recipient_allowlist(self):
+        result = self.run_cli()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("at least one --allowed-target", result.stderr)
+
     def test_rejects_non_evm_allowed_target(self):
         result = self.run_cli("--allowed-target", "*")
         self.assertNotEqual(result.returncode, 0)
