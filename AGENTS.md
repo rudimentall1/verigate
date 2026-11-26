@@ -26,6 +26,16 @@ For a substantial product change:
 
 Use the skills from `~/.agents/skills/` when the corresponding command is requested.
 
+## Mandatory documentation and truthfulness rules
+
+These rules apply to every task and every agent working in this repository:
+
+1. **Inspect before work.** Before making changes, read the relevant project documentation and inspect the repository structure, existing implementation, tests, configuration and dependency conventions. For Anna work, also follow the Anna-specific release/runtime reading requirements below.
+2. **Keep documentation synchronized.** After every significant code, behavior, architecture, configuration, workflow or release-process change, update the relevant documentation in the same change.
+3. **Separate facts from assumptions.** Never record an inference, guess, plan, unverified test result, external-platform behavior or expected outcome as an established fact. Label assumptions and pending verification explicitly. Cite the source, commit, test or observation for material claims where practical.
+4. **Verify docs before completion.** Before declaring a task complete, re-read the affected documentation and compare it with the resulting code, configuration, tests and actual verification results. Correct stale, contradictory or unsupported statements.
+5. **Commit docs with the related change.** Documentation updates required by a code or configuration change must be included in the same logical commit/PR as that change. Do not leave required documentation as a follow-up task. A documentation-only policy or correction may use its own focused commit.
+
 ## Repository rules
 
 - Read existing code and docs before changing architecture.
