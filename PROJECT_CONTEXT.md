@@ -49,4 +49,4 @@ Use commands documented by current workflow/package scripts; do not infer that a
 - Branch: integration/arc-unified-2026-11-26.
 - Starting implementation head: 42061acc511c188e55b6823a575615dea4e98b3c (Arc signer branch, stacked on Arc payment-settlement work).
 - This branch is a consolidation workspace, not a production deployment.
-- Current mainline synchronization has conflicts; do not claim this branch is merge-ready for main until those are resolved and fresh CI passes.
+- The 14 post-fork mainline commits have been reconciled by syncing the current-main versions of all affected files. GitHub currently reports the consolidation PR mergeable; fresh full CI and review remain mandatory before merge.
