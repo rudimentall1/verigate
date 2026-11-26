@@ -1224,3 +1224,9 @@ The same test then ran the actual issuer and agent signer daemons under distinct
 - Do not merge this branch to main yet. Resolve the 14-commit mainline delta selectively, preserving the Arc security boundaries and newer mainline fixes, then rerun the full CI.
 - The old `integration/arc` and `integration/arc-authority` refs are historical/superseded implementation lines with substantial divergence. Do not merge their full trees or backup/generated files mechanically. Reconcile any unique behavior only after a file-level review.
 - Production keys, host installation, service restart and live Arc transaction broadcast were not performed. No Verigate-authorized live USDC payment is claimed.
+
+
+### Bootstrap regression-test correction
+
+- First full CI attempt ran 679 Python tests and found one test-harness issue: argparse interpreted the literal `-inf` as an option when supplied as a separate argument. The validation itself was not bypassed; the test never reached the application check.
+- Updated the test to pass the negative value as `--max-usdc=-inf`. A new full CI run is required before claiming the regression suite passes.
