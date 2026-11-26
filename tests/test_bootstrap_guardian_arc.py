@@ -95,7 +95,7 @@ class GuardianArcBootstrapTest(unittest.TestCase):
         )
         self.key.chmod(0o644)
 
-        result = self.run_cli()
+        result = self.run_cli("--allowed-target", VALID_TARGET)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("permissions", result.stderr)
 
