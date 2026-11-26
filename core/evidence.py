@@ -74,16 +74,23 @@ class EvidenceGraph:
         try:
             policy = GovernancePolicy.from_dict(policy_data)
             ok, reason = verify_governance_quorum(action, approvals, policy)
-        except (TypeError, ValueError, KeyError) as exc:
+        except (TypeError, ValueError, KeyError, OverflowError) as exc:
             ok, reason = False, f"invalid governance envelope: {exc}"
         verification[f"governance:{action.get('action_id', subject_id)}"] = {
             "valid": ok,
             "reason": reason,
         }
         governance_policy_id = envelope.get("governance_policy_sha256") or policy.digest
-        nodes.append(_node("governance_policy", governance_policy_id, policy_data))
+        if not any(
+            node["type"] == "governance_policy" and node["id"] == governance_policy_id
+            for node in nodes
+        ):
+            nodes.append(_node("governance_policy", governance_policy_id, policy_data))
         action_id = action.get("action_id", subject_id)
-        nodes.append(_node("governance_action", action_id, action))
+        action_evidence = dict(action)
+        if subject_type == "attestor_authority" and envelope.get("recorded_at") is not None:
+            action_evidence["effective_at"] = envelope["recorded_at"]
+        nodes.append(_node("governance_action", action_id, action_evidence))
         edges.append({
             "from": f"governance_action:{action_id}",
             "relation": relation,
