@@ -444,3 +444,33 @@ This section supersedes earlier "unmerged/pending" statements above where they c
 - PR #81's P3 checkpoint wording finding was fixed: the document now says the rebase onto `main` is complete. Its review thread is resolved. Updated-head CI run [45357618214](https://github.com/rudimentall1/verigate/actions/runs/45357618214) has Python, contracts and container jobs passed; Anna UI E2E was still running at last poll.
 - PR #81 was re-reviewed on the updated head `d15ad99...`; the new review request is pending.
 - PR #69 remains stacked on the pre-final #68 head and is not ready to rebase or merge until #68 lands. Its source review found rotation reactivating revoked state, sorting before validating chronological input, and unguarded numeric-to-float conversions in `core/attestor_history.py`.
+
+
+## 2026-11-26 — repository audit and mandatory workflow rules
+
+### Repository snapshot
+
+- Audited repository: `rudimentall1/verigate`; default branch `main`.
+- Current `main` HEAD at audit: `d03d1389b9c32ee6014a8165645ff553709abf46`, the merge commit for PR #81.
+- The main-head GitHub Actions run [45363801097](https://github.com/rudimentall1/verigate/actions/runs/45363801097) completed successfully: `test`, `contracts`, `container`, and `anna-ui` all passed. This is remote CI evidence, not a local test run.
+- Repository tree contains 405 entries. Top-level implementation areas include `api/`, `core/`, `adapters/`, `enforcement/`, `contracts/`, `anna/`, `integrations/`, `packaging/`, `scripts/`, `tests/`, `tools/`, and `ui/`; Node tooling is declared in `package.json`, with Python dependencies in `requirements.txt`.
+- Root `AGENTS.md`, `README.md`, and `docs/SESSION-CHECKPOINT.md` exist. Root `PROJECT_CONTEXT.md`, `TASKS.md`, and `DECISIONS.md` do not exist on this `main` snapshot. The older root `SESSION-CHECKPOINT.md` is dated 2026-11-12 and is not the current engineering handoff.
+- The existing `AGENTS.md` rules were expanded in branch `docs/mandatory-agent-workflow-rules` to require documentation/structure inspection before work, explicit separation of facts from assumptions, documentation updates after material changes, final documentation verification, and same-commit/PR documentation for implementation changes. This section is pending review until its PR is merged.
+
+### Recent governance-proof changes
+
+- PR #81 was merged as `d03d1389...`; its change is a checkpoint document. The earlier checkpoint text below that merge record is historical context, not current PR status.
+- PR #68 remains open and marked Ready for review. Current head: `48e7a7f076e55ff4c34eac503971e50d481c2f60`. GitHub reports it mergeable with `mergeable_state=clean`; exact-head CI run [45354080414](https://github.com/rudimentall1/verigate/actions/runs/45354080414) passed all four jobs, including the 706-test Python suite. The PR targets `main`; its last reported base SHA is `c11dca3b...`, while current `main` is `d03d1389...`. Recheck the current comparison and required review gates before merge. CI and mergeability are not substitutes for a required security review; this audit did not establish a distinct security-review receipt.
+- PR #69 remains Draft and stacked on PR #68. Its current head is `93416056dbd493c2f03c07da46221822df4a0c9f`. Source inspection of `core/attestor_history.py` confirms three blockers:
+  1. `replay_attestor_governance_state()` sorts persisted governance actions by effective time before checking monotonic order, which can normalize malformed ordering instead of rejecting it.
+  2. `ATTESTOR_ROTATE` sets state to `ACTIVE` and clears `revoked_at`, rather than preserving the prior authority state and revocation marker.
+  3. Several timestamp/expiry checks call `float(value)` without catching `OverflowError`, allowing oversized persisted integers to escape the fail-closed path.
+- PR #69 must not merge in this state. Add test-first regressions, fix the state replay and overflow handling, rebase only after its dependency is accepted, then rerun full CI and review on the integrated head.
+- PRs #70–#80 and #82 remain a dependency stack; inspect and integrate in dependency order. Do not retarget downstream PRs directly to `main` or cherry-pick their tips without validating the full dependency diff.
+
+### Audit limits and next actions
+
+- This was a remote GitHub source/documentation/metadata audit. No local checkout was available in this session, so no local test, lint, type-check, package install, or build is claimed.
+- The current main CI result is green, but it does not validate every open stacked PR or prove production readiness.
+- Next: merge the focused AGENTS/checkpoint documentation PR after review; resolve the #68 review gate; then fix #69 with regression tests and continue the remaining stack in dependency order.
+- Product priority remains an independently maintained external integration with repeated, inspectable ALLOW and BLOCK evidence at the execution boundary. Infrastructure expansion alone does not satisfy this adoption milestone.
