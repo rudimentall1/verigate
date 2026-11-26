@@ -6,7 +6,8 @@ Arc API service will use:
 
     VERIGATE_DB=/opt/verigate/arc-test/verigate.db \
     PYTHONPATH=. python scripts/bootstrap_guardian_arc.py \
-      --private-key-path /etc/agentic-wallet-guardian/verigate-agent-ed25519.pem
+      --private-key-path /etc/agentic-wallet-guardian/verigate-agent-ed25519.pem \\
+      --allowed-target 0x2222222222222222222222222222222222222222
 
 The Ed25519 private key is written once (mode 0600) and is never printed.
 The identity and capability registrations are idempotent. Existing records
