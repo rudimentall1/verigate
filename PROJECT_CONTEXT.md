@@ -10,7 +10,7 @@ This is a mixed Python, Solidity and Node.js repository, not a generic src-only 
 - Arc implementation and signer services: integrations/, deploy/arc-signer/, deploy/systemd/.
 - Arc operations and verification: scripts/.
 - Tests: Python tests under tests/test_*.py; Node tests under tests/*.test.mjs; shell deployment/runtime smoke tests under tests/.
-- Product and engineering docs: docs/, README.md, AGENTS.md, SESSION-CHECKPOINT.md.
+- Product and engineering docs: docs/, README.md, AGENTS.md; docs/SESSION-CHECKPOINT.md is the current engineering checkpoint. The root SESSION-CHECKPOINT.md is retained as a legacy checkpoint.
 
 ## Arc architecture
 
