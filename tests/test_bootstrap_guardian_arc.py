@@ -69,7 +69,7 @@ class GuardianArcBootstrapTest(unittest.TestCase):
     def test_rejects_non_finite_capability_limits(self):
         for value in ("nan", "inf", "-inf"):
             with self.subTest(value=value):
-                result = self.run_cli("--max-usdc", value)
+                result = self.run_cli(f"--max-usdc={value}")
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("finite positive", result.stderr)
 
