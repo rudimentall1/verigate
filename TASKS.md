@@ -3,7 +3,7 @@
 ## Arc consolidation — current branch
 
 ### In progress
-- [ ] Resolve conflicts between the Arc signer/payment stack and current main without dropping post-branch security fixes.
+- [x] Reconcile all 14 post-fork mainline commits into the Arc branch without dropping the current-main security and Anna fixes; GitHub reports PR #86 mergeable.
 - [x] Integrate the reviewed Arc Mainnet deployment artifact verifier, historical source/runtime manifest, provenance document and read-only CI workflow.
 - [x] Integrate the Guardian Arc agent bootstrap utility; add finite-limit, EVM-target, key-permission/symlink and active-record guards plus regression tests.
 - [ ] Verify focused Python, Node, Solidity and signer deployment tests on the consolidated branch (GitHub CI currently running).
