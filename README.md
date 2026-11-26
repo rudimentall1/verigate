@@ -24,6 +24,8 @@ AI agents can propose consequential actions. Verigate decides whether the agent 
 
 ### For developers
 
+- **Engineering handoff.** See [project context](PROJECT_CONTEXT.md), [tasks](TASKS.md), [architecture decisions](DECISIONS.md), and [agent workflow rules](AGENTS.md).
+
 - **Connect an external agent.** Start with [External Agent Quickstart](docs/EXTERNAL_AGENT_QUICKSTART.md) and the runnable [Python example](examples/external-agent/agent.py); the client fails closed on API and transport errors.
 - **Try it in 60 seconds.** `python examples/genesis_demo.py` runs the full lifecycle, verifies the proof, then tampers with it and shows INVALID.
 - **Verify a proof without Verigate.** `pip install verigate-verify`, then `verigate-verify proof.json --public-key issuer.pub` ([PyPI](https://pypi.org/project/verigate-verify/), source in `packaging/verigate-verify`).
