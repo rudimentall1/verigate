@@ -172,7 +172,10 @@ primary autonomous-agent architecture.
 - RPC-based verification depends on the configured Arc RPC returning honest,
   consistent chain data. The API also requires VERIGATE_ARC_REGISTRY_CODE_HASH
   and rejects a runtime bytecode hash mismatch. The read-only
-  `npm run verify:arc-deployment` command validates the archived historical
+  `npm run verify:arc-deployment` command tries the Arc-operated RPC first and
+  an independent dRPC Arc Mainnet endpoint if the first endpoint cannot return
+  the deployment transaction/receipt. Every selected endpoint must report
+  chain ID 5042; the verifier then validates the archived historical
   source/runtime artifact, deployment transaction and receipt, canonical
   deployment block, live runtime hash, owner, enabled issuer and finalized
   head. See [deployment artifact provenance](evidence/arc-registry-deployment-artifact.md).
