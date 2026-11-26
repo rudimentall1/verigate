@@ -26,6 +26,18 @@ For a substantial product change:
 
 Use the skills from `~/.agents/skills/` when the corresponding command is requested.
 
+## Mandatory documentation and repository workflow
+
+These rules apply before, during, and at the end of every task—not only architecture changes.
+
+1. **Inspect before starting.** Read this file, the repository structure, the README, and all relevant project documentation before changing code or configuration. Inspect the relevant implementation, tests, dependency manifests/lockfiles, and current Git/PR state. Read `PROJECT_CONTEXT.md`, `TASKS.md`, and `DECISIONS.md` when they exist; do not assume a missing file exists or invent its contents.
+2. **Keep facts separate from assumptions.** Do not record an inference, guess, plan, unverified report, or expected behavior as an established fact. Label it explicitly as an assumption, hypothesis, pending check, or proposed decision, and record the source and verification status where useful.
+3. **Update documentation with significant changes.** When behavior, architecture, interfaces, dependencies, security boundaries, operational procedures, decisions, or task status materially change, update the owning documentation and the project checkpoint in the same change.
+4. **Verify documentation before finishing.** Re-read the affected documentation and check it against the final code, tests, configuration, actual command output, current branch/commit/PR state, and known limitations. Remove or correct stale claims, unsupported success statements, outdated commands, and inconsistent references.
+5. **Commit documentation with its corresponding implementation.** Documentation that describes or is required to understand a code/configuration change must be included in the same commit and PR as that change—not deferred to a later docs-only follow-up. A genuinely documentation-only task may use its own focused documentation commit/PR.
+
+A task is not complete until the relevant documentation has been checked for accuracy and updated where required.
+
 ## Repository rules
 
 - Read existing code and docs before changing architecture.
