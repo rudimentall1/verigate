@@ -123,3 +123,15 @@ The current-head analyzer run [#46120175666](https://github.com/rudimentall1/ver
 - `core/proof_package.py` → `attest/proof_package.py`
 
 Callers in CLI, Genesis lifecycle, and tests now import from `attest`. A fresh analyzer report for the new head is pending; do not report the cycle as resolved until it confirms no `module-cycle` diagnostic.
+
+### Outcome attestation was the final reverse edge — 2026-11-28
+
+The latest completed analyzer report [#46121019285](https://github.com/rudimentall1/verigate/actions/runs/46121019285) still reported one cycle. The complete JSON artifact identified the exact pair:
+- `core/outcome.py:507` imports `verify_execution_authorization` and `verify_execution_receipt` from `attest.receipt`.
+- `attest/authority_replay.py` imports core authority models and services.
+
+Outcome claim signing, attestor authority verification, and stored outcome-attestation validation belong in the attestation layer. The service moved to `attest/outcome.py`. The two reusable lower-level items that core also needs — `ATTESTOR_TYPES` and the Ed25519 `key_fingerprint()` helper — were extracted into dependency-free `core/attestor_types.py`. Core attestor governance and application wallet enrollment now import that helper module, not the outcome service. API, Genesis lifecycle, evidence graph, chain worker, E2E script and tests were updated to use `attest.outcome`.
+
+The move preserves claim fields, signature canonicalization, attestor governance replay, storage behavior, authority-event writes and EVM chain-verifier checks. The old `core/outcome.py` module was removed rather than kept as a compatibility re-export, which would have recreated the cycle.
+
+A new architecture scan and full CI run for the current HEAD are pending. The previous report #46121019285 is not a clean report and must not be used to claim zero cycles.
