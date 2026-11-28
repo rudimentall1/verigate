@@ -33,7 +33,7 @@ from core.outcome import (
     digest,
     key_fingerprint,
 )
-from core.wallet_enrollment import installation_principal
+from application.wallet_enrollment import installation_principal
 from enforcement.chain_verification import EVMChainVerifier
 from enforcement.evm_rpc import EvmRpcClient, EvmRpcError
 
