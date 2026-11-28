@@ -145,3 +145,14 @@ The current-head analyzer report [#46122297534](https://github.com/rudimentall1/
 `ExecutionSubmissionService` is an application workflow: it validates an enrolled Anna installation wallet, verifies the issuer-signed authorization and wallet receipt, checks the exact submitted EVM transaction fields, then persists the external submission. It moved to `application/submission_ingest.py`; the API and its tests now import the application module. The old core module was deleted. Request/response shapes, enrollment lookups, signing-time TTL validation, idempotency, persistence and chain-verifier behavior are unchanged.
 
 A new architecture scan and full CI run for the final head are pending. The previous report still had one cycle and must not be used as evidence that the final cycle is gone.
+
+### Final result — zero module cycles — 2026-11-28
+
+The last reverse edge was removed by moving `core/submission_ingest.py` to `application/submission_ingest.py`. The service verifies the enrolled wallet and signed authorization/receipt, checks the exact submitted transaction, then persists the external submission. Its old core module was deleted and the API/test imports were updated.
+
+On exact final implementation HEAD `4f0bd4020658e020a5df6256fa2429d1c4a0b103`:
+- Architecture audit [#46122668412](https://github.com/rudimentall1/verigate/actions/runs/46122668412): **zero `module-cycle` diagnostics**. Remaining advisory categories: 11 field-leak, 4 wide-directory, 1 long-file.
+- Full CI [#46122668307](https://github.com/rudimentall1/verigate/actions/runs/46122668307): **699 Python tests passed**; 69/69 Anna UI E2E; contracts/Arc Registry; container/API-auth; Linux Anna Executa 0.1.18 build and binary smoke all passed.
+- Anna binary smoke reported: signed ALLOW, one-time App approval consumed once, wallet hand-off consumed once, submitted receipt persisted and verified.
+
+The remaining field and size diagnostics were not auto-fixed: review their evidence individually. In particular, receipt payload and domain data carriers are public protocol objects, and a wide test directory or a 2172-line SQLite storage module should be decomposed based on ownership/behavior, not to game an advisory counter.
