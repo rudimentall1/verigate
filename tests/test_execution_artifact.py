@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from attest.keys import generate_keypair, load_private_key, load_public_key
-from core.authorization import AuthorizationService
+from attest.authorization import AuthorizationService
 from core.authority_state import DynamicAuthorityService
 from core.models import ActionIntent, Capability, GuardrailDecision, Decision
 from core.policy import Policy
