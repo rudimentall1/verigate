@@ -501,3 +501,14 @@ Updated the callers in the CLI, Genesis lifecycle, proof/evidence tests, authori
 - `tests/test_engine.py` now tests the application engine for signed authorization behavior and uses the core engine only for the fail-closed missing-issuer regression.
 
 CI on the earlier revision found stale imports and missing caller migrations; those are not hidden as successful verification. Fresh full CI and architecture scan for the current branch head are pending. Do not mark the module cycle resolved until the new architecture report confirms zero `module-cycle` diagnostics.
+
+### Outcome attestation moved to attest — 2026-11-28
+
+The full artifact from [Architecture Audit #46121019285](https://github.com/rudimentall1/verigate/actions/runs/46121019285) showed the remaining cycle was `core/outcome.py -> attest.receipt`, with the reverse `attest/authority_replay.py -> core`. This was the final core-to-attest source dependency.
+
+- Moved `core/outcome.py` to `attest/outcome.py`. Signed outcome claims/attestations, attestor signature verification, historical governance resolution and authority-event recording now live with attestation services.
+- Extracted the lower-level shared constants/fingerprint helper into `core/attestor_types.py`, which has no attestation dependency. Updated `core.attestor` and `application.wallet_enrollment` to use it.
+- Updated consumers in API, Genesis lifecycle, evidence graph, tests, chain-verifier worker and E2E script.
+- Removed the old `core/outcome.py` module; no compatibility re-export remains.
+
+No intended change to claim schema, signature canonicalization, storage calls, attestor governance checks, authority event semantics or EVM chain verification. The latest full CI (#46121019319) passed 699 Python tests and all four jobs, but it predates this outcome move. Fresh CI and architecture scan on current HEAD are pending. Do not mark the cycle resolved until a new report shows no `module-cycle` diagnostic.
