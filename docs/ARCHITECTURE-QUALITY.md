@@ -115,3 +115,11 @@ The PR's expanded move set now assigns the modules to their owners:
 Consumers in API, CMC adapter, Genesis workflow and tests were updated to import their owning packages. Old attestation/application modules were removed from `core`; no reverse-dependency shims were added.
 
 **Current verification status:** the second analyzer result is not clean. The expanded source changes were pushed after that report, so a new architecture scan and full CI run on the current head are required before the remediation can be declared complete. The structural report still has 11 field-leak, 4 wide-directory and 1 long-file diagnostics in addition to the single cycle; those other diagnostics have not been treated as defects or automatically rewritten.
+
+### Remaining cycle edge — portable proof verification
+
+The current-head analyzer run [#46120175666](https://github.com/rudimentall1/verigate/actions/runs/46120175666) narrowed the remaining cycle to `core/offline_verifier.py -> attest.receipt`, with the reverse `attest/authority_replay.py -> core`. This is not a reason to invert the attestation import. Offline verification and portable proof-package serialization are attestation responsibilities, so both files moved together:
+- `core/offline_verifier.py` → `attest/offline_verifier.py`
+- `core/proof_package.py` → `attest/proof_package.py`
+
+Callers in CLI, Genesis lifecycle, and tests now import from `attest`. A fresh analyzer report for the new head is pending; do not report the cycle as resolved until it confirms no `module-cycle` diagnostic.
