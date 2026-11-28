@@ -1,0 +1,85 @@
+name: Architecture Audit
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: architecture-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Python and JavaScript architecture audit (advisory)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Select pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup default 1.99.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Install pinned deslop-please
+        run: >-
+          cargo install
+          --git https://github.com/Bor4brn/deslop-please
+          --rev cfabfb9ee417e150d5342e8ef0d6a0fe725cc9a0
+          --locked
+
+      - name: Install SCIP indexers
+        run: >-
+          npm install --global --no-audit --no-fund
+          @sourcegraph/scip-python@0.6.8
+          @sourcegraph/scip-typescript@0.5.2
+
+      - name: Run advisory architecture scan
+        id: deslop
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          deslop-please --language auto --json \
+            > "$RUNNER_TEMP/deslop-please.json" \
+            2> "$RUNNER_TEMP/deslop-please.stderr"
+          status=$?
+          set -e
+
+          case "$status" in
+            0)
+              echo "Architecture scan completed: no findings." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            1)
+              echo "Architecture findings detected. This pilot is advisory and does not block the existing Verigate CI." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "Architecture scan could not complete (exit code $status). This is not a clean scan; inspect the uploaded stderr report." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+          esac
+
+          echo "deslop-please exit code: $status"
+          cat "$RUNNER_TEMP/deslop-please.json"
+          cat "$RUNNER_TEMP/deslop-please.stderr" >&2
+          exit "$status"
+
+      - name: Upload architecture report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deslop-please-verigate-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/deslop-please.json
+            ${{ runner.temp }}/deslop-please.stderr
+          if-no-files-found: warn
+          retention-days: 14
