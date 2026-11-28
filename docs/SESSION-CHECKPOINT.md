@@ -471,3 +471,16 @@ This section supersedes earlier "unmerged/pending" statements above where they c
 - The implemented source passed [CI #46115841371](https://github.com/rudimentall1/verigate/actions/runs/46115841371): **698 Python tests**, **69/69 Anna UI E2E**, contracts, container/API-auth, and Linux Anna Executa 0.1.18 smoke all passed.
 - Dependency boundaries are documented in `docs/ARCHITECTURE-DEPENDENCY-BOUNDARIES.md`, included in PR #88, and agent rules have been updated on this architecture-doc branch.
 - **Architecture scan re-run pending:** the Architecture Audit workflow is not yet on `main`. Do not report the cycle count as zero from the analyzer until a fresh report is produced. No live chain execution was performed.
+
+## Expanded package-cycle remediation — 2026-11-28
+
+A fresh source review after the first two module moves found a second-cycle cause. Analyzer run [#46116545770](https://github.com/rudimentall1/verigate/actions/runs/46116545770) reported the remaining two-package cycle as `core/authorization.py -> attest` and `attest/authority_replay.py -> core`. Manual review also found the reverse dependency in `core/evidence.py`.
+
+Additional PR #88 changes:
+- Concrete authorization issuance moved from `core/authorization.py` to `attest/authorization.py`; `core.authorization` now contains only the dependency-inversion Protocol `AuthorizationArtifactIssuer`.
+- `core.engine.GuardrailEngine` accepts the issuer by injection. New `application.engine.GuardrailEngine` composes the core engine with the concrete attestation issuer for runtime/API authorization flows.
+- Evidence graph construction and snapshot service moved from `core` to `attest`; historical replay remains in `attest`.
+- Updated API, adapters, Genesis orchestration and all discovered test imports. Removed the old evidence modules from `core`.
+- Governed wallet enrollment is in `application.wallet_enrollment`; Genesis lifecycle is in `application.genesis_lifecycle`.
+
+Current source has not yet been verified by a completed post-change full CI and architecture scan. The last analyzer result (#46116545770) predates these extra moves and must not be used to claim zero cycles. Re-run both workflows against the final head and inspect the complete diagnostic JSON/artifact.
