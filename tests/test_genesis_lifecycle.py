@@ -10,8 +10,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
-from core.engine import GuardrailEngine
-from core.evidence import EvidenceGraph
+from application.engine import GuardrailEngine
+from attest.evidence import EvidenceGraph
 from core.effect_verification import MCPToolVerifier
 from core.attestor import AttestorAuthorityService
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
