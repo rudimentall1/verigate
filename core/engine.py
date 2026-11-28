@@ -53,6 +53,15 @@ class GuardrailEngine:
         self.policy_parent_sha256 = policy_parent_sha256
         self._signed_policy_version = None
 
+    def _require_authorization_service(self) -> AuthorizationArtifactIssuer:
+        issuer = self.authorization_service
+        if issuer is None:
+            raise RuntimeError(
+                "authorization artifact issuer is not configured; "
+                "use application.engine.GuardrailEngine"
+            )
+        return issuer
+
     def _assert_governed_policy_control(self) -> None:
         governed = self.storage.governed_policy_change_by_sha(self.policy.digest)
         if governed is None:
@@ -322,8 +331,7 @@ class GuardrailEngine:
         Adapters may provide legacy payment inputs, but authorization issuance,
         policy evaluation, authority binding, and persistence happen here.
         """
-        if self.authorization_service is None:
-            raise RuntimeError("authorization artifact issuer is not configured; use application.engine.GuardrailEngine")
+        issuer = self._require_authorization_service()
         identity = None
         if identity_id is not None:
             if not agent_signature:
@@ -359,7 +367,7 @@ class GuardrailEngine:
                 action, capability, authority
             )
 
-        artifacts = self.authorization_service.issue(
+        artifacts = issuer.issue(
             action,
             decision,
             self.policy.digest,
@@ -411,11 +419,10 @@ class GuardrailEngine:
         Executable authorization requires an explicit capability-bound control
         plane path via ``authorize_with_capability`` or ``authorize_with_identity``.
         """
-        if self.authorization_service is None:
-            raise RuntimeError("authorization artifact issuer is not configured; use application.engine.GuardrailEngine")
+        issuer = self._require_authorization_service()
         action = intent.as_action_intent()
         decision = self.evaluate(intent, advisory=advisory, persist=persist)
-        artifacts = self.authorization_service.issue_decision_receipt(
+        artifacts = issuer.issue_decision_receipt(
             action,
             decision,
             self.policy.digest,
@@ -436,6 +443,7 @@ class GuardrailEngine:
         advisory: Sequence[RuleMatch] = (),
     ) -> dict:
         """Payment adapter with explicit static/dynamic authority binding."""
+        self._require_authorization_service()
         return self._authorize_control_plane(
             intent.as_action_intent(),
             private_key,
@@ -460,6 +468,7 @@ class GuardrailEngine:
         BLOCK is never overridable; capability and dynamic authority checks remain
         in the normal authorization control plane.
         """
+        self._require_authorization_service()
         if not isinstance(review_evidence, dict):
             raise PermissionError("warning review evidence is required")
         if review_evidence.get("source") != "anna-app-scoped-one-time-warning-review":
@@ -552,6 +561,7 @@ class GuardrailEngine:
         private_key,
     ) -> dict:
         """Payment adapter with identity + capability authority binding."""
+        self._require_authorization_service()
         return self._authorize_control_plane(
             intent.as_action_intent(),
             private_key,
