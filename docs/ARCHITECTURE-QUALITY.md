@@ -100,3 +100,18 @@ The initial `module-cycle` diagnostic is addressed structurally in Draft PR [#88
 The intended dependency direction is `attest -> core`, `enforcement -> attest/core`, and `application -> core/enforcement`. Core remains the protocol-agnostic domain/policy layer and must not import any of these higher layers.
 
 The fixed source head passed [CI run #46115841371](https://github.com/rudimentall1/verigate/actions/runs/46115841371): 698 Python tests, 69/69 Anna UI tests, contracts, container/API-auth, and Linux Anna Executa 0.1.18 smoke all passed. A fresh architecture scan has not yet been observed because this workflow has not landed on `main`; the source-level import graph has been corrected, but do not claim a new analyzer report is zero-cycle until the workflow produces one.
+
+## Second cycle review and expanded dependency-boundary remediation — 2026-11-28
+
+The first remediation moved the obvious application orchestrator and adversarial harness, but the next completed analyzer run [#46116545770](https://github.com/rudimentall1/verigate/actions/runs/46116545770) still reported one cycle between `core` and `attest`. Its import evidence named `core/authorization.py` and `attest/authority_replay.py`. Source inspection also found `core/evidence.py` importing `attest.receipt`; that was another reverse dependency hidden by the package-level cycle summary.
+
+The PR's expanded move set now assigns the modules to their owners:
+
+- `core/authorization.py`'s concrete signer moved to `attest/authorization.py`. The remaining `core.authorization` module contains only the `AuthorizationArtifactIssuer` Protocol. `core.engine.GuardrailEngine` receives this port by injection; `application.engine.GuardrailEngine` supplies the attestation implementation at the composition boundary.
+- Evidence graph construction and immutable graph snapshot service moved from `core` to `attest`.
+- Historical authority replay and adversarial mutation checks stay in `attest`.
+- Wallet enrollment and Genesis lifecycle orchestration stay in `application`.
+
+Consumers in API, CMC adapter, Genesis workflow and tests were updated to import their owning packages. Old attestation/application modules were removed from `core`; no reverse-dependency shims were added.
+
+**Current verification status:** the second analyzer result is not clean. The expanded source changes were pushed after that report, so a new architecture scan and full CI run on the current head are required before the remediation can be declared complete. The structural report still has 11 field-leak, 4 wide-directory and 1 long-file diagnostics in addition to the single cycle; those other diagnostics have not been treated as defects or automatically rewritten.
