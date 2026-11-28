@@ -14,7 +14,7 @@ from application.engine import GuardrailEngine
 from attest.evidence import EvidenceGraph
 from core.evidence_manifest import build_manifest, verify_manifest
 from core.proof_engine import digest
-from core.proof_package import build_proof_package
+from attest.proof_package import build_proof_package
 from core.outcome import OutcomeAttestationService
 from core.authority_protocol import LifecycleStage
 from enforcement.router import ExecutionRouter
