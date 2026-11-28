@@ -246,6 +246,12 @@ class EngineTest(unittest.TestCase):
         finally:
             second_storage.close()
 
+    def test_core_engine_requires_authorization_issuer_before_persisting(self):
+        intent = self._intent(payee="0xIssuerNotConfigured")
+        with self.assertRaisesRegex(RuntimeError, "authorization artifact issuer is not configured"):
+            self.engine.authorize(intent, None)
+        self.assertEqual(self.storage.spent_today("agent-1", "USDC"), 0.0)
+
     def test_blocks_rate_limit(self):
         for _ in range(5):
             i = self._intent(payee="0xRepeatMerchant", amount=1.0)
