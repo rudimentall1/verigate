@@ -26,7 +26,7 @@ from core.outcome import (
 from core.policy import Policy
 from core.authority_state import AuthorityPolicy, AuthorityState, DynamicAuthorityService
 from core.proof_engine import digest
-from core.proof_package import serialize_proof_package, verify_proof_package
+from attest.proof_package import serialize_proof_package, verify_proof_package
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter
