@@ -280,7 +280,7 @@ def _get_state():
         with _state_lock:
             if _state is None:
                 from attest.keys import ensure_keypair
-                from core.engine import GuardrailEngine
+                from application.engine import GuardrailEngine
                 from core.policy import Policy
                 from core.storage import Storage
 
