@@ -88,3 +88,15 @@ The analyzer returned exit code `1` with **17 diagnostics**:
 These are structural diagnostics, not 17 confirmed defects. The `attest/core/enforcement` cycle needs a deliberate dependency-direction review because those modules sit on the authorization, evidence, and execution boundary. The 2,172-line storage module is a strong candidate for a separate, test-backed decomposition review, but it should not be split mechanically. Field-leak findings involving public immutable data or intentional read-only policy state may be acceptable; mutable state exposure deserves closer inspection.
 
 The report and indexer stderr are available in [artifact 15249918282](https://github.com/rudimentall1/verigate/actions/runs/46112311890/artifacts/15249918282), retained by GitHub Actions for 14 days. The analyzer result is not clean. The workflow job is green only because findings are explicitly advisory. Solidity was not scanned.
+
+## Cycle remediation — PR #88
+
+The initial `module-cycle` diagnostic is addressed structurally in Draft PR [#88](https://github.com/rudimentall1/verigate/pull/88):
+
+- `core/adversarial.py` was moved to `attest/adversarial.py`, next to signed execution-authority verification.
+- `core/genesis_lifecycle.py` was moved to `application/genesis_lifecycle.py`, because it composes core services with `enforcement.router.ExecutionRouter`.
+- API and test imports now use the owning layers. The old `core` modules were removed, without compatibility re-exports that would restore the reverse dependency.
+
+The intended dependency direction is `attest -> core`, `enforcement -> attest/core`, and `application -> core/enforcement`. Core remains the protocol-agnostic domain/policy layer and must not import any of these higher layers.
+
+The fixed source head passed [CI run #46115841371](https://github.com/rudimentall1/verigate/actions/runs/46115841371): 698 Python tests, 69/69 Anna UI tests, contracts, container/API-auth, and Linux Anna Executa 0.1.18 smoke all passed. A fresh architecture scan has not yet been observed because this workflow has not landed on `main`; the source-level import graph has been corrected, but do not claim a new analyzer report is zero-cycle until the workflow produces one.
