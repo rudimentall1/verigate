@@ -8,7 +8,7 @@
 Verigate uses four logical layers:
 
 - `core` owns protocol-agnostic domain models, identity/capability/policy evaluation, authority state, rules, storage contracts/implementations, and lower-level proof primitives. It must not import `attest`, `enforcement`, `application`, or API modules.
-- `attest` owns signed DecisionReceipt and ExecutionAuthorization issuance/verification, historical authority replay, adversarial authorization checks, and signed evidence-graph construction. It may depend on core domain and persistence primitives.
+- `attest` owns signed DecisionReceipt and ExecutionAuthorization issuance/verification, outcome attestations, historical authority replay, adversarial authorization checks, signed evidence-graph construction, and portable proof packaging/offline verification. It may depend on core domain and persistence primitives.
 - `enforcement` owns execution gates, routers, chain/tool adapters, and effect verification. It may depend on `core` and `attest`.
 - `application` owns composition roots and workflows that combine core policy/evaluation with attestation and enforcement, including the configured GuardrailEngine, Genesis lifecycle, and governed wallet enrollment.
 
@@ -55,6 +55,7 @@ The source now places responsibilities with their owning layer:
 | `core/proof_package.py` | `attest/proof_package.py` | Versioned signed proof transport/verification wraps attestations; it is not a core domain primitive. |
 | `core/genesis_lifecycle.py` | `application/genesis_lifecycle.py` | Genesis composes core services, enforcement router, outcome service and proof package. |
 | `core/wallet_enrollment.py` | `application/wallet_enrollment.py` | Governed installation-wallet enrollment is application workflow orchestration. |
+| `core/outcome.py` | `attest/outcome.py` | Signed outcome claims, attestor verification, and persisted attestations are attestation responsibilities. |
 
 The old modules are removed; no compatibility re-exports were added because those would reintroduce reverse package edges.
 
@@ -72,7 +73,7 @@ No intentional changes were made to:
 - enforcement adapters or adapter contracts;
 - broadcast ordering or side-effect behavior.
 
-The changes are package ownership, dependency injection, and import-path updates. The core-only engine still supports policy evaluation; an application requiring signed authorization must provide the issuer through the application composition root.
+The changes are package ownership, dependency injection, and import-path updates. `core.attestor_types` now owns the dependency-free `ATTESTOR_TYPES` and Ed25519 public-key fingerprint helper used by core governance and attestation outcome verification. The core-only engine still supports policy evaluation; an application requiring signed authorization must provide the issuer through the application composition root.
 
 ## Verification
 
