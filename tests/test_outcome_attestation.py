@@ -15,7 +15,7 @@ from attest.receipt import sign_execution_receipt
 from application.engine import GuardrailEngine
 from core.effect_verification import digest
 from core.models import ActionIntent, AgentIdentity, Capability
-from core.outcome import (
+from attest.outcome import (
     OutcomeAttestationService,
     build_outcome_attestation,
     build_outcome_claim,
