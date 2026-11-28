@@ -83,7 +83,7 @@ class CapabilityRegistryTest(unittest.TestCase):
             action.agent_id,
             permitted.capability_id,
         )
-        from core.authorization import AuthorizationService
+        from attest.authorization import AuthorizationService
         artifacts = AuthorizationService().issue(
             action,
             decision,
