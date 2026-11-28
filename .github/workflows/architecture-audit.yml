@@ -36,7 +36,7 @@ jobs:
           cargo install
           --git https://github.com/Bor4brn/deslop-please
           --rev cfabfb9ee417e150d5342e8ef0d6a0fe725cc9a0
-          --locked
+          --locked deslop-please
 
       - name: Install SCIP indexers
         run: >-
