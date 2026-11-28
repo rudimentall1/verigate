@@ -61,9 +61,9 @@ from application.wallet_enrollment import WalletEnrollmentService
 from core.submission_ingest import ExecutionSubmissionService
 from core.authority import AuthorityGraph
 from core.authority_state import DynamicAuthorityService
-from core.engine import GuardrailEngine
-from core.evidence import EvidenceGraph
-from core.evidence_service import EvidenceGraphService
+from application.engine import GuardrailEngine
+from attest.evidence import EvidenceGraph
+from attest.evidence_service import EvidenceGraphService
 from core.evidence_manifest import build_manifest, verify_manifest
 from core.outcome import OutcomeAttestationService
 from core.governance import (
