@@ -21,7 +21,7 @@ from core.identity import sign_action_intent
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.policy import Policy
 from core.storage import Storage
-from core.submission_ingest import ExecutionSubmissionService
+from application.submission_ingest import ExecutionSubmissionService
 from application.wallet_enrollment import WalletEnrollmentService
 from api import main as api_main
 from scripts.chain_verifier_worker import create_chain_attestation
