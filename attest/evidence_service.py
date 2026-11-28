@@ -13,7 +13,7 @@ import time
 from typing import Any
 
 from attest.evidence import EvidenceGraph
-from .storage import Storage
+from core.storage import Storage
 
 
 def graph_sha256(graph: dict[str, Any]) -> str:
