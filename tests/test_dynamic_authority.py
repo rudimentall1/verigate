@@ -17,7 +17,7 @@ from core.authority_state import (
     DynamicAuthorityService,
 )
 from core.models import ActionIntent, Capability
-from core.outcome import (
+from attest.outcome import (
     OutcomeAttestationService,
     build_outcome_attestation,
     build_outcome_claim,
