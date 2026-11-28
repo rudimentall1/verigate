@@ -16,7 +16,7 @@ from core.governance import GovernancePolicy, verify_authority_reset, verify_gov
 from core.authority_state import DynamicAuthorityService
 from core.identity import verify_action_signature
 from core.models import ActionIntent
-from core.outcome import OutcomeAttestationService, digest as outcome_digest
+from attest.outcome import OutcomeAttestationService, digest as outcome_digest
 from core.policy_version import verify_policy_version
 from core.storage import Storage
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
