@@ -12,7 +12,7 @@ from core.evidence import EvidenceGraph
 from core.evidence_manifest import build_manifest, verify_manifest
 from core.external_state import ExternalStateVerifierRegistry
 from core.models import Capability, PaymentIntent
-from core.outcome import OutcomeAttestationService, build_outcome_attestation, build_outcome_claim
+from attest.outcome import OutcomeAttestationService, build_outcome_attestation, build_outcome_claim
 from core.policy import Policy
 from core.storage import Storage
 from enforcement.chain_verification import EVMChainVerifier
