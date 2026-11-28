@@ -1,59 +1,81 @@
 # Verigate package dependency boundaries
 
-**Status:** source-level dependency-cycle remediation implemented in PR #88.  
+**Status:** dependency-cycle remediation implemented in Draft PR #88; final CI and fresh analyzer verification pending.  
 **Date:** 2026-11-28.
 
 ## Intended dependency direction
 
 Verigate uses four logical layers:
 
-- `core` owns protocol-agnostic domain models, identity/capability/policy evaluation, authority state, evidence primitives, and proof construction. It must not import higher-level attestation, execution, API, or application orchestration packages.
-- `attest` owns signed decision receipts, executable authorization artifacts, cryptographic verification, and adversarial checks of those artifacts. It may depend on core domain primitives.
-- `enforcement` owns the execution router, one-time execution gate, chain/tool adapters, and effect verification. It may depend on core contracts and attestation verification.
-- `application` owns workflows that compose core services with enforcement adapters. It is the correct home for end-to-end lifecycle orchestration.
+- `core` owns protocol-agnostic domain models, identity/capability/policy evaluation, authority state, rules, storage contracts/implementations, and lower-level proof primitives. It must not import `attest`, `enforcement`, `application`, or API modules.
+- `attest` owns signed DecisionReceipt and ExecutionAuthorization issuance/verification, historical authority replay, adversarial authorization checks, and signed evidence-graph construction. It may depend on core domain and persistence primitives.
+- `enforcement` owns execution gates, routers, chain/tool adapters, and effect verification. It may depend on `core` and `attest`.
+- `application` owns composition roots and workflows that combine core policy/evaluation with attestation and enforcement, including the configured GuardrailEngine, Genesis lifecycle, and governed wallet enrollment.
 
 The intended graph is:
 
 ```text
              application
-              /       \
-             v         v
-           core <---- enforcement
-             ^          |
-             |          v
-             +------- attest
+             /    |    \
+            v     v     v
+          core <- attest
+            ^       ^
+            |       |
+            +-- enforcement
 ```
 
-More precisely, `attest -> core`, `enforcement -> attest/core`, and `application -> core/enforcement`. There must be no reverse dependency from `core` to `attest` or `enforcement`.
+More precisely: `attest -> core`; `enforcement -> attest/core`; `application -> core/attest/enforcement`. There must be no reverse dependency from `core` to any of these higher layers.
 
-## Cycle found by the initial architecture scan
+## Cycles found by the architecture scan
 
-The initial scan [Architecture Audit #46112311890](https://github.com/rudimentall1/verigate/actions/runs/46112311890) reported one module cycle across `attest`, `core`, and `enforcement`. Its import evidence identified two misplaced modules inside `core`:
+The initial scan [run #46112311890](https://github.com/rudimentall1/verigate/actions/runs/46112311890) reported a three-package cycle across `attest`, `core`, and `enforcement`. The first import evidence identified:
 
-- `core/adversarial.py` imported `attest.receipt.verify_execution_authorization`. This is an adversarial verification harness for signed execution-authority artifacts, not a core domain primitive.
-- `core/genesis_lifecycle.py` imported `enforcement.router.ExecutionRouter`. This is a high-level application workflow that composes the engine, enforcement router, outcome service, evidence graph, and proof package.
+- `core/adversarial.py` importing `attest.receipt.verify_execution_authorization`.
+- `core/genesis_lifecycle.py` importing `enforcement.router.ExecutionRouter`.
 
-Together with the natural lower-level edges `attest -> core` and `enforcement -> attest/core`, those imports made the dependency graph cyclic.
+After those two modules were moved, a second report [run #46116545770](https://github.com/rudimentall1/verigate/actions/runs/46116545770) reported a two-package cycle between `core` and `attest`. The exact remaining edges were:
+
+- `core/authorization.py` imported attestation receipt/authorization functions.
+- `attest/authority_replay.py` imported core authority-state models and policies.
+
+Further inspection showed that `core/evidence.py` also imported `attest.receipt`, and that authorization issuance and evidence graph assembly were in the wrong package even though the initial cycle diagnostic highlighted only one edge pair.
 
 ## Remediation in PR #88
 
-- Moved `core/adversarial.py` to `attest/adversarial.py`. The API route remains `POST /v1/verify/adversarial`; only its internal import changed.
-- Moved `core/genesis_lifecycle.py` to `application/genesis_lifecycle.py`. The `GenesisLifecycle` class and lifecycle behavior were preserved; the import in `tests/test_genesis_lifecycle.py` changed to the application layer.
-- Removed the old modules from `core`. No compatibility re-export was added, because a re-export that imports the higher-level package would recreate the dependency edge this change removes.
-- Kept the Genesis demo entry point unchanged: it still runs `tests.test_genesis_lifecycle.GenesisLifecycleTest.test_full_genesis_lifecycle_reuses_enforcement_and_proof_boundaries`.
+The source now places responsibilities with their owning layer:
 
-No changes were made to Ed25519 canonicalization/signatures, DecisionReceipt or ExecutionAuthorization fields, expiry checks, capability/identity bindings, nonce consumption, replay protection, adapter contracts, or side-effect ordering.
+| Original module | New module | Reason |
+|---|---|---|
+| `core/adversarial.py` | `attest/adversarial.py` | Challenge harness verifies signed execution-authority artifacts. |
+| `core/authority_replay.py` | `attest/authority_replay.py` | Historical replay verifies a signed authorization against the authority ledger. |
+| `core/authorization.py` | `attest/authorization.py` | Concrete service signs DecisionReceipt and ExecutionAuthorization artifacts. |
+| `core/evidence.py` | `attest/evidence.py` | Evidence graph verifies signed authorization, receipts, identity and governance evidence. |
+| `core/evidence_service.py` | `attest/evidence_service.py` | Persistent graph snapshots are an attestation/evidence responsibility. |
+| `core/genesis_lifecycle.py` | `application/genesis_lifecycle.py` | Genesis composes core services, enforcement router, outcome service and proof package. |
+| `core/wallet_enrollment.py` | `application/wallet_enrollment.py` | Governed installation-wallet enrollment is application workflow orchestration. |
+
+The old modules are removed; no compatibility re-exports were added because those would reintroduce reverse package edges.
+
+`core.authorization` now contains only the `AuthorizationArtifactIssuer` protocol (the dependency-inversion port). `core.engine.GuardrailEngine` accepts that port but does not know the concrete attestation implementation. `application.engine.GuardrailEngine` composes the core engine with `attest.authorization.AuthorizationService` for application flows that issue signed artifacts. The API and authorization tests use the application composition.
+
+The API route remains `POST /v1/verify/adversarial`; the public route and authorization payload format are not intentionally changed.
+
+## Security invariants preserved
+
+No intentional changes were made to:
+- Ed25519 canonicalization or signatures;
+- DecisionReceipt or ExecutionAuthorization fields;
+- capability/identity bindings, policy binding, or authorization expiry;
+- nonce consumption and replay protection;
+- enforcement adapters or adapter contracts;
+- broadcast ordering or side-effect behavior.
+
+The changes are package ownership, dependency injection, and import-path updates. The core-only engine still supports policy evaluation; an application requiring signed authorization must provide the issuer through the application composition root.
 
 ## Verification
 
-The test-first import-only commit was checked by [CI run #46115786079](https://github.com/rudimentall1/verigate/actions/runs/46115786079). It failed as expected because the new module paths did not exist yet; the test loader and Genesis demo showed the missing imports.
-
-After the module moves, [CI run #46115841371](https://github.com/rudimentall1/verigate/actions/runs/46115841371) passed all four jobs:
-
-- Full Python suite: **698 tests**.
-- Anna UI E2E: **69/69**.
-- Contracts and Arc Authority Registry checks.
-- Container/API-auth checks.
-- Linux Anna Executa 0.1.18 build and smoke test.
-
-The initial architecture scan's cycle evidence is addressed by removing the two `core -> attest` and `core -> enforcement` edges. **A fresh automated architecture scan has not yet been observed**: the Architecture Audit workflow is introduced by separate Draft PR #87 and is not yet available on the default branch. Do not describe the analyzer as having re-reported zero cycles until a fresh report exists.
+- The first test-first import-only stage intentionally failed because the destination modules did not yet exist: [CI #46115786079](https://github.com/rudimentall1/verigate/actions/runs/46115786079).
+- The first source-move stage passed 698 Python tests and 69/69 Anna UI tests: [CI #46115841371](https://github.com/rudimentall1/verigate/actions/runs/46115841371). That result predates the additional service moves described above and does not verify the current head.
+- The second architecture scan [#46116545770](https://github.com/rudimentall1/verigate/actions/runs/46116545770) still reported one module cycle between `core` and `attest`, which led to the additional moves in this document.
+- **Verification of the current source head is pending.** Do not report the cycle count as zero until a fresh report on the current head confirms it. Do not claim tests pass until the latest CI run for the final commit succeeds.
+- No live chain execution or live payment was performed.
