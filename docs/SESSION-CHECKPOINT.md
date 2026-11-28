@@ -1,6 +1,6 @@
 # Verigate — Current Working Checkpoint
 
-**Updated:** 2026-11-24  
+**Updated:** 2026-11-28  
 **Repository:** https://github.com/rudimentall1/verigate  
 **Purpose:** current engineering handoff and next verifiable work. This file supersedes neither release evidence nor the product/security specifications; those remain in their owning documents.
 
@@ -444,3 +444,15 @@ This section supersedes earlier "unmerged/pending" statements above where they c
 - PR #81's P3 checkpoint wording finding was fixed: the document now says the rebase onto `main` is complete. Its review thread is resolved. Updated-head CI run [45357618214](https://github.com/rudimentall1/verigate/actions/runs/45357618214) has Python, contracts and container jobs passed; Anna UI E2E was still running at last poll.
 - PR #81 was re-reviewed on the updated head `d15ad99...`; the new review request is pending.
 - PR #69 remains stacked on the pre-final #68 head and is not ready to rebase or merge until #68 lands. Its source review found rotation reactivating revoked state, sorting before validating chronological input, and unguarded numeric-to-float conversions in `core/attestor_history.py`.
+
+
+## Architecture quality audit pilot — 2026-11-28
+
+- Created feature branch `chore/deslop-please-architecture-audit` from the previously observed `main` head `0c9e9393e6b7621994e00abbfee0c7e74aa85094`.
+- Added an advisory GitHub Actions workflow at `.github/workflows/architecture-audit.yml`.
+- Added `docs/ARCHITECTURE-QUALITY.md` and extended `AGENTS.md` with review rules.
+- The workflow pins `deslop-please` to `cfabfb9ee417e150d5342e8ef0d6a0fe725cc9a0`, Rust `1.99.0`, `scip-python` `0.6.8`, and `scip-typescript` `0.5.2`.
+- It discovers supported Python, TypeScript, and JavaScript projects. Solidity is not supported and is explicitly out of scan scope.
+- JSON diagnostics and indexer stderr are retained as a 14-day Actions artifact. Findings and scan-time errors are advisory and do not gate the existing Verigate CI; installation/setup failures still fail this separate workflow.
+- No application source, runtime dependencies, lockfiles, authorization rules, contract behavior, or release artifacts were changed. No allowlist or automatic source rewrite was introduced.
+- **Verification pending:** the branch configuration and documentation have been committed, but the new workflow has not yet been observed completing on GitHub Actions. Do not treat the repository as architecture-clean until a successful scan report is available and reviewed.
