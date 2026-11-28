@@ -322,6 +322,8 @@ class GuardrailEngine:
         Adapters may provide legacy payment inputs, but authorization issuance,
         policy evaluation, authority binding, and persistence happen here.
         """
+        if self.authorization_service is None:
+            raise RuntimeError("authorization artifact issuer is not configured; use application.engine.GuardrailEngine")
         identity = None
         if identity_id is not None:
             if not agent_signature:
@@ -357,8 +359,6 @@ class GuardrailEngine:
                 action, capability, authority
             )
 
-        if self.authorization_service is None:
-            raise RuntimeError("authorization artifact issuer is not configured; use application.engine.GuardrailEngine")
         artifacts = self.authorization_service.issue(
             action,
             decision,
@@ -411,10 +411,10 @@ class GuardrailEngine:
         Executable authorization requires an explicit capability-bound control
         plane path via ``authorize_with_capability`` or ``authorize_with_identity``.
         """
-        action = intent.as_action_intent()
-        decision = self.evaluate(intent, advisory=advisory, persist=persist)
         if self.authorization_service is None:
             raise RuntimeError("authorization artifact issuer is not configured; use application.engine.GuardrailEngine")
+        action = intent.as_action_intent()
+        decision = self.evaluate(intent, advisory=advisory, persist=persist)
         artifacts = self.authorization_service.issue_decision_receipt(
             action,
             decision,
