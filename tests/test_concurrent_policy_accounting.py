@@ -19,7 +19,7 @@ from core.storage import Storage
 
 def _evaluate_daily_cap_worker(db_path, policy_path, worker_id, barrier, queue):
     """Evaluate one payment using an independent process and DB connection."""
-    from core.engine import GuardrailEngine
+    from application.engine import GuardrailEngine
     from core.models import PaymentIntent
     from core.policy import Policy
 
