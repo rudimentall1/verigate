@@ -16,7 +16,7 @@ from .models import ActionIntent, Decision, GuardrailDecision, PaymentIntent, Ru
 from .policy import Policy
 from .storage import Storage
 
-from .authorization import AuthorizationService
+from .authorization import AuthorizationArtifactIssuer
 from .authority_intent_graph import AuthorityAwareIntentGraph
 from .authority_protocol import Authority, AuthorityState as GenesisAuthorityState
 from .intent_graph import IntentGraphBuilder
@@ -37,12 +37,14 @@ class GuardrailEngine:
         policy_parent_sha256: str | None = None,
         require_governed_policy: bool = False,
         authority_service: DynamicAuthorityService | None = None,
+        authorization_service: AuthorizationArtifactIssuer | None = None,
     ):
         self.policy = policy
         self.storage = storage
         self.policy_source_ref = policy_source_ref
         self.require_governed_policy = require_governed_policy
         self.authority_service = authority_service or DynamicAuthorityService(storage)
+        self.authorization_service = authorization_service
         self.policy_version_number = (
             policy_version_number
             if policy_version_number is not None
@@ -50,6 +52,15 @@ class GuardrailEngine:
         )
         self.policy_parent_sha256 = policy_parent_sha256
         self._signed_policy_version = None
+
+    def _require_authorization_service(self) -> AuthorizationArtifactIssuer:
+        issuer = self.authorization_service
+        if issuer is None:
+            raise RuntimeError(
+                "authorization artifact issuer is not configured; "
+                "use application.engine.GuardrailEngine"
+            )
+        return issuer
 
     def _assert_governed_policy_control(self) -> None:
         governed = self.storage.governed_policy_change_by_sha(self.policy.digest)
@@ -320,6 +331,7 @@ class GuardrailEngine:
         Adapters may provide legacy payment inputs, but authorization issuance,
         policy evaluation, authority binding, and persistence happen here.
         """
+        issuer = self._require_authorization_service()
         identity = None
         if identity_id is not None:
             if not agent_signature:
@@ -355,7 +367,7 @@ class GuardrailEngine:
                 action, capability, authority
             )
 
-        artifacts = AuthorizationService().issue(
+        artifacts = issuer.issue(
             action,
             decision,
             self.policy.digest,
@@ -407,9 +419,10 @@ class GuardrailEngine:
         Executable authorization requires an explicit capability-bound control
         plane path via ``authorize_with_capability`` or ``authorize_with_identity``.
         """
+        issuer = self._require_authorization_service()
         action = intent.as_action_intent()
         decision = self.evaluate(intent, advisory=advisory, persist=persist)
-        artifacts = AuthorizationService().issue_decision_receipt(
+        artifacts = issuer.issue_decision_receipt(
             action,
             decision,
             self.policy.digest,
@@ -430,6 +443,7 @@ class GuardrailEngine:
         advisory: Sequence[RuleMatch] = (),
     ) -> dict:
         """Payment adapter with explicit static/dynamic authority binding."""
+        self._require_authorization_service()
         return self._authorize_control_plane(
             intent.as_action_intent(),
             private_key,
@@ -454,6 +468,7 @@ class GuardrailEngine:
         BLOCK is never overridable; capability and dynamic authority checks remain
         in the normal authorization control plane.
         """
+        self._require_authorization_service()
         if not isinstance(review_evidence, dict):
             raise PermissionError("warning review evidence is required")
         if review_evidence.get("source") != "anna-app-scoped-one-time-warning-review":
@@ -546,6 +561,7 @@ class GuardrailEngine:
         private_key,
     ) -> dict:
         """Payment adapter with identity + capability authority binding."""
+        self._require_authorization_service()
         return self._authorize_control_plane(
             intent.as_action_intent(),
             private_key,

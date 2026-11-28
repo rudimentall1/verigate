@@ -39,7 +39,7 @@ class AnnaStateInitializationTest(unittest.TestCase):
                 {"VERIGATE_ANNA_DATA_DIR": str(Path(tmp) / "state")},
             ):
                 with patch("attest.keys.ensure_keypair", side_effect=ensure_keypair), patch(
-                    "core.engine.GuardrailEngine", return_value=fake_engine
+                    "application.engine.GuardrailEngine", return_value=fake_engine
                 ), patch("core.storage.Storage", return_value=object()):
                     with ThreadPoolExecutor(max_workers=12) as pool:
                         states = list(pool.map(lambda _: plugin._get_state(), range(48)))

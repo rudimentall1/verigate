@@ -4,7 +4,8 @@ import unittest
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from core.engine import GuardrailEngine
+from application.engine import GuardrailEngine
+from core.engine import GuardrailEngine as CoreGuardrailEngine
 from core.models import Decision, PaymentIntent, RuleMatch, Severity
 from core.policy import Policy
 from core.storage import Storage
@@ -245,6 +246,25 @@ class EngineTest(unittest.TestCase):
             self.assertEqual(second_storage.spent_today("agent-1", "USDC"), 2000.0)
         finally:
             second_storage.close()
+
+    def test_core_engine_requires_authorization_issuer_before_persisting(self):
+        attempts = (
+            lambda intent: core_engine.authorize(intent, None),
+            lambda intent: core_engine.authorize_with_capability(intent, "unused-capability", None),
+            lambda intent: core_engine.authorize_with_identity(
+                intent, "unused-capability", "unused-identity", "unused-signature", None
+            ),
+            lambda intent: core_engine.authorize_with_capability_after_warning_review(
+                intent, "unused-capability", None, review_evidence={}
+            ),
+        )
+        core_engine = CoreGuardrailEngine(self.policy, self.storage)
+        for index, attempt in enumerate(attempts):
+            with self.subTest(index=index):
+                intent = self._intent(payee=f"0xIssuerNotConfigured{index}")
+                with self.assertRaisesRegex(RuntimeError, "authorization artifact issuer is not configured"):
+                    attempt(intent)
+                self.assertEqual(self.storage.spent_today("agent-1", "USDC"), 0.0)
 
     def test_blocks_rate_limit(self):
         for _ in range(5):

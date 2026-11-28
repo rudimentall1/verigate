@@ -19,7 +19,7 @@ from adapters.valta.proxy import (
     canonical_request_bytes,
 )
 from core.capabilities import CapabilityRegistry
-from core.engine import GuardrailEngine
+from application.engine import GuardrailEngine
 from core.identity import IdentityRegistry, sign_action_intent
 from core.models import AgentIdentity, Capability, Decision
 from core.policy import Policy

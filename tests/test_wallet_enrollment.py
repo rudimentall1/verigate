@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
 from core.storage import Storage
-from core.wallet_enrollment import WalletEnrollmentService, installation_principal
+from application.wallet_enrollment import WalletEnrollmentService, installation_principal
 
 
 def canonical(value):

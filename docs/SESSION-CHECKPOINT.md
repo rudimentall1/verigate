@@ -1,6 +1,6 @@
 # Verigate — Current Working Checkpoint
 
-**Updated:** 2026-11-24  
+**Updated:** 2026-11-28  
 **Repository:** https://github.com/rudimentall1/verigate  
 **Purpose:** current engineering handoff and next verifiable work. This file supersedes neither release evidence nor the product/security specifications; those remain in their owning documents.
 
@@ -444,3 +444,96 @@ This section supersedes earlier "unmerged/pending" statements above where they c
 - PR #81's P3 checkpoint wording finding was fixed: the document now says the rebase onto `main` is complete. Its review thread is resolved. Updated-head CI run [45357618214](https://github.com/rudimentall1/verigate/actions/runs/45357618214) has Python, contracts and container jobs passed; Anna UI E2E was still running at last poll.
 - PR #81 was re-reviewed on the updated head `d15ad99...`; the new review request is pending.
 - PR #69 remains stacked on the pre-final #68 head and is not ready to rebase or merge until #68 lands. Its source review found rotation reactivating revoked state, sorting before validating chronological input, and unguarded numeric-to-float conversions in `core/attestor_history.py`.
+
+
+## Architecture quality audit pilot — 2026-11-28
+
+- Created feature branch `chore/deslop-please-architecture-audit` from the previously observed `main` head `0c9e9393e6b7621994e00abbfee0c7e74aa85094`.
+- Added an advisory GitHub Actions workflow at `.github/workflows/architecture-audit.yml`.
+- Added `docs/ARCHITECTURE-QUALITY.md` and extended `AGENTS.md` with review rules.
+- The workflow pins `deslop-please` to `cfabfb9ee417e150d5342e8ef0d6a0fe725cc9a0`, Rust `1.99.0`, `scip-python` `0.6.8`, and `scip-typescript` `0.5.2`.
+- It discovers supported Python, TypeScript, and JavaScript projects. Solidity is not supported and is explicitly out of scan scope.
+- JSON diagnostics and indexer stderr are retained as a 14-day Actions artifact. Findings and scan-time errors are advisory and do not gate the existing Verigate CI; installation/setup failures still fail this separate workflow.
+- No application source, runtime dependencies, lockfiles, authorization rules, contract behavior, or release artifacts were changed. No allowlist or automatic source rewrite was introduced.
+- First GitHub Actions attempt `46112222180` installed Rust `1.99.0` and Node.js `22.23.5`, but Cargo rejected the install command because the tool repository also contains fixture binaries. No SCIP indexer or source scan ran in that attempt.
+- Corrected the workflow and local instructions to select the `deslop-please` package explicitly after `--locked`. The final Architecture Audit run [46112311890](https://github.com/rudimentall1/verigate/actions/runs/46112311890) completed successfully as a GitHub Actions job, with tool installation, both SCIP indexers, source scan, and report upload all confirmed.
+- The analyzer itself returned exit code `1` and reported **17 diagnostics**: 1 `module-cycle`, 11 `field-leak`, 4 `wide-directory`, and 1 `long-file`. Details and limitations are recorded in `docs/ARCHITECTURE-QUALITY.md`. The report artifact is [15249918282](https://github.com/rudimentall1/verigate/actions/runs/46112311890/artifacts/15249918282).
+- The first PR functional CI attempt `46112311881` had a transient Anna UI E2E failure at `one-time execution permission is issued only after a separate user click` while checking `execution permission signature verified`. The failed Anna UI job was rerun in place and passed, including the Linux Anna Executa binary build/smoke; the rerun completed with all four jobs successful: Python test suite, contracts, container/API-auth, and Anna UI. This verifies the code-equivalent source head `f0a830c...`.
+- The later documentation-only PR head `a1f0e1f...` triggered a fresh functional CI run `46112525458`, which was still in progress at this checkpoint refresh. No application source files changed after the fully successful rerun above; do not describe the newer run as completed until its final status is observed.
+- No application source or authorization logic was changed to address the scan. No allowlist or source rewrite was introduced. Solidity was not scanned, and this result is not a security audit.
+
+## Architecture cycle remediation — 2026-11-28
+
+- Opened Draft PR [#88 — break core/enforcement dependency cycle](https://github.com/rudimentall1/verigate/pull/88).
+- Initial scan run [#46112311890](https://github.com/rudimentall1/verigate/actions/runs/46112311890) reported one cycle across `attest`, `core`, and `enforcement`. The report identified two misplaced modules: `core/adversarial.py` imported attestation verification, and `core/genesis_lifecycle.py` imported `enforcement.router.ExecutionRouter`.
+- Moved the adversarial harness to `attest/adversarial.py` and Genesis orchestration to `application/genesis_lifecycle.py`. Updated the API import and tests, then removed the old core modules. No signature, authorization, replay, execution, or side-effect behavior was changed.
+- TDD RED was confirmed by [CI #46115786079](https://github.com/rudimentall1/verigate/actions/runs/46115786079): expected missing-module failures occurred before implementation.
+- The implemented source passed [CI #46115841371](https://github.com/rudimentall1/verigate/actions/runs/46115841371): **698 Python tests**, **69/69 Anna UI E2E**, contracts, container/API-auth, and Linux Anna Executa 0.1.18 smoke all passed.
+- Dependency boundaries are documented in `docs/ARCHITECTURE-DEPENDENCY-BOUNDARIES.md`, included in PR #88, and agent rules have been updated on this architecture-doc branch.
+- **Architecture scan re-run pending:** the Architecture Audit workflow is not yet on `main`. Do not report the cycle count as zero from the analyzer until a fresh report is produced. No live chain execution was performed.
+
+## Expanded package-cycle remediation — 2026-11-28
+
+A fresh source review after the first two module moves found a second-cycle cause. Analyzer run [#46116545770](https://github.com/rudimentall1/verigate/actions/runs/46116545770) reported the remaining two-package cycle as `core/authorization.py -> attest` and `attest/authority_replay.py -> core`. Manual review also found the reverse dependency in `core/evidence.py`.
+
+Additional PR #88 changes:
+- Concrete authorization issuance moved from `core/authorization.py` to `attest/authorization.py`; `core.authorization` now contains only the dependency-inversion Protocol `AuthorizationArtifactIssuer`.
+- `core.engine.GuardrailEngine` accepts the issuer by injection. New `application.engine.GuardrailEngine` composes the core engine with the concrete attestation issuer for runtime/API authorization flows.
+- Evidence graph construction and snapshot service moved from `core` to `attest`; historical replay remains in `attest`.
+- Updated API, adapters, Genesis orchestration and all discovered test imports. Removed the old evidence modules from `core`.
+- Governed wallet enrollment is in `application.wallet_enrollment`; Genesis lifecycle is in `application.genesis_lifecycle`.
+
+Current source has not yet been verified by a completed post-change full CI and architecture scan. The last analyzer result (#46116545770) predates these extra moves and must not be used to claim zero cycles. Re-run both workflows against the final head and inspect the complete diagnostic JSON/artifact.
+
+### Portable proof verifier moved into the attestation layer — 2026-11-28
+
+The current-head analyzer report [#46120175666](https://github.com/rudimentall1/verigate/actions/runs/46120175666) still found a single cycle caused by `core/offline_verifier.py` importing signed authorization/receipt verification from `attest`. Together with the reverse `attest/authority_replay.py -> core` dependency, this created the last `core <-> attest` cycle.
+
+Moved both related transport/verification modules into their owning package:
+- `core/offline_verifier.py` → `attest/offline_verifier.py`
+- `core/proof_package.py` → `attest/proof_package.py`
+
+Updated the callers in the CLI, Genesis lifecycle, proof/evidence tests, authority proof protocol vector test and portable proof artifact test. Also fixed remaining compatibility imports found by CI:
+- Anna Executa plugin now creates `application.engine.GuardrailEngine`.
+- Chain verifier worker reads installation-principal derivation from `application.wallet_enrollment`.
+- Execution router and demos import concrete `AuthorizationService` from `attest.authorization`.
+- Anna state-initialization test patches the application composition root.
+- `tests/test_engine.py` now tests the application engine for signed authorization behavior and uses the core engine only for the fail-closed missing-issuer regression.
+
+CI on the earlier revision found stale imports and missing caller migrations; those are not hidden as successful verification. Fresh full CI and architecture scan for the current branch head are pending. Do not mark the module cycle resolved until the new architecture report confirms zero `module-cycle` diagnostics.
+
+### Outcome attestation moved to attest — 2026-11-28
+
+The full artifact from [Architecture Audit #46121019285](https://github.com/rudimentall1/verigate/actions/runs/46121019285) showed the remaining cycle was `core/outcome.py -> attest.receipt`, with the reverse `attest/authority_replay.py -> core`. This was the final core-to-attest source dependency.
+
+- Moved `core/outcome.py` to `attest/outcome.py`. Signed outcome claims/attestations, attestor signature verification, historical governance resolution and authority-event recording now live with attestation services.
+- Extracted the lower-level shared constants/fingerprint helper into `core/attestor_types.py`, which has no attestation dependency. Updated `core.attestor` and `application.wallet_enrollment` to use it.
+- Updated consumers in API, Genesis lifecycle, evidence graph, tests, chain-verifier worker and E2E script.
+- Removed the old `core/outcome.py` module; no compatibility re-export remains.
+
+No intended change to claim schema, signature canonicalization, storage calls, attestor governance checks, authority event semantics or EVM chain verification. The latest full CI (#46121019319) passed 699 Python tests and all four jobs, but it predates this outcome move. Fresh CI and architecture scan on current HEAD are pending. Do not mark the cycle resolved until a new report shows no `module-cycle` diagnostic.
+
+### External execution submission moved to application — 2026-11-28
+
+The analyzer report [#46122297534](https://github.com/rudimentall1/verigate/actions/runs/46122297534) narrowed the last cycle to `core/submission_ingest.py -> attest.receipt`, with the reverse `attest/authority_replay.py -> core`.
+
+Moved `ExecutionSubmissionService` from `core/submission_ingest.py` to `application/submission_ingest.py`. The service coordinates enrolled-wallet verification, issuer signature validation, transaction-envelope checks, and durable persistence, so application is its owning layer. Updated the API import and `tests/test_submission_ingest.py`; deleted the old core module.
+
+The ingestion API contract and security checks are preserved: Anna installation principal, active wallet enrollment, chain/network/destination/value/calldata validation, authorization validity at signed wallet hand-off time, receipt signature/binding, transaction hash, and idempotent persistence. Full CI and a fresh architecture scan on the new current head are pending.
+
+### Final Verigate cycle remediation — verified 2026-11-28
+
+The remaining `core/submission_ingest.py -> attest.receipt` dependency was removed by moving `ExecutionSubmissionService` to `application/submission_ingest.py`. API and tests now use the application path, and the old core module is deleted. This completes the ownership moves recorded above: concrete authorization issuance, outcome attestation, evidence graph, replay, portable proof verification and external wallet-submission workflows now live in `attest`/ `application`, not `core`.
+
+Exact implementation HEAD: `4f0bd4020658e020a5df6256fa2429d1c4a0b103`.
+
+- Architecture Audit [#46122668412](https://github.com/rudimentall1/verigate/actions/runs/46122668412): **no module-cycle diagnostics**; 11 field-leak, 4 wide-directory and 1 long-file advisory diagnostics remain.
+- Full CI [#46122668307](https://github.com/rudimentall1/verigate/actions/runs/46122668307): **699 Python tests passed**; 69/69 Anna UI; contracts/Arc Registry; container/API-auth; Linux Anna Executa 0.1.18 build and binary smoke passed.
+- No live chain execution or live payment occurred.
+- PR #88 remains Draft and unmerged.
+
+### Latest PR HEAD revalidated — 2026-11-28
+
+After the checkpoint and architecture-document updates, exact PR HEAD `83dc32eab7113507e29762fd2093c5820c7a3139` was re-run:
+- [Architecture Audit #46122891729](https://github.com/rudimentall1/verigate/actions/runs/46122891729): zero `module-cycle` diagnostics; 11 field-leak, 4 wide-directory, 1 long-file remain.
+- [Full CI #46122891728](https://github.com/rudimentall1/verigate/actions/runs/46122891728): 699 Python tests, 69/69 Anna UI, contracts/Arc Authority Registry, container/API-auth, Linux Anna Executa 0.1.18 smoke all passed.

@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from core.authorization import AuthorizationService
+from attest.authorization import AuthorizationService
 from core.models import ActionIntent, Decision, GuardrailDecision, RuleMatch, Severity
 
 from .models import CmcRwaQuote

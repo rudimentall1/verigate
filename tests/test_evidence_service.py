@@ -5,14 +5,14 @@ from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 
-from core.evidence import EvidenceGraph
-from core.evidence_service import EvidenceGraphService
+from attest.evidence import EvidenceGraph
+from attest.evidence_service import EvidenceGraphService
 from core.evidence_manifest import build_manifest
-from core.offline_verifier import verify_proof
+from attest.offline_verifier import verify_proof
 from core.authority_state import DynamicAuthorityService
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.identity import sign_action_intent
-from core.engine import GuardrailEngine
+from application.engine import GuardrailEngine
 from core.policy import Policy
 from core.storage import Storage
 from attest.keys import generate_keypair, load_private_key, load_public_key

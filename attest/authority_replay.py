@@ -1,4 +1,4 @@
-"""Independent historical verification of Verigate authority decisions."""
+"""Attestation-layer verification of historical Verigate authority decisions."""
 from __future__ import annotations
 
 import hashlib
@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from attest.receipt import verify_execution_authorization
-from .authority_state import AuthorityPolicy, AuthorityState
+from core.authority_state import AuthorityPolicy, AuthorityState
 
 
 def _canonical(value: Any) -> bytes:

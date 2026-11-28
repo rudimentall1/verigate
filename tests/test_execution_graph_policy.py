@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key
-from core.engine import GuardrailEngine
+from application.engine import GuardrailEngine
 from core.models import ActionIntent
 from core.policy import Policy
 from core.storage import Storage

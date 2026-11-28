@@ -20,7 +20,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
-from core.authorization import AuthorizationService
+from attest.authorization import AuthorizationService
 from core.models import ActionIntent, Decision, GuardrailDecision
 from core.storage import Storage
 from enforcement.monitor import ExecutionMonitor

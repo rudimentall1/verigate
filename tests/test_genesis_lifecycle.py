@@ -10,15 +10,15 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
-from core.engine import GuardrailEngine
-from core.evidence import EvidenceGraph
+from application.engine import GuardrailEngine
+from attest.evidence import EvidenceGraph
 from core.effect_verification import MCPToolVerifier
 from core.attestor import AttestorAuthorityService
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
-from core.genesis_lifecycle import GenesisLifecycle
+from application.genesis_lifecycle import GenesisLifecycle
 from core.identity import sign_action_intent
 from core.models import ActionIntent, AgentIdentity, Capability
-from core.outcome import (
+from attest.outcome import (
     OutcomeAttestationService,
     build_outcome_attestation,
     build_outcome_claim,
@@ -26,7 +26,7 @@ from core.outcome import (
 from core.policy import Policy
 from core.authority_state import AuthorityPolicy, AuthorityState, DynamicAuthorityService
 from core.proof_engine import digest
-from core.proof_package import serialize_proof_package, verify_proof_package
+from attest.proof_package import serialize_proof_package, verify_proof_package
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry
 from enforcement.router import ExecutionRouter

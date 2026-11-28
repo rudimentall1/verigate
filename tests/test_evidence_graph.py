@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from api import main
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.authority import CapabilityDelegationService, sign_delegation
-from core.evidence import EvidenceGraph
+from attest.evidence import EvidenceGraph
 from core.governance import (
     GovernanceMember,
     GovernancePolicy,
@@ -21,7 +21,7 @@ from core.governance import (
 from core.policy_version import create_policy_change_action
 from core.identity import sign_action_intent
 from core.models import ActionIntent, AgentIdentity, Capability
-from core.outcome import (
+from attest.outcome import (
     OutcomeAttestationService,
     build_outcome_attestation,
     build_outcome_claim,
@@ -73,7 +73,7 @@ class EvidenceGraphTest(unittest.TestCase):
 
     def test_graph_proves_identity_policy_capability_and_execution(self):
         agent_key, identity, capability = self._identity_and_capability()
-        from core.engine import GuardrailEngine
+        from application.engine import GuardrailEngine
         from core.policy import Policy
 
         policy_path = Path(self.tmpdir.name) / "policy.yaml"
@@ -238,7 +238,7 @@ class EvidenceGraphTest(unittest.TestCase):
             root_id,
             delegation_signature,
         )
-        from core.engine import GuardrailEngine
+        from application.engine import GuardrailEngine
         from core.policy import Policy
         policy_path = Path(self.tmpdir.name) / "delegation-policy.yaml"
         policy_path.write_text(
@@ -272,7 +272,7 @@ class EvidenceGraphTest(unittest.TestCase):
         self.assertTrue(graph["verification"][f"delegation:{child.capability_id}"]["valid"])
 
     def test_graph_proves_governed_policy_publication(self):
-        from core.engine import GuardrailEngine
+        from application.engine import GuardrailEngine
         from core.policy import Policy
         from core.policy_version import build_policy_version, sign_policy_version
 

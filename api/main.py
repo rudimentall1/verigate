@@ -55,17 +55,17 @@ from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
 from attest.verify import verify_attestation
 from attest.receipt import verify_execution_authorization
-from core.adversarial import AdversarialVerificationPlane
+from attest.adversarial import AdversarialVerificationPlane
 from core.attestor import AttestorAuthorityService
-from core.wallet_enrollment import WalletEnrollmentService
-from core.submission_ingest import ExecutionSubmissionService
+from application.wallet_enrollment import WalletEnrollmentService
+from application.submission_ingest import ExecutionSubmissionService
 from core.authority import AuthorityGraph
 from core.authority_state import DynamicAuthorityService
-from core.engine import GuardrailEngine
-from core.evidence import EvidenceGraph
-from core.evidence_service import EvidenceGraphService
+from application.engine import GuardrailEngine
+from attest.evidence import EvidenceGraph
+from attest.evidence_service import EvidenceGraphService
 from core.evidence_manifest import build_manifest, verify_manifest
-from core.outcome import OutcomeAttestationService
+from attest.outcome import OutcomeAttestationService
 from core.governance import (
     AuthorityGovernanceService,
     GovernanceMember,

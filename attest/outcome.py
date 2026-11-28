@@ -8,13 +8,13 @@ import uuid
 from typing import Any
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
 
 from attest.receipt import verify_execution_receipt
+from core.attestor_types import ATTESTOR_TYPES, key_fingerprint
 from core.authority_state import DynamicAuthorityService
 from core.storage import Storage
 from core.governance import GovernancePolicy, verify_governance_quorum
@@ -26,7 +26,6 @@ ATTESTATION_TYPES = frozenset({
     "EXTERNAL_VERIFIER",
     "CHAIN_VERIFIER",
 })
-ATTESTOR_TYPES = frozenset({"EXECUTOR", "EXTERNAL_VERIFIER", "CHAIN_VERIFIER"})
 EVIDENCE_KINDS = frozenset({
     "MCP_RESULT",
     "HTTP_RESPONSE",
@@ -47,14 +46,6 @@ def _canonical(value: Any) -> bytes:
 
 def digest(value: Any) -> str:
     return hashlib.sha256(_canonical(value)).hexdigest()
-
-
-def key_fingerprint(public_key: Ed25519PublicKey) -> str:
-    raw = public_key.public_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw,
-    )
-    return hashlib.sha256(raw).hexdigest()
 
 
 def sign_payload(payload: dict[str, Any], private_key: Ed25519PrivateKey) -> str:

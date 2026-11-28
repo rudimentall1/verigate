@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from core.offline_verifier import verify_proof
+from attest.offline_verifier import verify_proof
 from core.proof_engine import canonical, digest
 from core.proof_protocol import PROOF_PROTOCOL, assertion_set_digest, build_authority_assertions, verify_authority_assertions
 

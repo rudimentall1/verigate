@@ -15,14 +15,14 @@ from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.effect_verification import MCPToolVerifier
 from core.attestor import AttestorAuthorityService
 from core.authority_state import DynamicAuthorityService
-from core.engine import GuardrailEngine
-from core.evidence import EvidenceGraph
+from application.engine import GuardrailEngine
+from attest.evidence import EvidenceGraph
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
 from core.evidence_manifest import build_manifest, verify_manifest, canonical, graph_root
-from core.offline_verifier import verify_proof
-from core.proof_package import build_proof_package, serialize_proof_package
+from attest.offline_verifier import verify_proof
+from attest.proof_package import build_proof_package, serialize_proof_package
 from core.models import ActionIntent, AgentIdentity, Capability
-from core.outcome import OutcomeAttestationService, build_outcome_attestation, build_outcome_claim
+from attest.outcome import OutcomeAttestationService, build_outcome_attestation, build_outcome_claim
 from core.identity import sign_action_intent
 from core.policy import Policy
 from core.storage import Storage

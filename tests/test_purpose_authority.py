@@ -1,5 +1,5 @@
 ﻿import unittest
-from core.engine import GuardrailEngine
+from application.engine import GuardrailEngine
 from core.models import ActionIntent, Capability, Decision
 from core.policy import Policy
 from core.storage import Storage

@@ -109,7 +109,7 @@ class StorageTest(unittest.TestCase):
             )
 
     def test_engine_records_exactly_one_attempt(self) -> None:
-        from core.engine import GuardrailEngine
+        from application.engine import GuardrailEngine
         from core.policy import Policy
 
         policy = Policy.load("policies/default.yaml")
@@ -132,7 +132,7 @@ class StorageTest(unittest.TestCase):
         )
 
     def test_engine_record_can_receive_signature_without_second_audit_row(self) -> None:
-        from core.engine import GuardrailEngine
+        from application.engine import GuardrailEngine
         from core.policy import Policy
 
         policy = Policy.load("policies/default.yaml")

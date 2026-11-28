@@ -27,13 +27,13 @@ if str(_REPO_ROOT) not in sys.path:
 
 from attest.keys import load_private_key
 from attest.receipt import verify_execution_authorization, verify_execution_receipt
-from core.outcome import (
+from attest.outcome import (
     build_outcome_attestation,
     build_outcome_claim,
     digest,
     key_fingerprint,
 )
-from core.wallet_enrollment import installation_principal
+from application.wallet_enrollment import installation_principal
 from enforcement.chain_verification import EVMChainVerifier
 from enforcement.evm_rpc import EvmRpcClient, EvmRpcError
 

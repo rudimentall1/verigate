@@ -5,7 +5,7 @@ from pathlib import Path
 
 from attest.keys import load_public_key
 from cryptography.hazmat.primitives import serialization
-from core.proof_package import verify_proof_package
+from attest.proof_package import verify_proof_package
 
 
 class CheckedInPortableProofTests(unittest.TestCase):

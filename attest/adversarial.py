@@ -1,4 +1,4 @@
-"""Adversarial verification plane for Verigate authority artifacts.
+"""Adversarial verification of signed Verigate authority artifacts.
 
 The corpus treats an ExecutionAuthorization as hostile input and mutates one
 security-critical field at a time. Every mutation must fail independently at

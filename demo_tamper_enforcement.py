@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
-from core.authorization import AuthorizationService
+from attest.authorization import AuthorizationService
 from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 from core.storage import Storage
 from core.authority_state import DynamicAuthorityService

@@ -14,15 +14,15 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from attest.receipt import sign_execution_receipt
-from core.engine import GuardrailEngine
-from core.outcome import OutcomeAttestationService
+from application.engine import GuardrailEngine
+from attest.outcome import OutcomeAttestationService
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
 from core.identity import sign_action_intent
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.policy import Policy
 from core.storage import Storage
-from core.submission_ingest import ExecutionSubmissionService
-from core.wallet_enrollment import WalletEnrollmentService
+from application.submission_ingest import ExecutionSubmissionService
+from application.wallet_enrollment import WalletEnrollmentService
 from api import main as api_main
 from scripts.chain_verifier_worker import create_chain_attestation
 from enforcement.evm_rpc import EvmRpcClient

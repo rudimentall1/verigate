@@ -1,4 +1,4 @@
-"""Genesis 2.0 lifecycle boundary over the existing Verigate runtime.
+"""Application-level Genesis 2.0 orchestration over the Verigate runtime.
 
 This module orchestrates existing authority, authorization, execution, outcome,
 and evidence primitives. It does not create a second enforcement path.
@@ -10,12 +10,12 @@ from typing import Any, Callable
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from core.engine import GuardrailEngine
-from core.evidence import EvidenceGraph
+from application.engine import GuardrailEngine
+from attest.evidence import EvidenceGraph
 from core.evidence_manifest import build_manifest, verify_manifest
 from core.proof_engine import digest
-from core.proof_package import build_proof_package
-from core.outcome import OutcomeAttestationService
+from attest.proof_package import build_proof_package
+from attest.outcome import OutcomeAttestationService
 from core.authority_protocol import LifecycleStage
 from enforcement.router import ExecutionRouter
 

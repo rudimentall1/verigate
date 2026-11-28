@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives import serialization
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import verify_execution_authorization
-from core.engine import GuardrailEngine
+from application.engine import GuardrailEngine
 from core.identity import IdentityRegistry, sign_action_intent, verify_action_signature
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.policy import Policy

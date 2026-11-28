@@ -12,8 +12,8 @@ import uuid
 import time
 from typing import Any
 
-from .evidence import EvidenceGraph
-from .storage import Storage
+from attest.evidence import EvidenceGraph
+from core.storage import Storage
 
 
 def graph_sha256(graph: dict[str, Any]) -> str:
@@ -33,7 +33,7 @@ class EvidenceGraphService:
         artifacts = self.storage.authorization_by_id(authorization_id)
         authorization = artifacts.get("execution_authorization") if artifacts else None
         if authorization:
-            from core.authority_replay import replay_authority_decision
+            from attest.authority_replay import replay_authority_decision
             replay_ok, replay_reason, replay = replay_authority_decision(
                 self.storage, authorization, self.graph.public_key
             )
