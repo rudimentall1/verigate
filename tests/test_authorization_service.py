@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives import serialization
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import verify_execution_authorization, verify_receipt
-from core.authorization import AuthorizationService
+from attest.authorization import AuthorizationService
 from core.models import ActionIntent, AgentIdentity, Capability, Decision, GuardrailDecision
 from core.identity import IdentityRegistry
 from core.authority_state import DynamicAuthorityService
