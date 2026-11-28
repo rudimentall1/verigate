@@ -135,3 +135,13 @@ Outcome claim signing, attestor authority verification, and stored outcome-attes
 The move preserves claim fields, signature canonicalization, attestor governance replay, storage behavior, authority-event writes and EVM chain-verifier checks. The old `core/outcome.py` module was removed rather than kept as a compatibility re-export, which would have recreated the cycle.
 
 A new architecture scan and full CI run for the current HEAD are pending. The previous report #46121019285 is not a clean report and must not be used to claim zero cycles.
+
+### Final remaining cycle edge — submission ingestion — 2026-11-28
+
+The current-head analyzer report [#46122297534](https://github.com/rudimentall1/verigate/actions/runs/46122297534) showed one remaining cycle:
+- `core/submission_ingest.py` imports `verify_execution_authorization` and `verify_execution_receipt` from `attest.receipt`.
+- `attest/authority_replay.py` depends on core authority models.
+
+`ExecutionSubmissionService` is an application workflow: it validates an enrolled Anna installation wallet, verifies the issuer-signed authorization and wallet receipt, checks the exact submitted EVM transaction fields, then persists the external submission. It moved to `application/submission_ingest.py`; the API and its tests now import the application module. The old core module was deleted. Request/response shapes, enrollment lookups, signing-time TTL validation, idempotency, persistence and chain-verifier behavior are unchanged.
+
+A new architecture scan and full CI run for the final head are pending. The previous report still had one cycle and must not be used as evidence that the final cycle is gone.
