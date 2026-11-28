@@ -455,4 +455,6 @@ This section supersedes earlier "unmerged/pending" statements above where they c
 - It discovers supported Python, TypeScript, and JavaScript projects. Solidity is not supported and is explicitly out of scan scope.
 - JSON diagnostics and indexer stderr are retained as a 14-day Actions artifact. Findings and scan-time errors are advisory and do not gate the existing Verigate CI; installation/setup failures still fail this separate workflow.
 - No application source, runtime dependencies, lockfiles, authorization rules, contract behavior, or release artifacts were changed. No allowlist or automatic source rewrite was introduced.
-- **Verification pending:** the branch configuration and documentation have been committed, but the new workflow has not yet been observed completing on GitHub Actions. Do not treat the repository as architecture-clean until a successful scan report is available and reviewed.
+- First GitHub Actions attempt `46112222180` installed Rust `1.99.0` and Node.js `22.23.5`, but Cargo rejected the install command because the tool repository also contains fixture binaries. No SCIP indexer or source scan ran in that attempt.
+- Corrected both the workflow and local instructions to select the `deslop-please` package explicitly after `--locked`. The follow-up Architecture Audit runs are pending; their actual install, scan, and artifact results must be inspected.
+- Do not treat the repository as architecture-clean until a completed scan report is available and its findings have been reviewed.
