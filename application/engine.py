@@ -6,7 +6,6 @@ from typing import Any
 from attest.authorization import AuthorizationService
 from core.authorization import AuthorizationArtifactIssuer
 from core.engine import GuardrailEngine as CoreGuardrailEngine
-from core.models import PaymentIntent
 from core.policy import Policy
 from core.storage import Storage
 
@@ -30,6 +29,6 @@ class GuardrailEngine(CoreGuardrailEngine):
         super().__init__(
             policy,
             storage,
-            authorization_service=authorization_service or AuthorizationService(),
+            authorization_service=(authorization_service if authorization_service is not None else AuthorizationService()),
             **kwargs,
         )
