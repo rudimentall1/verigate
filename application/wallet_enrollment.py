@@ -12,7 +12,7 @@ from typing import Any
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from core.governance import GovernancePolicy, verify_governance_quorum
-from core.outcome import key_fingerprint
+from core.attestor_types import key_fingerprint
 from core.storage import Storage
 from enforcement.networks import NetworkRegistry, UnsupportedNetworkError
 
