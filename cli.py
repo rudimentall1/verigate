@@ -12,12 +12,12 @@ from pathlib import Path
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
 from attest.verify import verify_attestation
-from core.engine import GuardrailEngine
+from application.engine import GuardrailEngine
 from core.models import PaymentIntent
 from core.policy import Policy
 from core.storage import Storage
-from core.offline_verifier import verify_proof
-from core.proof_package import parse_proof_package, verify_proof_package
+from attest.offline_verifier import verify_proof
+from attest.proof_package import parse_proof_package, verify_proof_package
 
 DEFAULT_POLICY = "policies/default.yaml"
 DEFAULT_DB = "data/verigate.db"
