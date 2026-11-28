@@ -520,3 +520,14 @@ The analyzer report [#46122297534](https://github.com/rudimentall1/verigate/acti
 Moved `ExecutionSubmissionService` from `core/submission_ingest.py` to `application/submission_ingest.py`. The service coordinates enrolled-wallet verification, issuer signature validation, transaction-envelope checks, and durable persistence, so application is its owning layer. Updated the API import and `tests/test_submission_ingest.py`; deleted the old core module.
 
 The ingestion API contract and security checks are preserved: Anna installation principal, active wallet enrollment, chain/network/destination/value/calldata validation, authorization validity at signed wallet hand-off time, receipt signature/binding, transaction hash, and idempotent persistence. Full CI and a fresh architecture scan on the new current head are pending.
+
+### Final Verigate cycle remediation — verified 2026-11-28
+
+The remaining `core/submission_ingest.py -> attest.receipt` dependency was removed by moving `ExecutionSubmissionService` to `application/submission_ingest.py`. API and tests now use the application path, and the old core module is deleted. This completes the ownership moves recorded above: concrete authorization issuance, outcome attestation, evidence graph, replay, portable proof verification and external wallet-submission workflows now live in `attest`/ `application`, not `core`.
+
+Exact implementation HEAD: `4f0bd4020658e020a5df6256fa2429d1c4a0b103`.
+
+- Architecture Audit [#46122668412](https://github.com/rudimentall1/verigate/actions/runs/46122668412): **no module-cycle diagnostics**; 11 field-leak, 4 wide-directory and 1 long-file advisory diagnostics remain.
+- Full CI [#46122668307](https://github.com/rudimentall1/verigate/actions/runs/46122668307): **699 Python tests passed**; 69/69 Anna UI; contracts/Arc Registry; container/API-auth; Linux Anna Executa 0.1.18 build and binary smoke passed.
+- No live chain execution or live payment occurred.
+- PR #88 remains Draft and unmerged.
