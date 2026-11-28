@@ -6,7 +6,7 @@ from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import issue_execution_authorization
-from core.engine import GuardrailEngine
+from application.engine import GuardrailEngine
 from core.policy import Policy
 from core.storage import Storage
 from core.models import Capability, PaymentIntent
