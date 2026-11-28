@@ -7,7 +7,7 @@ from pathlib import Path
 
 from attest.keys import generate_keypair
 from core.proof_engine import canonical
-from core.proof_package import build_proof_package, serialize_proof_package
+from attest.proof_package import build_proof_package, serialize_proof_package
 from tests.test_reference_lifecycle import VerigateReferenceLifecycleTest
 
 
