@@ -84,3 +84,12 @@ When touching authorization/enforcement, verify:
 - Investigate confirmed issues at their architectural boundary. Preserve Verigate authorization, enforcement, replay, expiry, and fail-closed invariants.
 - Do not create a blanket allowlist or use `--update-allow` without a reviewed, documented reason.
 - This scan does not analyze Solidity and does not replace security review, contract tests, Python tests, Anna UI tests, or execution-evidence verification.
+
+## Package dependency direction
+
+- Keep `core` below `attest`, `enforcement`, and `application`: core domain/policy modules must not import those higher-level packages.
+- `attest` owns signed receipts, execution-authority verification, and adversarial mutation checks; it may depend on core domain primitives.
+- `enforcement` owns execution gates, routers, and adapters; it may depend on core and attest.
+- `application` owns workflows that compose core services with enforcement adapters, such as Genesis lifecycle orchestration.
+- Do not put an application orchestrator or a verifier harness in `core` merely because it uses core types.
+- The import direction is documented in `docs/ARCHITECTURE-DEPENDENCY-BOUNDARIES.md`; preserve the direction when adding new modules.
