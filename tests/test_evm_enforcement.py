@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
-from core.engine import GuardrailEngine
+from application.engine import GuardrailEngine
 from core.models import Capability, PaymentIntent
 from core.policy import Policy
 from core.authority_state import DynamicAuthorityService
