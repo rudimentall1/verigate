@@ -1,0 +1,756 @@
+
+import base64
+import hashlib
+import json
+import math
+import time
+import uuid
+from typing import Any
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
+
+from attest.receipt import verify_execution_receipt
+from core.attestor_types import ATTESTOR_TYPES, key_fingerprint
+from core.authority_state import DynamicAuthorityService
+from core.storage import Storage
+from core.governance import GovernancePolicy, verify_governance_quorum
+
+
+OUTCOME_STATUSES = frozenset({"SUCCEEDED", "FAILED", "UNKNOWN"})
+ATTESTATION_TYPES = frozenset({
+    "EXECUTOR_SELF_REPORT",
+    "EXTERNAL_VERIFIER",
+    "CHAIN_VERIFIER",
+})
+EVIDENCE_KINDS = frozenset({
+    "MCP_RESULT",
+    "HTTP_RESPONSE",
+    "CHAIN_RECEIPT",
+    "EXECUTOR_RESULT",
+    "EXTERNAL_REFERENCE",
+})
+
+
+def _canonical(value: Any) -> bytes:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+
+def digest(value: Any) -> str:
+    return hashlib.sha256(_canonical(value)).hexdigest()
+
+
+def sign_payload(payload: dict[str, Any], private_key: Ed25519PrivateKey) -> str:
+    return base64.b64encode(private_key.sign(_canonical(payload))).decode("ascii")
+
+
+def verify_payload_signature(
+    payload: dict[str, Any],
+    signature: str,
+    public_key: Ed25519PublicKey,
+) -> tuple[bool, str]:
+    try:
+        public_key.verify(base64.b64decode(signature), _canonical(payload))
+        return True, "valid signature"
+    except (InvalidSignature, ValueError, TypeError):
+        return False, "invalid outcome attestation signature"
+
+
+def _finite_timestamp(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        timestamp = float(value)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    return timestamp if math.isfinite(timestamp) else None
+
+
+def _attestor_authority_at(
+    storage: Storage,
+    attestor_id: str,
+    attested_at: Any,
+    current: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve the governance-controlled attestor state effective at attested_at."""
+    timestamp = _finite_timestamp(attested_at)
+    created_at = _finite_timestamp(current.get("created_at"))
+    if timestamp is None or created_at is None or timestamp < created_at:
+        raise PermissionError("outcome attestation time is invalid for registered attestor authority")
+
+    history = storage.attestor_governance_actions(attestor_id)
+    if not history:
+        revoked_at = current.get("revoked_at")
+        expires_at = current.get("expires_at")
+        if current.get("status") != "ACTIVE":
+            raise PermissionError("bootstrap outcome attestor is not active")
+        if revoked_at is not None and (
+            _finite_timestamp(revoked_at) is None or timestamp >= float(revoked_at)
+        ):
+            raise PermissionError("bootstrap outcome attestor was revoked before attestation")
+        if expires_at is not None and (
+            _finite_timestamp(expires_at) is None or timestamp >= float(expires_at)
+        ):
+            raise PermissionError("bootstrap outcome attestor had expired before attestation")
+        return current
+
+    state: dict[str, Any] | None = None
+    previous_effective_at: float | None = None
+    for envelope in history:
+        if not isinstance(envelope, dict):
+            raise ValueError("attestor governance history contains a malformed envelope")
+        action = envelope.get("action")
+        policy_data = envelope.get("governance_policy")
+        approvals = envelope.get("approvals")
+        if (
+            not isinstance(action, dict)
+            or action.get("attestor_id") != attestor_id
+            or not isinstance(policy_data, dict)
+            or not isinstance(approvals, list)
+        ):
+            raise ValueError("attestor governance history is incomplete or targets another attestor")
+        issued_at = _finite_timestamp(action.get("issued_at"))
+        expires_at = _finite_timestamp(action.get("expires_at"))
+        if issued_at is None or expires_at is None or expires_at <= issued_at:
+            raise ValueError("attestor governance action timestamps are invalid")
+        approval_times = [
+            _finite_timestamp(item.get("payload", {}).get("issued_at"))
+            for item in approvals
+            if isinstance(item, dict) and isinstance(item.get("payload"), dict)
+        ]
+        if len(approval_times) != len(approvals) or any(item is None for item in approval_times):
+            raise ValueError("attestor governance approval timestamps are invalid")
+        verification_time = max([issued_at, *(float(item) for item in approval_times)])
+        policy = GovernancePolicy.from_dict(policy_data)
+        if (
+            policy.digest != action.get("governance_policy_sha256")
+            or policy.digest != envelope.get("governance_policy_sha256")
+        ):
+            raise PermissionError("attestor governance policy fingerprint mismatch")
+        quorum_ok, quorum_reason = verify_governance_quorum(
+            action,
+            approvals,
+            policy,
+            now=verification_time,
+        )
+        if not quorum_ok:
+            raise PermissionError(f"attestor governance quorum verification failed: {quorum_reason}")
+
+        recorded_at = envelope.get("recorded_at")
+        effective_at = (
+            verification_time
+            if recorded_at is None
+            else _finite_timestamp(recorded_at)
+        )
+        if (
+            effective_at is None
+            or effective_at < verification_time
+            or effective_at >= expires_at
+        ):
+            raise ValueError("attestor governance application timestamp is invalid")
+        if previous_effective_at is not None and effective_at < previous_effective_at:
+            raise ValueError("attestor governance history is not chronologically ordered")
+        previous_effective_at = effective_at
+
+        operation = action.get("action")
+        if operation not in {
+            "ATTESTOR_REGISTER",
+            "ATTESTOR_ACTIVATE",
+            "ATTESTOR_ROTATE",
+            "ATTESTOR_REVOKE",
+            "ATTESTOR_EXPIRE",
+        }:
+            raise ValueError("unsupported attestor governance action")
+        if effective_at > timestamp:
+            continue
+        if operation == "ATTESTOR_REGISTER":
+            if state is not None:
+                raise ValueError("attestor governance history contains a duplicate registration")
+            state = {"status": "ACTIVE"}
+        elif state is None:
+            raise ValueError("attestor governance history changes an unregistered attestor")
+        if operation in {"ATTESTOR_REGISTER", "ATTESTOR_ROTATE"}:
+            public_key_b64 = action.get("public_key_b64")
+            try:
+                raw_key = base64.b64decode(public_key_b64, validate=True)
+                if len(raw_key) != 32:
+                    raise ValueError("invalid Ed25519 public key length")
+                Ed25519PublicKey.from_public_bytes(raw_key)
+            except (TypeError, ValueError):
+                raise ValueError("attestor governance action contains an invalid public key") from None
+            if action.get("attestor_type") not in ATTESTOR_TYPES:
+                raise ValueError("attestor governance action contains an invalid attestor type")
+            state.update({
+                "public_key_b64": public_key_b64,
+                "key_id": hashlib.sha256(raw_key).hexdigest(),
+                "attestor_type": action["attestor_type"],
+                "expires_at": action.get("attestor_expires_at"),
+            })
+            if operation == "ATTESTOR_REGISTER":
+                state.update({"status": "ACTIVE", "revoked_at": None})
+        elif operation == "ATTESTOR_ACTIVATE":
+            state["status"] = "ACTIVE"
+            state["revoked_at"] = None
+        elif operation == "ATTESTOR_REVOKE":
+            state["status"] = "REVOKED"
+            state["revoked_at"] = effective_at
+        elif operation == "ATTESTOR_EXPIRE":
+            state["status"] = "EXPIRED"
+
+    if state is None or state.get("status") != "ACTIVE":
+        raise PermissionError("attestor authority was not active at outcome attestation time")
+    expiry = state.get("expires_at")
+    if expiry is not None and (
+        _finite_timestamp(expiry) is None or timestamp >= float(expiry)
+    ):
+        raise PermissionError("attestor authority had expired before outcome attestation")
+    return {**current, **state, "status": "ACTIVE", "revoked_at": None}
+
+
+def build_outcome_claim(
+    execution_receipt: dict[str, Any],
+    *,
+    status: str,
+    executor_id: str,
+    evidence_kind: str,
+    evidence_ref: str,
+    result_sha256: str,
+    observed_at: float | None = None,
+    metadata: dict[str, Any] | None = None,
+    claim_id: str | None = None,
+    observed_effect: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if status not in OUTCOME_STATUSES:
+        raise ValueError("invalid outcome status")
+    if evidence_kind not in EVIDENCE_KINDS:
+        raise ValueError("invalid outcome evidence kind")
+    if not executor_id or not evidence_ref:
+        raise ValueError("executor_id and evidence_ref are required")
+    if len(result_sha256) != 64:
+        raise ValueError("result_sha256 must be a SHA-256 hex digest")
+    if observed_effect is not None:
+        if not isinstance(observed_effect, dict):
+            raise ValueError("observed_effect must be a serialized ObservedEffect")
+        if observed_effect.get("authorization_id") != execution_receipt["payload"]["authorization_id"]:
+            raise ValueError("observed effect authorization mismatch")
+        if observed_effect.get("action_sha256") != execution_receipt["payload"]["action_sha256"]:
+            raise ValueError("observed effect action fingerprint mismatch")
+        if observed_effect.get("evidence_kind") != evidence_kind:
+            raise ValueError("observed effect evidence kind mismatch")
+        if observed_effect.get("evidence_ref") != evidence_ref:
+            raise ValueError("observed effect evidence reference mismatch")
+        if observed_effect.get("result_sha256") != result_sha256:
+            raise ValueError("observed effect result fingerprint mismatch")
+        if len(str(observed_effect.get("observation_sha256", ""))) != 64:
+            raise ValueError("observed effect fingerprint is required")
+    return {
+        "outcome_claim_version": 1,
+        "claim_id": claim_id or str(uuid.uuid4()),
+        "authorization_id": execution_receipt["payload"]["authorization_id"],
+        "execution_receipt_sha256": digest(execution_receipt),
+        "action_sha256": execution_receipt["payload"]["action_sha256"],
+        "intent_id": execution_receipt["payload"]["intent_id"],
+        "agent_id": execution_receipt["payload"]["agent_id"],
+        "executor_id": executor_id,
+        "status": status,
+        "evidence_kind": evidence_kind,
+        "evidence_ref": evidence_ref,
+        "result_sha256": result_sha256,
+        "observed_effect": observed_effect,
+        "observed_effect_sha256": digest(observed_effect) if observed_effect is not None else None,
+        "observed_at": time.time() if observed_at is None else observed_at,
+        "metadata": metadata or {},
+    }
+
+
+def build_outcome_attestation(
+    claim: dict[str, Any],
+    *,
+    attestor_id: str,
+    attestor_type: str,
+    private_key: Ed25519PrivateKey,
+    attested_at: float | None = None,
+) -> dict[str, Any]:
+    if attestor_type not in ATTESTATION_TYPES:
+        raise ValueError("invalid outcome attestation type")
+    payload = {
+        "outcome_attestation_version": 1,
+        "attestation_id": str(uuid.uuid4()),
+        "claim": claim,
+        "claim_sha256": digest(claim),
+        "attestor_id": attestor_id,
+        "attestor_type": attestor_type,
+        "attested_at": time.time() if attested_at is None else attested_at,
+    }
+    return {
+        "payload": payload,
+        "signature": sign_payload(payload, private_key),
+        "algorithm": "Ed25519",
+    }
+
+
+class OutcomeAttestationService:
+    """Verify and persist independently signed execution outcomes."""
+
+    def __init__(self, storage: Storage, issuer_public_key: Ed25519PublicKey):
+        self.storage = storage
+        self.issuer_public_key = issuer_public_key
+
+    def register_attestor(
+        self,
+        *,
+        attestor_id: str,
+        public_key_b64: str,
+        attestor_type: str,
+    ) -> dict[str, Any]:
+        if attestor_type not in ATTESTOR_TYPES:
+            raise ValueError("invalid attestor type")
+        try:
+            raw = base64.b64decode(public_key_b64)
+            public_key = Ed25519PublicKey.from_public_bytes(raw)
+        except (ValueError, TypeError):
+            raise ValueError("invalid attestor public key") from None
+        item = {
+            "attestor_id": attestor_id,
+            "key_id": key_fingerprint(public_key),
+            "public_key_b64": public_key_b64,
+            "attestor_type": attestor_type,
+            "status": "ACTIVE",
+        }
+        self.storage.register_outcome_attestor(item)
+        return item
+
+    def verify_and_record(
+        self,
+        attestation: dict[str, Any],
+        *,
+        record_authority_event: bool = True,
+    ) -> dict[str, Any]:
+        payload = attestation["payload"]
+        claim = payload["claim"]
+        attestor_id = payload["attestor_id"]
+        registered = self.storage.outcome_attestor(attestor_id)
+        if registered is None or registered["status"] != "ACTIVE":
+            raise PermissionError("outcome attestor is not registered and active")
+        if registered.get("expires_at") is not None and registered["expires_at"] <= time.time():
+            raise PermissionError("outcome attestor authority has expired")
+        if payload.get("outcome_attestation_version") != 1:
+            raise ValueError("unsupported outcome attestation version")
+        if payload.get("claim_sha256") != digest(claim):
+            raise ValueError("outcome claim fingerprint mismatch")
+        if payload.get("attestor_type") not in ATTESTATION_TYPES:
+            raise ValueError("invalid outcome attestation type")
+        registered_type = registered["attestor_type"]
+        expected_type = (
+            "EXECUTOR_SELF_REPORT"
+            if registered_type == "EXECUTOR"
+            else registered_type
+        )
+        if payload.get("attestor_type") != expected_type:
+            raise PermissionError("attestation type does not match registered attestor")
+        try:
+            public_key = Ed25519PublicKey.from_public_bytes(
+                base64.b64decode(registered["public_key_b64"])
+            )
+        except (ValueError, TypeError):
+            raise ValueError("registered attestor key is invalid") from None
+        valid, reason = verify_payload_signature(
+            payload,
+            attestation["signature"],
+            public_key,
+        )
+        if not valid:
+            raise PermissionError(reason)
+
+        claim_ok = self._verify_claim(claim, registered)
+        claim_id = claim["claim_id"]
+        self.storage.record_outcome_claim(claim)
+        self.storage.record_outcome_attestation(attestation)
+
+        authority_event = None
+        if (
+            record_authority_event
+            and claim["status"] in {"SUCCEEDED", "FAILED"}
+            and payload["attestor_type"] != "EXECUTOR_SELF_REPORT"
+        ):
+            receipt = self.storage.execution_receipt_by_authorization(
+                claim["authorization_id"]
+            )
+            capability_id = receipt["payload"].get("capability_id") if receipt else None
+            if capability_id:
+                authority_event = DynamicAuthorityService(self.storage).record_event(
+                    agent_id=claim["agent_id"],
+                    capability_id=capability_id,
+                    identity_id=receipt["payload"].get("identity_id"),
+                    event_type=(
+                        "EXECUTION_CONFIRMED"
+                        if claim["status"] == "SUCCEEDED"
+                        else "EXECUTION_FAILED"
+                    ),
+                    evidence_ref=(
+                        claim["evidence_ref"]
+                        if payload["attestor_type"] == "CHAIN_VERIFIER"
+                        else claim_id
+                    ),
+                    metadata={
+                        "outcome_attestation_id": payload["attestation_id"],
+                        "attestation_type": payload["attestor_type"],
+                    },
+                )
+        return {
+            "valid": True,
+            "reason": "valid independent outcome attestation",
+            "claim": claim,
+            "claim_sha256": digest(claim),
+            "attestation_id": payload["attestation_id"],
+            "attestation_type": payload["attestor_type"],
+            "attestation_sha256": digest(attestation),
+            "authority_event": authority_event,
+            "claim_verification": claim_ok,
+        }
+
+    def verify_existing(
+        self,
+        attestation: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = attestation["payload"]
+        claim = payload["claim"]
+        registered = self.storage.outcome_attestor(payload["attestor_id"])
+        if registered is None:
+            raise PermissionError("outcome attestor is not registered")
+        registered = _attestor_authority_at(
+            self.storage,
+            payload["attestor_id"],
+            payload.get("attested_at"),
+            registered,
+        )
+        if payload.get("outcome_attestation_version") != 1:
+            raise ValueError("unsupported outcome attestation version")
+        if payload.get("claim_sha256") != digest(claim):
+            raise ValueError("outcome claim fingerprint mismatch")
+        expected_type = (
+            "EXECUTOR_SELF_REPORT"
+            if registered["attestor_type"] == "EXECUTOR"
+            else registered["attestor_type"]
+        )
+        if payload.get("attestor_type") != expected_type:
+            raise PermissionError("attestation type does not match registered attestor")
+        public_key = Ed25519PublicKey.from_public_bytes(
+            base64.b64decode(registered["public_key_b64"])
+        )
+        valid, reason = verify_payload_signature(
+            payload,
+            attestation["signature"],
+            public_key,
+        )
+        if not valid:
+            raise PermissionError(reason)
+        claim_ok = self._verify_claim(claim, registered)
+        return {
+            "valid": True,
+            "reason": "valid stored outcome attestation",
+            "claim_sha256": digest(claim),
+            "attestation_sha256": digest(attestation),
+            "claim_verification": claim_ok,
+        }
+
+    def _verify_claim(
+        self,
+        claim: dict[str, Any],
+        registered_attestor: dict[str, Any],
+    ) -> dict[str, Any]:
+        if claim.get("outcome_claim_version") != 1:
+            raise ValueError("unsupported outcome claim version")
+        if claim.get("status") not in OUTCOME_STATUSES:
+            raise ValueError("invalid outcome claim status")
+        receipt = self.storage.execution_receipt_by_authorization(
+            claim["authorization_id"]
+        )
+        if receipt is None:
+            raise LookupError("execution receipt not found")
+        issuer_public_key = self.issuer_public_key
+        if registered_attestor["attestor_type"] == "CHAIN_VERIFIER" and str(claim.get("agent_id", "")).startswith("anna-installation:"):
+            receipt_payload = receipt.get("payload", {})
+            submission = receipt_payload.get("submission_data")
+            if not isinstance(submission, dict):
+                raise ValueError("Anna CHAIN_VERIFIER receipt is missing wallet enrollment metadata")
+            enrollment = self.storage.wallet_enrollment_for_wallet(
+                claim["agent_id"], submission.get("chain_id"), submission.get("sender", "")
+            )
+            if enrollment is None or enrollment["status"] != "ACTIVE":
+                raise PermissionError("Anna installation wallet enrollment is not active")
+            if receipt_payload.get("network") != enrollment["network"]:
+                raise ValueError("Anna execution receipt network does not match wallet enrollment")
+            try:
+                issuer_public_key = Ed25519PublicKey.from_public_bytes(
+                    base64.b64decode(enrollment["issuer_public_key_b64"], validate=True)
+                )
+            except (ValueError, TypeError):
+                raise ValueError("enrolled Anna installation issuer key is invalid") from None
+        valid, reason = verify_execution_receipt(
+            receipt,
+            issuer_public_key,
+        )
+        if not valid:
+            raise ValueError(f"stored execution receipt is invalid: {reason}")
+        if claim["execution_receipt_sha256"] != digest(receipt):
+            raise ValueError("execution receipt fingerprint mismatch")
+        receipt_payload = receipt["payload"]
+        if claim["intent_id"] != receipt_payload["intent_id"]:
+            raise ValueError("outcome intent mismatch")
+        if claim["agent_id"] != receipt_payload["agent_id"]:
+            raise ValueError("outcome agent mismatch")
+        if claim["action_sha256"] != receipt_payload["action_sha256"]:
+            raise ValueError("outcome action fingerprint mismatch")
+
+        attestation_type = "EXECUTOR_SELF_REPORT" if (
+            registered_attestor["attestor_type"] == "EXECUTOR"
+        ) else registered_attestor["attestor_type"]
+
+        if attestation_type == "CHAIN_VERIFIER":
+            # A chain verifier observes the transaction independently after the
+            # wallet hand-off. It must not rely on an issuer-signed CONFIRMED
+            # status that was derived from caller-supplied confirmation data.
+            if receipt_payload["status"] != "SUBMITTED":
+                raise ValueError("CHAIN_VERIFIER requires the original SUBMITTED wallet receipt")
+        else:
+            if claim["status"] == "SUCCEEDED" and receipt_payload["status"] != "CONFIRMED":
+                raise ValueError("successful outcome requires a CONFIRMED execution receipt")
+            if claim["status"] == "FAILED" and receipt_payload["status"] != "FAILED":
+                raise ValueError("failed outcome requires a FAILED execution receipt")
+            if claim["status"] == "UNKNOWN" and receipt_payload["status"] not in {
+                "SUBMITTED",
+                "CONFIRMED",
+                "FAILED",
+            }:
+                raise ValueError("unknown outcome has invalid execution receipt state")
+        observed_effect = claim.get("observed_effect")
+        if observed_effect is not None:
+            canonical_fields = {
+                key: observed_effect.get(key)
+                for key in (
+                    "verifier_type", "evidence_kind", "effect_status", "authorization_id",
+                    "action_sha256", "observed_at", "evidence_ref", "result_sha256", "observation",
+                )
+            }
+            expected_observation_sha256 = digest(canonical_fields)
+            if observed_effect.get("observation_sha256") != expected_observation_sha256:
+                raise ValueError("observed effect fingerprint mismatch")
+            if claim.get("observed_effect_sha256") != digest(observed_effect):
+                raise ValueError("outcome claim observed-effect fingerprint mismatch")
+            if observed_effect.get("authorization_id") != claim["authorization_id"]:
+                raise ValueError("observed effect authorization mismatch")
+            if observed_effect.get("action_sha256") != claim["action_sha256"]:
+                raise ValueError("observed effect action mismatch")
+            if observed_effect.get("evidence_kind") != claim["evidence_kind"] or observed_effect.get("evidence_ref") != claim["evidence_ref"]:
+                raise ValueError("observed effect evidence binding mismatch")
+            if observed_effect.get("result_sha256") != claim["result_sha256"]:
+                raise ValueError("observed effect result binding mismatch")
+        if attestation_type == "EXECUTOR_SELF_REPORT":
+            if claim["executor_id"] != registered_attestor["attestor_id"]:
+                raise ValueError("executor self-report identity mismatch")
+        elif attestation_type == "EXTERNAL_VERIFIER":
+            pass
+        elif attestation_type == "CHAIN_VERIFIER":
+            if claim["evidence_kind"] != "CHAIN_RECEIPT":
+                raise ValueError("chain verifier requires CHAIN_RECEIPT evidence")
+            if not isinstance(observed_effect, dict):
+                raise ValueError("CHAIN_VERIFIER requires a signed ObservedEffect")
+            if observed_effect.get("verifier_type") != "CHAIN_VERIFIER_EVM":
+                raise ValueError("CHAIN_VERIFIER requires the supported CHAIN_VERIFIER_EVM evidence type")
+            if observed_effect.get("effect_status") != claim["status"]:
+                raise ValueError("chain observed effect status does not match outcome claim")
+            if observed_effect.get("evidence_kind") != "CHAIN_RECEIPT":
+                raise ValueError("chain observed effect must use CHAIN_RECEIPT evidence")
+            observation = observed_effect.get("observation")
+            if not isinstance(observation, dict) or observation.get("network") != "EVM":
+                raise ValueError("CHAIN_VERIFIER EVM observation is missing its network binding")
+
+            # Bind the chain observation to the *original signed authorization*,
+            # not merely to fields copied into an executor's receipt metadata.
+            authorization = self.storage.execution_authorization_by_id(claim["authorization_id"])
+            if not isinstance(authorization, dict):
+                raise LookupError("stored signed execution authorization not found")
+            auth_valid, auth_reason = verify_execution_receipt(
+                receipt, issuer_public_key, authorization
+            )
+            if not auth_valid:
+                raise ValueError(f"execution receipt is not bound to stored authorization: {auth_reason}")
+            action = authorization["payload"].get("action")
+            metadata = action.get("metadata") if isinstance(action, dict) else None
+            expected_tx = metadata.get("evm_transaction") if isinstance(metadata, dict) else None
+            if (
+                not isinstance(action, dict)
+                or not isinstance(action.get("network"), str)
+                or not action["network"].strip()
+            ):
+                raise ValueError("CHAIN_VERIFIER authorization must identify an EVM network")
+            if not isinstance(expected_tx, dict):
+                raise ValueError("CHAIN_VERIFIER authorization has no signed EVM transaction")
+            expected_chain_id = expected_tx.get("chain_id")
+            expected_to = expected_tx.get("to")
+            expected_value = expected_tx.get("value_wei")
+            expected_data = expected_tx.get("data")
+            if (
+                isinstance(expected_chain_id, bool) or not isinstance(expected_chain_id, int)
+                or expected_chain_id <= 0
+                or not isinstance(expected_to, str) or len(expected_to) != 42
+                or not expected_to.startswith("0x")
+                or any(char not in "0123456789abcdefABCDEF" for char in expected_to[2:])
+                or isinstance(expected_value, bool) or not isinstance(expected_value, int)
+                or expected_value < 0
+                or not isinstance(expected_data, str) or not expected_data.startswith("0x")
+                or len(expected_data[2:]) % 2
+                or any(char not in "0123456789abcdefABCDEF" for char in expected_data[2:])
+            ):
+                raise ValueError("signed EVM transaction envelope is malformed")
+
+            import hashlib
+            expected_calldata_sha256 = hashlib.sha256(
+                expected_data.lower().encode("utf-8")
+            ).hexdigest()
+            submission = receipt_payload.get("submission_data")
+            if not isinstance(submission, dict):
+                raise ValueError("CHAIN_VERIFIER requires signed wallet submission metadata")
+            if (
+                submission.get("source") != "anna_eip1193_wallet"
+                or receipt_payload.get("executor") != "anna-eip1193-wallet"
+            ):
+                raise ValueError("CHAIN_VERIFIER requires the signed Anna EIP-1193 wallet submission path")
+            for field in ("sender", "chain_id", "to", "value_wei", "calldata_sha256"):
+                if field not in submission:
+                    raise ValueError(f"signed wallet submission metadata is missing {field}")
+            sender = submission["sender"]
+            if (
+                not isinstance(sender, str) or len(sender) != 42
+                or not sender.startswith("0x")
+                or any(char not in "0123456789abcdefABCDEF" for char in sender[2:])
+            ):
+                raise ValueError("signed wallet submission sender is malformed")
+            if (
+                isinstance(submission["chain_id"], bool)
+                or not isinstance(submission["chain_id"], int)
+                or submission["chain_id"] != expected_chain_id
+            ):
+                raise ValueError("wallet submission chain ID does not match signed authorization")
+            if not isinstance(submission["to"], str) or submission["to"].lower() != expected_to.lower():
+                raise ValueError("wallet submission destination does not match signed authorization")
+            if (
+                isinstance(submission["value_wei"], bool)
+                or not isinstance(submission["value_wei"], int)
+                or submission["value_wei"] != expected_value
+            ):
+                raise ValueError("wallet submission value does not match signed authorization")
+            if (
+                not isinstance(submission["calldata_sha256"], str)
+                or submission["calldata_sha256"] != expected_calldata_sha256
+            ):
+                raise ValueError("wallet submission calldata does not match signed authorization")
+            expected_network = str(action.get("network") or "").lower()
+            if str(receipt_payload.get("network") or "").lower() != expected_network:
+                raise ValueError("execution receipt network does not match signed authorization")
+
+            transaction_hash = receipt_payload.get("transaction_ref")
+            if (
+                not isinstance(transaction_hash, str) or len(transaction_hash) != 66
+                or not transaction_hash.startswith("0x")
+                or any(char not in "0123456789abcdefABCDEF" for char in transaction_hash[2:])
+            ):
+                raise ValueError("SUBMITTED receipt has no valid EVM transaction hash")
+            observed_hash = observation.get("transaction_hash")
+            if not isinstance(observed_hash, str) or observed_hash.lower() != transaction_hash.lower():
+                raise ValueError("chain observation transaction hash does not match SUBMITTED receipt")
+            if (
+                isinstance(observation.get("chain_id"), bool)
+                or not isinstance(observation.get("chain_id"), int)
+                or observation["chain_id"] != expected_chain_id
+            ):
+                raise ValueError("chain observation ID does not match signed authorization")
+
+            # When the RPC has returned the transaction object, bind every
+            # observed field even while the receipt is still below finality.
+            observed_sender = observation.get("transaction_from")
+            observed_to = observation.get("transaction_to")
+            observed_value = observation.get("transaction_value_wei")
+            observed_calldata = observation.get("transaction_calldata_sha256")
+            if observed_sender is not None and (
+                not isinstance(observed_sender, str) or observed_sender.lower() != sender.lower()
+            ):
+                raise ValueError("observed chain sender does not match signed wallet submission")
+            if observed_to is not None and (
+                not isinstance(observed_to, str) or observed_to.lower() != expected_to.lower()
+            ):
+                raise ValueError("observed chain destination does not match signed authorization")
+            if observed_value is not None and observed_value != str(expected_value):
+                raise ValueError("observed chain value does not match signed authorization")
+            if observed_calldata is not None and observed_calldata != expected_calldata_sha256:
+                raise ValueError("observed chain calldata does not match signed authorization")
+
+            if observed_effect["effect_status"] == "UNKNOWN":
+                if observation.get("state") != "PENDING":
+                    raise ValueError("UNKNOWN chain outcome requires PENDING chain evidence")
+            else:
+                expected_state = "CONFIRMED" if observed_effect["effect_status"] == "SUCCEEDED" else "FAILED"
+                if observation.get("state") != expected_state:
+                    raise ValueError("terminal chain outcome does not match observed chain state")
+                confirmations = observation.get("confirmations")
+                required_confirmations = observation.get("required_confirmations")
+                if (
+                    isinstance(confirmations, bool) or not isinstance(confirmations, int)
+                    or isinstance(required_confirmations, bool) or not isinstance(required_confirmations, int)
+                    or required_confirmations < 1 or confirmations < required_confirmations
+                ):
+                    raise ValueError("terminal chain outcome has insufficient confirmation evidence")
+                canonical_hash = observation.get("canonical_block_hash")
+                block_hash = observation.get("block_hash")
+                receipt_hash = observation.get("receipt_sha256")
+                block_number = observation.get("receipt_block_number")
+                if (
+                    not isinstance(canonical_hash, str) or len(canonical_hash) != 66
+                    or not canonical_hash.startswith("0x")
+                    or any(char not in "0123456789abcdefABCDEF" for char in canonical_hash[2:])
+                    or not isinstance(block_hash, str) or block_hash.lower() != canonical_hash.lower()
+                ):
+                    raise ValueError("terminal chain outcome is missing canonical block hash binding")
+                if (
+                    not isinstance(receipt_hash, str) or len(receipt_hash) != 64
+                    or any(char not in "0123456789abcdef" for char in receipt_hash)
+                    or isinstance(block_number, bool) or not isinstance(block_number, int)
+                    or block_number < 0
+                ):
+                    raise ValueError("terminal chain outcome is missing canonical receipt evidence")
+                if observed_sender is None or observed_to is None or observed_value is None or observed_calldata is None:
+                    raise ValueError("terminal chain outcome is missing transaction binding evidence")
+        else:
+            raise PermissionError("attestor type is inconsistent")
+        return {
+            "valid": True,
+            "reason": "claim is bound to a stored signed execution receipt",
+            "execution_receipt_sha256": digest(receipt),
+        }
+    def attestor_status(self, attestor_id: str) -> str | None:
+        item = self.storage.outcome_attestor(attestor_id)
+        return item["status"] if item else None
+
+    def explain_authorization(self, authorization_id: str) -> dict[str, Any]:
+        claims = self.storage.outcome_claims_by_authorization(authorization_id)
+        return {
+            "authorization_id": authorization_id,
+            "claims": claims,
+            "attestations": [
+                att
+                for claim in claims
+                for att in self.storage.outcome_attestations_by_claim(
+                    claim["claim_id"]
+                )
+            ],
+        }
