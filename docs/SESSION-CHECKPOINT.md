@@ -531,3 +531,9 @@ Exact implementation HEAD: `4f0bd4020658e020a5df6256fa2429d1c4a0b103`.
 - Full CI [#46122668307](https://github.com/rudimentall1/verigate/actions/runs/46122668307): **699 Python tests passed**; 69/69 Anna UI; contracts/Arc Registry; container/API-auth; Linux Anna Executa 0.1.18 build and binary smoke passed.
 - No live chain execution or live payment occurred.
 - PR #88 remains Draft and unmerged.
+
+### Latest PR HEAD revalidated — 2026-11-28
+
+After the checkpoint and architecture-document updates, exact PR HEAD `83dc32eab7113507e29762fd2093c5820c7a3139` was re-run:
+- [Architecture Audit #46122891729](https://github.com/rudimentall1/verigate/actions/runs/46122891729): zero `module-cycle` diagnostics; 11 field-leak, 4 wide-directory, 1 long-file remain.
+- [Full CI #46122891728](https://github.com/rudimentall1/verigate/actions/runs/46122891728): 699 Python tests, 69/69 Anna UI, contracts/Arc Authority Registry, container/API-auth, Linux Anna Executa 0.1.18 smoke all passed.
