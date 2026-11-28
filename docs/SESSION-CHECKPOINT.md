@@ -512,3 +512,11 @@ The full artifact from [Architecture Audit #46121019285](https://github.com/rudi
 - Removed the old `core/outcome.py` module; no compatibility re-export remains.
 
 No intended change to claim schema, signature canonicalization, storage calls, attestor governance checks, authority event semantics or EVM chain verification. The latest full CI (#46121019319) passed 699 Python tests and all four jobs, but it predates this outcome move. Fresh CI and architecture scan on current HEAD are pending. Do not mark the cycle resolved until a new report shows no `module-cycle` diagnostic.
+
+### External execution submission moved to application — 2026-11-28
+
+The analyzer report [#46122297534](https://github.com/rudimentall1/verigate/actions/runs/46122297534) narrowed the last cycle to `core/submission_ingest.py -> attest.receipt`, with the reverse `attest/authority_replay.py -> core`.
+
+Moved `ExecutionSubmissionService` from `core/submission_ingest.py` to `application/submission_ingest.py`. The service coordinates enrolled-wallet verification, issuer signature validation, transaction-envelope checks, and durable persistence, so application is its owning layer. Updated the API import and `tests/test_submission_ingest.py`; deleted the old core module.
+
+The ingestion API contract and security checks are preserved: Anna installation principal, active wallet enrollment, chain/network/destination/value/calldata validation, authorization validity at signed wallet hand-off time, receipt signature/binding, transaction hash, and idempotent persistence. Full CI and a fresh architecture scan on the new current head are pending.
