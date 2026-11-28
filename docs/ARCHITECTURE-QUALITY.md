@@ -49,7 +49,7 @@ No allowlist is configured, and the workflow never runs `--update-allow`. Existi
 On an Ubuntu 24.04 environment with Rust 1.99.0 and Node.js 22:
 
 ```bash
-cargo install --git https://github.com/Bor4brn/deslop-please --rev cfabfb9ee417e150d5342e8ef0d6a0fe725cc9a0 --locked
+cargo install --git https://github.com/Bor4brn/deslop-please --rev cfabfb9ee417e150d5342e8ef0d6a0fe725cc9a0 --locked deslop-please
 npm install --global --no-audit --no-fund @sourcegraph/scip-python@0.6.8 @sourcegraph/scip-typescript@0.5.2
 deslop-please --language auto --json
 ```
