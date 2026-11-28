@@ -6,7 +6,7 @@ from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import verify_execution_authorization, verify_receipt
-from core.engine import GuardrailEngine
+from application.engine import GuardrailEngine
 from core.policy import Policy
 from core.governance import (
     GovernanceMember,
