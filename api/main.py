@@ -55,7 +55,7 @@ from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.sign import sign_decision
 from attest.verify import verify_attestation
 from attest.receipt import verify_execution_authorization
-from core.adversarial import AdversarialVerificationPlane
+from attest.adversarial import AdversarialVerificationPlane
 from core.attestor import AttestorAuthorityService
 from core.wallet_enrollment import WalletEnrollmentService
 from core.submission_ingest import ExecutionSubmissionService
