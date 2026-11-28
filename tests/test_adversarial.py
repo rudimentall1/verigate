@@ -4,7 +4,7 @@ from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.adversarial import AdversarialVerificationPlane
-from core.authorization import AuthorizationService
+from attest.authorization import AuthorizationService
 from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 from core.authority_state import DynamicAuthorityService
 from core.policy import Policy
