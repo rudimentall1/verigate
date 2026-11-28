@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from core.engine import GuardrailEngine  # noqa: E402
+from application.engine import GuardrailEngine  # noqa: E402
 from core.models import PaymentIntent, RuleMatch, Severity  # noqa: E402
 from core.payee import keccak256, validate_payee  # noqa: E402
 from core.policy import Policy  # noqa: E402
