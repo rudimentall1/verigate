@@ -21,7 +21,7 @@ from core.governance import (
 from core.policy_version import create_policy_change_action
 from core.identity import sign_action_intent
 from core.models import ActionIntent, AgentIdentity, Capability
-from core.outcome import (
+from attest.outcome import (
     OutcomeAttestationService,
     build_outcome_attestation,
     build_outcome_claim,
