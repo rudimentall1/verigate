@@ -15,8 +15,8 @@ from attest.keys import generate_keypair, load_private_key, load_public_key
 from core.effect_verification import MCPToolVerifier
 from core.attestor import AttestorAuthorityService
 from core.authority_state import DynamicAuthorityService
-from core.engine import GuardrailEngine
-from core.evidence import EvidenceGraph
+from application.engine import GuardrailEngine
+from attest.evidence import EvidenceGraph
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
 from core.evidence_manifest import build_manifest, verify_manifest, canonical, graph_root
 from core.offline_verifier import verify_proof
