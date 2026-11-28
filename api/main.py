@@ -58,7 +58,7 @@ from attest.receipt import verify_execution_authorization
 from attest.adversarial import AdversarialVerificationPlane
 from core.attestor import AttestorAuthorityService
 from application.wallet_enrollment import WalletEnrollmentService
-from core.submission_ingest import ExecutionSubmissionService
+from application.submission_ingest import ExecutionSubmissionService
 from core.authority import AuthorityGraph
 from core.authority_state import DynamicAuthorityService
 from application.engine import GuardrailEngine
