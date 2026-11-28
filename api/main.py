@@ -65,7 +65,7 @@ from application.engine import GuardrailEngine
 from attest.evidence import EvidenceGraph
 from attest.evidence_service import EvidenceGraphService
 from core.evidence_manifest import build_manifest, verify_manifest
-from core.outcome import OutcomeAttestationService
+from attest.outcome import OutcomeAttestationService
 from core.governance import (
     AuthorityGovernanceService,
     GovernanceMember,
