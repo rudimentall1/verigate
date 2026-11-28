@@ -9,7 +9,7 @@ from core.models import ActionIntent, Decision, Capability
 from core.policy import Policy
 from core.storage import Storage
 from core.authority_state import DynamicAuthorityService
-from core.authorization import AuthorizationService
+from attest.authorization import AuthorizationService
 from enforcement.tool import ToolExecutionAdapter
 
 
