@@ -71,3 +71,20 @@ The Python and TypeScript/JavaScript indexes are cached under the user's cache d
 - Keep security-critical behavior unchanged unless a confirmed defect requires a focused fix with regression tests.
 - Do not use blanket allowlists. Any necessary exception must be narrow, justified, and documented.
 - Do not claim that Solidity or unsupported languages were scanned.
+
+## Initial baseline — 2026-11-28
+
+The first completed multi-language scan ran as [Architecture Audit run 46112311890](https://github.com/rudimentall1/verigate/actions/runs/46112311890) against source head `f0a830c3298e3523b9ddc68fc78798238b57af26`. It indexed the root Python project, root JavaScript project, nested Anna Executa Python project, and standalone verifier Python project.
+
+The analyzer returned exit code `1` with **17 diagnostics**:
+
+| Lint | Count | Initial locations |
+|---|---:|---|
+| `module-cycle` | 1 | Dependency cycle across `attest/`, `core/`, and `enforcement/` |
+| `field-leak` | 11 | Receipt payload, authority/service state, Arc registry addresses, Anna client disabled-state fields, and related object boundaries |
+| `wide-directory` | 4 | Repository root, `core/`, `enforcement/`, and `tests/` |
+| `long-file` | 1 | `core/storage.py` — 2,172 lines |
+
+These are structural diagnostics, not 17 confirmed defects. The `attest/core/enforcement` cycle needs a deliberate dependency-direction review because those modules sit on the authorization, evidence, and execution boundary. The 2,172-line storage module is a strong candidate for a separate, test-backed decomposition review, but it should not be split mechanically. Field-leak findings involving public immutable data or intentional read-only policy state may be acceptable; mutable state exposure deserves closer inspection.
+
+The report and indexer stderr are available in [artifact 15249918282](https://github.com/rudimentall1/verigate/actions/runs/46112311890/artifacts/15249918282), retained by GitHub Actions for 14 days. The analyzer result is not clean. The workflow job is green only because findings are explicitly advisory. Solidity was not scanned.
