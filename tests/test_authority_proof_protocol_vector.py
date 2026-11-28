@@ -5,7 +5,7 @@ import json
 import unittest
 from pathlib import Path
 
-from core.proof_package import parse_proof_package, verify_proof_package
+from attest.proof_package import parse_proof_package, verify_proof_package
 
 ROOT = Path(__file__).resolve().parents[1]
 VECTOR = ROOT / "examples" / "authority-proof" / "authority-proof.json"
