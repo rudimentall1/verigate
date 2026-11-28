@@ -7,7 +7,7 @@ from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import sign_receipt, verify_receipt, verify_execution_authorization
 from attest.verify import verify_attestation
 from core.models import ActionIntent, Decision, GuardrailDecision, PaymentIntent
-from core.engine import GuardrailEngine
+from application.engine import GuardrailEngine
 from core.policy import Policy
 from core.storage import Storage
 
