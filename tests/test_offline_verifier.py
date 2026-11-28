@@ -4,7 +4,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from attest.receipt import issue_execution_authorization, sign_receipt
 from core.models import ActionIntent, GuardrailDecision, Decision
 from core.evidence_manifest import build_manifest
-from core.offline_verifier import verify_authority_ledger, verify_proof, _check_authority_binding
+from attest.offline_verifier import verify_authority_ledger, verify_proof, _check_authority_binding
 from core.proof_engine import canonical
 
 def node(kind, ident, data):
