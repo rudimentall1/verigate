@@ -88,7 +88,7 @@ When touching authorization/enforcement, verify:
 ## Package dependency direction
 
 - Keep `core` below `attest`, `enforcement`, and `application`: core domain/policy modules must not import those higher-level packages.
-- `attest` owns signed receipt and execution-authorization issuance/verification, historical authority replay, adversarial authorization checks, signed evidence-graph construction, and portable proof packaging/offline verification; it may depend on core domain primitives.
+- `attest` owns signed receipt and execution-authorization issuance/verification, historical authority replay, outcome attestations, adversarial authorization checks, signed evidence-graph construction, and portable proof packaging/offline verification; it may depend on core domain primitives.
 - `enforcement` owns execution gates, routers, chain/tool adapters, and effect verification; it may depend on core and attest.
 - `application` owns composition roots and workflows that combine core policy/evaluation with attestation and enforcement, including `GuardrailEngine`, Genesis lifecycle, and governed wallet enrollment.
 - Do not put an application orchestrator or a verifier harness in `core` merely because it uses core types.
