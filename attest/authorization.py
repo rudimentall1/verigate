@@ -9,14 +9,14 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from .models import ActionIntent, AgentIdentity, Capability, Decision, GuardrailDecision
-from .capabilities import CapabilityRegistry
-from .identity import IdentityRegistry
-from .authority_state import AuthoritySnapshot
-from .effective_authority import effective_authority
-from .policy import Policy
-from .external_state import external_state_requirement_for_action
-from .authority_intent_graph import IntentAuthorityAssessment, PlanAuthorityStatus
+from core.models import ActionIntent, AgentIdentity, Capability, Decision, GuardrailDecision
+from core.capabilities import CapabilityRegistry
+from core.identity import IdentityRegistry
+from core.authority_state import AuthoritySnapshot
+from core.effective_authority import effective_authority
+from core.policy import Policy
+from core.external_state import external_state_requirement_for_action
+from core.authority_intent_graph import IntentAuthorityAssessment, PlanAuthorityStatus
 from attest.receipt import issue_execution_authorization, sign_receipt
 
 
