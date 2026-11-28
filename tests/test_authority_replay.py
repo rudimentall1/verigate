@@ -1,7 +1,7 @@
 import unittest
 
 from attest.keys import generate_keypair, load_public_key
-from core.authority_replay import replay_authority_decision
+from attest.authority_replay import replay_authority_decision
 
 
 class AuthorityReplayTest(unittest.TestCase):
@@ -58,7 +58,7 @@ class AuthorityReplayTest(unittest.TestCase):
                 "evaluated_at": snapshot.evaluated_at,
                 "history_start_at": snapshot.evaluated_at - service.policy.window_seconds,
             }}
-            with patch("core.authority_replay.verify_execution_authorization", return_value=(True, "valid")):
+            with patch("attest.authority_replay.verify_execution_authorization", return_value=(True, "valid")):
                 ok, reason, details = replay_authority_decision(storage, auth, public)
             self.assertTrue(ok, reason)
             self.assertEqual(details["ledger_sequence"], 1)
@@ -95,7 +95,7 @@ class AuthorityReplayTest(unittest.TestCase):
                 "evaluated_at": snapshot.evaluated_at,
                 "history_start_at": snapshot.evaluated_at - historical_policy.window_seconds,
             }}
-            with patch("core.authority_replay.verify_execution_authorization", return_value=(True, "valid")):
+            with patch("attest.authority_replay.verify_execution_authorization", return_value=(True, "valid")):
                 ok, reason, details = replay_authority_decision(storage, auth, public)
             self.assertTrue(ok, reason)
             self.assertEqual(details["authority_multiplier"], 0.40)
@@ -153,7 +153,7 @@ class AuthorityReplayTest(unittest.TestCase):
             "evaluated_at": snapshot.evaluated_at,
             "history_start_at": snapshot.history_start_at,
         }}
-        with patch("core.authority_replay.verify_execution_authorization", return_value=(True, "valid")):
+        with patch("attest.authority_replay.verify_execution_authorization", return_value=(True, "valid")):
             ok, reason, details = replay_authority_decision(storage, auth, object())
         self.assertTrue(ok, reason)
         self.assertEqual(details["authority_state"]["history_start_at"], 900.0)
