@@ -15,7 +15,7 @@ from core.evidence import EvidenceGraph
 from core.effect_verification import MCPToolVerifier
 from core.attestor import AttestorAuthorityService
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
-from core.genesis_lifecycle import GenesisLifecycle
+from application.genesis_lifecycle import GenesisLifecycle
 from core.identity import sign_action_intent
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.outcome import (
