@@ -51,6 +51,8 @@ The source now places responsibilities with their owning layer:
 | `core/authorization.py` | `attest/authorization.py` | Concrete service signs DecisionReceipt and ExecutionAuthorization artifacts. |
 | `core/evidence.py` | `attest/evidence.py` | Evidence graph verifies signed authorization, receipts, identity and governance evidence. |
 | `core/evidence_service.py` | `attest/evidence_service.py` | Persistent graph snapshots are an attestation/evidence responsibility. |
+| `core/offline_verifier.py` | `attest/offline_verifier.py` | Runtime-independent verification of signed portable evidence is an attestation responsibility. |
+| `core/proof_package.py` | `attest/proof_package.py` | Versioned signed proof transport/verification wraps attestations; it is not a core domain primitive. |
 | `core/genesis_lifecycle.py` | `application/genesis_lifecycle.py` | Genesis composes core services, enforcement router, outcome service and proof package. |
 | `core/wallet_enrollment.py` | `application/wallet_enrollment.py` | Governed installation-wallet enrollment is application workflow orchestration. |
 
@@ -58,7 +60,7 @@ The old modules are removed; no compatibility re-exports were added because thos
 
 `core.authorization` now contains only the `AuthorizationArtifactIssuer` protocol (the dependency-inversion port). `core.engine.GuardrailEngine` accepts that port but does not know the concrete attestation implementation. `application.engine.GuardrailEngine` composes the core engine with `attest.authorization.AuthorizationService` for application flows that issue signed artifacts. The API and authorization tests use the application composition.
 
-The API route remains `POST /v1/verify/adversarial`; the public route and authorization payload format are not intentionally changed.
+The API route remains `POST /v1/verify/adversarial`; the public route and authorization payload format are not intentionally changed. `attest.proof_package` preserves the previous proof-package serialization/verification functions and byte format; only the internal module path changes.
 
 ## Security invariants preserved
 
@@ -76,6 +78,6 @@ The changes are package ownership, dependency injection, and import-path updates
 
 - The first test-first import-only stage intentionally failed because the destination modules did not yet exist: [CI #46115786079](https://github.com/rudimentall1/verigate/actions/runs/46115786079).
 - The first source-move stage passed 698 Python tests and 69/69 Anna UI tests: [CI #46115841371](https://github.com/rudimentall1/verigate/actions/runs/46115841371). That result predates the additional service moves described above and does not verify the current head.
-- The second architecture scan [#46116545770](https://github.com/rudimentall1/verigate/actions/runs/46116545770) still reported one module cycle between `core` and `attest`, which led to the additional moves in this document.
+- The second architecture scan [#46116545770](https://github.com/rudimentall1/verigate/actions/runs/46116545770) still reported one module cycle between `core` and `attest`. The subsequent scan at run #46120175666 again isolated `core/offline_verifier.py` as the remaining reverse edge. Both offline verification and proof-package handling have now moved into `attest`.
 - **Verification of the current source head is pending.** Do not report the cycle count as zero until a fresh report on the current head confirms it. Do not claim tests pass until the latest CI run for the final commit succeeds.
 - No live chain execution or live payment was performed.
