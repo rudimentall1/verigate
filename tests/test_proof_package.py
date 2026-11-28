@@ -6,7 +6,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from core.evidence_manifest import build_manifest
 from core.offline_verifier import verify_proof
 from core.proof_engine import canonical
-from core.evidence import EvidenceGraph
+from attest.evidence import EvidenceGraph
 from core.proof_package import (
     PACKAGE_MEDIA_TYPE,
     PACKAGE_PROTOCOL,
