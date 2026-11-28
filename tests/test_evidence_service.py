@@ -8,7 +8,7 @@ from cryptography.hazmat.primitives import serialization
 from attest.evidence import EvidenceGraph
 from attest.evidence_service import EvidenceGraphService
 from core.evidence_manifest import build_manifest
-from core.offline_verifier import verify_proof
+from attest.offline_verifier import verify_proof
 from core.authority_state import DynamicAuthorityService
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.identity import sign_action_intent
