@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from api import main
 from core.governance import GovernanceMember, GovernancePolicy, governor_id
-from core.wallet_enrollment import WalletEnrollmentService, installation_principal
+from application.wallet_enrollment import WalletEnrollmentService, installation_principal
 
 
 def _canonical(value):
