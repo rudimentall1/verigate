@@ -484,3 +484,20 @@ Additional PR #88 changes:
 - Governed wallet enrollment is in `application.wallet_enrollment`; Genesis lifecycle is in `application.genesis_lifecycle`.
 
 Current source has not yet been verified by a completed post-change full CI and architecture scan. The last analyzer result (#46116545770) predates these extra moves and must not be used to claim zero cycles. Re-run both workflows against the final head and inspect the complete diagnostic JSON/artifact.
+
+### Portable proof verifier moved into the attestation layer — 2026-11-28
+
+The current-head analyzer report [#46120175666](https://github.com/rudimentall1/verigate/actions/runs/46120175666) still found a single cycle caused by `core/offline_verifier.py` importing signed authorization/receipt verification from `attest`. Together with the reverse `attest/authority_replay.py -> core` dependency, this created the last `core <-> attest` cycle.
+
+Moved both related transport/verification modules into their owning package:
+- `core/offline_verifier.py` → `attest/offline_verifier.py`
+- `core/proof_package.py` → `attest/proof_package.py`
+
+Updated the callers in the CLI, Genesis lifecycle, proof/evidence tests, authority proof protocol vector test and portable proof artifact test. Also fixed remaining compatibility imports found by CI:
+- Anna Executa plugin now creates `application.engine.GuardrailEngine`.
+- Chain verifier worker reads installation-principal derivation from `application.wallet_enrollment`.
+- Execution router and demos import concrete `AuthorizationService` from `attest.authorization`.
+- Anna state-initialization test patches the application composition root.
+- `tests/test_engine.py` now tests the application engine for signed authorization behavior and uses the core engine only for the fail-closed missing-issuer regression.
+
+CI on the earlier revision found stale imports and missing caller migrations; those are not hidden as successful verification. Fresh full CI and architecture scan for the current branch head are pending. Do not mark the module cycle resolved until the new architecture report confirms zero `module-cycle` diagnostics.
