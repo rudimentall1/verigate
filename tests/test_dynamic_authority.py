@@ -185,7 +185,7 @@ class DynamicAuthorityTest(unittest.TestCase):
         private_path = Path(self.tmp.name) / "issuer.key"
         public_path = Path(self.tmp.name) / "issuer.pub"
         generate_keypair(private_path, public_path)
-        from core.authorization import AuthorizationService
+        from attest.authorization import AuthorizationService
         from core.models import Decision, GuardrailDecision
 
         decision = GuardrailDecision(
@@ -230,7 +230,7 @@ class DynamicAuthorityTest(unittest.TestCase):
         )
 
     def test_confirmed_execution_feeds_back_into_authority_history(self):
-        from core.authorization import AuthorizationService
+        from attest.authorization import AuthorizationService
         from core.models import Decision, GuardrailDecision
         from enforcement.networks import NetworkRegistry
         from enforcement.router import ExecutionRouter
