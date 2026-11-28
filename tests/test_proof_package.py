@@ -4,10 +4,10 @@ import unittest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from core.evidence_manifest import build_manifest
-from core.offline_verifier import verify_proof
+from attest.offline_verifier import verify_proof
 from core.proof_engine import canonical
 from attest.evidence import EvidenceGraph
-from core.proof_package import (
+from attest.proof_package import (
     PACKAGE_MEDIA_TYPE,
     PACKAGE_PROTOCOL,
     build_proof_package,
