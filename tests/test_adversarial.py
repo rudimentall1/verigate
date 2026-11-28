@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
-from core.adversarial import AdversarialVerificationPlane
+from attest.adversarial import AdversarialVerificationPlane
 from core.authorization import AuthorizationService
 from core.models import ActionIntent, Capability, Decision, GuardrailDecision
 from core.authority_state import DynamicAuthorityService
