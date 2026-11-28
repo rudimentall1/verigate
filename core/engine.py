@@ -16,7 +16,7 @@ from .models import ActionIntent, Decision, GuardrailDecision, PaymentIntent, Ru
 from .policy import Policy
 from .storage import Storage
 
-from .authorization import AuthorizationService
+from .authorization import AuthorizationArtifactIssuer
 from .authority_intent_graph import AuthorityAwareIntentGraph
 from .authority_protocol import Authority, AuthorityState as GenesisAuthorityState
 from .intent_graph import IntentGraphBuilder
@@ -37,12 +37,14 @@ class GuardrailEngine:
         policy_parent_sha256: str | None = None,
         require_governed_policy: bool = False,
         authority_service: DynamicAuthorityService | None = None,
+        authorization_service: AuthorizationArtifactIssuer | None = None,
     ):
         self.policy = policy
         self.storage = storage
         self.policy_source_ref = policy_source_ref
         self.require_governed_policy = require_governed_policy
         self.authority_service = authority_service or DynamicAuthorityService(storage)
+        self.authorization_service = authorization_service
         self.policy_version_number = (
             policy_version_number
             if policy_version_number is not None
@@ -355,7 +357,9 @@ class GuardrailEngine:
                 action, capability, authority
             )
 
-        artifacts = AuthorizationService().issue(
+        if self.authorization_service is None:
+            raise RuntimeError("authorization artifact issuer is not configured; use application.engine.GuardrailEngine")
+        artifacts = self.authorization_service.issue(
             action,
             decision,
             self.policy.digest,
@@ -409,7 +413,9 @@ class GuardrailEngine:
         """
         action = intent.as_action_intent()
         decision = self.evaluate(intent, advisory=advisory, persist=persist)
-        artifacts = AuthorizationService().issue_decision_receipt(
+        if self.authorization_service is None:
+            raise RuntimeError("authorization artifact issuer is not configured; use application.engine.GuardrailEngine")
+        artifacts = self.authorization_service.issue_decision_receipt(
             action,
             decision,
             self.policy.digest,
