@@ -156,3 +156,9 @@ On exact final implementation HEAD `4f0bd4020658e020a5df6256fa2429d1c4a0b103`:
 - Anna binary smoke reported: signed ALLOW, one-time App approval consumed once, wallet hand-off consumed once, submitted receipt persisted and verified.
 
 The remaining field and size diagnostics were not auto-fixed: review their evidence individually. In particular, receipt payload and domain data carriers are public protocol objects, and a wide test directory or a 2172-line SQLite storage module should be decomposed based on ownership/behavior, not to game an advisory counter.
+
+### Documentation-head revalidation — 2026-11-28
+
+The PR's documentation/checkpoint commits after the final code change were also revalidated on exact latest PR HEAD `83dc32eab7113507e29762fd2093c5820c7a3139`:
+- Architecture Audit [#46122891729](https://github.com/rudimentall1/verigate/actions/runs/46122891729): still **zero module-cycle diagnostics**. Remaining advisories are 11 field-leak, 4 wide-directory, and one long-file finding.
+- Full CI [#46122891728](https://github.com/rudimentall1/verigate/actions/runs/46122891728): **699 Python tests**; 69/69 Anna UI tests; contracts, container/API-auth, and Linux Anna Executa 0.1.18 build + binary smoke all passed.
