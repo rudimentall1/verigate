@@ -1,6 +1,6 @@
 # Architecture Quality Audit
 
-**Status:** advisory pilot enabled on pushes, pull requests, and manual dispatch.  
+**Status:** advisory pilot enabled on pushes to `main`, pull requests targeting `main`, and manual dispatch.  
 **Workflow:** `.github/workflows/architecture-audit.yml`  
 **Scope:** Python, TypeScript, and JavaScript source projects discovered by the tool. Solidity is not supported by this scanner.
 
@@ -32,7 +32,7 @@ The workflow runs `deslop-please --language auto --json`. The tool discovers sup
 
 ## Execution and reporting
 
-The workflow runs on pushes, pull requests, and manual dispatch. Its JSON report and indexer stderr are uploaded as the `deslop-please-verigate-<run-id>` artifact for 14 days.
+The workflow runs on pushes to `main`, pull requests targeting `main`, and manual dispatch. Its JSON report and indexer stderr are uploaded as the `deslop-please-verigate-<run-id>` artifact for 14 days.
 
 The CLI exit codes are:
 
