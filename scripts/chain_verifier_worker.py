@@ -27,7 +27,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from attest.keys import load_private_key
 from attest.receipt import verify_execution_authorization, verify_execution_receipt
-from core.outcome import (
+from attest.outcome import (
     build_outcome_attestation,
     build_outcome_claim,
     digest,
