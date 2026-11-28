@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives import serialization
 
 from attest.keys import generate_keypair, load_private_key, load_public_key
 from attest.receipt import sign_execution_receipt
-from core.engine import GuardrailEngine
+from application.engine import GuardrailEngine
 from core.effect_verification import digest
 from core.models import ActionIntent, AgentIdentity, Capability
 from core.outcome import (
